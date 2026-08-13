@@ -1,0 +1,2 @@
+# DivergenceSplitter
+Auto splitter
