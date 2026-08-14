@@ -23,3 +23,5 @@ jobs:
         run: uv run ruff check .
       - name: Typecheck
         run: uv run ty check --error-on-warning .
+      - name: Test
+        run: uv run pytest -q
