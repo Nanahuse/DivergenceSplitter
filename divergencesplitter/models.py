@@ -1,17 +1,37 @@
-"""Data models shared across the frame source boundary.
+"""Data models shared by frame sources and image detectors.
 
-``Frame`` intentionally holds nothing but the image array: no timestamp,
-capture time, media time, or sequence number. Array copy and ownership rules
-are guaranteed by each frame source implementation.
+``Frame`` intentionally holds only the NumPy image array. Array copy and
+ownership rules are guaranteed by each frame source implementation. Detector
+configuration values remain hashable so equivalent detectors can share cache
+entries.
 """
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
+
+Pixel = int | float
+ConfigImage = Sequence[Sequence[Pixel]]
+ImageArray = np.ndarray
 
 
 @dataclass(frozen=True)
 class Frame:
     """A single captured frame carrying only its image array."""
 
-    image: np.ndarray
+    image: ImageArray
+
+
+@dataclass
+class FrameContext:
+    frame: Frame
+    now: float
+    preprocessing_cache: dict[object, object] = field(default_factory=dict)
+    detection_cache: dict[object, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DetectionSample:
+    matched: bool
+    score: float | None = None
