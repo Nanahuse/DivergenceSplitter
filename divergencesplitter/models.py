@@ -33,14 +33,11 @@ class FrameContext:
 
 @dataclass(frozen=True)
 class DetectionSample:
-    """Result of a single detector evaluation.
+    """Data model holding the result of a single detector evaluation.
 
     ``matched`` is the detector's boolean decision. ``score`` is a
-    detector-specific measure with no cross-detector meaning; higher values
-    always mean a stronger match (closer to ``matched=True``). ``score=None``
-    means the detector provides no score. If the underlying library reports
-    scores in the opposite direction, the detector must invert the value so
-    this contract holds.
+    detector-specific measure with no cross-detector meaning; ``score=None``
+    means the detector provides no score.
     """
 
     matched: bool
