@@ -1,20 +1,21 @@
-"""ImageDetector protocol, cache-aware evaluation, and minimal detectors.
+"""Cache-aware evaluation and shared image preprocessing.
 
-Detectors are immutable value objects: two equivalent instances compare equal
-and hash equal. ``evaluate`` uses that to share a single ``DetectionSample``
-per ``FrameContext`` even when the same definition appears as several
-instances. Exceptions and non-``DetectionSample`` returns are never cached.
+``preprocessed`` memoizes image computations per ``FrameContext`` so several
+detectors sharing a computation run it once. ``evaluate`` caches complete
+``DetectionSample`` results per detector instance, reusing them across
+equivalent definitions. Exceptions and non-``DetectionSample`` returns are
+never cached.
 
 References inside detector configuration (for example ``FrameDifferenceDetector``)
 must be hashable (use tuples) so the detectors stay usable as cache keys.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import cast
 
 import numpy as np
 
+from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.models import (
     ConfigImage,
     DetectionSample,
@@ -23,17 +24,6 @@ from divergencesplitter.models import (
 )
 
 FRAME_MEAN_KEY = "frame-mean"
-
-
-class ImageDetector(Protocol):
-    """Image detection method contract.
-
-    Implementations evaluate ``context`` deterministically and return a
-    ``DetectionSample``. They must be immutable and hashable by configuration
-    value so equivalent definitions share one evaluation per frame.
-    """
-
-    def detect(self, context: FrameContext) -> DetectionSample: ...
 
 
 def preprocessed[T](context: FrameContext, key: object, compute: Callable[[], T]) -> T:
@@ -74,30 +64,6 @@ def frame_mean_abs_diff(context: FrameContext, reference: ConfigImage) -> float:
     return preprocessed(
         context, key, lambda: _mean_abs_diff(context.frame.image, reference)
     )
-
-
-@dataclass(frozen=True)
-class MeanBrightnessDetector:
-    """Level-style detector: matched when the frame mean is above ``threshold``."""
-
-    threshold: float
-
-    def detect(self, context: FrameContext) -> DetectionSample:
-        mean = frame_mean(context)
-        return DetectionSample(matched=mean > self.threshold, score=mean)
-
-
-@dataclass(frozen=True)
-class FrameDifferenceDetector:
-    """Frame-difference style detector: matched when the frame differs from
-    ``reference`` by at least ``threshold`` (mean absolute difference)."""
-
-    reference: ConfigImage
-    threshold: float
-
-    def detect(self, context: FrameContext) -> DetectionSample:
-        diff = frame_mean_abs_diff(context, self.reference)
-        return DetectionSample(matched=diff >= self.threshold, score=diff)
 
 
 def _mean(image: ImageArray) -> float:

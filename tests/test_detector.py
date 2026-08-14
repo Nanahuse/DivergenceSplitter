@@ -3,15 +3,15 @@ from typing import cast
 
 import numpy as np
 
-from divergencesplitter.detector import (
-    FrameDifferenceDetector,
-    ImageDetector,
-    MeanBrightnessDetector,
+from divergencesplitter.detector.common import (
     evaluate,
     frame_mean,
     frame_mean_abs_diff,
     preprocessed,
 )
+from divergencesplitter.detector.frame_difference import FrameDifferenceDetector
+from divergencesplitter.detector.interface import ImageDetector
+from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
 from divergencesplitter.models import DetectionSample, Frame, FrameContext
 
 DARK = np.zeros((2, 3), dtype=np.uint8)
