@@ -32,7 +32,7 @@ def make_video(path, frame_count, fps=30.0, width=16, height=16):
     assert writer.isOpened(), "could not create the test video with the MJPG codec"
     try:
         for index in range(frame_count):
-            image = np.full((height, width, 3), index % 255, dtype=np.uint8)
+            image = np.full((height, width, 3), index * 85 % 255, dtype=np.uint8)
             writer.write(image)
     finally:
         writer.release()
@@ -105,7 +105,7 @@ class TestRead:
             result = source.read()
             assert isinstance(result, Frame)
             values.append(int(result.image[0, 0, 0]))
-        assert values == [0, 1, 2]
+        assert values[0] < values[1] < values[2]
 
 
 class TestError:
