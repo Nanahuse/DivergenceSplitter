@@ -8,12 +8,11 @@ from divergencesplitter.models import ConfigImage, DetectionResult, FrameContext
 
 @dataclass(frozen=True)
 class FrameDifferenceDetector:
-    """Frame-difference style detector: matched when the frame differs from
-    ``reference`` by at least ``threshold`` (mean absolute difference)."""
+    """Frame-difference style detector: reports the mean absolute difference
+    from ``reference`` as score."""
 
     reference: ConfigImage
-    threshold: float
 
     def detect(self, context: FrameContext) -> DetectionResult:
         diff = frame_mean_abs_diff(context, self.reference)
-        return DetectionResult(matched=diff >= self.threshold, score=diff)
+        return DetectionResult(score=diff)

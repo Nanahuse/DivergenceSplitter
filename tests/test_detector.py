@@ -26,68 +26,48 @@ def make_context(image, now=1.0):
 
 class MeanBrightnessDetectorTest(unittest.TestCase):
     def test_known_images(self):
-        detector = MeanBrightnessDetector(threshold=100.0)
+        detector = MeanBrightnessDetector()
         dark = evaluate(make_context(DARK), detector)
-        self.assertFalse(dark.matched)
         self.assertEqual(dark.score, 0.0)
         bright = evaluate(make_context(BRIGHT), detector)
-        self.assertTrue(bright.matched)
         self.assertEqual(bright.score, 255.0)
 
-    def test_threshold_boundary(self):
-        detector = MeanBrightnessDetector(threshold=50.0)
-        boundary = make_context(np.array([[50, 50], [50, 50]], dtype=np.uint8))
-        self.assertFalse(evaluate(boundary, detector).matched)
-        above = make_context(np.array([[51, 51], [51, 51]], dtype=np.uint8))
-        self.assertTrue(evaluate(above, detector).matched)
-
     def test_multidimensional_image(self):
-        detector = MeanBrightnessDetector(threshold=100.0)
-        dark_color = make_context(np.zeros((2, 2, 3), dtype=np.uint8))
-        self.assertFalse(evaluate(dark_color, detector).matched)
-        bright_color = make_context(np.full((2, 2, 3), 255, dtype=np.uint8))
-        result = evaluate(bright_color, detector)
-        self.assertTrue(result.matched)
-        self.assertEqual(result.score, 255.0)
+        detector = MeanBrightnessDetector()
+        dark_color = evaluate(
+            make_context(np.zeros((2, 2, 3), dtype=np.uint8)), detector
+        )
+        self.assertEqual(dark_color.score, 0.0)
+        bright_color = evaluate(
+            make_context(np.full((2, 2, 3), 255, dtype=np.uint8)), detector
+        )
+        self.assertEqual(bright_color.score, 255.0)
 
 
 class FrameDifferenceDetectorTest(unittest.TestCase):
     def test_known_images(self):
-        detector = FrameDifferenceDetector(reference=REFERENCE, threshold=1.0)
+        detector = FrameDifferenceDetector(reference=REFERENCE)
         same = evaluate(make_context(REFERENCE_IMAGE), detector)
-        self.assertFalse(same.matched)
         self.assertEqual(same.score, 0.0)
         changed = evaluate(
             make_context(np.array([[10, 10], [10, 10]], dtype=np.uint8)), detector
         )
-        self.assertTrue(changed.matched)
         self.assertEqual(changed.score, 10.0)
-
-    def test_threshold_boundary(self):
-        detector = FrameDifferenceDetector(reference=REFERENCE, threshold=10.0)
-        boundary = make_context(np.array([[10, 10], [10, 10]], dtype=np.uint8))
-        self.assertTrue(evaluate(boundary, detector).matched)
-        below = make_context(np.array([[9, 9], [9, 9]], dtype=np.uint8))
-        self.assertFalse(evaluate(below, detector).matched)
 
 
 class CountingDetector:
-    def __init__(self, threshold: float) -> None:
-        self.threshold = threshold
+    def __init__(self) -> None:
         self.evaluations = 0
 
     def detect(self, context: FrameContext) -> DetectionResult:
         self.evaluations += 1
-        mean = frame_mean(context)
-        return DetectionResult(matched=mean > self.threshold, score=mean)
+        return DetectionResult(score=frame_mean(context))
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, CountingDetector):
-            return NotImplemented
-        return self.threshold == other.threshold
+        return isinstance(other, CountingDetector)
 
     def __hash__(self) -> int:
-        return hash(("CountingDetector", self.threshold))
+        return hash("CountingDetector")
 
 
 class FailingDetector:
@@ -97,7 +77,7 @@ class FailingDetector:
     def detect(self, context: FrameContext) -> DetectionResult:
         if self.fail:
             raise ValueError("boom")
-        return DetectionResult(matched=False)
+        return DetectionResult(score=0.0)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, FailingDetector):
@@ -116,8 +96,8 @@ class IncompleteDetector:
 class CacheTest(unittest.TestCase):
     def test_equivalent_instances_evaluated_once(self):
         context = make_context(BRIGHT)
-        detector = CountingDetector(threshold=100.0)
-        equivalent = CountingDetector(threshold=100.0)
+        detector = CountingDetector()
+        equivalent = CountingDetector()
         result = evaluate(context, detector)
         cached = evaluate(context, equivalent)
         self.assertEqual(detector.evaluations, 1)
@@ -126,7 +106,7 @@ class CacheTest(unittest.TestCase):
         self.assertIs(result, cached)
 
     def test_next_frame_reevaluates(self):
-        detector = CountingDetector(threshold=100.0)
+        detector = CountingDetector()
         evaluate(make_context(DARK, now=1.0), detector)
         self.assertEqual(detector.evaluations, 1)
         evaluate(make_context(BRIGHT, now=2.0), detector)
@@ -153,7 +133,7 @@ class CacheTest(unittest.TestCase):
         self.assertEqual(context.detection_cache, {})
 
     def test_size_mismatch_raises_and_is_not_cached(self):
-        detector = FrameDifferenceDetector(reference=REFERENCE, threshold=1.0)
+        detector = FrameDifferenceDetector(reference=REFERENCE)
         context = make_context(np.zeros((2, 3), dtype=np.uint8))
         with self.assertRaises(ValueError):
             evaluate(context, detector)
@@ -192,15 +172,14 @@ class PreprocessingCacheTest(unittest.TestCase):
 
     def test_detectors_share_frame_mean_preprocessing(self):
         context = make_context(BRIGHT)
-        evaluate(context, MeanBrightnessDetector(threshold=0.0))
-        evaluate(context, MeanBrightnessDetector(threshold=1000.0))
+        evaluate(context, MeanBrightnessDetector())
+        evaluate(context, CountingDetector())
         self.assertEqual(frame_mean(context), 255.0)
         self.assertEqual(context.preprocessing_cache["frame-mean"], 255.0)
 
-    def test_detectors_share_diff_for_same_reference(self):
+    def test_detector_diff_is_cached_for_reuse(self):
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(context, FrameDifferenceDetector(reference=REFERENCE, threshold=0.0))
-        evaluate(context, FrameDifferenceDetector(reference=REFERENCE, threshold=5.0))
+        evaluate(context, FrameDifferenceDetector(reference=REFERENCE))
         self.assertEqual(frame_mean_abs_diff(context, REFERENCE), 3.0)
         self.assertEqual(
             context.preprocessing_cache[("frame-mean-abs-diff", REFERENCE)], 3.0
@@ -209,10 +188,8 @@ class PreprocessingCacheTest(unittest.TestCase):
     def test_different_references_do_not_share(self):
         other_reference = ((1, 1), (1, 1))
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(context, FrameDifferenceDetector(reference=REFERENCE, threshold=0.0))
-        evaluate(
-            context, FrameDifferenceDetector(reference=other_reference, threshold=0.0)
-        )
+        evaluate(context, FrameDifferenceDetector(reference=REFERENCE))
+        evaluate(context, FrameDifferenceDetector(reference=other_reference))
         self.assertIn(("frame-mean-abs-diff", REFERENCE), context.preprocessing_cache)
         self.assertIn(
             ("frame-mean-abs-diff", other_reference), context.preprocessing_cache

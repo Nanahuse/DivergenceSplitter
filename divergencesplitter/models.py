@@ -33,12 +33,10 @@ class FrameContext:
 
 @dataclass(frozen=True)
 class DetectionResult:
-    """Data model holding the result of a single detector evaluation.
+    """Data model holding the numeric observation of a single detector run.
 
-    ``matched`` is the detector's boolean decision. ``score`` is a
-    detector-specific measure with no cross-detector meaning; ``score=None``
-    means the detector provides no score.
+    ``score`` is a required detector-specific measure with no cross-detector
+    meaning.
     """
 
-    matched: bool
-    score: float | None = None
+    score: float

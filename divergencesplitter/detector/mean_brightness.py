@@ -8,10 +8,8 @@ from divergencesplitter.models import DetectionResult, FrameContext
 
 @dataclass(frozen=True)
 class MeanBrightnessDetector:
-    """Level-style detector: matched when the frame mean is above ``threshold``."""
-
-    threshold: float
+    """Level-style detector: reports the frame mean brightness as score."""
 
     def detect(self, context: FrameContext) -> DetectionResult:
         mean = frame_mean(context)
-        return DetectionResult(matched=mean > self.threshold, score=mean)
+        return DetectionResult(score=mean)

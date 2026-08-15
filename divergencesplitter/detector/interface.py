@@ -17,10 +17,10 @@ class ImageDetector(Protocol):
     value so equivalent definitions share one evaluation per frame.
 
     ``DetectionResult.score`` is a detector-specific measure, not normalized or
-    comparable across detectors. Higher values always mean a stronger match
-    (closer to ``matched=True``). If the underlying library reports scores in
-    the opposite direction, the implementation must invert the value inside
-    ``detect`` so this contract holds.
+    comparable across detectors. Higher values always mean a stronger match.
+    If the underlying library reports scores in the opposite direction, the
+    implementation must invert the value inside ``detect`` so this contract
+    holds.
     """
 
     def detect(self, context: FrameContext) -> DetectionResult: ...
