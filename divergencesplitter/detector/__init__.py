@@ -1,9 +1,9 @@
 """ImageDetector interface, cache-aware evaluation, and detector implementations.
 
 Detectors are immutable value objects: two equivalent instances compare equal
-and hash equal. ``evaluate`` uses that to share a single ``DetectionSample``
+and hash equal. ``evaluate`` uses that to share a single ``DetectionResult``
 per ``FrameContext`` even when the same definition appears as several
-instances. Exceptions and non-``DetectionSample`` returns are never cached.
+instances. Exceptions and non-``DetectionResult`` values are never cached.
 """
 
 from divergencesplitter.detector.common import (

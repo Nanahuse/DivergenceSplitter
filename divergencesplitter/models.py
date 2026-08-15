@@ -32,7 +32,7 @@ class FrameContext:
 
 
 @dataclass(frozen=True)
-class DetectionSample:
+class DetectionResult:
     """Data model holding the result of a single detector evaluation.
 
     ``matched`` is the detector's boolean decision. ``score`` is a

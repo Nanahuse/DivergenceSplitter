@@ -7,7 +7,7 @@ from divergencesplitter.detector import (
     evaluate,
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
-from divergencesplitter.models import DetectionSample, Frame, FrameContext, ImageArray
+from divergencesplitter.models import DetectionResult, Frame, FrameContext, ImageArray
 from divergencesplitter.video_file import (
     VideoFileDecodeError,
     VideoFileEndOfFileError,
@@ -18,7 +18,7 @@ from divergencesplitter.video_file import (
 )
 
 __all__ = [
-    "DetectionSample",
+    "DetectionResult",
     "ErrorAction",
     "Frame",
     "FrameContext",

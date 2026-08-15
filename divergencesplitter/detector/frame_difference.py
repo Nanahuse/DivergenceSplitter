@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from divergencesplitter.detector.common import frame_mean_abs_diff
-from divergencesplitter.models import ConfigImage, DetectionSample, FrameContext
+from divergencesplitter.models import ConfigImage, DetectionResult, FrameContext
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,6 @@ class FrameDifferenceDetector:
     reference: ConfigImage
     threshold: float
 
-    def detect(self, context: FrameContext) -> DetectionSample:
+    def detect(self, context: FrameContext) -> DetectionResult:
         diff = frame_mean_abs_diff(context, self.reference)
-        return DetectionSample(matched=diff >= self.threshold, score=diff)
+        return DetectionResult(matched=diff >= self.threshold, score=diff)

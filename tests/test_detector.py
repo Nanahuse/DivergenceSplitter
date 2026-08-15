@@ -12,7 +12,7 @@ from divergencesplitter.detector.common import (
 from divergencesplitter.detector.frame_difference import FrameDifferenceDetector
 from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
-from divergencesplitter.models import DetectionSample, Frame, FrameContext
+from divergencesplitter.models import DetectionResult, Frame, FrameContext
 
 DARK = np.zeros((2, 3), dtype=np.uint8)
 BRIGHT = np.full((2, 3), 255, dtype=np.uint8)
@@ -46,9 +46,9 @@ class MeanBrightnessDetectorTest(unittest.TestCase):
         dark_color = make_context(np.zeros((2, 2, 3), dtype=np.uint8))
         self.assertFalse(evaluate(dark_color, detector).matched)
         bright_color = make_context(np.full((2, 2, 3), 255, dtype=np.uint8))
-        sample = evaluate(bright_color, detector)
-        self.assertTrue(sample.matched)
-        self.assertEqual(sample.score, 255.0)
+        result = evaluate(bright_color, detector)
+        self.assertTrue(result.matched)
+        self.assertEqual(result.score, 255.0)
 
 
 class FrameDifferenceDetectorTest(unittest.TestCase):
@@ -76,10 +76,10 @@ class CountingDetector:
         self.threshold = threshold
         self.evaluations = 0
 
-    def detect(self, context: FrameContext) -> DetectionSample:
+    def detect(self, context: FrameContext) -> DetectionResult:
         self.evaluations += 1
         mean = frame_mean(context)
-        return DetectionSample(matched=mean > self.threshold, score=mean)
+        return DetectionResult(matched=mean > self.threshold, score=mean)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, CountingDetector):
@@ -94,10 +94,10 @@ class FailingDetector:
     def __init__(self, fail: bool) -> None:
         self.fail = fail
 
-    def detect(self, context: FrameContext) -> DetectionSample:
+    def detect(self, context: FrameContext) -> DetectionResult:
         if self.fail:
             raise ValueError("boom")
-        return DetectionSample(matched=False)
+        return DetectionResult(matched=False)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, FailingDetector):
@@ -118,12 +118,12 @@ class CacheTest(unittest.TestCase):
         context = make_context(BRIGHT)
         detector = CountingDetector(threshold=100.0)
         equivalent = CountingDetector(threshold=100.0)
-        sample = evaluate(context, detector)
+        result = evaluate(context, detector)
         cached = evaluate(context, equivalent)
         self.assertEqual(detector.evaluations, 1)
         self.assertEqual(equivalent.evaluations, 0)
-        self.assertEqual(sample, cached)
-        self.assertIs(sample, cached)
+        self.assertEqual(result, cached)
+        self.assertIs(result, cached)
 
     def test_next_frame_reevaluates(self):
         detector = CountingDetector(threshold=100.0)

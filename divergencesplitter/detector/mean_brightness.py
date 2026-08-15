@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from divergencesplitter.detector.common import frame_mean
-from divergencesplitter.models import DetectionSample, FrameContext
+from divergencesplitter.models import DetectionResult, FrameContext
 
 
 @dataclass(frozen=True)
@@ -12,6 +12,6 @@ class MeanBrightnessDetector:
 
     threshold: float
 
-    def detect(self, context: FrameContext) -> DetectionSample:
+    def detect(self, context: FrameContext) -> DetectionResult:
         mean = frame_mean(context)
-        return DetectionSample(matched=mean > self.threshold, score=mean)
+        return DetectionResult(matched=mean > self.threshold, score=mean)
