@@ -1,6 +1,5 @@
 """DivergenceSplitter public API."""
 
-from divergencesplitter.condition import DetectionCondition, ScoreThresholdCondition
 from divergencesplitter.detector import (
     FrameDifferenceDetector,
     ImageDetector,
@@ -9,6 +8,7 @@ from divergencesplitter.detector import (
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
 from divergencesplitter.models import DetectionResult, Frame, FrameContext, ImageArray
+from divergencesplitter.trigger import ScoreThresholdTrigger, Trigger
 from divergencesplitter.video_file import (
     VideoFileDecodeError,
     VideoFileEndOfFileError,
@@ -19,7 +19,6 @@ from divergencesplitter.video_file import (
 )
 
 __all__ = [
-    "DetectionCondition",
     "DetectionResult",
     "ErrorAction",
     "Frame",
@@ -30,7 +29,8 @@ __all__ = [
     "ImageArray",
     "ImageDetector",
     "MeanBrightnessDetector",
-    "ScoreThresholdCondition",
+    "ScoreThresholdTrigger",
+    "Trigger",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
     "VideoFileError",
