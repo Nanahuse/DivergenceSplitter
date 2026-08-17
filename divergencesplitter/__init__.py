@@ -1,11 +1,21 @@
-"""DivergenceSplitter frame source foundation."""
+"""DivergenceSplitter public API."""
 
-from divergencesplitter.frame_source import (
-    ErrorAction,
-    FrameSource,
-    FrameSourceState,
+from divergencesplitter.detector import (
+    FrameDifferenceDetector,
+    ImageDetector,
+    MeanBrightnessDetector,
+    evaluate,
 )
-from divergencesplitter.models import Frame
+from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
+from divergencesplitter.models import (
+    DetectionResult,
+    Frame,
+    FrameContext,
+    ImageArray,
+    MonotonicTime,
+)
+from divergencesplitter.score_threshold import ScoreThreshold
+from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.video_file import (
     VideoFileDecodeError,
     VideoFileEndOfFileError,
@@ -16,14 +26,24 @@ from divergencesplitter.video_file import (
 )
 
 __all__ = [
+    "DetectionResult",
     "ErrorAction",
     "Frame",
+    "FrameContext",
+    "FrameDifferenceDetector",
     "FrameSource",
     "FrameSourceState",
+    "ImageArray",
+    "ImageDetector",
+    "MeanBrightnessDetector",
+    "MonotonicTime",
+    "ScoreThreshold",
+    "TimeProvider",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
     "VideoFileError",
     "VideoFileOpenError",
     "VideoFileReadBeforeReadyError",
     "VideoFileSource",
+    "evaluate",
 ]
