@@ -1,10 +1,10 @@
-"""Monotonic time provider implementation."""
+"""Time provider implementation."""
 
 import time
 from datetime import UTC, datetime, timedelta
 
 
-class MonotonicTimeProvider:
+class TimeProvider:
     """Provides a monotonic non-decreasing timezone-aware UTC time.
 
     On construction the provider reads the OS wall clock once as its display

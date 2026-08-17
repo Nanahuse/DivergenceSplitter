@@ -1,9 +1,7 @@
-"""Time provider interface and implementations."""
+"""Time provider implementation."""
 
-from divergencesplitter.time_provider.interface import TimeProvider
-from divergencesplitter.time_provider.monotonic import MonotonicTimeProvider
+from divergencesplitter.time_provider.provider import TimeProvider
 
 __all__ = [
-    "MonotonicTimeProvider",
     "TimeProvider",
 ]
