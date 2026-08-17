@@ -8,13 +8,19 @@ entries.
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
 
 import numpy as np
 
 Pixel = int | float
 ConfigImage = Sequence[Sequence[Pixel]]
 ImageArray = np.ndarray
+
+
+@dataclass(frozen=True, order=True)
+class MonotonicTime:
+    """A point on the monotonic clock as raw nanoseconds."""
+
+    nanoseconds: int
 
 
 @dataclass(frozen=True)
@@ -27,13 +33,9 @@ class Frame:
 @dataclass
 class FrameContext:
     frame: Frame
-    now: datetime
+    now: MonotonicTime
     preprocessing_cache: dict[object, object] = field(default_factory=dict)
     detection_cache: dict[object, object] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if self.now.utcoffset() is None:
-            raise ValueError("FrameContext.now must be a timezone-aware datetime")
 
 
 @dataclass(frozen=True)

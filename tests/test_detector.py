@@ -1,5 +1,4 @@
 import unittest
-from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import numpy as np
@@ -13,13 +12,18 @@ from divergencesplitter.detector.common import (
 from divergencesplitter.detector.frame_difference import FrameDifferenceDetector
 from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
-from divergencesplitter.models import DetectionResult, Frame, FrameContext
+from divergencesplitter.models import (
+    DetectionResult,
+    Frame,
+    FrameContext,
+    MonotonicTime,
+)
 
 DARK = np.zeros((2, 3), dtype=np.uint8)
 BRIGHT = np.full((2, 3), 255, dtype=np.uint8)
 REFERENCE = ((0, 0), (0, 0))
 REFERENCE_IMAGE = np.asarray(REFERENCE)
-EPOCH = datetime(2024, 1, 1, tzinfo=UTC)
+EPOCH = MonotonicTime(nanoseconds=0)
 
 
 def make_context(image, now=EPOCH):
@@ -111,7 +115,10 @@ class CacheTest(unittest.TestCase):
         detector = CountingDetector()
         evaluate(make_context(DARK, now=EPOCH), detector)
         self.assertEqual(detector.evaluations, 1)
-        evaluate(make_context(BRIGHT, now=EPOCH + timedelta(seconds=1)), detector)
+        evaluate(
+            make_context(BRIGHT, now=MonotonicTime(nanoseconds=1_000_000_000)),
+            detector,
+        )
         self.assertEqual(detector.evaluations, 2)
 
     def test_exception_is_not_cached(self):

@@ -7,7 +7,13 @@ from divergencesplitter.detector import (
     evaluate,
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
-from divergencesplitter.models import DetectionResult, Frame, FrameContext, ImageArray
+from divergencesplitter.models import (
+    DetectionResult,
+    Frame,
+    FrameContext,
+    ImageArray,
+    MonotonicTime,
+)
 from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.trigger import ScoreThresholdTrigger, Trigger
 from divergencesplitter.video_file import (
@@ -30,6 +36,7 @@ __all__ = [
     "ImageArray",
     "ImageDetector",
     "MeanBrightnessDetector",
+    "MonotonicTime",
     "ScoreThresholdTrigger",
     "TimeProvider",
     "Trigger",
