@@ -8,6 +8,7 @@ entries.
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 
 import numpy as np
 
@@ -26,9 +27,13 @@ class Frame:
 @dataclass
 class FrameContext:
     frame: Frame
-    now: float
+    now: datetime
     preprocessing_cache: dict[object, object] = field(default_factory=dict)
     detection_cache: dict[object, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.now.utcoffset() is None:
+            raise ValueError("FrameContext.now must be a timezone-aware datetime")
 
 
 @dataclass(frozen=True)

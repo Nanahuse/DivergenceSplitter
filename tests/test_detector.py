@@ -1,4 +1,5 @@
 import unittest
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import numpy as np
@@ -18,9 +19,10 @@ DARK = np.zeros((2, 3), dtype=np.uint8)
 BRIGHT = np.full((2, 3), 255, dtype=np.uint8)
 REFERENCE = ((0, 0), (0, 0))
 REFERENCE_IMAGE = np.asarray(REFERENCE)
+EPOCH = datetime(2024, 1, 1, tzinfo=UTC)
 
 
-def make_context(image, now=1.0):
+def make_context(image, now=EPOCH):
     return FrameContext(frame=Frame(image=image), now=now)
 
 
@@ -107,9 +109,9 @@ class CacheTest(unittest.TestCase):
 
     def test_next_frame_reevaluates(self):
         detector = CountingDetector()
-        evaluate(make_context(DARK, now=1.0), detector)
+        evaluate(make_context(DARK, now=EPOCH), detector)
         self.assertEqual(detector.evaluations, 1)
-        evaluate(make_context(BRIGHT, now=2.0), detector)
+        evaluate(make_context(BRIGHT, now=EPOCH + timedelta(seconds=1)), detector)
         self.assertEqual(detector.evaluations, 2)
 
     def test_exception_is_not_cached(self):

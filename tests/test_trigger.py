@@ -1,13 +1,16 @@
 import unittest
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import numpy as np
 
 from divergencesplitter.models import DetectionResult, Frame, FrameContext
 from divergencesplitter.trigger.score_threshold import ScoreThresholdTrigger
 
+EPOCH = datetime(2024, 1, 1, tzinfo=UTC)
 
-def make_context(now=1.0):
+
+def make_context(now=EPOCH):
     return FrameContext(frame=Frame(image=np.zeros((2, 2), dtype=np.uint8)), now=now)
 
 
