@@ -1,10 +1,8 @@
 """All: conjunction of boolean inputs."""
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
 class All:
     """True when every input is ``True``; an empty input is ``True``."""
 

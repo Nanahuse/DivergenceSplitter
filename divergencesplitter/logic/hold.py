@@ -1,46 +1,34 @@
 """Hold: minimum-duration latch."""
 
-from dataclasses import dataclass
-
 from divergencesplitter.models import MonotonicTime
 
 
-@dataclass(frozen=True)
-class HoldState:
-    """Moment the input became ``True``, or ``None`` while not held."""
-
-    start: MonotonicTime | None
-
-
-@dataclass(frozen=True)
 class Hold:
     """True once the input has stayed ``True`` for ``duration_nanoseconds``.
 
     Once satisfied it stays ``True`` while the input remains ``True``. A
-    ``False`` input releases and re-arms the hold. A zero duration is
-    satisfied by the first ``True`` observation.
+    ``False`` input releases and re-arms the hold. A zero duration is satisfied
+    by the first ``True`` observation. Each instance keeps its own start time;
+    independent instances do not share state.
     """
 
-    duration_nanoseconds: int
-
-    def __post_init__(self) -> None:
-        if self.duration_nanoseconds < 0:
+    def __init__(self, duration_nanoseconds: int) -> None:
+        if duration_nanoseconds < 0:
             raise ValueError(
-                f"duration_nanoseconds must be non-negative: {self.duration_nanoseconds}"
+                f"duration_nanoseconds must be non-negative: {duration_nanoseconds}"
             )
+        self._duration_nanoseconds = duration_nanoseconds
+        self._start: MonotonicTime | None = None
 
-    def initial_state(self) -> HoldState:
-        return HoldState(start=None)
-
-    def step(
-        self, value: bool, now: MonotonicTime, state: HoldState
-    ) -> tuple[bool, HoldState]:
-        if state.start is not None and now < state.start:
+    def step(self, value: bool, now: MonotonicTime) -> bool:
+        if self._start is not None and now < self._start:
             raise ValueError(
-                f"now moved backwards from {state.start.nanoseconds} to {now.nanoseconds}"
+                f"now moved backwards from {self._start.nanoseconds} to {now.nanoseconds}"
             )
         if not value:
-            return (False, HoldState(start=None))
-        start = state.start if state.start is not None else now
+            self._start = None
+            return False
+        start = self._start if self._start is not None else now
+        self._start = start
         elapsed = now.nanoseconds - start.nanoseconds
-        return (elapsed >= self.duration_nanoseconds, HoldState(start=start))
+        return elapsed >= self._duration_nanoseconds

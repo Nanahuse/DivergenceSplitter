@@ -1,9 +1,6 @@
 """Not: logical negation of a boolean input."""
 
-from dataclasses import dataclass
 
-
-@dataclass(frozen=True)
 class Not:
     """True when the single input is ``False``."""
 

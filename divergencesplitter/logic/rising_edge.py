@@ -1,28 +1,20 @@
 """RisingEdge: false-to-true transition detector."""
 
-from dataclasses import dataclass
 
-
-@dataclass(frozen=True)
-class RisingEdgeState:
-    """Previous observation; ``None`` until the first baseline observation."""
-
-    previous: bool | None
-
-
-@dataclass(frozen=True)
 class RisingEdge:
     """True exactly when the input transitions from ``False`` to ``True``.
 
-    The first observation only establishes a baseline and never fires.
+    The first observation only establishes a baseline and never fires. Each
+    instance keeps its own previous observation; independent instances do not
+    share history.
     """
 
-    def initial_state(self) -> RisingEdgeState:
-        return RisingEdgeState(previous=None)
+    def __init__(self) -> None:
+        self._previous: bool | None = None
 
-    def step(self, value: bool, state: RisingEdgeState) -> tuple[bool, RisingEdgeState]:
-        previous = state.previous
+    def step(self, value: bool) -> bool:
+        previous = self._previous
+        self._previous = value
         if previous is None:
-            return (False, RisingEdgeState(previous=value))
-        fired = not previous and value
-        return (fired, RisingEdgeState(previous=value))
+            return False
+        return not previous and value

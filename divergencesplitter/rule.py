@@ -1,91 +1,94 @@
-"""Rule: a timed execution instance that owns per-node logic state."""
+"""Rule: a timed execution instance that owns per-node logic instances."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass
-from types import MappingProxyType
 from typing import Any
 
 from divergencesplitter.models import FrameContext
 
 
 class RuleFrameEvaluation:
-    """Per-frame view over a rule's node states during staging.
+    """Per-frame view over a rule's node logic during staging.
 
-    ``transition`` runs the caller-provided step against the current state of a
-    node and returns the fired boolean. The first call for a node runs the step
-    once; every later call for the same node returns the cached boolean and does
-    not run the step again, so a shared node transitions at most once per frame.
+    ``evaluate`` runs the caller-provided callable against the working copy of
+    the node's logic and returns the fired boolean. The first evaluation for a
+    node runs the callable once; every later call for the same node returns the
+    cached boolean and does not run it again, so a shared node evaluates at most
+    once per frame.
     """
 
-    def __init__(self, states: dict[str, Any]) -> None:
-        self._states = states
+    def __init__(self, instances: dict[str, Any]) -> None:
+        self._instances = instances
         self._results: dict[str, bool] = {}
 
-    def transition(self, node_id: str, step: Callable[[Any], tuple[bool, Any]]) -> bool:
-        if node_id not in self._states:
+    def evaluate(self, node_id: str, step: Callable[[Any], bool]) -> bool:
+        if node_id not in self._instances:
             raise ValueError(f"unknown node_id: {node_id!r}")
         if node_id in self._results:
             return self._results[node_id]
-        fired, next_state = step(self._states[node_id])
-        if type(fired) is not bool:
+        result = step(self._instances[node_id])
+        if type(result) is not bool:
             raise TypeError(
-                f"step for node_id {node_id!r} must return a strict bool, got {fired!r}"
+                f"step for node_id {node_id!r} must return a strict bool, got {result!r}"
             )
-        self._states[node_id] = next_state
-        self._results[node_id] = fired
-        return fired
+        self._results[node_id] = result
+        return result
 
 
 @dataclass(frozen=True)
 class RuleStage:
     """Opaque staged result of a single :meth:`Rule.stage` call.
 
-    All data validation happens while staging. ``_next_state`` is exposed as a
-    read-only mapping so external code cannot mutate a staged transaction;
-    :meth:`Rule.commit` applies it as a single replacement.
+    All data validation happens while staging. ``_next_instances`` holds the
+    working copies of the node logic; :meth:`Rule.commit` adopts them as the
+    rule's state.
     """
 
     _owner: Rule
     _generation: int
-    _next_state: Mapping[str, Any]
+    _next_instances: dict[str, Any]
     result: bool
 
 
 class Rule:
-    """A timed execution instance that owns the logic state of its nodes.
+    """A timed execution instance that owns the logic instances of its nodes.
 
-    Holds the logic state per declared node id and evaluates a Python
+    Holds one logic instance per declared node id and evaluates a Python
     ``evaluator`` against a ``FrameContext``. The evaluator organizes
     ``Detector`` -> ``ScoreThreshold`` -> boolean logic and advances stateful
-    nodes through :meth:`RuleFrameEvaluation.transition`, keyed by the declared
-    node id. Node state is initialized when the rule is created, carried across
-    frames, and discarded with the rule. A regenerated rule starts from fresh
-    state.
+    nodes through :meth:`RuleFrameEvaluation.evaluate`, keyed by the declared
+    node id. Logic instances are created by the node factories when the rule is
+    created, carried across frames, and discarded with the rule. A regenerated
+    rule starts from fresh logic.
 
-    A single-frame evaluation is read -> transition -> stage -> commit. The
-    staged state is not applied until :meth:`commit`; an exception or a
-    non-boolean result during staging leaves the rule state unchanged.
+    A single-frame evaluation is read -> evaluate -> stage -> commit. The
+    evaluator runs against deep copies of the owned logic, so the rule's logic
+    is not changed until :meth:`commit`; an exception or a non-boolean result
+    during staging leaves the rule state unchanged.
     """
 
     def __init__(
         self,
-        initial_states: Mapping[str, Callable[[], Any]],
+        logic_factories: Mapping[str, Callable[[], Any]],
         evaluator: Callable[[FrameContext, RuleFrameEvaluation], bool],
     ) -> None:
-        self._state: dict[str, Any] = {}
-        for node_id, initializer in initial_states.items():
+        self._instances: dict[str, Any] = {}
+        for node_id, factory in logic_factories.items():
             if not isinstance(node_id, str) or not node_id:
                 raise ValueError(f"node_id must be a non-empty str: {node_id!r}")
-            self._state[node_id] = initializer()
+            self._instances[node_id] = factory()
         self._evaluator = evaluator
         self._generation = 0
 
     def stage(self, context: FrameContext) -> RuleStage:
         self._generation += 1
         generation = self._generation
-        working = dict(self._state)
+        working = {
+            node_id: deepcopy(instance) for node_id, instance in self._instances.items()
+        }
         evaluation = RuleFrameEvaluation(working)
         result = self._evaluator(context, evaluation)
         if type(result) is not bool:
@@ -93,7 +96,7 @@ class Rule:
         return RuleStage(
             _owner=self,
             _generation=generation,
-            _next_state=MappingProxyType(working),
+            _next_instances=working,
             result=result,
         )
 
@@ -102,4 +105,4 @@ class Rule:
             raise ValueError("stage does not belong to this rule")
         if stage._generation != self._generation:
             raise ValueError("stale stage")
-        self._state = dict(stage._next_state)
+        self._instances = dict(stage._next_instances)

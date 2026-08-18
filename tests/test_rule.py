@@ -17,206 +17,229 @@ def make_context(image=EMPTY, now_nanoseconds=0):
     )
 
 
-def make_rule(initial_states=None, evaluator=None):
+def make_rule(logic_factories=None, evaluator=None):
     if evaluator is None:
         evaluator = lambda context, evaluation: False
     return Rule(
-        initial_states=initial_states if initial_states is not None else {},
+        logic_factories=logic_factories if logic_factories is not None else {},
         evaluator=evaluator,
     )
 
 
-class RuleStateTest(unittest.TestCase):
-    def test_state_initialized_from_initializer(self):
+class RuleConstructionTest(unittest.TestCase):
+    def test_factory_called_once_at_construction(self):
         calls = []
 
-        def initializer():
+        def factory():
             calls.append(1)
-            return 5
+            return RisingEdge()
 
-        observed = []
-
-        def step(state):
-            observed.append(state)
-            return (False, state)
-
-        rule = make_rule(
-            initial_states={"node": initializer},
-            evaluator=lambda context, evaluation: evaluation.transition("node", step),
-        )
+        make_rule(logic_factories={"edge": factory})
         self.assertEqual(calls, [1])
-        rule.commit(rule.stage(make_context()))
-        self.assertEqual(observed, [5])
-
-    def test_stateless_rule_has_no_state(self):
-        rule = make_rule()
-        self.assertEqual(len(rule._state), 0)
-        for _ in range(3):
-            rule.commit(rule.stage(make_context()))
-        self.assertEqual(len(rule._state), 0)
 
     def test_constructor_rejects_empty_node_id(self):
         with self.assertRaises(ValueError):
-            make_rule(initial_states={"": lambda: 0})
+            make_rule(logic_factories={"": RisingEdge})
+
+
+class RuleEvaluationTest(unittest.TestCase):
+    def test_same_node_evaluates_once_per_frame(self):
+        calls = []
+
+        def evaluator(context, evaluation):
+            def step(edge):
+                calls.append(1)
+                return edge.step(True)
+
+            evaluation.evaluate("edge", step)
+            evaluation.evaluate("edge", step)
+            return False
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
+        rule.commit(rule.stage(make_context()))
+        self.assertEqual(calls, [1])
+
+    def test_same_node_returns_cached_result(self):
+        results = []
+        calls = []
+
+        def evaluator(context, evaluation):
+            def step(edge):
+                calls.append(1)
+                return edge.step(True)
+
+            results.append(evaluation.evaluate("edge", step))
+            results.append(evaluation.evaluate("edge", step))
+            return False
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
+        rule.commit(rule.stage(make_context()))
+        self.assertEqual(calls, [1])
+        self.assertEqual(results, [False, False])
+
+    def test_unknown_node_fails_fast(self):
+        def evaluator(context, evaluation):
+            return evaluation.evaluate("unknown", lambda edge: edge.step(True))
+
+        rule = make_rule(logic_factories={"known": RisingEdge}, evaluator=evaluator)
+        with self.assertRaises(ValueError):
+            rule.stage(make_context())
+
+    def test_non_bool_step_result_rejected(self):
+        def evaluator(context, evaluation):
+            return evaluation.evaluate("edge", lambda edge: 1)
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
+        with self.assertRaises(TypeError):
+            rule.stage(make_context())
+
+    def test_numpy_bool_step_result_rejected(self):
+        def evaluator(context, evaluation):
+            return evaluation.evaluate("edge", lambda edge: np.True_)
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
+        with self.assertRaises(TypeError):
+            rule.stage(make_context())
+
+
+class RuleStateLifecycleTest(unittest.TestCase):
+    def test_state_advances_across_committed_frames(self):
+        values = {"v": False}
+
+        def evaluator(context, evaluation):
+            return evaluation.evaluate("edge", lambda edge: edge.step(values["v"]))
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+        values["v"] = True
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
 
     def test_stage_without_commit_does_not_advance_state(self):
-        rule = make_rule(
-            initial_states={"node": lambda: 0},
-            evaluator=lambda context, evaluation: evaluation.transition(
-                "node", lambda state: (False, state + 1)
-            ),
-        )
-        rule.stage(make_context())
-        stage = rule.stage(make_context())
-        rule.commit(stage)
-        self.assertEqual(rule._state, {"node": 1})
+        values = {"v": False}
 
-    def test_evaluator_exception_does_not_commit(self):
         def evaluator(context, evaluation):
-            raise RuntimeError("boom")
+            return evaluation.evaluate("edge", lambda edge: edge.step(values["v"]))
 
-        rule = make_rule(initial_states={"node": lambda: 0}, evaluator=evaluator)
-        with self.assertRaises(RuntimeError):
-            rule.stage(make_context())
-        self.assertEqual(rule._state, {"node": 0})
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
+        rule.stage(make_context())
+        values["v"] = True
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
 
     def test_rule_recreation_reinitializes_state(self):
+        values = {"v": False}
+
         def build():
             return make_rule(
-                initial_states={"node": lambda: 0},
-                evaluator=lambda context, evaluation: evaluation.transition(
-                    "node", lambda state: (False, state + 1)
+                logic_factories={"edge": RisingEdge},
+                evaluator=lambda context, evaluation: evaluation.evaluate(
+                    "edge", lambda edge: edge.step(values["v"])
                 ),
             )
 
         first = build()
-        first.commit(first.stage(make_context()))
-        self.assertEqual(first._state, {"node": 1})
+        stage = first.stage(make_context())
+        first.commit(stage)
+        values["v"] = True
+        stage = first.stage(make_context())
+        self.assertTrue(stage.result)
+        first.commit(stage)
+
         second = build()
-        second.commit(second.stage(make_context()))
-        self.assertEqual(second._state, {"node": 1})
+        stage = second.stage(make_context())
+        self.assertFalse(stage.result)
+        second.commit(stage)
 
-
-class RuleTransitionTest(unittest.TestCase):
-    def test_same_node_transitions_once_per_frame(self):
-        calls = []
-
-        def step(state):
-            calls.append(1)
-            return (False, state + 1)
+    def test_evaluator_exception_does_not_commit(self):
+        values = {"v": False}
+        mode = {"bad": False}
 
         def evaluator(context, evaluation):
-            evaluation.transition("node", step)
-            evaluation.transition("node", step)
-            return False
+            if mode["bad"]:
+                raise RuntimeError("boom")
+            return evaluation.evaluate("edge", lambda edge: edge.step(values["v"]))
 
-        rule = make_rule(initial_states={"node": lambda: 0}, evaluator=evaluator)
-        stage = rule.stage(make_context())
-        rule.commit(stage)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(rule._state, {"node": 1})
-
-    def test_same_node_returns_cached_bool(self):
-        results = []
-        calls = []
-
-        def step(state):
-            calls.append(1)
-            return (True, state)
-
-        def evaluator(context, evaluation):
-            results.append(evaluation.transition("node", step))
-            results.append(evaluation.transition("node", step))
-            return False
-
-        rule = make_rule(initial_states={"node": lambda: 0}, evaluator=evaluator)
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(results, [True, True])
+        values["v"] = True
+        mode["bad"] = True
+        with self.assertRaises(RuntimeError):
+            rule.stage(make_context())
+        mode["bad"] = False
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
 
-    def test_distinct_nodes_transition_independently(self):
-        calls = {"a": 0, "b": 0}
-
-        def step_a(state):
-            calls["a"] += 1
-            return (False, state + 1)
-
-        def step_b(state):
-            calls["b"] += 1
-            return (False, state + 1)
+    def test_non_bool_step_result_does_not_commit(self):
+        values = {"v": False}
+        mode = {"bad": False}
 
         def evaluator(context, evaluation):
-            evaluation.transition("a", step_a)
-            evaluation.transition("b", step_b)
-            evaluation.transition("a", step_a)
-            return False
+            if mode["bad"]:
+
+                def step(edge):
+                    edge.step(True)
+                    return 1
+
+                return evaluation.evaluate("edge", step)
+            return evaluation.evaluate("edge", lambda edge: edge.step(values["v"]))
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
+        rule.commit(rule.stage(make_context()))
+        values["v"] = True
+        mode["bad"] = True
+        with self.assertRaises(TypeError):
+            rule.stage(make_context())
+        mode["bad"] = False
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+
+
+class RuleNodeIndependenceTest(unittest.TestCase):
+    def test_same_config_nodes_do_not_share_state(self):
+        values = {"a": True, "b": True}
+        fired = []
+
+        def evaluator(context, evaluation):
+            fired_a = evaluation.evaluate("a", lambda edge: edge.step(values["a"]))
+            fired_b = evaluation.evaluate("b", lambda edge: edge.step(values["b"]))
+            fired.append((fired_a, fired_b))
+            return fired_a or fired_b
 
         rule = make_rule(
-            initial_states={"a": lambda: 0, "b": lambda: 10},
-            evaluator=evaluator,
+            logic_factories={"a": RisingEdge, "b": RisingEdge}, evaluator=evaluator
         )
         rule.commit(rule.stage(make_context()))
-        self.assertEqual(calls, {"a": 1, "b": 1})
-        self.assertEqual(rule._state, {"a": 1, "b": 11})
+        values["b"] = False
+        rule.commit(rule.stage(make_context()))
+        values["b"] = True
+        rule.commit(rule.stage(make_context()))
+        self.assertEqual(fired, [(False, False), (False, False), (False, True)])
 
-    def test_explicitly_shared_node_keeps_single_state(self):
+    def test_explicitly_shared_node_evaluates_once_per_frame(self):
         seen = []
 
-        def step(state):
-            seen.append(state)
-            return (False, "advanced")
-
         def evaluator(context, evaluation):
-            first = evaluation.transition("shared", step)
-            second = evaluation.transition("shared", step)
-            return first and second
+            def step(edge):
+                seen.append(edge)
+                return edge.step(True)
 
-        rule = make_rule(
-            initial_states={"shared": lambda: "initial"}, evaluator=evaluator
-        )
+            first = evaluation.evaluate("shared", step)
+            second = evaluation.evaluate("shared", step)
+            return first or second
+
+        rule = make_rule(logic_factories={"shared": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
-        self.assertEqual(seen, ["initial"])
-        self.assertEqual(rule._state, {"shared": "advanced"})
-
-    def test_unknown_node_fails_fast(self):
-        def evaluator(context, evaluation):
-            evaluation.transition("unknown", lambda state: (False, state))
-            return False
-
-        rule = make_rule(initial_states={"known": lambda: 0}, evaluator=evaluator)
-        with self.assertRaises(ValueError):
-            rule.stage(make_context())
-
-    def test_non_bool_fired_from_step_rejected(self):
-        def evaluator(context, evaluation):
-            evaluation.transition("node", lambda state: (1, state))
-            return False
-
-        rule = make_rule(initial_states={"node": lambda: 0}, evaluator=evaluator)
-        with self.assertRaises(TypeError):
-            rule.stage(make_context())
-        self.assertEqual(rule._state, {"node": 0})
-
-    def test_numpy_bool_fired_from_step_rejected(self):
-        def evaluator(context, evaluation):
-            evaluation.transition("node", lambda state: (np.True_, state))
-            return False
-
-        rule = make_rule(initial_states={"node": lambda: 0}, evaluator=evaluator)
-        with self.assertRaises(TypeError):
-            rule.stage(make_context())
-        self.assertEqual(rule._state, {"node": 0})
-
-    def test_state_progresses_across_committed_frames(self):
-        rule = make_rule(
-            initial_states={"node": lambda: 0},
-            evaluator=lambda context, evaluation: evaluation.transition(
-                "node", lambda state: (False, state + 1)
-            ),
-        )
-        rule.commit(rule.stage(make_context()))
-        rule.commit(rule.stage(make_context()))
-        self.assertEqual(rule._state, {"node": 2})
+        self.assertEqual(len(seen), 1)
 
 
 class RuleStageTest(unittest.TestCase):
@@ -228,34 +251,19 @@ class RuleStageTest(unittest.TestCase):
 
     def test_non_bool_evaluator_return_rejected(self):
         rule = make_rule(
-            initial_states={"node": lambda: 0},
+            logic_factories={"edge": RisingEdge},
             evaluator=lambda context, evaluation: 1,
         )
         with self.assertRaises(TypeError):
             rule.stage(make_context())
-        self.assertEqual(rule._state, {"node": 0})
 
     def test_numpy_bool_evaluator_return_rejected(self):
         rule = make_rule(
-            initial_states={"node": lambda: 0},
+            logic_factories={"edge": RisingEdge},
             evaluator=lambda context, evaluation: np.True_,
         )
         with self.assertRaises(TypeError):
             rule.stage(make_context())
-        self.assertEqual(rule._state, {"node": 0})
-
-    def test_stage_next_state_is_read_only(self):
-        rule = make_rule(
-            initial_states={"node": lambda: 0},
-            evaluator=lambda context, evaluation: evaluation.transition(
-                "node", lambda state: (False, state + 1)
-            ),
-        )
-        stage = rule.stage(make_context())
-        with self.assertRaises(TypeError):
-            stage._next_state["node"] = 999
-        rule.commit(stage)
-        self.assertEqual(rule._state, {"node": 1})
 
 
 class RuleCommitTest(unittest.TestCase):
@@ -275,42 +283,12 @@ class RuleCommitTest(unittest.TestCase):
 
 
 class LogicIntegrationTest(unittest.TestCase):
-    def test_shared_logic_definition_has_independent_node_states(self):
-        edge = RisingEdge()
-        values = {"a": True, "b": True}
-        fired = []
-
-        def evaluator(context, evaluation):
-            fired_a = evaluation.transition(
-                "a", lambda state: edge.step(values["a"], state)
-            )
-            fired_b = evaluation.transition(
-                "b", lambda state: edge.step(values["b"], state)
-            )
-            fired.append((fired_a, fired_b))
-            return fired_a or fired_b
-
-        rule = make_rule(
-            initial_states={"a": edge.initial_state, "b": edge.initial_state},
-            evaluator=evaluator,
-        )
-        rule.commit(rule.stage(make_context()))
-        values = {"a": True, "b": False}
-        rule.commit(rule.stage(make_context()))
-        values = {"a": True, "b": True}
-        rule.commit(rule.stage(make_context()))
-        self.assertEqual(fired, [(False, False), (False, False), (False, True)])
-
     def test_hold_uses_context_time(self):
-        hold = Hold(duration_nanoseconds=10)
-
-        def evaluator(context, evaluation):
-            return evaluation.transition(
-                "hold", lambda state: hold.step(True, context.now, state)
-            )
-
         rule = make_rule(
-            initial_states={"hold": hold.initial_state}, evaluator=evaluator
+            logic_factories={"hold": lambda: Hold(duration_nanoseconds=10)},
+            evaluator=lambda context, evaluation: evaluation.evaluate(
+                "hold", lambda hold: hold.step(True, context.now)
+            ),
         )
         stage = rule.stage(make_context(now_nanoseconds=0))
         self.assertFalse(stage.result)
@@ -327,16 +305,13 @@ class DetectorThresholdLogicTest(unittest.TestCase):
     def test_detector_threshold_logic_pipeline(self):
         detector = MeanBrightnessDetector()
         threshold = ScoreThreshold(minimum_score=128.0)
-        edge = RisingEdge()
 
         def evaluator(context, evaluation):
             result = evaluate(context, detector)
             bright = threshold.apply(result)
-            return evaluation.transition("edge", lambda state: edge.step(bright, state))
+            return evaluation.evaluate("edge", lambda edge: edge.step(bright))
 
-        rule = make_rule(
-            initial_states={"edge": edge.initial_state}, evaluator=evaluator
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
 
         dark = make_context(image=np.zeros((1, 1), dtype=np.uint8))
         bright = make_context(image=np.full((1, 1), 255, dtype=np.uint8))
