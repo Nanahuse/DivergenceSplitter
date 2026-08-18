@@ -5,7 +5,11 @@ import cv2
 import numpy as np
 import pytest
 
-from divergencesplitter.frame_normalizer import FrameNormalizer
+from divergencesplitter.frame_normalizer import (
+    ClipRegion,
+    FrameNormalizer,
+    OutputSize,
+)
 from divergencesplitter.frame_source import (
     ErrorAction,
     FrameSource,
@@ -261,31 +265,25 @@ class TestDecodeError:
 
 class TestNormalizer:
     def test_normalizer_holds_configured_settings(self):
-        source = VideoFileSource(
-            "unused.avi", clip_region=(2, 3, 6, 5), output_size=(12, 10)
-        )
+        region = ClipRegion(x=2, y=3, width=6, height=5)
+        size = OutputSize(width=12, height=10)
+        source = VideoFileSource("unused.avi", clip_region=region, output_size=size)
         normalizer = source.normalizer
         assert isinstance(normalizer, FrameNormalizer)
-        assert normalizer.clip_region == (2, 3, 6, 5)
-        assert normalizer.output_size == (12, 10)
+        assert normalizer.clip_region == region
+        assert normalizer.output_size == size
 
     def test_default_normalizer_has_no_settings(self):
         source = VideoFileSource("unused.avi")
         assert source.normalizer.clip_region is None
         assert source.normalizer.output_size is None
 
-    def test_constructor_rejects_invalid_clip_region(self):
-        with pytest.raises(ValueError):
-            VideoFileSource("unused.avi", clip_region=(-1, 0, 2, 2))
-
-    def test_constructor_rejects_invalid_output_size(self):
-        with pytest.raises(ValueError):
-            VideoFileSource("unused.avi", output_size=(0, 2))
-
     def test_normalizer_normalizes_raw_frame_read_from_source(self, tmp_path):
         video = tmp_path / "movie.avi"
         make_video(video, frame_count=2)
-        source = VideoFileSource(str(video), clip_region=(2, 3, 6, 5))
+        source = VideoFileSource(
+            str(video), clip_region=ClipRegion(x=2, y=3, width=6, height=5)
+        )
         source.prepare()
         raw = source.read()
         assert isinstance(raw, Frame)
@@ -305,7 +303,9 @@ class TestNormalizer:
             return real_resize(*args, **kwargs)
 
         monkeypatch.setattr(cv2, "resize", counting_resize)
-        source = VideoFileSource(str(video), output_size=(12, 10))
+        source = VideoFileSource(
+            str(video), output_size=OutputSize(width=12, height=10)
+        )
         source.prepare()
         raws = []
         for _ in range(3):

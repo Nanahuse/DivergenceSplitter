@@ -7,10 +7,12 @@ from divergencesplitter.detector import (
     evaluate,
 )
 from divergencesplitter.frame_normalizer import (
+    ClipRegion,
     FrameClipError,
     FrameNormalizationError,
     FrameNormalizer,
     FrameResizeError,
+    OutputSize,
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
 from divergencesplitter.models import (
@@ -32,6 +34,7 @@ from divergencesplitter.video_file import (
 )
 
 __all__ = [
+    "ClipRegion",
     "DetectionResult",
     "ErrorAction",
     "Frame",
@@ -47,6 +50,7 @@ __all__ = [
     "ImageDetector",
     "MeanBrightnessDetector",
     "MonotonicTime",
+    "OutputSize",
     "ScoreThreshold",
     "TimeProvider",
     "VideoFileDecodeError",

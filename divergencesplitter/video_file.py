@@ -11,7 +11,11 @@ from typing import Self
 
 import cv2
 
-from divergencesplitter.frame_normalizer import FrameNormalizer
+from divergencesplitter.frame_normalizer import (
+    ClipRegion,
+    FrameNormalizer,
+    OutputSize,
+)
 from divergencesplitter.frame_source import ErrorAction, FrameSourceState
 from divergencesplitter.models import Frame
 
@@ -44,8 +48,8 @@ class VideoFileSource:
     def __init__(
         self,
         path: str,
-        clip_region: tuple[int, int, int, int] | None = None,
-        output_size: tuple[int, int] | None = None,
+        clip_region: ClipRegion | None = None,
+        output_size: OutputSize | None = None,
     ) -> None:
         self._normalizer = FrameNormalizer(
             clip_region=clip_region, output_size=output_size
