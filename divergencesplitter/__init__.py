@@ -23,6 +23,7 @@ from divergencesplitter.models import (
     ImageArray,
     MonotonicTime,
 )
+from divergencesplitter.rule import Rule, RuleFrameEvaluation, RuleStage
 from divergencesplitter.score_threshold import ScoreThreshold
 from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.video_file import (
@@ -52,6 +53,9 @@ __all__ = [
     "MonotonicTime",
     "Not",
     "RisingEdge",
+    "Rule",
+    "RuleFrameEvaluation",
+    "RuleStage",
     "ScoreThreshold",
     "Then",
     "TimeProvider",
