@@ -18,6 +18,7 @@ from divergencesplitter.video_file import (
     VideoFileError,
     VideoFileOpenError,
     VideoFileReadBeforeReadyError,
+    VideoFileResizeError,
     VideoFileSource,
 )
 
@@ -133,6 +134,7 @@ class TestError:
             VideoFileDecodeError("decode"),
             VideoFileReadBeforeReadyError("not ready"),
             VideoFileClipError("clip"),
+            VideoFileResizeError("resize"),
         )
         for error in errors:
             assert source.handle_error(error) is ErrorAction.STOP
@@ -363,3 +365,132 @@ class TestClipRegionConstruction:
     def test_region_rejects_negative_or_non_positive(self, region):
         with pytest.raises(ValueError):
             VideoFileSource("unused.avi", clip_region=region)
+
+
+class TestOutputSizeConstruction:
+    @pytest.mark.parametrize(
+        "size",
+        [
+            (0, 2),
+            (2, 0),
+            (-1, 2),
+            (2, -1),
+        ],
+    )
+    def test_output_size_rejects_non_positive(self, size):
+        with pytest.raises(ValueError):
+            VideoFileSource("unused.avi", output_size=size)
+
+
+class TestResize:
+    def test_resize_matches_cv2_inter_linear_on_full_frame(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_pattern_video(video, frame_count=2)
+        size = (12, 10)
+        resized = VideoFileSource(str(video), output_size=size)
+        full = VideoFileSource(str(video))
+        resized.prepare()
+        full.prepare()
+        resized_result = resized.read()
+        full_result = full.read()
+        assert isinstance(resized_result, Frame)
+        assert isinstance(full_result, Frame)
+        expected = cv2.resize(full_result.image, size, interpolation=cv2.INTER_LINEAR)
+        np.testing.assert_array_equal(resized_result.image, expected)
+
+    def test_clip_and_resize_match_cv2_inter_linear_on_manual_clip(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_pattern_video(video, frame_count=2)
+        region = (2, 3, 6, 5)
+        size = (12, 10)
+        transformed = VideoFileSource(str(video), clip_region=region, output_size=size)
+        full = VideoFileSource(str(video))
+        transformed.prepare()
+        full.prepare()
+        transformed_result = transformed.read()
+        full_result = full.read()
+        assert isinstance(transformed_result, Frame)
+        assert isinstance(full_result, Frame)
+        x, y, width, height = region
+        manual_clip = full_result.image[y : y + height, x : x + width]
+        expected = cv2.resize(manual_clip, size, interpolation=cv2.INTER_LINEAR)
+        np.testing.assert_array_equal(transformed_result.image, expected)
+
+    def test_four_combinations_have_expected_shapes(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=3)
+        region = (2, 3, 6, 5)
+        size = (12, 10)
+        cases = [
+            (None, None, (*SIZE, 3)),
+            (region, None, (5, 6, 3)),
+            (None, size, (10, 12, 3)),
+            (region, size, (10, 12, 3)),
+        ]
+        for clip_region, output_size, expected_shape in cases:
+            source = VideoFileSource(
+                str(video), clip_region=clip_region, output_size=output_size
+            )
+            source.prepare()
+            shapes = []
+            for _ in range(3):
+                result = source.read()
+                assert isinstance(result, Frame)
+                shapes.append(result.image.shape)
+                assert result.image.shape[-1] == 3
+            assert len(set(shapes)) == 1
+            assert shapes[0] == expected_shape
+
+    def test_multiple_reads_keep_output_shape_constant(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=3)
+        source = VideoFileSource(
+            str(video), clip_region=(1, 1, 8, 8), output_size=(12, 10)
+        )
+        source.prepare()
+        shapes = []
+        for _ in range(3):
+            result = source.read()
+            assert isinstance(result, Frame)
+            shapes.append(result.image.shape)
+        assert len(set(shapes)) == 1
+        assert shapes[0] == (10, 12, 3)
+
+    def test_resized_frame_owns_its_data(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_pattern_video(video, frame_count=1)
+        source = VideoFileSource(str(video), output_size=(12, 10))
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, Frame)
+        assert result.image.flags.owndata
+        assert result.image.base is None
+
+    def test_clipped_and_resized_frame_owns_its_data(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_pattern_video(video, frame_count=1)
+        source = VideoFileSource(
+            str(video), clip_region=(0, 0, 8, 8), output_size=(12, 10)
+        )
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, Frame)
+        assert result.image.flags.owndata
+        assert result.image.base is None
+
+
+class TestResizeError:
+    def test_resize_failure_returned_as_value_and_stop(self, tmp_path, monkeypatch):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=1)
+
+        def raise_resize_error(*args, **kwargs):
+            raise cv2.error("resize failed")
+
+        monkeypatch.setattr(cv2, "resize", raise_resize_error)
+        source = VideoFileSource(str(video), output_size=(12, 10))
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, VideoFileResizeError)
+        assert isinstance(result, VideoFileError)
+        assert source.handle_error(result) is ErrorAction.STOP

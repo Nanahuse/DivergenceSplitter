@@ -6,7 +6,6 @@ from divergencesplitter.detector import (
     MeanBrightnessDetector,
     evaluate,
 )
-from divergencesplitter.frame_resize import resize_frame
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
 from divergencesplitter.models import (
     DetectionResult,
@@ -24,6 +23,7 @@ from divergencesplitter.video_file import (
     VideoFileError,
     VideoFileOpenError,
     VideoFileReadBeforeReadyError,
+    VideoFileResizeError,
     VideoFileSource,
 )
 
@@ -47,7 +47,7 @@ __all__ = [
     "VideoFileError",
     "VideoFileOpenError",
     "VideoFileReadBeforeReadyError",
+    "VideoFileResizeError",
     "VideoFileSource",
     "evaluate",
-    "resize_frame",
 ]

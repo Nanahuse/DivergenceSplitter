@@ -3,6 +3,10 @@
 Source-specific connection, discovery, EOF, decode, memory ownership, and
 reconnection behaviour is confined to each implementation. The common side
 interprets errors no further than handing them back to their origin source.
+
+Each concrete source keeps the image shape of its returned frames constant
+across every successful ``read`` while READY; how that shape is determined is
+source-specific.
 """
 
 from enum import Enum, auto

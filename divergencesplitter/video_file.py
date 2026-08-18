@@ -41,25 +41,40 @@ class VideoFileClipError(VideoFileError):
     """A decoded frame does not fully contain the configured clip region."""
 
 
+class VideoFileResizeError(VideoFileError):
+    """A frame could not be resized to the configured output size."""
+
+
 class VideoFileSource:
     """Replays a local video file paced by ``time.monotonic``.
 
     The first frame is available as soon as the source is READY; every
     following ``read`` waits until the recorded frame rate's real-time slot.
     A file is opened by ``prepare`` only, so the source may be retried after a
-    failed ``prepare``. EOF, open, decode, read-before-ready, and clip-region
-    conditions are returned as source-specific errors, never raised.
+    failed ``prepare``. EOF, open, decode, read-before-ready, clip-region, and
+    resize conditions are returned as source-specific errors, never raised.
 
     ``clip_region`` is ``(x, y, width, height)`` where ``x`` is the column and
     ``y`` is the row, with an exclusive end like a NumPy slice. When given,
-    each read clips ``image[y:y + height, x:x + width].copy()``; the returned
-    ``Frame`` owns its data and shares no memory with the decoded array.
+    each read clips ``image[y:y + height, x:x + width]`` before resizing.
+    ``output_size`` is ``(width, height)`` in OpenCV order; when given, each
+    read resizes the (possibly clipped) image with ``cv2.INTER_LINEAR``. The
+    returned ``Frame`` always has the same image shape while READY: the
+    clipped size when only ``clip_region`` is set, the video's native size
+    when neither is set, and ``output_size`` otherwise. When ``output_size``
+    is given, the crop slice view is passed directly to ``cv2.resize`` with
+    no intermediate copy; when only ``clip_region`` is set, the slice is
+    copied with ``.copy()`` so the frame owns its data. Resize results are
+    the fresh ``cv2.resize`` output. These transformed images share no memory
+    with the decoded array; the no-transform path returns that decoded array
+    directly under the source's existing ownership guarantee.
     """
 
     def __init__(
         self,
         path: str,
         clip_region: tuple[int, int, int, int] | None = None,
+        output_size: tuple[int, int] | None = None,
     ) -> None:
         if clip_region is not None:
             x, y, width, height = clip_region
@@ -69,7 +84,12 @@ class VideoFileSource:
                 raise ValueError(
                     f"clip_region must have a positive size: {clip_region}"
                 )
+        if output_size is not None:
+            width, height = output_size
+            if width <= 0 or height <= 0:
+                raise ValueError(f"output_size must be positive: {output_size}")
         self._clip_region = clip_region
+        self._output_size = output_size
         self._path = path
         self._capture: cv2.VideoCapture | None = None
         self._state = FrameSourceState.NOT_READY
@@ -112,7 +132,16 @@ class VideoFileSource:
                     f"clip region {self._clip_region} does not fit in "
                     f"image shape {image.shape}"
                 )
-            image = image[y : y + height, x : x + width].copy()
+            image = image[y : y + height, x : x + width]
+            if self._output_size is None:
+                image = image.copy()
+        if self._output_size is not None:
+            try:
+                image = cv2.resize(
+                    image, self._output_size, interpolation=cv2.INTER_LINEAR
+                )
+            except cv2.error as error:
+                return VideoFileResizeError(f"failed to resize frame: {error}")
         return Frame(image=image)
 
     def handle_error(self, _error: VideoFileError) -> ErrorAction:
