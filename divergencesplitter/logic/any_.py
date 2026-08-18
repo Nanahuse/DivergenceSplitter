@@ -10,6 +10,11 @@ class Any:
     ``True``: later elements are never fetched or evaluated. This lets a
     generator short-circuit upstream evaluation once the result is
     determined.
+
+    The short-circuit applies to result composition only: it does not mean a
+    stateful operand's transition may be skipped. A ``Rule`` transitions every
+    stateful node in its transition phase and uses ``apply`` only to compose
+    the already-transitioned booleans.
     """
 
     def apply(self, values: Iterable[bool]) -> bool:
