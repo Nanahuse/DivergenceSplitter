@@ -11,6 +11,11 @@ from typing import Self
 
 import cv2
 
+from divergencesplitter.frame_normalizer import (
+    ClipRegion,
+    FrameNormalizer,
+    OutputSize,
+)
 from divergencesplitter.frame_source import ErrorAction, FrameSourceState
 from divergencesplitter.models import Frame
 
@@ -38,16 +43,17 @@ class VideoFileReadBeforeReadyError(VideoFileError):
 
 
 class VideoFileSource:
-    """Replays a local video file paced by ``time.monotonic``.
+    """Reads raw frames from a local video at its recorded frame rate."""
 
-    The first frame is available as soon as the source is READY; every
-    following ``read`` waits until the recorded frame rate's real-time slot.
-    A file is opened by ``prepare`` only, so the source may be retried after a
-    failed ``prepare``. EOF, open, decode, and read-before-ready conditions are
-    returned as source-specific errors, never raised.
-    """
-
-    def __init__(self, path: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        clip_region: ClipRegion | None = None,
+        output_size: OutputSize | None = None,
+    ) -> None:
+        self._normalizer = FrameNormalizer(
+            clip_region=clip_region, output_size=output_size
+        )
         self._path = path
         self._capture: cv2.VideoCapture | None = None
         self._state = FrameSourceState.NOT_READY
@@ -58,6 +64,10 @@ class VideoFileSource:
     @property
     def state(self) -> FrameSourceState:
         return self._state
+
+    @property
+    def normalizer(self) -> FrameNormalizer:
+        return self._normalizer
 
     def prepare(self) -> VideoFileError | None:
         if self._state is FrameSourceState.READY:

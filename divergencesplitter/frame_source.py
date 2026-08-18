@@ -3,12 +3,16 @@
 Source-specific connection, discovery, EOF, decode, memory ownership, and
 reconnection behaviour is confined to each implementation. The common side
 interprets errors no further than handing them back to their origin source.
+
+``read`` performs pacing and decoding only and returns each raw frame exactly
+as decoded, so un-evaluated frames are never transformed.
 """
 
 from enum import Enum, auto
 from types import TracebackType
 from typing import Protocol, Self, TypeVar
 
+from divergencesplitter.frame_normalizer import FrameNormalizer
 from divergencesplitter.models import Frame
 
 ErrorT = TypeVar("ErrorT")
@@ -29,10 +33,13 @@ class ErrorAction(Enum):
 
 
 class FrameSource(Protocol[ErrorT]):
-    """Input-way-agnostic contract for obtaining ``Frame`` objects."""
+    """Input contract for obtaining raw frames."""
 
     @property
     def state(self) -> FrameSourceState: ...
+
+    @property
+    def normalizer(self) -> FrameNormalizer: ...
 
     def prepare(self) -> ErrorT | None: ...
 

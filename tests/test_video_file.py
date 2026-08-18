@@ -5,6 +5,11 @@ import cv2
 import numpy as np
 import pytest
 
+from divergencesplitter.frame_normalizer import (
+    ClipRegion,
+    FrameNormalizer,
+    OutputSize,
+)
 from divergencesplitter.frame_source import (
     ErrorAction,
     FrameSource,
@@ -198,6 +203,7 @@ class TestProtocol:
     def test_video_file_source_satisfies_frame_source(self):
         members = get_protocol_members(FrameSource)
         assert "state" in members
+        assert "normalizer" in members
         source = VideoFileSource("unused.avi")
         for member in members:
             assert hasattr(source, member), member
@@ -255,3 +261,58 @@ class TestDecodeError:
             assert isinstance(result, Frame)
             decoded += 1
         assert 0 < decoded < 20
+
+
+class TestNormalizer:
+    def test_normalizer_holds_configured_settings(self):
+        region = ClipRegion(x=2, y=3, width=6, height=5)
+        size = OutputSize(width=12, height=10)
+        source = VideoFileSource("unused.avi", clip_region=region, output_size=size)
+        normalizer = source.normalizer
+        assert isinstance(normalizer, FrameNormalizer)
+        assert normalizer.clip_region == region
+        assert normalizer.output_size == size
+
+    def test_default_normalizer_has_no_settings(self):
+        source = VideoFileSource("unused.avi")
+        assert source.normalizer.clip_region is None
+        assert source.normalizer.output_size is None
+
+    def test_normalizer_normalizes_raw_frame_read_from_source(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=2)
+        source = VideoFileSource(
+            str(video), clip_region=ClipRegion(x=2, y=3, width=6, height=5)
+        )
+        source.prepare()
+        raw = source.read()
+        assert isinstance(raw, Frame)
+        assert raw.image.shape == (*SIZE, 3)
+        result = source.normalizer.normalize(raw)
+        assert isinstance(result, Frame)
+        assert result.image.shape == (5, 6, 3)
+
+    def test_read_stays_raw_and_normalize_resizes_once(self, tmp_path, monkeypatch):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=4)
+        calls = {"count": 0}
+        real_resize = cv2.resize
+
+        def counting_resize(*args, **kwargs):
+            calls["count"] += 1
+            return real_resize(*args, **kwargs)
+
+        monkeypatch.setattr(cv2, "resize", counting_resize)
+        source = VideoFileSource(
+            str(video), output_size=OutputSize(width=12, height=10)
+        )
+        source.prepare()
+        raws = []
+        for _ in range(3):
+            result = source.read()
+            assert isinstance(result, Frame)
+            raws.append(result)
+        assert calls["count"] == 0
+        normalized = source.normalizer.normalize(raws[1])
+        assert isinstance(normalized, Frame)
+        assert calls["count"] == 1
