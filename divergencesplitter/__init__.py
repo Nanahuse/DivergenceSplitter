@@ -7,6 +7,7 @@ from divergencesplitter.detector import (
     evaluate,
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
+from divergencesplitter.frame_transform import FrameCropResize
 from divergencesplitter.models import (
     DetectionResult,
     Frame,
@@ -30,6 +31,7 @@ __all__ = [
     "ErrorAction",
     "Frame",
     "FrameContext",
+    "FrameCropResize",
     "FrameDifferenceDetector",
     "FrameSource",
     "FrameSourceState",
