@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from divergencesplitter.detector import MeanBrightnessDetector, evaluate
-from divergencesplitter.logic import Hold, RisingEdge
+from divergencesplitter.logic import All, Any, Hold, RisingEdge
 from divergencesplitter.models import Frame, FrameContext, MonotonicTime
 from divergencesplitter.rule import Rule
 from divergencesplitter.score_threshold import ScoreThreshold
@@ -298,6 +298,95 @@ class LogicIntegrationTest(unittest.TestCase):
         rule.commit(stage)
         stage = rule.stage(make_context(now_nanoseconds=10))
         self.assertTrue(stage.result)
+        rule.commit(stage)
+
+
+class RuleAllAnyShortCircuitTest(unittest.TestCase):
+    def test_all_short_circuits_after_first_false(self):
+        stepped = []
+        mode = {"phase": "combine"}
+        values = {"a": True, "b": False, "c": False}
+
+        def make_step(node_id, value):
+            def step(edge):
+                stepped.append(node_id)
+                return edge.step(value)
+
+            return step
+
+        def evaluator(context, evaluation):
+            if mode["phase"] == "warmup":
+                return evaluation.evaluate("a", make_step("a", False))
+            if mode["phase"] == "combine":
+                return All().apply(
+                    evaluation.evaluate(node_id, make_step(node_id, values[node_id]))
+                    for node_id in ("a", "b", "c")
+                )
+            return evaluation.evaluate("c", make_step("c", True))
+
+        rule = make_rule(
+            logic_factories={"a": RisingEdge, "b": RisingEdge, "c": RisingEdge},
+            evaluator=evaluator,
+        )
+
+        mode["phase"] = "warmup"
+        rule.commit(rule.stage(make_context()))
+        self.assertEqual(stepped, ["a"])
+        stepped.clear()
+
+        mode["phase"] = "combine"
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+        self.assertEqual(stepped, ["a", "b"])
+
+        mode["phase"] = "check"
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+        self.assertEqual(stepped, ["a", "b", "c"])
+
+    def test_any_short_circuits_after_first_true(self):
+        stepped = []
+        mode = {"phase": "combine"}
+        values = {"a": False, "b": True, "c": False}
+
+        def make_step(node_id, value):
+            def step(edge):
+                stepped.append(node_id)
+                return edge.step(value)
+
+            return step
+
+        def evaluator(context, evaluation):
+            if mode["phase"] == "warmup":
+                return evaluation.evaluate("b", make_step("b", False))
+            if mode["phase"] == "combine":
+                return Any().apply(
+                    evaluation.evaluate(node_id, make_step(node_id, values[node_id]))
+                    for node_id in ("a", "b", "c")
+                )
+            return evaluation.evaluate("c", make_step("c", True))
+
+        rule = make_rule(
+            logic_factories={"a": RisingEdge, "b": RisingEdge, "c": RisingEdge},
+            evaluator=evaluator,
+        )
+
+        mode["phase"] = "warmup"
+        rule.commit(rule.stage(make_context()))
+        self.assertEqual(stepped, ["b"])
+        stepped.clear()
+
+        mode["phase"] = "combine"
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+        self.assertEqual(stepped, ["a", "b"])
+
+        mode["phase"] = "check"
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
         rule.commit(stage)
 
 

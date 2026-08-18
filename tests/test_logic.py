@@ -29,6 +29,27 @@ class AllTest(unittest.TestCase):
     def test_all_false(self):
         self.assertFalse(All().apply([False, False]))
 
+    def test_stops_at_first_false_without_consuming_rest(self):
+        consumed = []
+
+        def values():
+            for value in (True, False, True, True):
+                consumed.append(value)
+                yield value
+
+        self.assertFalse(All().apply(values()))
+        self.assertEqual(consumed, [True, False])
+
+    def test_never_fetches_after_result_determined(self):
+        def values():
+            yield True
+            yield False
+            raise AssertionError(
+                "All fetched an element after the result was determined"
+            )
+
+        self.assertFalse(All().apply(values()))
+
 
 class AnyTest(unittest.TestCase):
     def test_empty_is_false(self):
@@ -39,6 +60,27 @@ class AnyTest(unittest.TestCase):
 
     def test_all_false(self):
         self.assertFalse(Any().apply([False, False]))
+
+    def test_stops_at_first_true_without_consuming_rest(self):
+        consumed = []
+
+        def values():
+            for value in (False, True, False, False):
+                consumed.append(value)
+                yield value
+
+        self.assertTrue(Any().apply(values()))
+        self.assertEqual(consumed, [False, True])
+
+    def test_never_fetches_after_result_determined(self):
+        def values():
+            yield False
+            yield True
+            raise AssertionError(
+                "Any fetched an element after the result was determined"
+            )
+
+        self.assertTrue(Any().apply(values()))
 
 
 class NotTest(unittest.TestCase):
