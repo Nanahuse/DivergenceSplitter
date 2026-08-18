@@ -1,5 +1,7 @@
 import unittest
 
+import numpy as np
+
 from divergencesplitter.logic import (
     All,
     Any,
@@ -50,6 +52,17 @@ class AllTest(unittest.TestCase):
 
         self.assertFalse(All().apply(values()))
 
+    def test_non_bool_element_raises(self):
+        with self.assertRaises(TypeError):
+            All().apply([True, 1, True])  # type: ignore
+
+    def test_numpy_bool_element_rejected(self):
+        with self.assertRaises(TypeError):
+            All().apply([np.True_, True])  # type: ignore
+
+    def test_invalid_element_after_false_not_consumed(self):
+        self.assertFalse(All().apply([False, "not a bool"]))  # type: ignore
+
 
 class AnyTest(unittest.TestCase):
     def test_empty_is_false(self):
@@ -82,11 +95,34 @@ class AnyTest(unittest.TestCase):
 
         self.assertTrue(Any().apply(values()))
 
+    def test_non_bool_element_raises(self):
+        with self.assertRaises(TypeError):
+            Any().apply([False, 0, True])  # type: ignore
+
+    def test_numpy_bool_element_rejected(self):
+        with self.assertRaises(TypeError):
+            Any().apply([np.False_, False])  # type: ignore
+
+    def test_invalid_element_after_true_not_consumed(self):
+        self.assertTrue(Any().apply([True, "not a bool"]))  # type: ignore
+
 
 class NotTest(unittest.TestCase):
     def test_negation(self):
         self.assertFalse(Not().apply(True))
         self.assertTrue(Not().apply(False))
+
+    def test_non_bool_raises(self):
+        with self.assertRaises(TypeError):
+            Not().apply(1)  # type: ignore
+
+    def test_numpy_bool_rejected(self):
+        with self.assertRaises(TypeError):
+            Not().apply(np.True_)  # type: ignore
+
+    def test_ambiguous_truthiness_array_rejected(self):
+        with self.assertRaises(TypeError):
+            Not().apply(np.array([True, False]))  # type: ignore
 
 
 class RisingEdgeTest(unittest.TestCase):
@@ -108,6 +144,18 @@ class RisingEdgeTest(unittest.TestCase):
         self.assertFalse(edge.step(False))
         self.assertTrue(edge.step(True))
 
+    def test_non_bool_input_rejected_and_state_unchanged(self):
+        edge = RisingEdge()
+        with self.assertRaises(TypeError):
+            edge.step(1)  # type: ignore
+        self.assertFalse(edge.step(False))
+        self.assertTrue(edge.step(True))
+
+    def test_numpy_bool_input_rejected(self):
+        edge = RisingEdge()
+        with self.assertRaises(TypeError):
+            edge.step(np.True_)  # type: ignore
+
 
 class FallingEdgeTest(unittest.TestCase):
     def test_baseline_and_transitions(self):
@@ -127,6 +175,18 @@ class FallingEdgeTest(unittest.TestCase):
         self.assertFalse(edge.step(False))
         self.assertFalse(edge.step(True))
         self.assertTrue(edge.step(False))
+
+    def test_non_bool_input_rejected_and_state_unchanged(self):
+        edge = FallingEdge()
+        with self.assertRaises(TypeError):
+            edge.step(1)  # type: ignore
+        self.assertFalse(edge.step(True))
+        self.assertTrue(edge.step(False))
+
+    def test_numpy_bool_input_rejected(self):
+        edge = FallingEdge()
+        with self.assertRaises(TypeError):
+            edge.step(np.False_)  # type: ignore
 
 
 class HoldTest(unittest.TestCase):
@@ -166,6 +226,18 @@ class HoldTest(unittest.TestCase):
         self.assertTrue(hold_a.step(True, t(10)))
         self.assertFalse(hold_b.step(True, t(10)))
         self.assertTrue(hold_b.step(True, t(20)))
+
+    def test_non_bool_input_rejected_before_mutation(self):
+        hold = Hold(duration_nanoseconds=10)
+        with self.assertRaises(TypeError):
+            hold.step(1, t(0))  # type: ignore
+        self.assertFalse(hold.step(True, t(0)))
+        self.assertTrue(hold.step(True, t(10)))
+
+    def test_numpy_bool_input_rejected(self):
+        hold = Hold(duration_nanoseconds=10)
+        with self.assertRaises(TypeError):
+            hold.step(np.True_, t(0))  # type: ignore
 
 
 class ThenTest(unittest.TestCase):
@@ -239,6 +311,24 @@ class ThenTest(unittest.TestCase):
         self.assertFalse(then_b.step([False, False], t(0)))
         self.assertTrue(then_a.step([False, True], t(6)))
         self.assertFalse(then_b.step([True, False], t(10)))
+
+    def test_non_bool_element_rejected_and_state_unchanged(self):
+        then = Then(step_count=2, within_nanoseconds=100)
+        with self.assertRaises(TypeError):
+            then.step([True, 1], t(0))  # type: ignore
+        self.assertFalse(then.step([True, False], t(1)))
+        self.assertTrue(then.step([False, True], t(2)))
+
+    def test_numpy_bool_element_rejected(self):
+        then = Then(step_count=2, within_nanoseconds=100)
+        with self.assertRaises(TypeError):
+            then.step([np.True_, False], t(0))  # type: ignore
+
+    def test_non_iterable_input_rejected_and_state_unchanged(self):
+        then = Then(step_count=2, within_nanoseconds=100)
+        with self.assertRaises(TypeError):
+            then.step(42, t(0))  # type: ignore
+        self.assertFalse(then.step([True, False], t(1)))
 
 
 if __name__ == "__main__":

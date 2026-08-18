@@ -10,6 +10,9 @@ class Hold:
     ``False`` input releases and re-arms the hold. A zero duration is satisfied
     by the first ``True`` observation. Each instance keeps its own start time;
     independent instances do not share state.
+
+    ``value`` must be a strict ``bool``; any other type raises
+    :class:`TypeError` before the hold state is mutated.
     """
 
     def __init__(self, duration_nanoseconds: int) -> None:
@@ -21,6 +24,8 @@ class Hold:
         self._start: MonotonicTime | None = None
 
     def step(self, value: bool, now: MonotonicTime) -> bool:
+        if type(value) is not bool:
+            raise TypeError(f"value must be a strict bool, got {value!r}")
         if self._start is not None and now < self._start:
             raise ValueError(
                 f"now moved backwards from {self._start.nanoseconds} to {now.nanoseconds}"

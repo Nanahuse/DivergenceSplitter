@@ -16,6 +16,18 @@ class Then:
     attempt to begin from the leading condition of the same observation. Once
     completed, the result stays ``True`` until the instance is discarded. Each
     instance keeps its own progress; independent instances do not share state.
+
+    Only the observation that makes a stage current is considered. A condition
+    that pulsed ``True`` before its stage was reached and has since returned to
+    ``False`` is not remembered and cannot satisfy that stage. A condition that
+    remains ``True`` once its stage becomes current (for example a ``Hold``
+    that stays latched) can satisfy it on a later observation. No queue or
+    buffer of past pulses is kept.
+
+    ``values`` is snapshotted before any state transition and must contain
+    exactly ``step_count`` strict ``bool`` elements; a wrong length, a
+    non-boolean element, or a non-iterable input raises before the instance's
+    progress is changed.
     """
 
     def __init__(self, step_count: int, within_nanoseconds: int) -> None:
@@ -32,8 +44,12 @@ class Then:
         self._completed = False
 
     def step(self, values: Sequence[bool], now: MonotonicTime) -> bool:
-        if len(values) != self._step_count:
-            raise ValueError(f"expected {self._step_count} values, got {len(values)}")
+        snapshot = tuple(values)
+        if len(snapshot) != self._step_count:
+            raise ValueError(f"expected {self._step_count} values, got {len(snapshot)}")
+        for value in snapshot:
+            if type(value) is not bool:
+                raise TypeError(f"value must be a strict bool, got {value!r}")
         if self._completed:
             return True
         if self._start is not None:
@@ -46,7 +62,7 @@ class Then:
                 self._stage = 0
                 self._start = None
         if self._start is None:
-            if values[0]:
+            if snapshot[0]:
                 if self._step_count == 1:
                     self._completed = True
                     return True
@@ -54,7 +70,7 @@ class Then:
                 self._start = now
                 return False
             return False
-        if values[self._stage]:
+        if snapshot[self._stage]:
             next_stage = self._stage + 1
             if next_stage == self._step_count:
                 self._stage = 0

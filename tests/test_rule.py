@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from divergencesplitter.detector import MeanBrightnessDetector, evaluate
-from divergencesplitter.logic import All, Any, Hold, RisingEdge
+from divergencesplitter.logic import All, Any, FallingEdge, Hold, RisingEdge, Then
 from divergencesplitter.models import Frame, FrameContext, MonotonicTime
 from divergencesplitter.rule import Rule
 from divergencesplitter.score_threshold import ScoreThreshold
@@ -29,6 +29,28 @@ def make_rule(logic_factories=None, transitioner=None, evaluator=None):
     )
 
 
+def make_chain_rule(child_factory, parent_factory, child_step, parent_step):
+    """Rule where the child node is transitioned first and its boolean is
+    handed to the parent node's step within the same transition phase."""
+
+    def transitioner(context, evaluation):
+        child_result = evaluation.transition(
+            "child", lambda node: child_step(node, context)
+        )
+        evaluation.transition(
+            "parent", lambda node: parent_step(node, child_result, context)
+        )
+
+    def evaluator(context, evaluation):
+        return evaluation.result("parent")
+
+    return make_rule(
+        logic_factories={"child": child_factory, "parent": parent_factory},
+        transitioner=transitioner,
+        evaluator=evaluator,
+    )
+
+
 class RuleConstructionTest(unittest.TestCase):
     def test_factory_called_once_at_construction(self):
         calls = []
@@ -46,15 +68,54 @@ class RuleConstructionTest(unittest.TestCase):
 
 
 class RuleTransitionTest(unittest.TestCase):
-    def test_same_node_transitions_once_per_frame(self):
-        calls = []
+    def test_duplicate_transition_fails_fast(self):
+        def transitioner(context, evaluation):
+            evaluation.transition("edge", lambda edge: edge.step(True))
+            evaluation.transition("edge", lambda edge: edge.step(True))
+
+        rule = make_rule(
+            logic_factories={"edge": RisingEdge}, transitioner=transitioner
+        )
+        with self.assertRaises(RuntimeError):
+            rule.stage(make_context())
+
+    def test_duplicate_transition_does_not_commit(self):
+        values = {"v": False}
+        mode = {"duplicate": False}
+
+        def transitioner(context, evaluation):
+            evaluation.transition("edge", lambda edge: edge.step(values["v"]))
+            if mode["duplicate"]:
+                evaluation.transition("edge", lambda edge: edge.step(values["v"]))
+
+        def evaluator(context, evaluation):
+            return evaluation.result("edge")
+
+        rule = make_rule(
+            logic_factories={"edge": RisingEdge},
+            transitioner=transitioner,
+            evaluator=evaluator,
+        )
+        rule.commit(rule.stage(make_context()))
+        values["v"] = True
+        mode["duplicate"] = True
+        with self.assertRaises(RuntimeError):
+            rule.stage(make_context())
+        mode["duplicate"] = False
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+
+    def test_reentrant_transition_fails_fast_and_does_not_commit(self):
+        values = {"v": False}
+        mode = {"reentrant": False}
 
         def transitioner(context, evaluation):
             def step(edge):
-                calls.append(1)
-                return edge.step(True)
+                if mode["reentrant"]:
+                    evaluation.transition("edge", lambda e: e.step(True))
+                return edge.step(values["v"])
 
-            evaluation.transition("edge", step)
             evaluation.transition("edge", step)
 
         def evaluator(context, evaluation):
@@ -66,21 +127,29 @@ class RuleTransitionTest(unittest.TestCase):
             evaluator=evaluator,
         )
         rule.commit(rule.stage(make_context()))
-        self.assertEqual(calls, [1])
+        values["v"] = True
+        mode["reentrant"] = True
+        with self.assertRaises(RuntimeError):
+            rule.stage(make_context())
+        mode["reentrant"] = False
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
 
-    def test_same_node_returns_cached_result(self):
-        results = []
+    def test_shared_node_result_read_multiple_times(self):
         calls = []
+        results = []
 
         def transitioner(context, evaluation):
             def step(edge):
                 calls.append(1)
                 return edge.step(True)
 
-            results.append(evaluation.transition("edge", step))
-            results.append(evaluation.transition("edge", step))
+            evaluation.transition("edge", step)
 
         def evaluator(context, evaluation):
+            results.append(evaluation.result("edge"))
+            results.append(evaluation.result("edge"))
             return evaluation.result("edge")
 
         rule = make_rule(
@@ -384,10 +453,9 @@ class RuleNodeIndependenceTest(unittest.TestCase):
                 return edge.step(True)
 
             evaluation.transition("shared", step)
-            evaluation.transition("shared", step)
 
         def evaluator(context, evaluation):
-            return evaluation.result("shared")
+            return evaluation.result("shared") or evaluation.result("shared")
 
         rule = make_rule(
             logic_factories={"shared": RisingEdge},
@@ -427,6 +495,19 @@ class RuleStageTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             rule.stage(make_context())
 
+    def test_stage_exposes_only_opaque_result(self):
+        rule = make_rule(
+            logic_factories={"edge": RisingEdge},
+            transitioner=lambda context, evaluation: evaluation.transition(
+                "edge", lambda edge: edge.step(False)
+            ),
+            evaluator=lambda context, evaluation: evaluation.result("edge"),
+        )
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        public = {name for name in dir(stage) if not name.startswith("_")}
+        self.assertEqual(public, {"result"})
+
 
 class RuleCommitTest(unittest.TestCase):
     def test_foreign_stage_rejected(self):
@@ -442,6 +523,21 @@ class RuleCommitTest(unittest.TestCase):
         rule.stage(make_context())
         with self.assertRaises(ValueError):
             rule.commit(first)
+
+    def test_double_commit_rejected(self):
+        rule = make_rule()
+        stage = rule.stage(make_context())
+        rule.commit(stage)
+        with self.assertRaises(ValueError):
+            rule.commit(stage)
+
+    def test_multiple_rules_staged_then_committed(self):
+        rule_a = make_rule()
+        rule_b = make_rule()
+        stage_a = rule_a.stage(make_context())
+        stage_b = rule_b.stage(make_context())
+        rule_a.commit(stage_a)
+        rule_b.commit(stage_b)
 
 
 class LogicIntegrationTest(unittest.TestCase):
@@ -638,6 +734,282 @@ class DetectorThresholdLogicTest(unittest.TestCase):
 
         stage = rule.stage(bright)
         self.assertFalse(stage.result)
+        rule.commit(stage)
+
+
+class StatefulCompositionTest(unittest.TestCase):
+    def test_rising_edge_of_hold_fires_once_on_hold_turn_on(self):
+        level = {"value": False}
+
+        def child_step(hold, context):
+            return hold.step(level["value"], context.now)
+
+        def parent_step(edge, child_result, context):
+            return edge.step(child_result)
+
+        rule = make_chain_rule(
+            child_factory=lambda: Hold(duration_nanoseconds=0),
+            parent_factory=RisingEdge,
+            child_step=child_step,
+            parent_step=parent_step,
+        )
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        level["value"] = True
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+    def test_falling_edge_of_hold_fires_on_hold_release(self):
+        level = {"value": True}
+
+        def child_step(hold, context):
+            return hold.step(level["value"], context.now)
+
+        def parent_step(edge, child_result, context):
+            return edge.step(child_result)
+
+        rule = make_chain_rule(
+            child_factory=lambda: Hold(duration_nanoseconds=0),
+            parent_factory=FallingEdge,
+            child_step=child_step,
+            parent_step=parent_step,
+        )
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        level["value"] = False
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+    def test_hold_of_rising_edge_zero_duration_fires_only_on_pulse_frame(self):
+        level = {"value": False}
+
+        def child_step(edge, context):
+            return edge.step(level["value"])
+
+        def parent_step(hold, child_result, context):
+            return hold.step(child_result, context.now)
+
+        rule = make_chain_rule(
+            child_factory=RisingEdge,
+            parent_factory=lambda: Hold(duration_nanoseconds=0),
+            child_step=child_step,
+            parent_step=parent_step,
+        )
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        level["value"] = True
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+    def test_hold_of_rising_edge_positive_duration_not_satisfied_by_pulse(self):
+        level = {"value": False}
+
+        def child_step(edge, context):
+            return edge.step(level["value"])
+
+        def parent_step(hold, child_result, context):
+            return hold.step(child_result, context.now)
+
+        rule = make_chain_rule(
+            child_factory=RisingEdge,
+            parent_factory=lambda: Hold(duration_nanoseconds=10),
+            child_step=child_step,
+            parent_step=parent_step,
+        )
+        rule.commit(rule.stage(make_context(now_nanoseconds=0)))
+        level["value"] = True
+        stage = rule.stage(make_context(now_nanoseconds=10))
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        stage = rule.stage(make_context(now_nanoseconds=20))
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+    def test_rising_edge_of_then_fires_once_on_completion(self):
+        cond = {"value": False}
+
+        def child_step(then, context):
+            return then.step([cond["value"]], context.now)
+
+        def parent_step(edge, child_result, context):
+            return edge.step(child_result)
+
+        rule = make_chain_rule(
+            child_factory=lambda: Then(step_count=1, within_nanoseconds=0),
+            parent_factory=RisingEdge,
+            child_step=child_step,
+            parent_step=parent_step,
+        )
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        cond["value"] = True
+        stage = rule.stage(make_context())
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+
+        stage = rule.stage(make_context())
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+    def test_hold_of_then_satisfied_after_completion_duration(self):
+        cond = {"value": False}
+
+        def child_step(then, context):
+            return then.step([cond["value"]], context.now)
+
+        def parent_step(hold, child_result, context):
+            return hold.step(child_result, context.now)
+
+        rule = make_chain_rule(
+            child_factory=lambda: Then(step_count=1, within_nanoseconds=0),
+            parent_factory=lambda: Hold(duration_nanoseconds=10),
+            child_step=child_step,
+            parent_step=parent_step,
+        )
+        stage = rule.stage(make_context(now_nanoseconds=0))
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        cond["value"] = True
+        stage = rule.stage(make_context(now_nanoseconds=5))
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        stage = rule.stage(make_context(now_nanoseconds=15))
+        self.assertTrue(stage.result)
+        rule.commit(stage)
+
+    def test_child_transition_fed_to_parent_step_in_order(self):
+        order = []
+
+        def child_step(edge, context):
+            order.append("child")
+            return edge.step(True)
+
+        def parent_step(edge, child_result, context):
+            order.append("parent")
+            return edge.step(child_result)
+
+        rule = make_chain_rule(
+            child_factory=RisingEdge,
+            parent_factory=FallingEdge,
+            child_step=child_step,
+            parent_step=parent_step,
+        )
+        rule.commit(rule.stage(make_context()))
+        self.assertEqual(order, ["child", "parent"])
+
+
+class ThenOrderingTest(unittest.TestCase):
+    def test_early_edge_pulse_is_lost(self):
+        gate_value = {"value": False}
+        pulse_value = {"value": False}
+
+        def transitioner(context, evaluation):
+            gate = evaluation.transition(
+                "gate", lambda node: node.step(gate_value["value"])
+            )
+            pulse = evaluation.transition(
+                "pulse", lambda node: node.step(pulse_value["value"])
+            )
+            evaluation.transition(
+                "then", lambda node: node.step([gate, pulse], context.now)
+            )
+
+        def evaluator(context, evaluation):
+            return evaluation.result("then")
+
+        rule = make_rule(
+            logic_factories={
+                "gate": RisingEdge,
+                "pulse": RisingEdge,
+                "then": lambda: Then(step_count=2, within_nanoseconds=1000),
+            },
+            transitioner=transitioner,
+            evaluator=evaluator,
+        )
+
+        rule.commit(rule.stage(make_context(now_nanoseconds=0)))
+
+        pulse_value["value"] = True
+        rule.commit(rule.stage(make_context(now_nanoseconds=1)))
+
+        pulse_value["value"] = False
+        gate_value["value"] = True
+        stage = rule.stage(make_context(now_nanoseconds=2))
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        gate_value["value"] = False
+        stage = rule.stage(make_context(now_nanoseconds=3))
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+    def test_hold_level_usable_after_stage_reached(self):
+        gate_value = {"value": False}
+        level_value = {"value": False}
+
+        def transitioner(context, evaluation):
+            gate = evaluation.transition(
+                "gate", lambda node: node.step(gate_value["value"])
+            )
+            level = evaluation.transition(
+                "level", lambda node: node.step(level_value["value"], context.now)
+            )
+            evaluation.transition(
+                "then", lambda node: node.step([gate, level], context.now)
+            )
+
+        def evaluator(context, evaluation):
+            return evaluation.result("then")
+
+        rule = make_rule(
+            logic_factories={
+                "gate": RisingEdge,
+                "level": lambda: Hold(duration_nanoseconds=0),
+                "then": lambda: Then(step_count=2, within_nanoseconds=1000),
+            },
+            transitioner=transitioner,
+            evaluator=evaluator,
+        )
+
+        rule.commit(rule.stage(make_context(now_nanoseconds=0)))
+
+        level_value["value"] = True
+        rule.commit(rule.stage(make_context(now_nanoseconds=1)))
+
+        gate_value["value"] = True
+        stage = rule.stage(make_context(now_nanoseconds=2))
+        self.assertFalse(stage.result)
+        rule.commit(stage)
+
+        gate_value["value"] = False
+        stage = rule.stage(make_context(now_nanoseconds=3))
+        self.assertTrue(stage.result)
         rule.commit(stage)
 
 

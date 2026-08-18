@@ -16,11 +16,17 @@ class RuleFrameEvaluation:
     A frame is evaluated in two phases. In the *transition phase*, the
     ``transitioner`` advances every stateful node through
     :meth:`transition`, which runs the caller-provided ``step`` against the
-    working copy of the node's logic at most once and caches the returned
+    working copy of the node's logic exactly once and caches the returned
     boolean. Once every declared node has been transitioned, the phase is
     sealed. In the *result phase*, the ``evaluator`` reads the cached booleans
     through :meth:`result` and composes them (with pure predicates) into the
     frame's fired boolean.
+
+    Each declared node is transitioned exactly once: a second transition of
+    the same node, or a re-entrant transition while that node's ``step`` is
+    still running, fails fast with :class:`RuntimeError` rather than returning
+    a cached or recursive result. Shared references to a node's boolean must
+    be read through :meth:`result` in the result phase.
 
     The seal keeps stateful transitions out of the result phase: short-circuit
     composition in the result phase can skip cached-result reads and pure
@@ -30,6 +36,7 @@ class RuleFrameEvaluation:
     def __init__(self, instances: dict[str, Any]) -> None:
         self._instances = instances
         self._results: dict[str, bool] = {}
+        self._in_progress: set[str] = set()
         self._sealed = False
 
     def transition(self, node_id: str, step: Callable[[Any], bool]) -> bool:
@@ -37,9 +44,15 @@ class RuleFrameEvaluation:
             raise RuntimeError("transition phase is already sealed")
         if node_id not in self._instances:
             raise ValueError(f"unknown node_id: {node_id!r}")
+        if node_id in self._in_progress:
+            raise RuntimeError(f"re-entrant transition of node_id {node_id!r}")
         if node_id in self._results:
-            return self._results[node_id]
-        result = step(self._instances[node_id])
+            raise RuntimeError(f"node_id {node_id!r} already transitioned")
+        self._in_progress.add(node_id)
+        try:
+            result = step(self._instances[node_id])
+        finally:
+            self._in_progress.discard(node_id)
         if type(result) is not bool:
             raise TypeError(
                 f"step for node_id {node_id!r} must return a strict bool, got {result!r}"
@@ -67,14 +80,16 @@ class RuleFrameEvaluation:
 class RuleStage:
     """Opaque staged result of a single :meth:`Rule.stage` call.
 
-    All data validation happens while staging. ``_next_instances`` holds the
-    working copies of the node logic; :meth:`Rule.commit` adopts them as the
-    rule's state.
+    All data validation happens while staging. The stage carries only opaque
+    ownership tokens (``_owner`` and ``_generation``) plus the computed
+    ``result`` boolean. The working copies of the node logic are held inside
+    the owning :class:`Rule` as its pending stage and are adopted on
+    :meth:`Rule.commit`; callers cannot reach or mutate the rule's logic
+    through a stage object.
     """
 
     _owner: Rule
     _generation: int
-    _next_instances: dict[str, Any]
     result: bool
 
 
@@ -97,6 +112,13 @@ class Rule:
     the owned logic, so the rule's logic is not changed until :meth:`commit`;
     an exception, a skipped transition, or a non-boolean result during staging
     leaves the rule state unchanged.
+
+    Each successful :meth:`stage` replaces the rule's single pending stage with
+    its working copies and returns an opaque :class:`RuleStage` token;
+    :meth:`commit` adopts that pending stage and clears it. Committing a
+    foreign or stale stage, or committing a stage twice, is rejected. Rules
+    can each be staged ahead of a later commit, but each rule keeps at most one
+    pending stage.
     """
 
     def __init__(
@@ -113,10 +135,12 @@ class Rule:
         self._transitioner = transitioner
         self._evaluator = evaluator
         self._generation = 0
+        self._pending: dict[str, Any] | None = None
 
     def stage(self, context: FrameContext) -> RuleStage:
         self._generation += 1
         generation = self._generation
+        self._pending = None
         working = {
             node_id: deepcopy(instance) for node_id, instance in self._instances.items()
         }
@@ -126,10 +150,10 @@ class Rule:
         result = self._evaluator(context, evaluation)
         if type(result) is not bool:
             raise TypeError(f"evaluator must return a strict bool, got {result!r}")
+        self._pending = working
         return RuleStage(
             _owner=self,
             _generation=generation,
-            _next_instances=working,
             result=result,
         )
 
@@ -138,4 +162,7 @@ class Rule:
             raise ValueError("stage does not belong to this rule")
         if stage._generation != self._generation:
             raise ValueError("stale stage")
-        self._instances = dict(stage._next_instances)
+        if self._pending is None:
+            raise ValueError("stage already committed")
+        self._instances = self._pending
+        self._pending = None
