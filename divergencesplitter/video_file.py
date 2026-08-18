@@ -51,23 +51,27 @@ class VideoFileSource:
     The first frame is available as soon as the source is READY; every
     following ``read`` waits until the recorded frame rate's real-time slot.
     A file is opened by ``prepare`` only, so the source may be retried after a
-    failed ``prepare``. EOF, open, decode, read-before-ready, clip-region, and
-    resize conditions are returned as source-specific errors, never raised.
+    failed ``prepare``. EOF, open, decode, and read-before-ready conditions are
+    returned as source-specific errors, never raised.
 
-    ``clip_region`` is ``(x, y, width, height)`` where ``x`` is the column and
-    ``y`` is the row, with an exclusive end like a NumPy slice. When given,
-    each read clips ``image[y:y + height, x:x + width]`` before resizing.
-    ``output_size`` is ``(width, height)`` in OpenCV order; when given, each
-    read resizes the (possibly clipped) image with ``cv2.INTER_LINEAR``. The
-    returned ``Frame`` always has the same image shape while READY: the
-    clipped size when only ``clip_region`` is set, the video's native size
-    when neither is set, and ``output_size`` otherwise. When ``output_size``
-    is given, the crop slice view is passed directly to ``cv2.resize`` with
-    no intermediate copy; when only ``clip_region`` is set, the slice is
-    copied with ``.copy()`` so the frame owns its data. Resize results are
-    the fresh ``cv2.resize`` output. These transformed images share no memory
-    with the decoded array; the no-transform path returns that decoded array
-    directly under the source's existing ownership guarantee.
+    ``read`` performs pacing and decoding only and returns each frame as
+    decoded, so un-evaluated frames are never transformed. ``clip_region`` is
+    ``(x, y, width, height)`` where ``x`` is the column and ``y`` is the row,
+    with an exclusive end like a NumPy slice. ``output_size`` is ``(width,
+    height)`` in OpenCV order. When evaluation decides to use a frame it calls
+    ``normalize`` once, passing a raw frame returned by this source. For frames
+    read from one prepared video stream, successful results have a stable image
+    shape: the clipped size when only ``clip_region`` is set, the decoded video
+    size when neither is set, and ``output_size`` otherwise. ``normalize`` is
+    pure: it touches neither pacing nor capture state, does not depend on the
+    source state, and may be called after ``close``.
+
+    When only ``clip_region`` is set, the slice is copied with ``.copy()`` so
+    the normalized frame owns its data. When ``output_size`` is set, the crop
+    slice view is passed directly to ``cv2.resize`` with no intermediate copy;
+    resize results are the fresh ``cv2.resize`` output and share no memory with
+    the decoded array. The no-transform path returns the input ``Frame`` object
+    itself.
     """
 
     def __init__(
@@ -125,6 +129,10 @@ class VideoFileSource:
         if not retval or image is None:
             return self._classify_failure()
         self._frames_read += 1
+        return Frame(image=image)
+
+    def normalize(self, frame: Frame) -> Frame | VideoFileError:
+        image = frame.image
         if self._clip_region is not None:
             x, y, width, height = self._clip_region
             if y + height > image.shape[0] or x + width > image.shape[1]:
@@ -134,7 +142,7 @@ class VideoFileSource:
                 )
             image = image[y : y + height, x : x + width]
             if self._output_size is None:
-                image = image.copy()
+                return Frame(image=image.copy())
         if self._output_size is not None:
             try:
                 image = cv2.resize(
@@ -142,7 +150,8 @@ class VideoFileSource:
                 )
             except cv2.error as error:
                 return VideoFileResizeError(f"failed to resize frame: {error}")
-        return Frame(image=image)
+            return Frame(image=image)
+        return frame
 
     def handle_error(self, _error: VideoFileError) -> ErrorAction:
         return ErrorAction.STOP
