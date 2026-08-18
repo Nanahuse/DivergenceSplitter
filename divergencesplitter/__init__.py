@@ -7,6 +7,15 @@ from divergencesplitter.detector import (
     evaluate,
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
+from divergencesplitter.logic import (
+    All,
+    Any,
+    FallingEdge,
+    Hold,
+    Not,
+    RisingEdge,
+    Then,
+)
 from divergencesplitter.models import (
     DetectionResult,
     Frame,
@@ -26,18 +35,25 @@ from divergencesplitter.video_file import (
 )
 
 __all__ = [
+    "All",
+    "Any",
     "DetectionResult",
     "ErrorAction",
+    "FallingEdge",
     "Frame",
     "FrameContext",
     "FrameDifferenceDetector",
     "FrameSource",
     "FrameSourceState",
+    "Hold",
     "ImageArray",
     "ImageDetector",
     "MeanBrightnessDetector",
     "MonotonicTime",
+    "Not",
+    "RisingEdge",
     "ScoreThreshold",
+    "Then",
     "TimeProvider",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
