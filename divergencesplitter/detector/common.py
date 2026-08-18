@@ -12,6 +12,7 @@ must be hashable (use tuples) so the detectors stay usable as cache keys.
 from collections.abc import Callable
 from typing import cast
 
+import cv2
 import numpy as np
 
 from divergencesplitter.detector.interface import ImageDetector
@@ -54,15 +55,38 @@ def evaluate(context: FrameContext, detector: ImageDetector) -> DetectionResult:
     return result
 
 
-def frame_mean(context: FrameContext) -> float:
-    return preprocessed(context, FRAME_MEAN_KEY, lambda: _mean(context.frame.image))
+def _resized(context: FrameContext, size: tuple[int, int]) -> ImageArray:
+    """Return the frame resized to ``size``, cached per ``FrameContext``.
 
-
-def frame_mean_abs_diff(context: FrameContext, reference: ConfigImage) -> float:
-    key = ("frame-mean-abs-diff", reference)
+    The ``(width, height)`` size follows OpenCV's convention. The resized
+    array is stored under ``("frame-resize", size)`` so detectors sharing a
+    size within one ``FrameContext`` reuse the same array.
+    """
     return preprocessed(
-        context, key, lambda: _mean_abs_diff(context.frame.image, reference)
+        context,
+        ("frame-resize", size),
+        lambda: cv2.resize(context.frame.image, size, interpolation=cv2.INTER_LINEAR),
     )
+
+
+def frame_mean(context: FrameContext, size: tuple[int, int] | None = None) -> float:
+    image = context.frame.image if size is None else _resized(context, size)
+    key = FRAME_MEAN_KEY if size is None else ("frame-mean", size)
+    return preprocessed(context, key, lambda: _mean(image))
+
+
+def frame_mean_abs_diff(
+    context: FrameContext,
+    reference: ConfigImage,
+    size: tuple[int, int] | None = None,
+) -> float:
+    image = context.frame.image if size is None else _resized(context, size)
+    key = (
+        ("frame-mean-abs-diff", reference)
+        if size is None
+        else ("frame-mean-abs-diff", size, reference)
+    )
+    return preprocessed(context, key, lambda: _mean_abs_diff(image, reference))
 
 
 def _mean(image: ImageArray) -> float:

@@ -7,7 +7,6 @@ from divergencesplitter.detector import (
     evaluate,
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
-from divergencesplitter.frame_transform import FrameCropResize
 from divergencesplitter.models import (
     DetectionResult,
     Frame,
@@ -18,6 +17,7 @@ from divergencesplitter.models import (
 from divergencesplitter.score_threshold import ScoreThreshold
 from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.video_file import (
+    VideoFileClipError,
     VideoFileDecodeError,
     VideoFileEndOfFileError,
     VideoFileError,
@@ -31,7 +31,6 @@ __all__ = [
     "ErrorAction",
     "Frame",
     "FrameContext",
-    "FrameCropResize",
     "FrameDifferenceDetector",
     "FrameSource",
     "FrameSourceState",
@@ -41,6 +40,7 @@ __all__ = [
     "MonotonicTime",
     "ScoreThreshold",
     "TimeProvider",
+    "VideoFileClipError",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
     "VideoFileError",

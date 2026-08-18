@@ -12,6 +12,7 @@ from divergencesplitter.frame_source import (
 )
 from divergencesplitter.models import Frame
 from divergencesplitter.video_file import (
+    VideoFileClipError,
     VideoFileDecodeError,
     VideoFileEndOfFileError,
     VideoFileError,
@@ -33,6 +34,21 @@ def make_video(path, frame_count, fps=30.0, width=16, height=16):
     try:
         for index in range(frame_count):
             image = np.full((height, width, 3), index * 85 % 255, dtype=np.uint8)
+            writer.write(image)
+    finally:
+        writer.release()
+
+
+def make_pattern_video(path, frame_count, width=16, height=16):
+    writer = cv2.VideoWriter(str(path), _fourcc("MJPG"), 30.0, (width, height))
+    assert writer.isOpened(), "could not create the test video with the MJPG codec"
+    try:
+        stripe = np.array(
+            [[row // 2 * 30 for _ in range(width)] for row in range(height)],
+            dtype=np.uint8,
+        )
+        for _ in range(frame_count):
+            image = np.stack([stripe, stripe, stripe], axis=-1)
             writer.write(image)
     finally:
         writer.release()
@@ -116,6 +132,7 @@ class TestError:
             VideoFileEndOfFileError("eof"),
             VideoFileDecodeError("decode"),
             VideoFileReadBeforeReadyError("not ready"),
+            VideoFileClipError("clip"),
         )
         for error in errors:
             assert source.handle_error(error) is ErrorAction.STOP
@@ -255,3 +272,94 @@ class TestDecodeError:
             assert isinstance(result, Frame)
             decoded += 1
         assert 0 < decoded < 20
+
+
+class TestClipRegion:
+    def test_clip_region_returns_clipped_shape(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_pattern_video(video, frame_count=2)
+        region = (2, 3, 6, 5)
+        source = VideoFileSource(str(video), clip_region=region)
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, Frame)
+        _, _, width, height = region
+        assert result.image.shape == (height, width, 3)
+
+    def test_clip_matches_manual_slice_of_full_frame(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_pattern_video(video, frame_count=2)
+        region = (2, 3, 6, 5)
+        clipped = VideoFileSource(str(video), clip_region=region)
+        full = VideoFileSource(str(video))
+        clipped.prepare()
+        full.prepare()
+        clipped_result = clipped.read()
+        full_result = full.read()
+        assert isinstance(clipped_result, Frame)
+        assert isinstance(full_result, Frame)
+        x, y, width, height = region
+        expected = full_result.image[y : y + height, x : x + width]
+        np.testing.assert_array_equal(clipped_result.image, expected)
+
+    def test_clipped_frame_owns_its_data(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_pattern_video(video, frame_count=1)
+        source = VideoFileSource(str(video), clip_region=(0, 0, 8, 8))
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, Frame)
+        assert result.image.flags.owndata
+        assert result.image.base is None
+
+    def test_default_clip_region_returns_full_frame(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=1)
+        source = VideoFileSource(str(video))
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, Frame)
+        assert result.image.shape == (*SIZE, 3)
+
+    def test_horizontal_overflow_returns_clip_error(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=1)
+        source = VideoFileSource(str(video), clip_region=(1, 0, 16, 16))
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, VideoFileClipError)
+        assert isinstance(result, VideoFileError)
+
+    def test_vertical_overflow_returns_clip_error(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=1)
+        source = VideoFileSource(str(video), clip_region=(0, 1, 16, 16))
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, VideoFileClipError)
+        assert isinstance(result, VideoFileError)
+
+    def test_overflow_does_not_raise(self, tmp_path):
+        video = tmp_path / "movie.avi"
+        make_video(video, frame_count=1)
+        source = VideoFileSource(str(video), clip_region=(1, 0, 16, 16))
+        source.prepare()
+        result = source.read()
+        assert isinstance(result, VideoFileError)
+
+
+class TestClipRegionConstruction:
+    @pytest.mark.parametrize(
+        "region",
+        [
+            (-1, 0, 2, 2),
+            (0, -1, 2, 2),
+            (0, 0, 0, 2),
+            (0, 0, -1, 2),
+            (0, 0, 2, 0),
+            (0, 0, 2, -1),
+        ],
+    )
+    def test_region_rejects_negative_or_non_positive(self, region):
+        with pytest.raises(ValueError):
+            VideoFileSource("unused.avi", clip_region=region)

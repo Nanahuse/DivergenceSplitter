@@ -37,17 +37,39 @@ class VideoFileReadBeforeReadyError(VideoFileError):
     """``read`` was attempted while the source is not READY."""
 
 
+class VideoFileClipError(VideoFileError):
+    """A decoded frame does not fully contain the configured clip region."""
+
+
 class VideoFileSource:
     """Replays a local video file paced by ``time.monotonic``.
 
     The first frame is available as soon as the source is READY; every
     following ``read`` waits until the recorded frame rate's real-time slot.
     A file is opened by ``prepare`` only, so the source may be retried after a
-    failed ``prepare``. EOF, open, decode, and read-before-ready conditions are
-    returned as source-specific errors, never raised.
+    failed ``prepare``. EOF, open, decode, read-before-ready, and clip-region
+    conditions are returned as source-specific errors, never raised.
+
+    ``clip_region`` is ``(x, y, width, height)`` where ``x`` is the column and
+    ``y`` is the row, with an exclusive end like a NumPy slice. When given,
+    each read clips ``image[y:y + height, x:x + width].copy()``; the returned
+    ``Frame`` owns its data and shares no memory with the decoded array.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        clip_region: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        if clip_region is not None:
+            x, y, width, height = clip_region
+            if x < 0 or y < 0:
+                raise ValueError(f"clip_region must be non-negative: {clip_region}")
+            if width <= 0 or height <= 0:
+                raise ValueError(
+                    f"clip_region must have a positive size: {clip_region}"
+                )
+        self._clip_region = clip_region
         self._path = path
         self._capture: cv2.VideoCapture | None = None
         self._state = FrameSourceState.NOT_READY
@@ -83,6 +105,14 @@ class VideoFileSource:
         if not retval or image is None:
             return self._classify_failure()
         self._frames_read += 1
+        if self._clip_region is not None:
+            x, y, width, height = self._clip_region
+            if y + height > image.shape[0] or x + width > image.shape[1]:
+                return VideoFileClipError(
+                    f"clip region {self._clip_region} does not fit in "
+                    f"image shape {image.shape}"
+                )
+            image = image[y : y + height, x : x + width].copy()
         return Frame(image=image)
 
     def handle_error(self, _error: VideoFileError) -> ErrorAction:

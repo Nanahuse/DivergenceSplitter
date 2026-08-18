@@ -1,6 +1,7 @@
 import unittest
 from typing import cast
 
+import cv2
 import numpy as np
 
 from divergencesplitter.detector.common import (
@@ -202,4 +203,167 @@ class PreprocessingCacheTest(unittest.TestCase):
         self.assertIn(("frame-mean-abs-diff", REFERENCE), context.preprocessing_cache)
         self.assertIn(
             ("frame-mean-abs-diff", other_reference), context.preprocessing_cache
+        )
+
+
+def _resized_reference(image, size):
+    resized = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
+    return tuple(tuple(int(value) for value in row) for row in resized)
+
+
+class DetectorSizeTest(unittest.TestCase):
+    def test_size_none_preserves_existing_behavior(self):
+        context = make_context(DARK)
+        result = evaluate(context, MeanBrightnessDetector())
+        self.assertEqual(result.score, 0.0)
+        self.assertIn("frame-mean", context.preprocessing_cache)
+        self.assertNotIn(("frame-resize", None), context.preprocessing_cache)
+
+    def test_diff_size_none_preserves_existing_behavior(self):
+        context = make_context(REFERENCE_IMAGE)
+        result = evaluate(context, FrameDifferenceDetector(reference=REFERENCE))
+        self.assertEqual(result.score, 0.0)
+        self.assertIn(("frame-mean-abs-diff", REFERENCE), context.preprocessing_cache)
+        self.assertNotIn(("frame-resize", None), context.preprocessing_cache)
+
+    def test_mean_resizes_with_inter_linear_pixels(self):
+        image = np.arange(6 * 8, dtype=np.uint8).reshape(6, 8)
+        size = (4, 3)
+        context = make_context(image)
+        result = evaluate(context, MeanBrightnessDetector(size=size))
+        expected = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
+        self.assertIn(("frame-resize", size), context.preprocessing_cache)
+        np.testing.assert_array_equal(
+            context.preprocessing_cache[("frame-resize", size)], expected
+        )
+        self.assertEqual(result.score, float(np.mean(expected)))
+
+    def test_diff_matches_resized_inter_linear_score(self):
+        image = np.zeros((6, 8), dtype=np.uint8)
+        size = (4, 3)
+        reference = tuple((10,) * 4 for _ in range(3))
+        result = evaluate(
+            make_context(image), FrameDifferenceDetector(reference=reference, size=size)
+        )
+        self.assertEqual(result.score, 10.0)
+
+    def test_diff_compares_against_resized_reference(self):
+        image = np.arange(6 * 8, dtype=np.uint8).reshape(6, 8)
+        size = (4, 3)
+        reference = _resized_reference(image, size)
+        result = evaluate(
+            make_context(image), FrameDifferenceDetector(reference=reference, size=size)
+        )
+        self.assertEqual(result.score, 0.0)
+
+    def test_size_is_retained(self):
+        self.assertEqual(MeanBrightnessDetector(size=(4, 5)).size, (4, 5))
+        self.assertEqual(
+            FrameDifferenceDetector(reference=REFERENCE, size=(4, 5)).size, (4, 5)
+        )
+        self.assertIsNone(MeanBrightnessDetector().size)
+        self.assertIsNone(FrameDifferenceDetector(reference=REFERENCE).size)
+
+    def test_size_participates_in_equality_and_hash(self):
+        self.assertEqual(
+            MeanBrightnessDetector(size=(4, 4)), MeanBrightnessDetector(size=(4, 4))
+        )
+        self.assertNotEqual(
+            MeanBrightnessDetector(size=(4, 4)), MeanBrightnessDetector()
+        )
+        self.assertNotEqual(
+            MeanBrightnessDetector(size=(4, 4)), MeanBrightnessDetector(size=(4, 5))
+        )
+        self.assertEqual(
+            hash(MeanBrightnessDetector(size=(4, 4))),
+            hash(MeanBrightnessDetector(size=(4, 4))),
+        )
+        self.assertEqual(
+            FrameDifferenceDetector(reference=REFERENCE, size=(4, 4)),
+            FrameDifferenceDetector(reference=REFERENCE, size=(4, 4)),
+        )
+        self.assertNotEqual(
+            FrameDifferenceDetector(reference=REFERENCE, size=(4, 4)),
+            FrameDifferenceDetector(reference=REFERENCE, size=(4, 5)),
+        )
+        self.assertNotEqual(
+            FrameDifferenceDetector(reference=REFERENCE, size=(4, 4)),
+            FrameDifferenceDetector(reference=REFERENCE),
+        )
+
+    def test_non_positive_size_rejected(self):
+        for size in [(0, 2), (2, 0), (-1, 2), (2, -1)]:
+            with self.assertRaises(ValueError):
+                MeanBrightnessDetector(size=size)
+            with self.assertRaises(ValueError):
+                FrameDifferenceDetector(reference=REFERENCE, size=size)
+
+    def test_same_size_resize_shared_across_detectors(self):
+        image = np.arange(6 * 8, dtype=np.uint8).reshape(6, 8)
+        size = (4, 3)
+        reference = _resized_reference(image, size)
+        context = make_context(image)
+        evaluate(context, MeanBrightnessDetector(size=size))
+        evaluate(context, FrameDifferenceDetector(reference=reference, size=size))
+        self.assertIn(("frame-resize", size), context.preprocessing_cache)
+        resize_keys = [
+            key
+            for key in context.preprocessing_cache
+            if isinstance(key, tuple) and key[0] == "frame-resize"
+        ]
+        self.assertEqual(len(resize_keys), 1)
+
+    def test_different_sizes_do_not_share_resize(self):
+        image = np.arange(6 * 8, dtype=np.uint8).reshape(6, 8)
+        context = make_context(image)
+        evaluate(context, MeanBrightnessDetector(size=(4, 3)))
+        evaluate(context, MeanBrightnessDetector(size=(8, 2)))
+        self.assertIn(("frame-resize", (4, 3)), context.preprocessing_cache)
+        self.assertIn(("frame-resize", (8, 2)), context.preprocessing_cache)
+        self.assertEqual(
+            context.preprocessing_cache[("frame-resize", (4, 3))].shape, (3, 4)
+        )
+        self.assertEqual(
+            context.preprocessing_cache[("frame-resize", (8, 2))].shape, (2, 8)
+        )
+
+    def test_derived_keys_include_size_and_do_not_collide(self):
+        image = np.arange(6 * 8, dtype=np.uint8).reshape(6, 8)
+        context = make_context(image)
+        first = evaluate(context, MeanBrightnessDetector(size=(4, 3)))
+        second = evaluate(context, MeanBrightnessDetector(size=(8, 2)))
+        expected_first = float(
+            np.mean(cv2.resize(image, (4, 3), interpolation=cv2.INTER_LINEAR))
+        )
+        expected_second = float(
+            np.mean(cv2.resize(image, (8, 2), interpolation=cv2.INTER_LINEAR))
+        )
+        self.assertEqual(first.score, expected_first)
+        self.assertEqual(second.score, expected_second)
+        self.assertIn(("frame-mean", (4, 3)), context.preprocessing_cache)
+        self.assertIn(("frame-mean", (8, 2)), context.preprocessing_cache)
+        self.assertNotIn("frame-mean", context.preprocessing_cache)
+
+    def test_diff_derived_key_includes_size(self):
+        image = np.zeros((6, 8), dtype=np.uint8)
+        size = (4, 3)
+        reference = tuple((10,) * 4 for _ in range(3))
+        context = make_context(image)
+        evaluate(context, FrameDifferenceDetector(reference=reference, size=size))
+        self.assertIn(
+            ("frame-mean-abs-diff", size, reference), context.preprocessing_cache
+        )
+        self.assertNotIn(
+            ("frame-mean-abs-diff", reference), context.preprocessing_cache
+        )
+
+    def test_resized_diff_shape_mismatch_raises_and_is_not_cached(self):
+        image = np.zeros((6, 8), dtype=np.uint8)
+        context = make_context(image)
+        detector = FrameDifferenceDetector(reference=REFERENCE, size=(4, 3))
+        with self.assertRaises(ValueError):
+            evaluate(context, detector)
+        self.assertEqual(context.detection_cache, {})
+        self.assertNotIn(
+            ("frame-mean-abs-diff", (4, 3), REFERENCE), context.preprocessing_cache
         )
