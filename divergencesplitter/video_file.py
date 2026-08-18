@@ -11,6 +11,7 @@ from typing import Self
 
 import cv2
 
+from divergencesplitter.frame_normalizer import FrameNormalizer
 from divergencesplitter.frame_source import ErrorAction, FrameSourceState
 from divergencesplitter.models import Frame
 
@@ -37,42 +38,8 @@ class VideoFileReadBeforeReadyError(VideoFileError):
     """``read`` was attempted while the source is not READY."""
 
 
-class VideoFileClipError(VideoFileError):
-    """A decoded frame does not fully contain the configured clip region."""
-
-
-class VideoFileResizeError(VideoFileError):
-    """A frame could not be resized to the configured output size."""
-
-
 class VideoFileSource:
-    """Replays a local video file paced by ``time.monotonic``.
-
-    The first frame is available as soon as the source is READY; every
-    following ``read`` waits until the recorded frame rate's real-time slot.
-    A file is opened by ``prepare`` only, so the source may be retried after a
-    failed ``prepare``. EOF, open, decode, and read-before-ready conditions are
-    returned as source-specific errors, never raised.
-
-    ``read`` performs pacing and decoding only and returns each frame as
-    decoded, so un-evaluated frames are never transformed. ``clip_region`` is
-    ``(x, y, width, height)`` where ``x`` is the column and ``y`` is the row,
-    with an exclusive end like a NumPy slice. ``output_size`` is ``(width,
-    height)`` in OpenCV order. When evaluation decides to use a frame it calls
-    ``normalize`` once, passing a raw frame returned by this source. For frames
-    read from one prepared video stream, successful results have a stable image
-    shape: the clipped size when only ``clip_region`` is set, the decoded video
-    size when neither is set, and ``output_size`` otherwise. ``normalize`` is
-    pure: it touches neither pacing nor capture state, does not depend on the
-    source state, and may be called after ``close``.
-
-    When only ``clip_region`` is set, the slice is copied with ``.copy()`` so
-    the normalized frame owns its data. When ``output_size`` is set, the crop
-    slice view is passed directly to ``cv2.resize`` with no intermediate copy;
-    resize results are the fresh ``cv2.resize`` output and share no memory with
-    the decoded array. The no-transform path returns the input ``Frame`` object
-    itself.
-    """
+    """Reads raw frames from a local video at its recorded frame rate."""
 
     def __init__(
         self,
@@ -80,20 +47,9 @@ class VideoFileSource:
         clip_region: tuple[int, int, int, int] | None = None,
         output_size: tuple[int, int] | None = None,
     ) -> None:
-        if clip_region is not None:
-            x, y, width, height = clip_region
-            if x < 0 or y < 0:
-                raise ValueError(f"clip_region must be non-negative: {clip_region}")
-            if width <= 0 or height <= 0:
-                raise ValueError(
-                    f"clip_region must have a positive size: {clip_region}"
-                )
-        if output_size is not None:
-            width, height = output_size
-            if width <= 0 or height <= 0:
-                raise ValueError(f"output_size must be positive: {output_size}")
-        self._clip_region = clip_region
-        self._output_size = output_size
+        self._normalizer = FrameNormalizer(
+            clip_region=clip_region, output_size=output_size
+        )
         self._path = path
         self._capture: cv2.VideoCapture | None = None
         self._state = FrameSourceState.NOT_READY
@@ -104,6 +60,10 @@ class VideoFileSource:
     @property
     def state(self) -> FrameSourceState:
         return self._state
+
+    @property
+    def normalizer(self) -> FrameNormalizer:
+        return self._normalizer
 
     def prepare(self) -> VideoFileError | None:
         if self._state is FrameSourceState.READY:
@@ -130,28 +90,6 @@ class VideoFileSource:
             return self._classify_failure()
         self._frames_read += 1
         return Frame(image=image)
-
-    def normalize(self, frame: Frame) -> Frame | VideoFileError:
-        image = frame.image
-        if self._clip_region is not None:
-            x, y, width, height = self._clip_region
-            if y + height > image.shape[0] or x + width > image.shape[1]:
-                return VideoFileClipError(
-                    f"clip region {self._clip_region} does not fit in "
-                    f"image shape {image.shape}"
-                )
-            image = image[y : y + height, x : x + width]
-            if self._output_size is None:
-                return Frame(image=image.copy())
-        if self._output_size is not None:
-            try:
-                image = cv2.resize(
-                    image, self._output_size, interpolation=cv2.INTER_LINEAR
-                )
-            except cv2.error as error:
-                return VideoFileResizeError(f"failed to resize frame: {error}")
-            return Frame(image=image)
-        return frame
 
     def handle_error(self, _error: VideoFileError) -> ErrorAction:
         return ErrorAction.STOP

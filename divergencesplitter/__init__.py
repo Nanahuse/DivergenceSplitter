@@ -6,6 +6,12 @@ from divergencesplitter.detector import (
     MeanBrightnessDetector,
     evaluate,
 )
+from divergencesplitter.frame_normalizer import (
+    FrameClipError,
+    FrameNormalizationError,
+    FrameNormalizer,
+    FrameResizeError,
+)
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
 from divergencesplitter.models import (
     DetectionResult,
@@ -17,13 +23,11 @@ from divergencesplitter.models import (
 from divergencesplitter.score_threshold import ScoreThreshold
 from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.video_file import (
-    VideoFileClipError,
     VideoFileDecodeError,
     VideoFileEndOfFileError,
     VideoFileError,
     VideoFileOpenError,
     VideoFileReadBeforeReadyError,
-    VideoFileResizeError,
     VideoFileSource,
 )
 
@@ -31,8 +35,12 @@ __all__ = [
     "DetectionResult",
     "ErrorAction",
     "Frame",
+    "FrameClipError",
     "FrameContext",
     "FrameDifferenceDetector",
+    "FrameNormalizationError",
+    "FrameNormalizer",
+    "FrameResizeError",
     "FrameSource",
     "FrameSourceState",
     "ImageArray",
@@ -41,13 +49,11 @@ __all__ = [
     "MonotonicTime",
     "ScoreThreshold",
     "TimeProvider",
-    "VideoFileClipError",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
     "VideoFileError",
     "VideoFileOpenError",
     "VideoFileReadBeforeReadyError",
-    "VideoFileResizeError",
     "VideoFileSource",
     "evaluate",
 ]

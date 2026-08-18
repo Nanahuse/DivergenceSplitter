@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
+from divergencesplitter.frame_normalizer import FrameNormalizer
 from divergencesplitter.frame_source import (
     ErrorAction,
     FrameSource,
@@ -12,13 +13,11 @@ from divergencesplitter.frame_source import (
 )
 from divergencesplitter.models import Frame
 from divergencesplitter.video_file import (
-    VideoFileClipError,
     VideoFileDecodeError,
     VideoFileEndOfFileError,
     VideoFileError,
     VideoFileOpenError,
     VideoFileReadBeforeReadyError,
-    VideoFileResizeError,
     VideoFileSource,
 )
 
@@ -35,21 +34,6 @@ def make_video(path, frame_count, fps=30.0, width=16, height=16):
     try:
         for index in range(frame_count):
             image = np.full((height, width, 3), index * 85 % 255, dtype=np.uint8)
-            writer.write(image)
-    finally:
-        writer.release()
-
-
-def make_pattern_video(path, frame_count, width=16, height=16):
-    writer = cv2.VideoWriter(str(path), _fourcc("MJPG"), 30.0, (width, height))
-    assert writer.isOpened(), "could not create the test video with the MJPG codec"
-    try:
-        stripe = np.array(
-            [[row // 2 * 30 for _ in range(width)] for row in range(height)],
-            dtype=np.uint8,
-        )
-        for _ in range(frame_count):
-            image = np.stack([stripe, stripe, stripe], axis=-1)
             writer.write(image)
     finally:
         writer.release()
@@ -133,8 +117,6 @@ class TestError:
             VideoFileEndOfFileError("eof"),
             VideoFileDecodeError("decode"),
             VideoFileReadBeforeReadyError("not ready"),
-            VideoFileClipError("clip"),
-            VideoFileResizeError("resize"),
         )
         for error in errors:
             assert source.handle_error(error) is ErrorAction.STOP
@@ -217,7 +199,7 @@ class TestProtocol:
     def test_video_file_source_satisfies_frame_source(self):
         members = get_protocol_members(FrameSource)
         assert "state" in members
-        assert "normalize" in members
+        assert "normalizer" in members
         source = VideoFileSource("unused.avi")
         for member in members:
             assert hasattr(source, member), member
@@ -277,249 +259,44 @@ class TestDecodeError:
         assert 0 < decoded < 20
 
 
-class TestClipRegion:
-    def test_clip_region_normalize_returns_clipped_shape(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=2)
-        region = (2, 3, 6, 5)
-        source = VideoFileSource(str(video), clip_region=region)
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, Frame)
-        _, _, width, height = region
-        assert result.image.shape == (height, width, 3)
+class TestNormalizer:
+    def test_normalizer_holds_configured_settings(self):
+        source = VideoFileSource(
+            "unused.avi", clip_region=(2, 3, 6, 5), output_size=(12, 10)
+        )
+        normalizer = source.normalizer
+        assert isinstance(normalizer, FrameNormalizer)
+        assert normalizer.clip_region == (2, 3, 6, 5)
+        assert normalizer.output_size == (12, 10)
 
-    def test_read_stays_raw_native_shape_until_normalize(self, tmp_path):
+    def test_default_normalizer_has_no_settings(self):
+        source = VideoFileSource("unused.avi")
+        assert source.normalizer.clip_region is None
+        assert source.normalizer.output_size is None
+
+    def test_constructor_rejects_invalid_clip_region(self):
+        with pytest.raises(ValueError):
+            VideoFileSource("unused.avi", clip_region=(-1, 0, 2, 2))
+
+    def test_constructor_rejects_invalid_output_size(self):
+        with pytest.raises(ValueError):
+            VideoFileSource("unused.avi", output_size=(0, 2))
+
+    def test_normalizer_normalizes_raw_frame_read_from_source(self, tmp_path):
         video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=2)
+        make_video(video, frame_count=2)
         source = VideoFileSource(str(video), clip_region=(2, 3, 6, 5))
         source.prepare()
         raw = source.read()
         assert isinstance(raw, Frame)
         assert raw.image.shape == (*SIZE, 3)
-        result = source.normalize(raw)
+        result = source.normalizer.normalize(raw)
         assert isinstance(result, Frame)
         assert result.image.shape == (5, 6, 3)
 
-    def test_clip_matches_manual_slice_of_full_frame(self, tmp_path):
+    def test_read_stays_raw_and_normalize_resizes_once(self, tmp_path, monkeypatch):
         video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=2)
-        region = (2, 3, 6, 5)
-        clipped = VideoFileSource(str(video), clip_region=region)
-        full = VideoFileSource(str(video))
-        clipped.prepare()
-        full.prepare()
-        clipped_raw = clipped.read()
-        full_result = full.read()
-        assert isinstance(clipped_raw, Frame)
-        assert isinstance(full_result, Frame)
-        clipped_result = clipped.normalize(clipped_raw)
-        assert isinstance(clipped_result, Frame)
-        x, y, width, height = region
-        expected = full_result.image[y : y + height, x : x + width]
-        np.testing.assert_array_equal(clipped_result.image, expected)
-
-    def test_clipped_frame_owns_its_data(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=1)
-        source = VideoFileSource(str(video), clip_region=(0, 0, 8, 8))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, Frame)
-        assert result.image.flags.owndata
-        assert result.image.base is None
-
-    def test_default_clip_region_returns_full_frame(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=1)
-        source = VideoFileSource(str(video))
-        source.prepare()
-        result = source.read()
-        assert isinstance(result, Frame)
-        assert result.image.shape == (*SIZE, 3)
-
-    def test_horizontal_overflow_normalize_returns_clip_error(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=1)
-        source = VideoFileSource(str(video), clip_region=(1, 0, 16, 16))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, VideoFileClipError)
-        assert isinstance(result, VideoFileError)
-
-    def test_vertical_overflow_normalize_returns_clip_error(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=1)
-        source = VideoFileSource(str(video), clip_region=(0, 1, 16, 16))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, VideoFileClipError)
-        assert isinstance(result, VideoFileError)
-
-    def test_overflow_does_not_raise(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=1)
-        source = VideoFileSource(str(video), clip_region=(1, 0, 16, 16))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, VideoFileError)
-
-
-class TestClipRegionConstruction:
-    @pytest.mark.parametrize(
-        "region",
-        [
-            (-1, 0, 2, 2),
-            (0, -1, 2, 2),
-            (0, 0, 0, 2),
-            (0, 0, -1, 2),
-            (0, 0, 2, 0),
-            (0, 0, 2, -1),
-        ],
-    )
-    def test_region_rejects_negative_or_non_positive(self, region):
-        with pytest.raises(ValueError):
-            VideoFileSource("unused.avi", clip_region=region)
-
-
-class TestOutputSizeConstruction:
-    @pytest.mark.parametrize(
-        "size",
-        [
-            (0, 2),
-            (2, 0),
-            (-1, 2),
-            (2, -1),
-        ],
-    )
-    def test_output_size_rejects_non_positive(self, size):
-        with pytest.raises(ValueError):
-            VideoFileSource("unused.avi", output_size=size)
-
-
-class TestResize:
-    def test_resize_matches_cv2_inter_linear_on_full_frame(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=2)
-        size = (12, 10)
-        resized = VideoFileSource(str(video), output_size=size)
-        full = VideoFileSource(str(video))
-        resized.prepare()
-        full.prepare()
-        resized_raw = resized.read()
-        full_result = full.read()
-        assert isinstance(resized_raw, Frame)
-        assert isinstance(full_result, Frame)
-        resized_result = resized.normalize(resized_raw)
-        assert isinstance(resized_result, Frame)
-        expected = cv2.resize(full_result.image, size, interpolation=cv2.INTER_LINEAR)
-        np.testing.assert_array_equal(resized_result.image, expected)
-
-    def test_clip_and_resize_match_cv2_inter_linear_on_manual_clip(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=2)
-        region = (2, 3, 6, 5)
-        size = (12, 10)
-        transformed = VideoFileSource(str(video), clip_region=region, output_size=size)
-        full = VideoFileSource(str(video))
-        transformed.prepare()
-        full.prepare()
-        transformed_raw = transformed.read()
-        full_result = full.read()
-        assert isinstance(transformed_raw, Frame)
-        assert isinstance(full_result, Frame)
-        transformed_result = transformed.normalize(transformed_raw)
-        assert isinstance(transformed_result, Frame)
-        x, y, width, height = region
-        manual_clip = full_result.image[y : y + height, x : x + width]
-        expected = cv2.resize(manual_clip, size, interpolation=cv2.INTER_LINEAR)
-        np.testing.assert_array_equal(transformed_result.image, expected)
-
-    def test_four_combinations_normalize_shapes_are_constant(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=3)
-        region = (2, 3, 6, 5)
-        size = (12, 10)
-        cases = [
-            (None, None, (*SIZE, 3)),
-            (region, None, (5, 6, 3)),
-            (None, size, (10, 12, 3)),
-            (region, size, (10, 12, 3)),
-        ]
-        for clip_region, output_size, expected_shape in cases:
-            source = VideoFileSource(
-                str(video), clip_region=clip_region, output_size=output_size
-            )
-            source.prepare()
-            shapes = []
-            for _ in range(3):
-                raw = source.read()
-                assert isinstance(raw, Frame)
-                result = source.normalize(raw)
-                assert isinstance(result, Frame)
-                shapes.append(result.image.shape)
-                assert result.image.shape[-1] == 3
-            assert len(set(shapes)) == 1
-            assert shapes[0] == expected_shape
-
-    def test_normalize_keeps_output_shape_constant(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=3)
-        source = VideoFileSource(
-            str(video), clip_region=(1, 1, 8, 8), output_size=(12, 10)
-        )
-        source.prepare()
-        shapes = []
-        for _ in range(3):
-            raw = source.read()
-            assert isinstance(raw, Frame)
-            result = source.normalize(raw)
-            assert isinstance(result, Frame)
-            shapes.append(result.image.shape)
-        assert len(set(shapes)) == 1
-        assert shapes[0] == (10, 12, 3)
-
-    def test_resized_frame_owns_its_data(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=1)
-        source = VideoFileSource(str(video), output_size=(12, 10))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, Frame)
-        assert result.image.flags.owndata
-        assert result.image.base is None
-
-    def test_clipped_and_resized_frame_owns_its_data(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=1)
-        source = VideoFileSource(
-            str(video), clip_region=(0, 0, 8, 8), output_size=(12, 10)
-        )
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, Frame)
-        assert result.image.flags.owndata
-        assert result.image.base is None
-
-    def test_raw_reads_do_not_resize_and_normalize_resizes_once(
-        self, tmp_path, monkeypatch
-    ):
-        video = tmp_path / "movie.avi"
-        make_pattern_video(video, frame_count=4)
+        make_video(video, frame_count=4)
         calls = {"count": 0}
         real_resize = cv2.resize
 
@@ -536,47 +313,6 @@ class TestResize:
             assert isinstance(result, Frame)
             raws.append(result)
         assert calls["count"] == 0
-        normalized = source.normalize(raws[1])
+        normalized = source.normalizer.normalize(raws[1])
         assert isinstance(normalized, Frame)
         assert calls["count"] == 1
-
-    def test_normalize_without_transform_returns_same_frame(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=1)
-        source = VideoFileSource(str(video))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        assert source.normalize(raw) is raw
-
-    def test_normalize_works_after_close(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=1)
-        source = VideoFileSource(str(video), clip_region=(1, 1, 8, 8))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        source.close()
-        assert source.state is FrameSourceState.NOT_READY
-        result = source.normalize(raw)
-        assert isinstance(result, Frame)
-        assert result.image.shape == (8, 8, 3)
-
-
-class TestResizeError:
-    def test_resize_failure_returned_as_value_and_stop(self, tmp_path, monkeypatch):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=1)
-
-        def raise_resize_error(*args, **kwargs):
-            raise cv2.error("resize failed")
-
-        monkeypatch.setattr(cv2, "resize", raise_resize_error)
-        source = VideoFileSource(str(video), output_size=(12, 10))
-        source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
-        result = source.normalize(raw)
-        assert isinstance(result, VideoFileResizeError)
-        assert isinstance(result, VideoFileError)
-        assert source.handle_error(result) is ErrorAction.STOP
