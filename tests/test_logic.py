@@ -9,7 +9,6 @@ from divergencesplitter.logic import (
     Hold,
     Not,
     RisingEdge,
-    Then,
 )
 from divergencesplitter.models import MonotonicTime
 
@@ -242,97 +241,6 @@ class HoldTest(unittest.TestCase):
         hold = Hold(duration_nanoseconds=10)
         with self.assertRaises(TypeError):
             hold.step(np.True_, t(0))  # type: ignore
-
-
-class ThenTest(unittest.TestCase):
-    def test_conditions_must_be_satisfied_in_order(self):
-        then = Then(step_count=3, within_nanoseconds=1000)
-        self.assertFalse(then.step([False, True, True], t(0)))
-        self.assertFalse(then.step([True, False, False], t(1)))
-        self.assertFalse(then.step([False, True, True], t(2)))
-        self.assertTrue(then.step([False, False, True], t(3)))
-
-    def test_advances_at_most_one_stage_per_call(self):
-        then = Then(step_count=3, within_nanoseconds=1000)
-        self.assertFalse(then.step([True, True, True], t(0)))
-        self.assertFalse(then.step([True, True, True], t(1)))
-        self.assertTrue(then.step([True, True, True], t(2)))
-
-    def test_deadline_is_inclusive(self):
-        then = Then(step_count=2, within_nanoseconds=100)
-        self.assertFalse(then.step([True, False], t(0)))
-        self.assertTrue(then.step([False, True], t(100)))
-
-    def test_deadline_exceeded_restarts_from_first_condition(self):
-        then = Then(step_count=2, within_nanoseconds=100)
-        self.assertFalse(then.step([True, False], t(0)))
-        self.assertFalse(then.step([True, False], t(101)))
-        self.assertTrue(then.step([False, True], t(200)))
-
-    def test_deadline_exceeded_without_first_condition_returns_to_idle(self):
-        then = Then(step_count=2, within_nanoseconds=100)
-        self.assertFalse(then.step([True, False], t(0)))
-        self.assertFalse(then.step([False, True], t(101)))
-        self.assertFalse(then.step([True, False], t(200)))
-        self.assertTrue(then.step([False, True], t(250)))
-
-    def test_step_count_one_completes_immediately(self):
-        then = Then(step_count=1, within_nanoseconds=0)
-        self.assertFalse(then.step([False], t(0)))
-        self.assertTrue(then.step([True], t(1)))
-
-    def test_completion_latches_until_new_instance(self):
-        then = Then(step_count=1, within_nanoseconds=0)
-        self.assertTrue(then.step([True], t(0)))
-        self.assertTrue(then.step([False], t(100)))
-        then = Then(step_count=1, within_nanoseconds=0)
-        self.assertTrue(then.step([True], t(200)))
-        self.assertTrue(then.step([False], t(300)))
-
-    def test_backward_time_raises(self):
-        then = Then(step_count=2, within_nanoseconds=1000)
-        self.assertFalse(then.step([True, False], t(100)))
-        with self.assertRaises(ValueError):
-            then.step([False, True], t(50))
-
-    def test_input_length_mismatch_raises(self):
-        then = Then(step_count=2, within_nanoseconds=100)
-        with self.assertRaises(ValueError):
-            then.step([True], t(0))
-        with self.assertRaises(ValueError):
-            then.step([True, False, True], t(0))
-
-    def test_invalid_configuration_rejected(self):
-        with self.assertRaises(ValueError):
-            Then(step_count=0, within_nanoseconds=0)
-        with self.assertRaises(ValueError):
-            Then(step_count=1, within_nanoseconds=-1)
-
-    def test_independent_instances_do_not_interfere(self):
-        then_a = Then(step_count=2, within_nanoseconds=1000)
-        then_b = Then(step_count=2, within_nanoseconds=1000)
-        self.assertFalse(then_a.step([True, False], t(0)))
-        self.assertFalse(then_b.step([False, False], t(0)))
-        self.assertTrue(then_a.step([False, True], t(6)))
-        self.assertFalse(then_b.step([True, False], t(10)))
-
-    def test_non_bool_element_rejected_and_state_unchanged(self):
-        then = Then(step_count=2, within_nanoseconds=100)
-        with self.assertRaises(TypeError):
-            then.step([True, 1], t(0))  # type: ignore
-        self.assertFalse(then.step([True, False], t(1)))
-        self.assertTrue(then.step([False, True], t(2)))
-
-    def test_numpy_bool_element_rejected(self):
-        then = Then(step_count=2, within_nanoseconds=100)
-        with self.assertRaises(TypeError):
-            then.step([np.True_, False], t(0))  # type: ignore
-
-    def test_non_iterable_input_rejected_and_state_unchanged(self):
-        then = Then(step_count=2, within_nanoseconds=100)
-        with self.assertRaises(TypeError):
-            then.step(42, t(0))  # type: ignore
-        self.assertFalse(then.step([True, False], t(1)))
 
 
 if __name__ == "__main__":

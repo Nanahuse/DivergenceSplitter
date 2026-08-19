@@ -14,7 +14,6 @@ from divergencesplitter.logic import (
     Hold,
     Not,
     RisingEdge,
-    Then,
 )
 from divergencesplitter.models import (
     DetectionResult,
@@ -57,7 +56,6 @@ __all__ = [
     "RuleFrameEvaluation",
     "RuleStage",
     "ScoreThreshold",
-    "Then",
     "TimeProvider",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",

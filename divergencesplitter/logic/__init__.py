@@ -4,7 +4,6 @@ from divergencesplitter.logic.falling_edge import FallingEdge
 from divergencesplitter.logic.hold import Hold
 from divergencesplitter.logic.not_ import Not
 from divergencesplitter.logic.rising_edge import RisingEdge
-from divergencesplitter.logic.then import Then
 
 __all__ = [
     "All",
@@ -13,5 +12,4 @@ __all__ = [
     "Hold",
     "Not",
     "RisingEdge",
-    "Then",
 ]

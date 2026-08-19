@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from divergencesplitter.detector import MeanBrightnessDetector, evaluate
-from divergencesplitter.logic import All, Any, FallingEdge, Hold, RisingEdge, Then
+from divergencesplitter.logic import All, Any, FallingEdge, Hold, RisingEdge
 from divergencesplitter.models import Frame, FrameContext, MonotonicTime
 from divergencesplitter.rule import Rule
 from divergencesplitter.score_threshold import ScoreThreshold
@@ -658,62 +658,6 @@ class StatefulCompositionTest(unittest.TestCase):
         self.assertFalse(stage.result)
         rule.commit(stage)
 
-    def test_rising_edge_of_then_fires_once_on_completion(self):
-        cond = {"value": False}
-
-        def child_step(then, context):
-            return then.step([cond["value"]], context.now)
-
-        def parent_step(edge, child_result, context):
-            return edge.step(child_result)
-
-        rule = make_chain_rule(
-            child_factory=lambda: Then(step_count=1, within_nanoseconds=0),
-            parent_factory=RisingEdge,
-            child_step=child_step,
-            parent_step=parent_step,
-        )
-        stage = rule.stage(make_context())
-        self.assertFalse(stage.result)
-        rule.commit(stage)
-
-        cond["value"] = True
-        stage = rule.stage(make_context())
-        self.assertTrue(stage.result)
-        rule.commit(stage)
-
-        stage = rule.stage(make_context())
-        self.assertFalse(stage.result)
-        rule.commit(stage)
-
-    def test_hold_of_then_satisfied_after_completion_duration(self):
-        cond = {"value": False}
-
-        def child_step(then, context):
-            return then.step([cond["value"]], context.now)
-
-        def parent_step(hold, child_result, context):
-            return hold.step(child_result, context.now)
-
-        rule = make_chain_rule(
-            child_factory=lambda: Then(step_count=1, within_nanoseconds=0),
-            parent_factory=lambda: Hold(duration_nanoseconds=10),
-            child_step=child_step,
-            parent_step=parent_step,
-        )
-        stage = rule.stage(make_context(now_nanoseconds=0))
-        self.assertFalse(stage.result)
-        rule.commit(stage)
-
-        cond["value"] = True
-        stage = rule.stage(make_context(now_nanoseconds=5))
-        self.assertFalse(stage.result)
-        rule.commit(stage)
-
-        stage = rule.stage(make_context(now_nanoseconds=15))
-        self.assertTrue(stage.result)
-        rule.commit(stage)
-
     def test_child_transition_fed_to_parent_step_in_order(self):
         order = []
 
@@ -733,87 +677,6 @@ class StatefulCompositionTest(unittest.TestCase):
         )
         rule.commit(rule.stage(make_context()))
         self.assertEqual(order, ["child", "parent"])
-
-
-class ThenOrderingTest(unittest.TestCase):
-    def test_early_edge_pulse_is_lost(self):
-        gate_value = {"value": False}
-        pulse_value = {"value": False}
-
-        def evaluator(context, evaluation):
-            gate = evaluation.transition(
-                "gate", lambda node: node.step(gate_value["value"])
-            )
-            pulse = evaluation.transition(
-                "pulse", lambda node: node.step(pulse_value["value"])
-            )
-            return evaluation.transition(
-                "then", lambda node: node.step([gate, pulse], context.now)
-            )
-
-        rule = make_rule(
-            logic_factories={
-                "gate": RisingEdge,
-                "pulse": RisingEdge,
-                "then": lambda: Then(step_count=2, within_nanoseconds=1000),
-            },
-            evaluator=evaluator,
-        )
-
-        rule.commit(rule.stage(make_context(now_nanoseconds=0)))
-
-        pulse_value["value"] = True
-        rule.commit(rule.stage(make_context(now_nanoseconds=1)))
-
-        pulse_value["value"] = False
-        gate_value["value"] = True
-        stage = rule.stage(make_context(now_nanoseconds=2))
-        self.assertFalse(stage.result)
-        rule.commit(stage)
-
-        gate_value["value"] = False
-        stage = rule.stage(make_context(now_nanoseconds=3))
-        self.assertFalse(stage.result)
-        rule.commit(stage)
-
-    def test_hold_level_usable_after_stage_reached(self):
-        gate_value = {"value": False}
-        level_value = {"value": False}
-
-        def evaluator(context, evaluation):
-            gate = evaluation.transition(
-                "gate", lambda node: node.step(gate_value["value"])
-            )
-            level = evaluation.transition(
-                "level", lambda node: node.step(level_value["value"], context.now)
-            )
-            return evaluation.transition(
-                "then", lambda node: node.step([gate, level], context.now)
-            )
-
-        rule = make_rule(
-            logic_factories={
-                "gate": RisingEdge,
-                "level": lambda: Hold(duration_nanoseconds=0),
-                "then": lambda: Then(step_count=2, within_nanoseconds=1000),
-            },
-            evaluator=evaluator,
-        )
-
-        rule.commit(rule.stage(make_context(now_nanoseconds=0)))
-
-        level_value["value"] = True
-        rule.commit(rule.stage(make_context(now_nanoseconds=1)))
-
-        gate_value["value"] = True
-        stage = rule.stage(make_context(now_nanoseconds=2))
-        self.assertFalse(stage.result)
-        rule.commit(stage)
-
-        gate_value["value"] = False
-        stage = rule.stage(make_context(now_nanoseconds=3))
-        self.assertTrue(stage.result)
-        rule.commit(stage)
 
 
 if __name__ == "__main__":
