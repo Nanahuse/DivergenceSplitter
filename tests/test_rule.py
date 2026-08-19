@@ -27,9 +27,6 @@ def make_rule(logic_factories=None, evaluator=None):
 
 
 def make_chain_rule(child_factory, parent_factory, child_step, parent_step):
-    """Rule where the child node is transitioned first and its boolean is
-    handed to the parent node's step within the same evaluation."""
-
     def evaluator(context, evaluation):
         child_result = evaluation.transition(
             "child", lambda node: child_step(node, context)

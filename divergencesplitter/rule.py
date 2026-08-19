@@ -1,5 +1,3 @@
-"""Rule: a timed execution instance that owns per-node logic instances."""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -11,21 +9,7 @@ from divergencesplitter.models import FrameContext
 
 
 class RuleFrameEvaluation:
-    """Per-frame view over a rule's node logic during staging.
-
-    The ``evaluator`` advances every stateful node through
-    :meth:`transition`, which runs the caller-provided ``step`` against the
-    working copy of the node's logic exactly once and caches the returned
-    boolean. The evaluator then composes those booleans (with pure
-    predicates) into the frame's fired boolean.
-
-    Each declared node is transitioned exactly once: a second transition of
-    the same node, or a re-entrant transition while that node's ``step`` is
-    still running, fails fast with :class:`RuntimeError` rather than returning
-    a cached or recursive result. A node's boolean is read through
-    :meth:`result`, which only allows already-transitioned nodes, so a shared
-    node is transitioned once and its result referenced multiple times.
-    """
+    """Transitions every declared node exactly once against staged copies."""
 
     def __init__(self, instances: dict[str, Any]) -> None:
         self._instances = instances
@@ -68,15 +52,7 @@ class RuleFrameEvaluation:
 
 @dataclass(frozen=True)
 class RuleStage:
-    """Opaque staged result of a single :meth:`Rule.stage` call.
-
-    All data validation happens while staging. The stage carries only opaque
-    ownership tokens (``_owner`` and ``_generation``) plus the computed
-    ``result`` boolean. The working copies of the node logic are held inside
-    the owning :class:`Rule` as its pending stage and are adopted on
-    :meth:`Rule.commit`; callers cannot reach or mutate the rule's logic
-    through a stage object.
-    """
+    """Opaque result of one staged evaluation."""
 
     _owner: Rule
     _generation: int
@@ -84,31 +60,7 @@ class RuleStage:
 
 
 class Rule:
-    """A timed execution instance that owns the logic instances of its nodes.
-
-    Holds one logic instance per declared node id and evaluates a Python
-    ``evaluator`` against a ``FrameContext``. The evaluator transitions every
-    stateful node through :meth:`RuleFrameEvaluation.transition`, keyed by the
-    declared node id, computing each node's input with a ``Detector`` ->
-    ``ScoreThreshold`` -> logic step chain before the transition, and composes
-    the resulting booleans (via :meth:`RuleFrameEvaluation.result`) with pure
-    predicates into the frame's fired boolean. Logic instances are created by
-    the node factories when the rule is created, carried across frames, and
-    discarded with the rule. A regenerated rule starts from fresh logic.
-
-    A single-frame evaluation is read -> transition -> compose -> stage ->
-    commit. The evaluator runs against deep copies of the owned logic, so the
-    rule's logic is not changed until :meth:`commit`; an exception, a skipped
-    transition, or a non-boolean result during staging leaves the rule state
-    unchanged.
-
-    Each successful :meth:`stage` replaces the rule's single pending stage with
-    its working copies and returns an opaque :class:`RuleStage` token;
-    :meth:`commit` adopts that pending stage and clears it. Committing a
-    foreign or stale stage, or committing a stage twice, is rejected. Rules
-    can each be staged ahead of a later commit, but each rule keeps at most one
-    pending stage.
-    """
+    """Owns per-node logic and commits state only after successful staging."""
 
     def __init__(
         self,

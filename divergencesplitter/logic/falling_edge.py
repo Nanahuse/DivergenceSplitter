@@ -1,16 +1,5 @@
-"""FallingEdge: true-to-false transition detector."""
-
-
 class FallingEdge:
-    """True exactly when the input transitions from ``True`` to ``False``.
-
-    The first observation only establishes a baseline and never fires. Each
-    instance keeps its own previous observation; independent instances do not
-    share history.
-
-    ``value`` must be a strict ``bool``; any other type raises
-    :class:`TypeError` before the previous observation is updated.
-    """
+    """Detects true-to-false transitions; the first value sets the baseline."""
 
     def __init__(self) -> None:
         self._previous: bool | None = None

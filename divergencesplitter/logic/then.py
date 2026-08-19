@@ -1,33 +1,13 @@
-"""Then: ordered sequence of conditions with a deadline."""
-
 from collections.abc import Sequence
 
 from divergencesplitter.models import MonotonicTime
 
 
 class Then:
-    """True once ``step_count`` conditions are satisfied in order in time.
+    """Matches ordered conditions within an inclusive deadline.
 
-    The deadline is measured from the observation that first satisfies the
-    leading condition. Each call advances the current stage by at most one, so
-    later conditions satisfied early in the same observation are ignored. The
-    deadline is inclusive: ``elapsed <= within_nanoseconds`` keeps the attempt
-    alive, while ``elapsed > within_nanoseconds`` discards it and allows a new
-    attempt to begin from the leading condition of the same observation. Once
-    completed, the result stays ``True`` until the instance is discarded. Each
-    instance keeps its own progress; independent instances do not share state.
-
-    Only the observation that makes a stage current is considered. A condition
-    that pulsed ``True`` before its stage was reached and has since returned to
-    ``False`` is not remembered and cannot satisfy that stage. A condition that
-    remains ``True`` once its stage becomes current (for example a ``Hold``
-    that stays latched) can satisfy it on a later observation. No queue or
-    buffer of past pulses is kept.
-
-    ``values`` is snapshotted before any state transition and must contain
-    exactly ``step_count`` strict ``bool`` elements; a wrong length, a
-    non-boolean element, or a non-iterable input raises before the instance's
-    progress is changed.
+    At most one stage advances per call. Early pulses are not buffered, and a
+    completed sequence remains true.
     """
 
     def __init__(self, step_count: int, within_nanoseconds: int) -> None:

@@ -1,19 +1,8 @@
-"""Hold: minimum-duration latch."""
-
 from divergencesplitter.models import MonotonicTime
 
 
 class Hold:
-    """True once the input has stayed ``True`` for ``duration_nanoseconds``.
-
-    Once satisfied it stays ``True`` while the input remains ``True``. A
-    ``False`` input releases and re-arms the hold. A zero duration is satisfied
-    by the first ``True`` observation. Each instance keeps its own start time;
-    independent instances do not share state.
-
-    ``value`` must be a strict ``bool``; any other type raises
-    :class:`TypeError` before the hold state is mutated.
-    """
+    """Becomes true after a continuous true interval; false resets it."""
 
     def __init__(self, duration_nanoseconds: int) -> None:
         if duration_nanoseconds < 0:
