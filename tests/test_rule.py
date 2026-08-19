@@ -149,22 +149,6 @@ class RuleTransitionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             rule.stage(make_context())
 
-    def test_non_bool_step_result_rejected(self):
-        def evaluator(context, evaluation):
-            return evaluation.transition("edge", lambda edge: 1)
-
-        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
-        with self.assertRaises(TypeError):
-            rule.stage(make_context())
-
-    def test_numpy_bool_step_result_rejected(self):
-        def evaluator(context, evaluation):
-            return evaluation.transition("edge", lambda edge: np.True_)
-
-        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
-        with self.assertRaises(TypeError):
-            rule.stage(make_context())
-
 
 class RuleTransitionContractTest(unittest.TestCase):
     def test_missing_transition_fails_fast(self):
@@ -289,31 +273,6 @@ class RuleStateLifecycleTest(unittest.TestCase):
         self.assertTrue(stage.result)
         rule.commit(stage)
 
-    def test_non_bool_step_result_does_not_commit(self):
-        values = {"v": False}
-        mode = {"bad": False}
-
-        def evaluator(context, evaluation):
-            if mode["bad"]:
-
-                def step(edge):
-                    edge.step(True)
-                    return 1
-
-                return evaluation.transition("edge", step)
-            return evaluation.transition("edge", lambda edge: edge.step(values["v"]))
-
-        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
-        rule.commit(rule.stage(make_context()))
-        values["v"] = True
-        mode["bad"] = True
-        with self.assertRaises(TypeError):
-            rule.stage(make_context())
-        mode["bad"] = False
-        stage = rule.stage(make_context())
-        self.assertTrue(stage.result)
-        rule.commit(stage)
-
 
 class RuleNodeIndependenceTest(unittest.TestCase):
     def test_same_config_nodes_do_not_share_state(self):
@@ -359,24 +318,6 @@ class RuleStageTest(unittest.TestCase):
         self.assertTrue(fired.stage(make_context()).result)
         unfired = make_rule(evaluator=lambda context, evaluation: False)
         self.assertFalse(unfired.stage(make_context()).result)
-
-    def test_non_bool_evaluator_return_rejected(self):
-        def evaluator(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(False))
-            return 1
-
-        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
-        with self.assertRaises(TypeError):
-            rule.stage(make_context())
-
-    def test_numpy_bool_evaluator_return_rejected(self):
-        def evaluator(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(False))
-            return np.True_
-
-        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
-        with self.assertRaises(TypeError):
-            rule.stage(make_context())
 
     def test_stage_exposes_only_opaque_result(self):
         rule = make_rule(

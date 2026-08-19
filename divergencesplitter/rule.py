@@ -28,10 +28,6 @@ class RuleFrameEvaluation:
             result = step(self._instances[node_id])
         finally:
             self._in_progress.discard(node_id)
-        if type(result) is not bool:
-            raise TypeError(
-                f"step for node_id {node_id!r} must return a strict bool, got {result!r}"
-            )
         self._results[node_id] = result
         return result
 
@@ -85,8 +81,6 @@ class Rule:
         }
         evaluation = RuleFrameEvaluation(working)
         result = self._evaluator(context, evaluation)
-        if type(result) is not bool:
-            raise TypeError(f"evaluator must return a strict bool, got {result!r}")
         evaluation._verify_complete()
         self._pending = working
         return RuleStage(

@@ -5,8 +5,6 @@ class RisingEdge:
         self._previous: bool | None = None
 
     def step(self, value: bool) -> bool:
-        if type(value) is not bool:
-            raise TypeError(f"value must be a strict bool, got {value!r}")
         previous = self._previous
         self._previous = value
         if previous is None:

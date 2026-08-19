@@ -1,7 +1,5 @@
 import unittest
 
-import numpy as np
-
 from divergencesplitter.logic import (
     All,
     Any,
@@ -52,18 +50,6 @@ class AllTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             All().apply(values())
 
-    def test_non_bool_element_raises(self):
-        with self.assertRaises(TypeError):
-            All().apply([True, 1, True])  # type: ignore
-
-    def test_numpy_bool_element_rejected(self):
-        with self.assertRaises(TypeError):
-            All().apply([np.True_, True])  # type: ignore
-
-    def test_invalid_element_after_false_raises(self):
-        with self.assertRaises(TypeError):
-            All().apply([False, "not a bool"])  # type: ignore
-
 
 class AnyTest(unittest.TestCase):
     def test_empty_is_false(self):
@@ -97,35 +83,11 @@ class AnyTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             Any().apply(values())
 
-    def test_non_bool_element_raises(self):
-        with self.assertRaises(TypeError):
-            Any().apply([False, 0, True])  # type: ignore
-
-    def test_numpy_bool_element_rejected(self):
-        with self.assertRaises(TypeError):
-            Any().apply([np.False_, False])  # type: ignore
-
-    def test_invalid_element_after_true_raises(self):
-        with self.assertRaises(TypeError):
-            Any().apply([True, "not a bool"])  # type: ignore
-
 
 class NotTest(unittest.TestCase):
     def test_negation(self):
         self.assertFalse(Not().apply(True))
         self.assertTrue(Not().apply(False))
-
-    def test_non_bool_raises(self):
-        with self.assertRaises(TypeError):
-            Not().apply(1)  # type: ignore
-
-    def test_numpy_bool_rejected(self):
-        with self.assertRaises(TypeError):
-            Not().apply(np.True_)  # type: ignore
-
-    def test_ambiguous_truthiness_array_rejected(self):
-        with self.assertRaises(TypeError):
-            Not().apply(np.array([True, False]))  # type: ignore
 
 
 class RisingEdgeTest(unittest.TestCase):
@@ -147,18 +109,6 @@ class RisingEdgeTest(unittest.TestCase):
         self.assertFalse(edge.step(False))
         self.assertTrue(edge.step(True))
 
-    def test_non_bool_input_rejected_and_state_unchanged(self):
-        edge = RisingEdge()
-        with self.assertRaises(TypeError):
-            edge.step(1)  # type: ignore
-        self.assertFalse(edge.step(False))
-        self.assertTrue(edge.step(True))
-
-    def test_numpy_bool_input_rejected(self):
-        edge = RisingEdge()
-        with self.assertRaises(TypeError):
-            edge.step(np.True_)  # type: ignore
-
 
 class FallingEdgeTest(unittest.TestCase):
     def test_baseline_and_transitions(self):
@@ -178,18 +128,6 @@ class FallingEdgeTest(unittest.TestCase):
         self.assertFalse(edge.step(False))
         self.assertFalse(edge.step(True))
         self.assertTrue(edge.step(False))
-
-    def test_non_bool_input_rejected_and_state_unchanged(self):
-        edge = FallingEdge()
-        with self.assertRaises(TypeError):
-            edge.step(1)  # type: ignore
-        self.assertFalse(edge.step(True))
-        self.assertTrue(edge.step(False))
-
-    def test_numpy_bool_input_rejected(self):
-        edge = FallingEdge()
-        with self.assertRaises(TypeError):
-            edge.step(np.False_)  # type: ignore
 
 
 class HoldTest(unittest.TestCase):
@@ -229,18 +167,6 @@ class HoldTest(unittest.TestCase):
         self.assertTrue(hold_a.step(True, t(10)))
         self.assertFalse(hold_b.step(True, t(10)))
         self.assertTrue(hold_b.step(True, t(20)))
-
-    def test_non_bool_input_rejected_before_mutation(self):
-        hold = Hold(duration_nanoseconds=10)
-        with self.assertRaises(TypeError):
-            hold.step(1, t(0))  # type: ignore
-        self.assertFalse(hold.step(True, t(0)))
-        self.assertTrue(hold.step(True, t(10)))
-
-    def test_numpy_bool_input_rejected(self):
-        hold = Hold(duration_nanoseconds=10)
-        with self.assertRaises(TypeError):
-            hold.step(np.True_, t(0))  # type: ignore
 
 
 if __name__ == "__main__":

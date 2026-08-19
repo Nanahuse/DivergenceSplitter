@@ -13,8 +13,6 @@ class Hold:
         self._start: MonotonicTime | None = None
 
     def step(self, value: bool, now: MonotonicTime) -> bool:
-        if type(value) is not bool:
-            raise TypeError(f"value must be a strict bool, got {value!r}")
         if self._start is not None and now < self._start:
             raise ValueError(
                 f"now moved backwards from {self._start.nanoseconds} to {now.nanoseconds}"
