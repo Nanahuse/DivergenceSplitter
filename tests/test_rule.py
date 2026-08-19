@@ -17,36 +17,29 @@ def make_context(image=EMPTY, now_nanoseconds=0):
     )
 
 
-def make_rule(logic_factories=None, transitioner=None, evaluator=None):
-    if transitioner is None:
-        transitioner = lambda context, evaluation: None
+def make_rule(logic_factories=None, evaluator=None):
     if evaluator is None:
         evaluator = lambda context, evaluation: False
     return Rule(
         logic_factories=logic_factories if logic_factories is not None else {},
-        transitioner=transitioner,
         evaluator=evaluator,
     )
 
 
 def make_chain_rule(child_factory, parent_factory, child_step, parent_step):
     """Rule where the child node is transitioned first and its boolean is
-    handed to the parent node's step within the same transition phase."""
+    handed to the parent node's step within the same evaluation."""
 
-    def transitioner(context, evaluation):
+    def evaluator(context, evaluation):
         child_result = evaluation.transition(
             "child", lambda node: child_step(node, context)
         )
-        evaluation.transition(
+        return evaluation.transition(
             "parent", lambda node: parent_step(node, child_result, context)
         )
 
-    def evaluator(context, evaluation):
-        return evaluation.result("parent")
-
     return make_rule(
         logic_factories={"child": child_factory, "parent": parent_factory},
-        transitioner=transitioner,
         evaluator=evaluator,
     )
 
@@ -69,13 +62,12 @@ class RuleConstructionTest(unittest.TestCase):
 
 class RuleTransitionTest(unittest.TestCase):
     def test_duplicate_transition_fails_fast(self):
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             evaluation.transition("edge", lambda edge: edge.step(True))
             evaluation.transition("edge", lambda edge: edge.step(True))
+            return False
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge}, transitioner=transitioner
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(RuntimeError):
             rule.stage(make_context())
 
@@ -83,19 +75,13 @@ class RuleTransitionTest(unittest.TestCase):
         values = {"v": False}
         mode = {"duplicate": False}
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             evaluation.transition("edge", lambda edge: edge.step(values["v"]))
             if mode["duplicate"]:
                 evaluation.transition("edge", lambda edge: edge.step(values["v"]))
-
-        def evaluator(context, evaluation):
             return evaluation.result("edge")
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
         values["v"] = True
         mode["duplicate"] = True
@@ -110,22 +96,15 @@ class RuleTransitionTest(unittest.TestCase):
         values = {"v": False}
         mode = {"reentrant": False}
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             def step(edge):
                 if mode["reentrant"]:
                     evaluation.transition("edge", lambda e: e.step(True))
                 return edge.step(values["v"])
 
-            evaluation.transition("edge", step)
+            return evaluation.transition("edge", step)
 
-        def evaluator(context, evaluation):
-            return evaluation.result("edge")
-
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
         values["v"] = True
         mode["reentrant"] = True
@@ -140,84 +119,64 @@ class RuleTransitionTest(unittest.TestCase):
         calls = []
         results = []
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             def step(edge):
                 calls.append(1)
                 return edge.step(True)
 
             evaluation.transition("edge", step)
-
-        def evaluator(context, evaluation):
             results.append(evaluation.result("edge"))
             results.append(evaluation.result("edge"))
             return evaluation.result("edge")
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
         self.assertEqual(calls, [1])
         self.assertEqual(results, [False, False])
 
     def test_unknown_node_transition_fails_fast(self):
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             evaluation.transition("unknown", lambda edge: edge.step(True))
+            return False
 
-        rule = make_rule(
-            logic_factories={"known": RisingEdge}, transitioner=transitioner
-        )
+        rule = make_rule(logic_factories={"known": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(ValueError):
             rule.stage(make_context())
 
     def test_unknown_node_result_fails_fast(self):
-        def transitioner(context, evaluation):
-            evaluation.transition("known", lambda edge: edge.step(True))
-
         def evaluator(context, evaluation):
+            evaluation.transition("known", lambda edge: edge.step(True))
             return evaluation.result("unknown")
 
-        rule = make_rule(
-            logic_factories={"known": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"known": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(ValueError):
             rule.stage(make_context())
 
     def test_non_bool_step_result_rejected(self):
-        def transitioner(context, evaluation):
-            evaluation.transition("edge", lambda edge: 1)
+        def evaluator(context, evaluation):
+            return evaluation.transition("edge", lambda edge: 1)
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge}, transitioner=transitioner
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(TypeError):
             rule.stage(make_context())
 
     def test_numpy_bool_step_result_rejected(self):
-        def transitioner(context, evaluation):
-            evaluation.transition("edge", lambda edge: np.True_)
+        def evaluator(context, evaluation):
+            return evaluation.transition("edge", lambda edge: np.True_)
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge}, transitioner=transitioner
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(TypeError):
             rule.stage(make_context())
 
 
 class RuleTransitionContractTest(unittest.TestCase):
     def test_missing_transition_fails_fast(self):
-        def transitioner(context, evaluation):
-            evaluation.transition("a", lambda edge: edge.step(True))
-
         def evaluator(context, evaluation):
+            evaluation.transition("a", lambda edge: edge.step(True))
             return True
 
         rule = make_rule(
             logic_factories={"a": RisingEdge, "b": RisingEdge},
-            transitioner=transitioner,
             evaluator=evaluator,
         )
         with self.assertRaises(RuntimeError):
@@ -227,17 +186,14 @@ class RuleTransitionContractTest(unittest.TestCase):
         values = {"a": False}
         mode = {"omit_b": False}
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             evaluation.transition("a", lambda edge: edge.step(values["a"]))
             if not mode["omit_b"]:
                 evaluation.transition("b", lambda edge: edge.step(False))
-
-        def evaluator(context, evaluation):
             return evaluation.result("a")
 
         rule = make_rule(
             logic_factories={"a": RisingEdge, "b": RisingEdge},
-            transitioner=transitioner,
             evaluator=evaluator,
         )
         rule.commit(rule.stage(make_context()))
@@ -250,35 +206,12 @@ class RuleTransitionContractTest(unittest.TestCase):
         self.assertTrue(stage.result)
         rule.commit(stage)
 
-    def test_transition_in_result_phase_fails(self):
-        def transitioner(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(False))
-
+    def test_result_before_transition_fails(self):
         def evaluator(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(True))
-            return True
-
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
-        with self.assertRaises(RuntimeError):
-            rule.stage(make_context())
-
-    def test_result_before_transition_complete_fails(self):
-        def transitioner(context, evaluation):
             evaluation.result("edge")
-            evaluation.transition("edge", lambda edge: edge.step(False))
+            return evaluation.transition("edge", lambda edge: edge.step(False))
 
-        def evaluator(context, evaluation):
-            return True
-
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(RuntimeError):
             rule.stage(make_context())
 
@@ -287,17 +220,10 @@ class RuleStateLifecycleTest(unittest.TestCase):
     def test_state_advances_across_committed_frames(self):
         values = {"v": False}
 
-        def transitioner(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(values["v"]))
-
         def evaluator(context, evaluation):
-            return evaluation.result("edge")
+            return evaluation.transition("edge", lambda edge: edge.step(values["v"]))
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         stage = rule.stage(make_context())
         self.assertFalse(stage.result)
         rule.commit(stage)
@@ -312,17 +238,10 @@ class RuleStateLifecycleTest(unittest.TestCase):
     def test_stage_without_commit_does_not_advance_state(self):
         values = {"v": False}
 
-        def transitioner(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(values["v"]))
-
         def evaluator(context, evaluation):
-            return evaluation.result("edge")
+            return evaluation.transition("edge", lambda edge: edge.step(values["v"]))
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         rule.stage(make_context())
         values["v"] = True
         stage = rule.stage(make_context())
@@ -333,17 +252,12 @@ class RuleStateLifecycleTest(unittest.TestCase):
         values = {"v": False}
 
         def build():
-            def transitioner(context, evaluation):
-                evaluation.transition("edge", lambda edge: edge.step(values["v"]))
-
             def evaluator(context, evaluation):
-                return evaluation.result("edge")
+                return evaluation.transition(
+                    "edge", lambda edge: edge.step(values["v"])
+                )
 
-            return make_rule(
-                logic_factories={"edge": RisingEdge},
-                transitioner=transitioner,
-                evaluator=evaluator,
-            )
+            return make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
 
         first = build()
         stage = first.stage(make_context())
@@ -362,19 +276,12 @@ class RuleStateLifecycleTest(unittest.TestCase):
         values = {"v": False}
         mode = {"bad": False}
 
-        def transitioner(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(values["v"]))
-
         def evaluator(context, evaluation):
             if mode["bad"]:
                 raise RuntimeError("boom")
-            return evaluation.result("edge")
+            return evaluation.transition("edge", lambda edge: edge.step(values["v"]))
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
         values["v"] = True
         mode["bad"] = True
@@ -389,25 +296,17 @@ class RuleStateLifecycleTest(unittest.TestCase):
         values = {"v": False}
         mode = {"bad": False}
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             if mode["bad"]:
 
                 def step(edge):
                     edge.step(True)
                     return 1
 
-                evaluation.transition("edge", step)
-            else:
-                evaluation.transition("edge", lambda edge: edge.step(values["v"]))
+                return evaluation.transition("edge", step)
+            return evaluation.transition("edge", lambda edge: edge.step(values["v"]))
 
-        def evaluator(context, evaluation):
-            return evaluation.result("edge")
-
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
         values["v"] = True
         mode["bad"] = True
@@ -424,17 +323,14 @@ class RuleNodeIndependenceTest(unittest.TestCase):
         values = {"a": True, "b": True}
         fired = []
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             fired_a = evaluation.transition("a", lambda edge: edge.step(values["a"]))
             fired_b = evaluation.transition("b", lambda edge: edge.step(values["b"]))
             fired.append((fired_a, fired_b))
-
-        def evaluator(context, evaluation):
-            return evaluation.result("a") or evaluation.result("b")
+            return fired_a or fired_b
 
         rule = make_rule(
             logic_factories={"a": RisingEdge, "b": RisingEdge},
-            transitioner=transitioner,
             evaluator=evaluator,
         )
         rule.commit(rule.stage(make_context()))
@@ -447,21 +343,15 @@ class RuleNodeIndependenceTest(unittest.TestCase):
     def test_explicitly_shared_node_transitions_once_per_frame(self):
         seen = []
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             def step(edge):
                 seen.append(edge)
                 return edge.step(True)
 
             evaluation.transition("shared", step)
-
-        def evaluator(context, evaluation):
             return evaluation.result("shared") or evaluation.result("shared")
 
-        rule = make_rule(
-            logic_factories={"shared": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"shared": RisingEdge}, evaluator=evaluator)
         rule.commit(rule.stage(make_context()))
         self.assertEqual(len(seen), 1)
 
@@ -474,34 +364,29 @@ class RuleStageTest(unittest.TestCase):
         self.assertFalse(unfired.stage(make_context()).result)
 
     def test_non_bool_evaluator_return_rejected(self):
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=lambda context, evaluation: evaluation.transition(
-                "edge", lambda edge: edge.step(False)
-            ),
-            evaluator=lambda context, evaluation: 1,
-        )
+        def evaluator(context, evaluation):
+            evaluation.transition("edge", lambda edge: edge.step(False))
+            return 1
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(TypeError):
             rule.stage(make_context())
 
     def test_numpy_bool_evaluator_return_rejected(self):
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=lambda context, evaluation: evaluation.transition(
-                "edge", lambda edge: edge.step(False)
-            ),
-            evaluator=lambda context, evaluation: np.True_,
-        )
+        def evaluator(context, evaluation):
+            evaluation.transition("edge", lambda edge: edge.step(False))
+            return np.True_
+
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         with self.assertRaises(TypeError):
             rule.stage(make_context())
 
     def test_stage_exposes_only_opaque_result(self):
         rule = make_rule(
             logic_factories={"edge": RisingEdge},
-            transitioner=lambda context, evaluation: evaluation.transition(
+            evaluator=lambda context, evaluation: evaluation.transition(
                 "edge", lambda edge: edge.step(False)
             ),
-            evaluator=lambda context, evaluation: evaluation.result("edge"),
         )
         stage = rule.stage(make_context())
         self.assertFalse(stage.result)
@@ -542,15 +427,13 @@ class RuleCommitTest(unittest.TestCase):
 
 class LogicIntegrationTest(unittest.TestCase):
     def test_hold_uses_context_time(self):
-        def transitioner(context, evaluation):
-            evaluation.transition("hold", lambda hold: hold.step(True, context.now))
-
         def evaluator(context, evaluation):
-            return evaluation.result("hold")
+            return evaluation.transition(
+                "hold", lambda hold: hold.step(True, context.now)
+            )
 
         rule = make_rule(
             logic_factories={"hold": lambda: Hold(duration_nanoseconds=10)},
-            transitioner=transitioner,
             evaluator=evaluator,
         )
         stage = rule.stage(make_context(now_nanoseconds=0))
@@ -564,19 +447,18 @@ class LogicIntegrationTest(unittest.TestCase):
         rule.commit(stage)
 
 
-class RuleResultPhaseShortCircuitTest(unittest.TestCase):
+class RuleStatefulGateCompositionTest(unittest.TestCase):
     def test_all_hold_with_false_gate_still_advances_hold(self):
         gate = {"value": False}
 
-        def transitioner(context, evaluation):
-            evaluation.transition("hold", lambda hold: hold.step(True, context.now))
-
         def evaluator(context, evaluation):
-            return All().apply([evaluation.result("hold"), gate["value"]])
+            hold = evaluation.transition(
+                "hold", lambda hold: hold.step(True, context.now)
+            )
+            return All().apply([hold, gate["value"]])
 
         rule = make_rule(
             logic_factories={"hold": lambda: Hold(duration_nanoseconds=10)},
-            transitioner=transitioner,
             evaluator=evaluator,
         )
         stage = rule.stage(make_context(now_nanoseconds=0))
@@ -594,17 +476,14 @@ class RuleResultPhaseShortCircuitTest(unittest.TestCase):
         values = {"b": True}
         gate = {"value": True}
 
-        def transitioner(context, evaluation):
-            evaluation.transition(
+        def evaluator(context, evaluation):
+            hold = evaluation.transition(
                 "hold", lambda hold: hold.step(values["b"], context.now)
             )
-
-        def evaluator(context, evaluation):
-            return All().apply([evaluation.result("hold"), gate["value"]])
+            return All().apply([hold, gate["value"]])
 
         rule = make_rule(
             logic_factories={"hold": lambda: Hold(duration_nanoseconds=10)},
-            transitioner=transitioner,
             evaluator=evaluator,
         )
         stage = rule.stage(make_context(now_nanoseconds=0))
@@ -625,17 +504,11 @@ class RuleResultPhaseShortCircuitTest(unittest.TestCase):
         values = {"x": False}
         gate = {"value": False}
 
-        def transitioner(context, evaluation):
-            evaluation.transition("edge", lambda edge: edge.step(values["x"]))
-
         def evaluator(context, evaluation):
-            return Any().apply([gate["value"], evaluation.result("edge")])
+            edge = evaluation.transition("edge", lambda edge: edge.step(values["x"]))
+            return Any().apply([gate["value"], edge])
 
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
         stage = rule.stage(make_context())
         self.assertFalse(stage.result)
         rule.commit(stage)
@@ -649,77 +522,18 @@ class RuleResultPhaseShortCircuitTest(unittest.TestCase):
         self.assertFalse(stage.result)
         rule.commit(stage)
 
-    def test_result_phase_pure_suffix_skipped_by_all_short_circuit(self):
-        calls = []
-
-        def pure_predicate():
-            calls.append(1)
-            return True
-
-        def transitioner(context, evaluation):
-            evaluation.transition("a", lambda edge: edge.step(False))
-
-        def evaluator(context, evaluation):
-            def values():
-                yield evaluation.result("a")
-                yield pure_predicate()
-
-            return All().apply(values())
-
-        rule = make_rule(
-            logic_factories={"a": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
-        stage = rule.stage(make_context())
-        self.assertFalse(stage.result)
-        self.assertEqual(calls, [])
-
-    def test_result_phase_pure_suffix_skipped_by_any_short_circuit(self):
-        calls = []
-
-        def pure_predicate():
-            calls.append(1)
-            return False
-
-        def transitioner(context, evaluation):
-            evaluation.transition("hold", lambda hold: hold.step(True, context.now))
-
-        def evaluator(context, evaluation):
-            def values():
-                yield evaluation.result("hold")
-                yield pure_predicate()
-
-            return Any().apply(values())
-
-        rule = make_rule(
-            logic_factories={"hold": lambda: Hold(duration_nanoseconds=0)},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
-        stage = rule.stage(make_context())
-        self.assertTrue(stage.result)
-        self.assertEqual(calls, [])
-
 
 class DetectorThresholdLogicTest(unittest.TestCase):
     def test_detector_threshold_logic_pipeline(self):
         detector = MeanBrightnessDetector()
         threshold = ScoreThreshold(minimum_score=128.0)
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             result = evaluate(context, detector)
             bright = threshold.apply(result)
-            evaluation.transition("edge", lambda edge: edge.step(bright))
+            return evaluation.transition("edge", lambda edge: edge.step(bright))
 
-        def evaluator(context, evaluation):
-            return evaluation.result("edge")
-
-        rule = make_rule(
-            logic_factories={"edge": RisingEdge},
-            transitioner=transitioner,
-            evaluator=evaluator,
-        )
+        rule = make_rule(logic_factories={"edge": RisingEdge}, evaluator=evaluator)
 
         dark = make_context(image=np.zeros((1, 1), dtype=np.uint8))
         bright = make_context(image=np.full((1, 1), 255, dtype=np.uint8))
@@ -929,19 +743,16 @@ class ThenOrderingTest(unittest.TestCase):
         gate_value = {"value": False}
         pulse_value = {"value": False}
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             gate = evaluation.transition(
                 "gate", lambda node: node.step(gate_value["value"])
             )
             pulse = evaluation.transition(
                 "pulse", lambda node: node.step(pulse_value["value"])
             )
-            evaluation.transition(
+            return evaluation.transition(
                 "then", lambda node: node.step([gate, pulse], context.now)
             )
-
-        def evaluator(context, evaluation):
-            return evaluation.result("then")
 
         rule = make_rule(
             logic_factories={
@@ -949,7 +760,6 @@ class ThenOrderingTest(unittest.TestCase):
                 "pulse": RisingEdge,
                 "then": lambda: Then(step_count=2, within_nanoseconds=1000),
             },
-            transitioner=transitioner,
             evaluator=evaluator,
         )
 
@@ -973,19 +783,16 @@ class ThenOrderingTest(unittest.TestCase):
         gate_value = {"value": False}
         level_value = {"value": False}
 
-        def transitioner(context, evaluation):
+        def evaluator(context, evaluation):
             gate = evaluation.transition(
                 "gate", lambda node: node.step(gate_value["value"])
             )
             level = evaluation.transition(
                 "level", lambda node: node.step(level_value["value"], context.now)
             )
-            evaluation.transition(
+            return evaluation.transition(
                 "then", lambda node: node.step([gate, level], context.now)
             )
-
-        def evaluator(context, evaluation):
-            return evaluation.result("then")
 
         rule = make_rule(
             logic_factories={
@@ -993,7 +800,6 @@ class ThenOrderingTest(unittest.TestCase):
                 "level": lambda: Hold(duration_nanoseconds=0),
                 "then": lambda: Then(step_count=2, within_nanoseconds=1000),
             },
-            transitioner=transitioner,
             evaluator=evaluator,
         )
 

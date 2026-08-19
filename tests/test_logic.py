@@ -31,7 +31,7 @@ class AllTest(unittest.TestCase):
     def test_all_false(self):
         self.assertFalse(All().apply([False, False]))
 
-    def test_stops_at_first_false_without_consuming_rest(self):
+    def test_consumes_all_even_after_false(self):
         consumed = []
 
         def values():
@@ -40,9 +40,9 @@ class AllTest(unittest.TestCase):
                 yield value
 
         self.assertFalse(All().apply(values()))
-        self.assertEqual(consumed, [True, False])
+        self.assertEqual(consumed, [True, False, True, True])
 
-    def test_never_fetches_after_result_determined(self):
+    def test_fetches_past_result_determined(self):
         def values():
             yield True
             yield False
@@ -50,7 +50,8 @@ class AllTest(unittest.TestCase):
                 "All fetched an element after the result was determined"
             )
 
-        self.assertFalse(All().apply(values()))
+        with self.assertRaises(AssertionError):
+            All().apply(values())
 
     def test_non_bool_element_raises(self):
         with self.assertRaises(TypeError):
@@ -60,8 +61,9 @@ class AllTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             All().apply([np.True_, True])  # type: ignore
 
-    def test_invalid_element_after_false_not_consumed(self):
-        self.assertFalse(All().apply([False, "not a bool"]))  # type: ignore
+    def test_invalid_element_after_false_raises(self):
+        with self.assertRaises(TypeError):
+            All().apply([False, "not a bool"])  # type: ignore
 
 
 class AnyTest(unittest.TestCase):
@@ -74,7 +76,7 @@ class AnyTest(unittest.TestCase):
     def test_all_false(self):
         self.assertFalse(Any().apply([False, False]))
 
-    def test_stops_at_first_true_without_consuming_rest(self):
+    def test_consumes_all_even_after_true(self):
         consumed = []
 
         def values():
@@ -83,9 +85,9 @@ class AnyTest(unittest.TestCase):
                 yield value
 
         self.assertTrue(Any().apply(values()))
-        self.assertEqual(consumed, [False, True])
+        self.assertEqual(consumed, [False, True, False, False])
 
-    def test_never_fetches_after_result_determined(self):
+    def test_fetches_past_result_determined(self):
         def values():
             yield False
             yield True
@@ -93,7 +95,8 @@ class AnyTest(unittest.TestCase):
                 "Any fetched an element after the result was determined"
             )
 
-        self.assertTrue(Any().apply(values()))
+        with self.assertRaises(AssertionError):
+            Any().apply(values())
 
     def test_non_bool_element_raises(self):
         with self.assertRaises(TypeError):
@@ -103,8 +106,9 @@ class AnyTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             Any().apply([np.False_, False])  # type: ignore
 
-    def test_invalid_element_after_true_not_consumed(self):
-        self.assertTrue(Any().apply([True, "not a bool"]))  # type: ignore
+    def test_invalid_element_after_true_raises(self):
+        with self.assertRaises(TypeError):
+            Any().apply([True, "not a bool"])  # type: ignore
 
 
 class NotTest(unittest.TestCase):
