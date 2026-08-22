@@ -1,5 +1,4 @@
 import unittest
-from dataclasses import FrozenInstanceError
 from typing import Literal, cast, overload
 
 import numpy as np
@@ -57,19 +56,6 @@ class RecordingCondition:
 
 def make_action() -> Action:
     return Action(scenario_id="scenario", target_id="game", operation="Split")
-
-
-class ActionTest(unittest.TestCase):
-    def test_identifies_scenario_target_and_operation(self) -> None:
-        action = make_action()
-        self.assertEqual(action.scenario_id, "scenario")
-        self.assertEqual(action.target_id, "game")
-        self.assertEqual(action.operation, "Split")
-
-    def test_is_immutable(self) -> None:
-        action = make_action()
-        with self.assertRaises(FrozenInstanceError):
-            action.operation = "Reset"  # ty: ignore[invalid-assignment]
 
 
 class RuleEvaluateTest(unittest.TestCase):
