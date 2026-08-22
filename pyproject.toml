@@ -5,9 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "livesplit-bridge-client",
     "numpy>=2.5.2",
     "opencv-python>=5.0.0.93",
 ]
+
+[tool.uv.sources]
+livesplit-bridge-client = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/livesplit-bridge-client"]
 
 [dependency-groups]
 dev = [
@@ -19,3 +26,7 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ty.rules]
+# grpc_tools generates enum stubs whose protobuf metaclass is opaque to ty.
+conflicting-metaclass = "ignore"

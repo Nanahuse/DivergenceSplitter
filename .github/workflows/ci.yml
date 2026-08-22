@@ -16,12 +16,20 @@ jobs:
         with:
           python-version: "3.14"
       - name: Sync locked environment
-        run: uv sync --locked
+        run: uv sync --locked --all-packages
+      - name: Verify generated Bridge protocol
+        run: |
+          uv run --package livesplit-bridge-client python packages/livesplit-bridge-client/scripts/generate_proto.py
+          test -z "$(git status --porcelain --untracked-files=all -- packages/livesplit-bridge-client/src/livesplit)"
       - name: Check formatting
         run: uv run ruff format --check .
       - name: Lint
         run: uv run ruff check .
       - name: Typecheck
         run: uv run ty check --error-on-warning .
-      - name: Test
+      - name: Test application
         run: uv run pytest -q
+      - name: Test LiveSplit Bridge client
+        run: uv run --package livesplit-bridge-client pytest -q packages/livesplit-bridge-client/tests
+      - name: Build LiveSplit Bridge client
+        run: uv build --package livesplit-bridge-client
