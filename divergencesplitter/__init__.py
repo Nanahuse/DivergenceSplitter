@@ -28,6 +28,13 @@ from divergencesplitter.frame_normalizer import (
     OutputSize,
 )
 from divergencesplitter.frame_source import ErrorAction, FrameSource, FrameSourceState
+from divergencesplitter.livesplit_bridge_adapter import (
+    LiveSplitBridgeConversionError,
+    event_update,
+    snapshot_update,
+    timer_operation_for_action,
+    to_livesplit_snapshot,
+)
 from divergencesplitter.models import (
     DetectionResult,
     Frame,
@@ -77,6 +84,7 @@ __all__ = [
     "Hold",
     "ImageArray",
     "ImageDetector",
+    "LiveSplitBridgeConversionError",
     "LiveSplitSnapshot",
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",
@@ -102,4 +110,8 @@ __all__ = [
     "VideoFileReadBeforeReadyError",
     "VideoFileSource",
     "evaluate",
+    "event_update",
+    "snapshot_update",
+    "timer_operation_for_action",
+    "to_livesplit_snapshot",
 ]
