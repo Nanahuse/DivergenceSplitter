@@ -22,6 +22,7 @@ from divergencesplitter.models import (
     ImageArray,
     MonotonicTime,
 )
+from divergencesplitter.rule import Action, Condition, Rule
 from divergencesplitter.score_threshold import ScoreThreshold
 from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.video_file import (
@@ -34,7 +35,9 @@ from divergencesplitter.video_file import (
 )
 
 __all__ = [
+    "Action",
     "ClipRegion",
+    "Condition",
     "DetectionResult",
     "ErrorAction",
     "Frame",
@@ -51,6 +54,7 @@ __all__ = [
     "MeanBrightnessDetector",
     "MonotonicTime",
     "OutputSize",
+    "Rule",
     "ScoreThreshold",
     "TimeProvider",
     "VideoFileDecodeError",
