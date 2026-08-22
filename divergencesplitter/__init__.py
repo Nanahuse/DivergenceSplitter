@@ -33,9 +33,16 @@ from divergencesplitter.models import (
     Frame,
     FrameContext,
     ImageArray,
+    LiveSplitSnapshot,
+    LiveSplitUpdate,
+    LiveSplitUpdateKind,
     MonotonicTime,
+    RuleDefinition,
+    ScenarioDefinition,
+    TimerPhase,
 )
 from divergencesplitter.rule import Action, Condition, Rule
+from divergencesplitter.scenario_runtime import ScenarioRuntime
 from divergencesplitter.score_threshold import ScoreThreshold
 from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.video_file import (
@@ -70,6 +77,9 @@ __all__ = [
     "Hold",
     "ImageArray",
     "ImageDetector",
+    "LiveSplitSnapshot",
+    "LiveSplitUpdate",
+    "LiveSplitUpdateKind",
     "MeanBrightnessDetector",
     "MonotonicTime",
     "Not",
@@ -78,9 +88,13 @@ __all__ = [
     "OutputSize",
     "RisingEdge",
     "Rule",
+    "RuleDefinition",
+    "ScenarioDefinition",
+    "ScenarioRuntime",
     "ScoreThreshold",
     "Then",
     "TimeProvider",
+    "TimerPhase",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
     "VideoFileError",
