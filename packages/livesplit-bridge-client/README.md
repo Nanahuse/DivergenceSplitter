@@ -5,18 +5,30 @@ repositoryに置かれますが、uv workspaceの独立projectとしてinstall�
 
 ## Protocol authority
 
-同梱schemaは
-[`Nanahuse/LiveSplit.Bridge`](https://github.com/Nanahuse/LiveSplit.Bridge)
-のcommit `7bcb4ec3896a3fb95099da8f101e4565c3f3daf8`から同期しています。
-更新時は`proto/`を正本commitから同期し、次を実行してgenerated filesとlockを更新します。
+protocol schemaの唯一の正本はGit submodule
+[`external/LiveSplit.Bridge`](../../external/LiveSplit.Bridge)の`proto/`です。現在のgitlinkは
+commit `a55747d500eaa6d1e79dd95bf5f799c3da81376a`を指します。checkout後は次のように
+submoduleを初期化してください。更新や再調査時も同じrepositoryを参照します。
 
 ```powershell
-uv run --package livesplit-bridge-client python packages/livesplit-bridge-client/scripts/generate_proto.py
+git submodule update --init --recursive
+git -C external/LiveSplit.Bridge fetch origin main
+git -C external/LiveSplit.Bridge checkout origin/main
 uv lock
 ```
 
-runtimeでは`protoc`を必要としません。protobuf generated typesは内部実装であり、
-`livesplit_bridge_client`の公開APIには含めません。
+protobuf codeはuv syncやwheel build時に正本schemaから生成されます。sdist buildでは
+正本schemaをsdistへ取り込み、そこからwheelをbuildする際にcodeを生成します。生成された
+`src/livesplit/`はbuild artifactでGit管理しません。手動で開発用生成物を作る場合は次を
+実行できます。
+
+```powershell
+uv run --package livesplit-bridge-client python packages/livesplit-bridge-client/proto_codegen.py
+```
+
+runtimeでは`protoc`を必要としません。generated typesは内部実装であり、
+`livesplit_bridge_client`の公開APIには含めません。sdistには正本submoduleから取得した
+schemaを含め、sdistからwheelをbuildする場合も同じschemaから生成します。
 
 ## Usage
 

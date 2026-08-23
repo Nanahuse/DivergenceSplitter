@@ -209,6 +209,9 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# LiveSplit.Bridge protobuf build artifacts
+packages/livesplit-bridge-client/src/livesplit/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

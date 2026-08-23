@@ -27,6 +27,12 @@ dev = [
 pythonpath = ["."]
 testpaths = ["tests"]
 
+[tool.ruff]
+extend-exclude = ["external"]
+
+[tool.ty.src]
+exclude = ["external"]
+
 [tool.ty.rules]
 # grpc_tools generates enum stubs whose protobuf metaclass is opaque to ty.
 conflicting-metaclass = "ignore"

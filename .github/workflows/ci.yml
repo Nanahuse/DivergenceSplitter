@@ -12,15 +12,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
       - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           python-version: "3.14"
       - name: Sync locked environment
         run: uv sync --locked --all-packages
-      - name: Verify generated Bridge protocol
+      - name: Verify Bridge protocol authority
         run: |
-          uv run --package livesplit-bridge-client python packages/livesplit-bridge-client/scripts/generate_proto.py
-          test -z "$(git status --porcelain --untracked-files=all -- packages/livesplit-bridge-client/src/livesplit)"
+          test -f external/LiveSplit.Bridge/proto/livesplit/bridge/v1/bridge.proto
+          test -z "$(git ls-files packages/livesplit-bridge-client/src/livesplit)"
       - name: Check formatting
         run: uv run ruff format --check .
       - name: Lint

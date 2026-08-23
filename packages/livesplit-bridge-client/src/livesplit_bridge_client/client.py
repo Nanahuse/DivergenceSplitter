@@ -6,8 +6,8 @@ from typing import Self
 
 import zmq
 from google.protobuf.message import DecodeError
-
 from livesplit.bridge.v1 import bridge_pb2, common_pb2
+
 from livesplit_bridge_client._mapping import (
     attach_result,
     bridge_event,

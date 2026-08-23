@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from google.protobuf.message import Message
-
 from livesplit.bridge.v1 import bridge_pb2, common_pb2
+
 from livesplit_bridge_client.errors import BridgeProtocolError
 from livesplit_bridge_client.models import (
     AttachResult,

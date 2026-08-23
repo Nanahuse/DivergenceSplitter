@@ -8,8 +8,8 @@ from contextlib import contextmanager
 
 import pytest
 import zmq
-
 from livesplit.bridge.v1 import bridge_pb2, common_pb2
+
 from livesplit_bridge_client import (
     BridgeClientError,
     BridgeEventType,
