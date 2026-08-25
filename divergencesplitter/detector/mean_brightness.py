@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 
 from divergencesplitter.detector.common import frame_mean
-from divergencesplitter.models import DetectionResult, FrameContext
+from divergencesplitter.detector.models import DetectionResult
+from divergencesplitter.frame.models import FrameContext
 
 
 @dataclass(frozen=True)

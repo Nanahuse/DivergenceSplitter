@@ -12,8 +12,8 @@ from enum import Enum, auto
 from types import TracebackType
 from typing import Protocol, Self, TypeVar
 
-from divergencesplitter.frame_normalizer import FrameNormalizer
-from divergencesplitter.models import Frame
+from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.normalizer import FrameNormalizer
 
 ErrorT = TypeVar("ErrorT")
 

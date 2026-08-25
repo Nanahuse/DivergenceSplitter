@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
-from divergencesplitter.models import FrameContext
+from divergencesplitter.condition.interface import Condition
+from divergencesplitter.frame.models import FrameContext
 from divergencesplitter.rule.action import Action
-from divergencesplitter.rule.interface import Condition
 
 
 @dataclass

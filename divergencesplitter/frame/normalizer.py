@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import cv2
 
-from divergencesplitter.models import Frame
+from divergencesplitter.frame.models import Frame
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 from typing import Literal, Protocol, overload
 
-from divergencesplitter.models import FrameContext
+from divergencesplitter.frame.models import FrameContext
 
 
 class Condition(Protocol):

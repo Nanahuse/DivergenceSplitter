@@ -3,7 +3,8 @@ from typing import Literal, cast, overload
 
 import numpy as np
 
-from divergencesplitter.models import Frame, FrameContext, MonotonicTime
+from divergencesplitter.clock import MonotonicTime
+from divergencesplitter.frame.models import Frame, FrameContext
 from divergencesplitter.rule import Action, Rule
 
 EPOCH = MonotonicTime(nanoseconds=0)

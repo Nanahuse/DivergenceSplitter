@@ -2,7 +2,8 @@ import cv2
 import numpy as np
 import pytest
 
-from divergencesplitter.frame_normalizer import (
+from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.normalizer import (
     ClipRegion,
     FrameClipError,
     FrameNormalizationError,
@@ -10,7 +11,6 @@ from divergencesplitter.frame_normalizer import (
     FrameResizeError,
     OutputSize,
 )
-from divergencesplitter.models import Frame
 
 SIZE = (16, 16)
 

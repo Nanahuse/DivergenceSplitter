@@ -171,13 +171,13 @@ class ModelValidationTest(unittest.TestCase):
         definition = make_rule(RecordingCondition(False), name="")
         self.assertIsNone(definition.name)
         self.assertTrue(
-            definition.source_path.endswith("tests/test_scenario_runtime.py")
+            definition.source_path.endswith("tests/scenario/test_runtime.py")
         )
         self.assertGreater(definition.source_line, 0)
 
     def test_rule_definition_falls_back_when_source_is_unavailable(self) -> None:
         with patch(
-            "divergencesplitter.models.inspect.currentframe",
+            "divergencesplitter.scenario.definition.inspect.currentframe",
             return_value=None,
         ):
             definition = make_rule(RecordingCondition(False))

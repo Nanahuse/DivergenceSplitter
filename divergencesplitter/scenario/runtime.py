@@ -1,16 +1,15 @@
 import logging
 from dataclasses import dataclass
 
-from divergencesplitter.models import (
-    FrameContext,
+from divergencesplitter.frame.models import FrameContext
+from divergencesplitter.livesplit.models import (
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
-    RuleDefinition,
-    ScenarioDefinition,
     TimerPhase,
 )
 from divergencesplitter.rule import Action, Rule
+from divergencesplitter.scenario.definition import RuleDefinition, ScenarioDefinition
 
 SPLIT_TRANSITION_TIMEOUT_NANOSECONDS = 1_000_000_000
 

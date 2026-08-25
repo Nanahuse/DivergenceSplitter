@@ -6,7 +6,8 @@ docstring.
 
 from typing import Protocol
 
-from divergencesplitter.models import DetectionResult, FrameContext
+from divergencesplitter.detector.models import DetectionResult
+from divergencesplitter.frame.models import FrameContext
 
 
 class ImageDetector(Protocol):

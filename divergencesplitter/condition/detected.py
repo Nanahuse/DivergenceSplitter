@@ -1,6 +1,6 @@
 from divergencesplitter.condition._base import ConditionBase
 from divergencesplitter.detector import ImageDetector, evaluate
-from divergencesplitter.models import FrameContext
+from divergencesplitter.frame.models import FrameContext
 
 
 class Detected(ConditionBase):

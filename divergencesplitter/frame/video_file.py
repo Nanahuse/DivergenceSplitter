@@ -11,13 +11,13 @@ from typing import Self
 
 import cv2
 
-from divergencesplitter.frame_normalizer import (
+from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.normalizer import (
     ClipRegion,
     FrameNormalizer,
     OutputSize,
 )
-from divergencesplitter.frame_source import ErrorAction, FrameSourceState
-from divergencesplitter.models import Frame
+from divergencesplitter.frame.source import ErrorAction, FrameSourceState
 
 DEFAULT_FPS = 30.0
 

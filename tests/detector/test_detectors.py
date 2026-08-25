@@ -3,6 +3,7 @@ from typing import cast
 
 import numpy as np
 
+from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.detector.common import (
     evaluate,
     frame_mean,
@@ -12,12 +13,8 @@ from divergencesplitter.detector.common import (
 from divergencesplitter.detector.frame_difference import FrameDifferenceDetector
 from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
-from divergencesplitter.models import (
-    DetectionResult,
-    Frame,
-    FrameContext,
-    MonotonicTime,
-)
+from divergencesplitter.detector.models import DetectionResult
+from divergencesplitter.frame.models import Frame, FrameContext
 
 DARK = np.zeros((2, 3), dtype=np.uint8)
 BRIGHT = np.full((2, 3), 255, dtype=np.uint8)
