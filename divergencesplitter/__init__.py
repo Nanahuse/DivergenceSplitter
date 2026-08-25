@@ -43,7 +43,6 @@ from divergencesplitter.models import (
 )
 from divergencesplitter.rule import Action, Condition, Rule
 from divergencesplitter.scenario_runtime import ScenarioRuntime
-from divergencesplitter.score_threshold import ScoreThreshold
 from divergencesplitter.time_provider import TimeProvider
 from divergencesplitter.video_file import (
     VideoFileDecodeError,
@@ -91,7 +90,6 @@ __all__ = [
     "RuleDefinition",
     "ScenarioDefinition",
     "ScenarioRuntime",
-    "ScoreThreshold",
     "Then",
     "TimeProvider",
     "TimerPhase",
