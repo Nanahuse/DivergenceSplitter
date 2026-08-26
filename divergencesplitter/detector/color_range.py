@@ -5,16 +5,12 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from divergencesplitter.detector._immutable import ImmutableDetector
-from divergencesplitter.detector.models import (
-    DetectionResult,
-    Pixel,
-    freeze_pixel_vector,
-)
+from divergencesplitter.detector._configured import ConfiguredDetector
+from divergencesplitter.detector.models import ColorRangeConfig, DetectionResult
 from divergencesplitter.frame.models import FrameContext
 
 
-class ColorRangeDetector(ImmutableDetector):
+class ColorRangeDetector(ConfiguredDetector[ColorRangeConfig]):
     """Pixel-ratio detector using ``cv2.inRange`` (inclusive bounds).
 
     Reports the fraction of frame pixels whose value lies within
@@ -23,32 +19,11 @@ class ColorRangeDetector(ImmutableDetector):
     single-channel frame) or ``3`` (a three-channel frame).
     """
 
-    __slots__ = ("lower", "upper")
-
-    lower: tuple[Pixel, ...]
-    upper: tuple[Pixel, ...]
-
-    def __init__(self, lower: tuple[Pixel, ...], upper: tuple[Pixel, ...]) -> None:
-        lower = freeze_pixel_vector(lower)
-        upper = freeze_pixel_vector(upper)
-        if len(lower) not in (1, 3):
-            raise ValueError(f"color bound length must be 1 or 3, got {len(lower)}")
-        if len(lower) != len(upper):
-            raise ValueError(
-                f"color bound length mismatch: {len(lower)} != {len(upper)}"
-            )
-        for lo, hi in zip(lower, upper):
-            if lo > hi:
-                raise ValueError(f"lower bound exceeds upper bound: {lower} > {upper}")
-        object.__setattr__(self, "lower", lower)
-        object.__setattr__(self, "upper", upper)
-
-    def _configuration_key(self) -> tuple[object, ...]:
-        return (self.lower, self.upper)
+    __slots__ = ()
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = context.frame.image
-        channels = len(self.lower)
+        channels = len(self.config.lower)
         if frame.ndim == 2:
             frame_channels = 1
         elif frame.ndim == 3 and frame.shape[2] in (1, 3):
@@ -61,6 +36,6 @@ class ColorRangeDetector(ImmutableDetector):
             )
         if not np.all(np.isfinite(frame)):
             raise ValueError("frame values must be finite")
-        mask = cv2.inRange(frame, self.lower, self.upper)
+        mask = cv2.inRange(frame, self.config.lower, self.config.upper)
         ratio = float(np.count_nonzero(mask)) / mask.size
         return DetectionResult(score=ratio)

@@ -11,6 +11,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
 
+import numpy as np
+
 Pixel = int | float
 ConfigImage = Sequence[Sequence[Pixel]] | Sequence[Sequence[Sequence[Pixel]]]
 FrozenConfigImage = (
@@ -27,6 +29,77 @@ class DetectionResult:
     """
 
     score: float
+
+
+@dataclass(frozen=True)
+class MeanAbsoluteSimilarityConfig:
+    """Configuration for mean absolute similarity detection."""
+
+    reference: FrozenConfigImage
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
+
+
+@dataclass(frozen=True)
+class TemplateMatchConfig:
+    """Configuration for normalized template matching."""
+
+    reference: FrozenConfigImage
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
+        template = np.asarray(self.reference, dtype=np.float32)
+        if np.all(np.ptp(template, axis=(0, 1)) == 0):
+            raise ValueError("template must contain spatial variation")
+
+
+@dataclass(frozen=True)
+class ColorRangeConfig:
+    """Inclusive color bounds used by color-range detection."""
+
+    lower: tuple[Pixel, ...]
+    upper: tuple[Pixel, ...]
+
+    def __post_init__(self) -> None:
+        lower = freeze_pixel_vector(self.lower)
+        upper = freeze_pixel_vector(self.upper)
+        if type(self.lower) is not tuple or type(self.upper) is not tuple:
+            raise ValueError("color bounds must be tuples")
+        if len(lower) not in (1, 3):
+            raise ValueError(f"color bound length must be 1 or 3, got {len(lower)}")
+        if len(lower) != len(upper):
+            raise ValueError(
+                f"color bound length mismatch: {len(lower)} != {len(upper)}"
+            )
+        for lo, hi in zip(lower, upper):
+            if lo > hi:
+                raise ValueError(f"lower bound exceeds upper bound: {lower} > {upper}")
+
+
+@dataclass(frozen=True)
+class PhaseCorrelationConfig:
+    """Configuration for phase-correlation detection."""
+
+    reference: FrozenConfigImage
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
+
+
+@dataclass(frozen=True)
+class DifferenceHashSimilarityConfig:
+    """Configuration for difference-hash similarity detection."""
+
+    reference: FrozenConfigImage
+    hash_size: int = 8
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
+        if type(self.hash_size) is not int or self.hash_size <= 0:
+            raise ValueError(
+                f"hash_size must be a positive integer: {self.hash_size!r}"
+            )
 
 
 def freeze_config_image(image: ConfigImage) -> FrozenConfigImage:
@@ -53,6 +126,22 @@ def freeze_pixel_vector(values: Sequence[Pixel]) -> tuple[Pixel, ...]:
     if len(frozen) == 0:
         raise ValueError("pixel vector must not be empty")
     return frozen
+
+
+def _validate_frozen_config_image(image: FrozenConfigImage) -> None:
+    """Validate an image and require its complete structure to use tuples."""
+    freeze_config_image(image)
+    if not _contains_only_tuples(image):
+        raise ValueError("reference image must use nested tuples")
+
+
+def _contains_only_tuples(value: object) -> bool:
+    if type(value) is not tuple:
+        return False
+    return all(
+        type(item) is int or type(item) is float or _contains_only_tuples(item)
+        for item in value
+    )
 
 
 def _freeze_2d(image: Sequence[Sequence[Pixel]]) -> tuple[tuple[Pixel, ...], ...]:

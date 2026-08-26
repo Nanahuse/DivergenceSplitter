@@ -7,17 +7,13 @@ import math
 import cv2
 import numpy as np
 
-from divergencesplitter.detector._immutable import ImmutableDetector
+from divergencesplitter.detector._configured import ConfiguredDetector
 from divergencesplitter.detector.common import frame_gray, to_gray
-from divergencesplitter.detector.models import (
-    ConfigImage,
-    DetectionResult,
-    freeze_config_image,
-)
+from divergencesplitter.detector.models import DetectionResult, PhaseCorrelationConfig
 from divergencesplitter.frame.models import FrameContext
 
 
-class PhaseCorrelationDetector(ImmutableDetector):
+class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
     """Phase-correlation detector.
 
     Converts the frame and ``reference`` to grayscale float32 and reports the
@@ -30,19 +26,11 @@ class PhaseCorrelationDetector(ImmutableDetector):
     positional equality.
     """
 
-    __slots__ = ("reference",)
-
-    reference: ConfigImage
-
-    def __init__(self, reference: ConfigImage) -> None:
-        object.__setattr__(self, "reference", freeze_config_image(reference))
-
-    def _configuration_key(self) -> tuple[object, ...]:
-        return (self.reference,)
+    __slots__ = ()
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = frame_gray(context)
-        reference = to_gray(np.asarray(self.reference))
+        reference = to_gray(np.asarray(self.config.reference))
         if frame.shape != reference.shape:
             raise ValueError(
                 f"shape mismatch: frame {frame.shape} != reference {reference.shape}"

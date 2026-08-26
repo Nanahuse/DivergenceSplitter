@@ -7,16 +7,12 @@ import math
 import cv2
 import numpy as np
 
-from divergencesplitter.detector._immutable import ImmutableDetector
-from divergencesplitter.detector.models import (
-    ConfigImage,
-    DetectionResult,
-    freeze_config_image,
-)
+from divergencesplitter.detector._configured import ConfiguredDetector
+from divergencesplitter.detector.models import DetectionResult, TemplateMatchConfig
 from divergencesplitter.frame.models import FrameContext
 
 
-class TemplateMatchDetector(ImmutableDetector):
+class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
     """Normalized-cross-correlation template matcher.
 
     Slides ``reference`` over the frame and reports the maximum
@@ -25,23 +21,11 @@ class TemplateMatchDetector(ImmutableDetector):
     channel layout and be no larger than the frame in either dimension.
     """
 
-    __slots__ = ("reference",)
-
-    reference: ConfigImage
-
-    def __init__(self, reference: ConfigImage) -> None:
-        reference = freeze_config_image(reference)
-        template = np.asarray(reference, dtype=np.float32)
-        if np.all(np.ptp(template, axis=(0, 1)) == 0):
-            raise ValueError("template must contain spatial variation")
-        object.__setattr__(self, "reference", reference)
-
-    def _configuration_key(self) -> tuple[object, ...]:
-        return (self.reference,)
+    __slots__ = ()
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = np.asarray(context.frame.image, dtype=np.float32)
-        template = np.asarray(self.reference, dtype=np.float32)
+        template = np.asarray(self.config.reference, dtype=np.float32)
         if not np.all(np.isfinite(frame)):
             raise ValueError("frame values must be finite")
         if frame.ndim != template.ndim:

@@ -14,7 +14,16 @@ from divergencesplitter.detector.difference_hash import (
 from divergencesplitter.detector.mean_absolute_similarity import (
     MeanAbsoluteSimilarityDetector,
 )
-from divergencesplitter.detector.models import ConfigImage, freeze_config_image
+from divergencesplitter.detector.models import (
+    ColorRangeConfig,
+    ConfigImage,
+    DifferenceHashSimilarityConfig,
+    FrozenConfigImage,
+    MeanAbsoluteSimilarityConfig,
+    PhaseCorrelationConfig,
+    TemplateMatchConfig,
+    freeze_config_image,
+)
 from divergencesplitter.detector.phase_correlation import PhaseCorrelationDetector
 from divergencesplitter.detector.template_match import TemplateMatchDetector
 from divergencesplitter.frame.models import Frame, FrameContext
@@ -27,24 +36,30 @@ def make_context(image: np.ndarray) -> FrameContext:
     return FrameContext(frame=Frame(image=image), now=EPOCH)
 
 
+def assign_attribute(target: object, name: str, value: object) -> None:
+    setattr(target, name, value)
+
+
 class TemplateMatchDetectorTest(unittest.TestCase):
     def test_finds_template_at_an_offset(self) -> None:
         frame = np.zeros((5, 6), dtype=np.uint8)
         frame[2:4, 3:5] = np.asarray(PATTERN, dtype=np.uint8)
-        score = evaluate(make_context(frame), TemplateMatchDetector(PATTERN)).score
+        score = evaluate(
+            make_context(frame), TemplateMatchDetector(TemplateMatchConfig(PATTERN))
+        ).score
         self.assertAlmostEqual(score, 1.0)
 
     def test_rejects_constant_template(self) -> None:
         with self.assertRaises(ValueError):
-            TemplateMatchDetector(((1, 1), (1, 1)))
+            TemplateMatchConfig(((1, 1), (1, 1)))
 
     def test_rejects_oversized_template(self) -> None:
-        detector = TemplateMatchDetector(PATTERN)
+        detector = TemplateMatchDetector(TemplateMatchConfig(PATTERN))
         with self.assertRaises(ValueError):
             evaluate(make_context(np.zeros((1, 2), dtype=np.uint8)), detector)
 
     def test_rejects_channel_mismatch(self) -> None:
-        detector = TemplateMatchDetector(PATTERN)
+        detector = TemplateMatchDetector(TemplateMatchConfig(PATTERN))
         with self.assertRaises(ValueError):
             evaluate(make_context(np.zeros((4, 4, 3), dtype=np.uint8)), detector)
 
@@ -52,24 +67,26 @@ class TemplateMatchDetectorTest(unittest.TestCase):
 class ColorRangeDetectorTest(unittest.TestCase):
     def test_bounds_are_inclusive_and_score_is_pixel_ratio(self) -> None:
         frame = np.array([[0, 10], [20, 30]], dtype=np.uint8)
-        detector = ColorRangeDetector(lower=(10,), upper=(20,))
+        detector = ColorRangeDetector(ColorRangeConfig(lower=(10,), upper=(20,)))
         self.assertEqual(evaluate(make_context(frame), detector).score, 0.5)
 
     def test_three_channel_range(self) -> None:
         frame = np.array([[[10, 20, 30], [11, 21, 31]]], dtype=np.uint8)
-        detector = ColorRangeDetector(lower=(10, 20, 30), upper=(10, 20, 30))
+        detector = ColorRangeDetector(
+            ColorRangeConfig(lower=(10, 20, 30), upper=(10, 20, 30))
+        )
         self.assertEqual(evaluate(make_context(frame), detector).score, 0.5)
 
     def test_rejects_invalid_bounds(self) -> None:
         with self.assertRaises(ValueError):
-            ColorRangeDetector(lower=(2,), upper=(1,))
+            ColorRangeConfig(lower=(2,), upper=(1,))
         with self.assertRaises(ValueError):
-            ColorRangeDetector(lower=(0, 0), upper=(1, 1))
+            ColorRangeConfig(lower=(0, 0), upper=(1, 1))
         with self.assertRaises(ValueError):
-            ColorRangeDetector(lower=(0,), upper=(1, 1, 1))
+            ColorRangeConfig(lower=(0,), upper=(1, 1, 1))
 
     def test_rejects_channel_mismatch(self) -> None:
-        detector = ColorRangeDetector(lower=(0,), upper=(255,))
+        detector = ColorRangeDetector(ColorRangeConfig(lower=(0,), upper=(255,)))
         with self.assertRaises(ValueError):
             evaluate(make_context(np.zeros((2, 2, 3), dtype=np.uint8)), detector)
 
@@ -79,7 +96,9 @@ class PhaseCorrelationDetectorTest(unittest.TestCase):
         reference = np.zeros((16, 16), dtype=np.float32)
         reference[3:7, 4:9] = np.arange(20, dtype=np.float32).reshape(4, 5)
         shifted = np.roll(reference, shift=(3, -2), axis=(0, 1))
-        detector = PhaseCorrelationDetector(reference.tolist())
+        detector = PhaseCorrelationDetector(
+            PhaseCorrelationConfig(freeze_config_image(reference.tolist()))
+        )
         score = evaluate(make_context(shifted), detector).score
         self.assertGreater(score, 0.9)
 
@@ -88,16 +107,20 @@ class PhaseCorrelationDetectorTest(unittest.TestCase):
         color = np.repeat(gray[:, :, None], 3, axis=2)
         color_score = evaluate(
             make_context(color),
-            PhaseCorrelationDetector(color.tolist()),
+            PhaseCorrelationDetector(
+                PhaseCorrelationConfig(freeze_config_image(color.tolist()))
+            ),
         ).score
         gray_score = evaluate(
             make_context(gray),
-            PhaseCorrelationDetector(gray.tolist()),
+            PhaseCorrelationDetector(
+                PhaseCorrelationConfig(freeze_config_image(gray.tolist()))
+            ),
         ).score
         self.assertAlmostEqual(color_score, gray_score)
 
     def test_rejects_shape_mismatch(self) -> None:
-        detector = PhaseCorrelationDetector(PATTERN)
+        detector = PhaseCorrelationDetector(PhaseCorrelationConfig(PATTERN))
         with self.assertRaises(ValueError):
             evaluate(make_context(np.zeros((3, 3), dtype=np.uint8)), detector)
 
@@ -107,22 +130,28 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
         increasing = np.tile(np.arange(9, dtype=np.uint8), (8, 1))
         decreasing = increasing[:, ::-1].copy()
         detector = DifferenceHashSimilarityDetector(
-            increasing.tolist(),
-            hash_size=8,
+            DifferenceHashSimilarityConfig(
+                freeze_config_image(increasing.tolist()),
+                hash_size=8,
+            )
         )
         self.assertEqual(evaluate(make_context(increasing), detector).score, 1.0)
         self.assertEqual(evaluate(make_context(decreasing), detector).score, 0.0)
 
     def test_rejects_invalid_hash_size(self) -> None:
         with self.assertRaises(ValueError):
-            DifferenceHashSimilarityDetector(PATTERN, hash_size=0)
+            DifferenceHashSimilarityConfig(PATTERN, hash_size=0)
         with self.assertRaises(ValueError):
-            DifferenceHashSimilarityDetector(PATTERN, hash_size=True)
+            DifferenceHashSimilarityConfig(PATTERN, hash_size=True)
 
     def test_frame_hash_is_shared_by_hash_size(self) -> None:
         frame = np.tile(np.arange(9, dtype=np.uint8), (8, 1))
-        first = DifferenceHashSimilarityDetector(frame.tolist(), hash_size=8)
-        second = DifferenceHashSimilarityDetector(frame[:, ::-1].tolist(), hash_size=8)
+        first = DifferenceHashSimilarityDetector(
+            DifferenceHashSimilarityConfig(freeze_config_image(frame.tolist()))
+        )
+        second = DifferenceHashSimilarityDetector(
+            DifferenceHashSimilarityConfig(freeze_config_image(frame[:, ::-1].tolist()))
+        )
         with patch(
             "divergencesplitter.detector.common.dhash_bits",
             wraps=__import__(
@@ -138,6 +167,19 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
 
 
 class ConfigImageTest(unittest.TestCase):
+    def test_detector_configurations_are_data_classes(self) -> None:
+        config_types = (
+            MeanAbsoluteSimilarityConfig,
+            TemplateMatchConfig,
+            ColorRangeConfig,
+            PhaseCorrelationConfig,
+            DifferenceHashSimilarityConfig,
+        )
+        for config_type in config_types:
+            with self.subTest(config_type=config_type):
+                self.assertTrue(is_dataclass(config_type))
+                self.assertFalse(hasattr(config_type, "detect"))
+
     def test_detector_implementations_are_not_dataclasses(self) -> None:
         detector_types = (
             MeanAbsoluteSimilarityDetector,
@@ -150,50 +192,57 @@ class ConfigImageTest(unittest.TestCase):
             with self.subTest(detector_type=detector_type):
                 self.assertFalse(is_dataclass(detector_type))
 
-    def test_detector_implementations_are_immutable_value_objects(self) -> None:
+    def test_detector_implementations_compare_by_configuration(self) -> None:
         equivalent_pairs = (
             (
-                MeanAbsoluteSimilarityDetector(PATTERN),
-                MeanAbsoluteSimilarityDetector(PATTERN),
-                "reference",
+                MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(PATTERN)),
+                MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(PATTERN)),
             ),
             (
-                TemplateMatchDetector(PATTERN),
-                TemplateMatchDetector(PATTERN),
-                "reference",
+                TemplateMatchDetector(TemplateMatchConfig(PATTERN)),
+                TemplateMatchDetector(TemplateMatchConfig(PATTERN)),
             ),
             (
-                ColorRangeDetector((0,), (255,)),
-                ColorRangeDetector((0,), (255,)),
-                "lower",
+                ColorRangeDetector(ColorRangeConfig((0,), (255,))),
+                ColorRangeDetector(ColorRangeConfig((0,), (255,))),
             ),
             (
-                PhaseCorrelationDetector(PATTERN),
-                PhaseCorrelationDetector(PATTERN),
-                "reference",
+                PhaseCorrelationDetector(PhaseCorrelationConfig(PATTERN)),
+                PhaseCorrelationDetector(PhaseCorrelationConfig(PATTERN)),
             ),
             (
-                DifferenceHashSimilarityDetector(PATTERN),
-                DifferenceHashSimilarityDetector(PATTERN),
-                "hash_size",
+                DifferenceHashSimilarityDetector(
+                    DifferenceHashSimilarityConfig(PATTERN)
+                ),
+                DifferenceHashSimilarityDetector(
+                    DifferenceHashSimilarityConfig(PATTERN)
+                ),
             ),
         )
-        for first, second, attribute in equivalent_pairs:
+        for first, second in equivalent_pairs:
             with self.subTest(detector_type=type(first)):
                 self.assertEqual(first, second)
                 self.assertEqual(hash(first), hash(second))
                 with self.assertRaises(AttributeError):
-                    setattr(first, attribute, None)
+                    assign_attribute(first, "config", None)
 
-    def test_list_reference_becomes_hashable_and_shares_detection_cache(self) -> None:
-        reference = [[0, 0], [0, 0]]
-        detector = MeanAbsoluteSimilarityDetector(reference)
-        equivalent = MeanAbsoluteSimilarityDetector(reference)
+    def test_equivalent_configurations_share_detection_cache(self) -> None:
+        reference = ((0, 0), (0, 0))
+        config = MeanAbsoluteSimilarityConfig(reference)
+        detector = MeanAbsoluteSimilarityDetector(config)
+        equivalent = MeanAbsoluteSimilarityDetector(
+            MeanAbsoluteSimilarityConfig(reference)
+        )
+        self.assertIs(detector.config, config)
         self.assertEqual(hash(detector), hash(equivalent))
         context = make_context(np.zeros((2, 2), dtype=np.uint8))
         first = evaluate(context, detector)
         second = evaluate(context, equivalent)
         self.assertIs(first, second)
+
+    def test_configuration_requires_frozen_reference(self) -> None:
+        with self.assertRaises(ValueError):
+            MeanAbsoluteSimilarityConfig(cast(FrozenConfigImage, [[0, 0], [0, 0]]))
 
     def test_freezes_color_image(self) -> None:
         frozen = freeze_config_image([[[0, 1, 2], [3, 4, 5]]])

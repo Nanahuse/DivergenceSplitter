@@ -20,17 +20,29 @@ from divergencesplitter.detector.mean_absolute_similarity import (
     MeanAbsoluteSimilarityDetector,
 )
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
+from divergencesplitter.detector.models import (
+    ColorRangeConfig,
+    DifferenceHashSimilarityConfig,
+    MeanAbsoluteSimilarityConfig,
+    PhaseCorrelationConfig,
+    TemplateMatchConfig,
+)
 from divergencesplitter.detector.phase_correlation import PhaseCorrelationDetector
 from divergencesplitter.detector.template_match import TemplateMatchDetector
 
 __all__ = [
     "FRAME_MEAN_KEY",
+    "ColorRangeConfig",
     "ColorRangeDetector",
+    "DifferenceHashSimilarityConfig",
     "DifferenceHashSimilarityDetector",
     "ImageDetector",
+    "MeanAbsoluteSimilarityConfig",
     "MeanAbsoluteSimilarityDetector",
     "MeanBrightnessDetector",
+    "PhaseCorrelationConfig",
     "PhaseCorrelationDetector",
+    "TemplateMatchConfig",
     "TemplateMatchDetector",
     "evaluate",
     "frame_mean",
