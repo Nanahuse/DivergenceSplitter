@@ -3,7 +3,11 @@
 from dataclasses import dataclass
 
 from divergencesplitter.detector.common import frame_mean_abs_diff
-from divergencesplitter.detector.models import ConfigImage, DetectionResult
+from divergencesplitter.detector.models import (
+    ConfigImage,
+    DetectionResult,
+    freeze_config_image,
+)
 from divergencesplitter.frame.models import FrameContext
 
 
@@ -18,6 +22,9 @@ class MeanAbsoluteSimilarityDetector:
     """
 
     reference: ConfigImage
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "reference", freeze_config_image(self.reference))
 
     def detect(self, context: FrameContext) -> DetectionResult:
         diff = frame_mean_abs_diff(context, self.reference)
