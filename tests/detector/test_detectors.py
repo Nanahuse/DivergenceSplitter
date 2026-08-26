@@ -55,7 +55,21 @@ class FrameDifferenceDetectorTest(unittest.TestCase):
         changed = evaluate(
             make_context(np.array([[10, 10], [10, 10]], dtype=np.uint8)), detector
         )
-        self.assertEqual(changed.score, 10.0)
+        self.assertEqual(changed.score, -10.0)
+
+    def test_score_decreases_monotonically_with_difference(self):
+        detector = FrameDifferenceDetector(reference=REFERENCE)
+        match = evaluate(make_context(REFERENCE_IMAGE), detector).score
+        small_diff = evaluate(
+            make_context(np.array([[1, 1], [1, 1]], dtype=np.uint8)), detector
+        ).score
+        large_diff = evaluate(
+            make_context(np.array([[10, 10], [10, 10]], dtype=np.uint8)), detector
+        ).score
+        self.assertEqual(match, 0.0)
+        self.assertEqual(small_diff, -1.0)
+        self.assertEqual(large_diff, -10.0)
+        self.assertTrue(match > small_diff > large_diff)
 
 
 class CountingDetector:
