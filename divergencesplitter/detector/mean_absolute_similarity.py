@@ -1,4 +1,4 @@
-"""FrameDifferenceDetector implementation."""
+"""MeanAbsoluteSimilarityDetector implementation."""
 
 from dataclasses import dataclass
 
@@ -8,8 +8,8 @@ from divergencesplitter.frame.models import FrameContext
 
 
 @dataclass(frozen=True)
-class FrameDifferenceDetector:
-    """Frame-difference style detector: reports the negated mean absolute
+class MeanAbsoluteSimilarityDetector:
+    """Mean-absolute-similarity detector: reports the negated mean absolute
     difference from ``reference`` as score.
 
     The score follows the ``ImageDetector`` contract that higher values mean a

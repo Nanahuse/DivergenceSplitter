@@ -13,14 +13,16 @@ from divergencesplitter.detector.common import (
     frame_mean_abs_diff,
     preprocessed,
 )
-from divergencesplitter.detector.frame_difference import FrameDifferenceDetector
 from divergencesplitter.detector.interface import ImageDetector
+from divergencesplitter.detector.mean_absolute_similarity import (
+    MeanAbsoluteSimilarityDetector,
+)
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
 
 __all__ = [
     "FRAME_MEAN_KEY",
-    "FrameDifferenceDetector",
     "ImageDetector",
+    "MeanAbsoluteSimilarityDetector",
     "MeanBrightnessDetector",
     "evaluate",
     "frame_mean",

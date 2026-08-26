@@ -10,8 +10,10 @@ from divergencesplitter.detector.common import (
     frame_mean_abs_diff,
     preprocessed,
 )
-from divergencesplitter.detector.frame_difference import FrameDifferenceDetector
 from divergencesplitter.detector.interface import ImageDetector
+from divergencesplitter.detector.mean_absolute_similarity import (
+    MeanAbsoluteSimilarityDetector,
+)
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
 from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame.models import Frame, FrameContext
@@ -47,9 +49,9 @@ class MeanBrightnessDetectorTest(unittest.TestCase):
         self.assertEqual(bright_color.score, 255.0)
 
 
-class FrameDifferenceDetectorTest(unittest.TestCase):
+class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
     def test_known_images(self):
-        detector = FrameDifferenceDetector(reference=REFERENCE)
+        detector = MeanAbsoluteSimilarityDetector(reference=REFERENCE)
         same = evaluate(make_context(REFERENCE_IMAGE), detector)
         self.assertEqual(same.score, 0.0)
         changed = evaluate(
@@ -58,7 +60,7 @@ class FrameDifferenceDetectorTest(unittest.TestCase):
         self.assertEqual(changed.score, -10.0)
 
     def test_score_decreases_monotonically_with_difference(self):
-        detector = FrameDifferenceDetector(reference=REFERENCE)
+        detector = MeanAbsoluteSimilarityDetector(reference=REFERENCE)
         match = evaluate(make_context(REFERENCE_IMAGE), detector).score
         small_diff = evaluate(
             make_context(np.array([[1, 1], [1, 1]], dtype=np.uint8)), detector
@@ -153,7 +155,7 @@ class CacheTest(unittest.TestCase):
         self.assertEqual(context.detection_cache, {})
 
     def test_size_mismatch_raises_and_is_not_cached(self):
-        detector = FrameDifferenceDetector(reference=REFERENCE)
+        detector = MeanAbsoluteSimilarityDetector(reference=REFERENCE)
         context = make_context(np.zeros((2, 3), dtype=np.uint8))
         with self.assertRaises(ValueError):
             evaluate(context, detector)
@@ -199,7 +201,7 @@ class PreprocessingCacheTest(unittest.TestCase):
 
     def test_detector_diff_is_cached_for_reuse(self):
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(context, FrameDifferenceDetector(reference=REFERENCE))
+        evaluate(context, MeanAbsoluteSimilarityDetector(reference=REFERENCE))
         self.assertEqual(frame_mean_abs_diff(context, REFERENCE), 3.0)
         self.assertEqual(
             context.preprocessing_cache[("frame-mean-abs-diff", REFERENCE)], 3.0
@@ -208,8 +210,8 @@ class PreprocessingCacheTest(unittest.TestCase):
     def test_different_references_do_not_share(self):
         other_reference = ((1, 1), (1, 1))
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(context, FrameDifferenceDetector(reference=REFERENCE))
-        evaluate(context, FrameDifferenceDetector(reference=other_reference))
+        evaluate(context, MeanAbsoluteSimilarityDetector(reference=REFERENCE))
+        evaluate(context, MeanAbsoluteSimilarityDetector(reference=other_reference))
         self.assertIn(("frame-mean-abs-diff", REFERENCE), context.preprocessing_cache)
         self.assertIn(
             ("frame-mean-abs-diff", other_reference), context.preprocessing_cache
