@@ -16,8 +16,8 @@ from divergencesplitter.condition import (
     Then,
 )
 from divergencesplitter.detector import (
-    FrameDifferenceDetector,
     ImageDetector,
+    MeanAbsoluteSimilarityDetector,
     MeanBrightnessDetector,
     evaluate,
 )
@@ -69,7 +69,6 @@ __all__ = [
     "Frame",
     "FrameClipError",
     "FrameContext",
-    "FrameDifferenceDetector",
     "FrameNormalizationError",
     "FrameNormalizer",
     "FrameResizeError",
@@ -81,6 +80,7 @@ __all__ = [
     "LiveSplitSnapshot",
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",
+    "MeanAbsoluteSimilarityDetector",
     "MeanBrightnessDetector",
     "MonotonicTime",
     "Not",

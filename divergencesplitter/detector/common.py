@@ -5,7 +5,7 @@ detectors sharing a computation run it once. ``evaluate`` caches one complete
 ``DetectionResult`` per detector definition, reusing it across equivalent
 instances. Exceptions and non-``DetectionResult`` values are never cached.
 
-References inside detector configuration (for example ``FrameDifferenceDetector``)
+References inside detector configuration (for example ``MeanAbsoluteSimilarityDetector``)
 must be hashable (use tuples) so the detectors stay usable as cache keys.
 """
 
