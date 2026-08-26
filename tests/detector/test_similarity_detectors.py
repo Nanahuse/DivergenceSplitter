@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import is_dataclass
 from typing import cast
 from unittest.mock import patch
 
@@ -137,6 +138,53 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
 
 
 class ConfigImageTest(unittest.TestCase):
+    def test_detector_implementations_are_not_dataclasses(self) -> None:
+        detector_types = (
+            MeanAbsoluteSimilarityDetector,
+            TemplateMatchDetector,
+            ColorRangeDetector,
+            PhaseCorrelationDetector,
+            DifferenceHashSimilarityDetector,
+        )
+        for detector_type in detector_types:
+            with self.subTest(detector_type=detector_type):
+                self.assertFalse(is_dataclass(detector_type))
+
+    def test_detector_implementations_are_immutable_value_objects(self) -> None:
+        equivalent_pairs = (
+            (
+                MeanAbsoluteSimilarityDetector(PATTERN),
+                MeanAbsoluteSimilarityDetector(PATTERN),
+                "reference",
+            ),
+            (
+                TemplateMatchDetector(PATTERN),
+                TemplateMatchDetector(PATTERN),
+                "reference",
+            ),
+            (
+                ColorRangeDetector((0,), (255,)),
+                ColorRangeDetector((0,), (255,)),
+                "lower",
+            ),
+            (
+                PhaseCorrelationDetector(PATTERN),
+                PhaseCorrelationDetector(PATTERN),
+                "reference",
+            ),
+            (
+                DifferenceHashSimilarityDetector(PATTERN),
+                DifferenceHashSimilarityDetector(PATTERN),
+                "hash_size",
+            ),
+        )
+        for first, second, attribute in equivalent_pairs:
+            with self.subTest(detector_type=type(first)):
+                self.assertEqual(first, second)
+                self.assertEqual(hash(first), hash(second))
+                with self.assertRaises(AttributeError):
+                    setattr(first, attribute, None)
+
     def test_list_reference_becomes_hashable_and_shares_detection_cache(self) -> None:
         reference = [[0, 0], [0, 0]]
         detector = MeanAbsoluteSimilarityDetector(reference)

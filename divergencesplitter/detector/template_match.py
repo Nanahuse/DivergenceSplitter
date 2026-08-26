@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
+from divergencesplitter.detector._immutable import ImmutableDetector
 from divergencesplitter.detector.models import (
     ConfigImage,
     DetectionResult,
@@ -16,8 +16,7 @@ from divergencesplitter.detector.models import (
 from divergencesplitter.frame.models import FrameContext
 
 
-@dataclass(frozen=True)
-class TemplateMatchDetector:
+class TemplateMatchDetector(ImmutableDetector):
     """Normalized-cross-correlation template matcher.
 
     Slides ``reference`` over the frame and reports the maximum
@@ -26,14 +25,19 @@ class TemplateMatchDetector:
     channel layout and be no larger than the frame in either dimension.
     """
 
+    __slots__ = ("reference",)
+
     reference: ConfigImage
 
-    def __post_init__(self) -> None:
-        reference = freeze_config_image(self.reference)
+    def __init__(self, reference: ConfigImage) -> None:
+        reference = freeze_config_image(reference)
         template = np.asarray(reference, dtype=np.float32)
         if np.all(np.ptp(template, axis=(0, 1)) == 0):
             raise ValueError("template must contain spatial variation")
         object.__setattr__(self, "reference", reference)
+
+    def _configuration_key(self) -> tuple[object, ...]:
+        return (self.reference,)
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = np.asarray(context.frame.image, dtype=np.float32)

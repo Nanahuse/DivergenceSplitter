@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
+from divergencesplitter.detector._immutable import ImmutableDetector
 from divergencesplitter.detector.common import frame_gray, to_gray
 from divergencesplitter.detector.models import (
     ConfigImage,
@@ -17,8 +17,7 @@ from divergencesplitter.detector.models import (
 from divergencesplitter.frame.models import FrameContext
 
 
-@dataclass(frozen=True)
-class PhaseCorrelationDetector:
+class PhaseCorrelationDetector(ImmutableDetector):
     """Phase-correlation detector.
 
     Converts the frame and ``reference`` to grayscale float32 and reports the
@@ -31,10 +30,15 @@ class PhaseCorrelationDetector:
     positional equality.
     """
 
+    __slots__ = ("reference",)
+
     reference: ConfigImage
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "reference", freeze_config_image(self.reference))
+    def __init__(self, reference: ConfigImage) -> None:
+        object.__setattr__(self, "reference", freeze_config_image(reference))
+
+    def _configuration_key(self) -> tuple[object, ...]:
+        return (self.reference,)
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = frame_gray(context)

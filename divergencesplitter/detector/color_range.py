@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import cv2
 import numpy as np
 
+from divergencesplitter.detector._immutable import ImmutableDetector
 from divergencesplitter.detector.models import (
     DetectionResult,
     Pixel,
@@ -15,8 +14,7 @@ from divergencesplitter.detector.models import (
 from divergencesplitter.frame.models import FrameContext
 
 
-@dataclass(frozen=True)
-class ColorRangeDetector:
+class ColorRangeDetector(ImmutableDetector):
     """Pixel-ratio detector using ``cv2.inRange`` (inclusive bounds).
 
     Reports the fraction of frame pixels whose value lies within
@@ -25,12 +23,14 @@ class ColorRangeDetector:
     single-channel frame) or ``3`` (a three-channel frame).
     """
 
+    __slots__ = ("lower", "upper")
+
     lower: tuple[Pixel, ...]
     upper: tuple[Pixel, ...]
 
-    def __post_init__(self) -> None:
-        lower = freeze_pixel_vector(self.lower)
-        upper = freeze_pixel_vector(self.upper)
+    def __init__(self, lower: tuple[Pixel, ...], upper: tuple[Pixel, ...]) -> None:
+        lower = freeze_pixel_vector(lower)
+        upper = freeze_pixel_vector(upper)
         if len(lower) not in (1, 3):
             raise ValueError(f"color bound length must be 1 or 3, got {len(lower)}")
         if len(lower) != len(upper):
@@ -42,6 +42,9 @@ class ColorRangeDetector:
                 raise ValueError(f"lower bound exceeds upper bound: {lower} > {upper}")
         object.__setattr__(self, "lower", lower)
         object.__setattr__(self, "upper", upper)
+
+    def _configuration_key(self) -> tuple[object, ...]:
+        return (self.lower, self.upper)
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = context.frame.image
