@@ -6,26 +6,29 @@ from unittest.mock import patch
 import numpy as np
 
 from divergencesplitter.clock import MonotonicTime
-from divergencesplitter.detector.color_range import ColorRangeDetector
+from divergencesplitter.detector.color_range import ColorRangeConfig, ColorRangeDetector
 from divergencesplitter.detector.common import evaluate
 from divergencesplitter.detector.difference_hash import (
+    DifferenceHashSimilarityConfig,
     DifferenceHashSimilarityDetector,
 )
 from divergencesplitter.detector.mean_absolute_similarity import (
+    MeanAbsoluteSimilarityConfig,
     MeanAbsoluteSimilarityDetector,
 )
 from divergencesplitter.detector.models import (
-    ColorRangeConfig,
     ConfigImage,
-    DifferenceHashSimilarityConfig,
     FrozenConfigImage,
-    MeanAbsoluteSimilarityConfig,
-    PhaseCorrelationConfig,
-    TemplateMatchConfig,
     freeze_config_image,
 )
-from divergencesplitter.detector.phase_correlation import PhaseCorrelationDetector
-from divergencesplitter.detector.template_match import TemplateMatchDetector
+from divergencesplitter.detector.phase_correlation import (
+    PhaseCorrelationConfig,
+    PhaseCorrelationDetector,
+)
+from divergencesplitter.detector.template_match import (
+    TemplateMatchConfig,
+    TemplateMatchDetector,
+)
 from divergencesplitter.frame.models import Frame, FrameContext
 
 EPOCH = MonotonicTime(nanoseconds=0)
@@ -168,17 +171,18 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
 
 class ConfigImageTest(unittest.TestCase):
     def test_detector_configurations_are_data_classes(self) -> None:
-        config_types = (
-            MeanAbsoluteSimilarityConfig,
-            TemplateMatchConfig,
-            ColorRangeConfig,
-            PhaseCorrelationConfig,
-            DifferenceHashSimilarityConfig,
+        config_detector_pairs = (
+            (MeanAbsoluteSimilarityConfig, MeanAbsoluteSimilarityDetector),
+            (TemplateMatchConfig, TemplateMatchDetector),
+            (ColorRangeConfig, ColorRangeDetector),
+            (PhaseCorrelationConfig, PhaseCorrelationDetector),
+            (DifferenceHashSimilarityConfig, DifferenceHashSimilarityDetector),
         )
-        for config_type in config_types:
+        for config_type, detector_type in config_detector_pairs:
             with self.subTest(config_type=config_type):
                 self.assertTrue(is_dataclass(config_type))
                 self.assertFalse(hasattr(config_type, "detect"))
+                self.assertEqual(config_type.__module__, detector_type.__module__)
 
     def test_detector_implementations_are_not_dataclasses(self) -> None:
         detector_types = (

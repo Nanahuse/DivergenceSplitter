@@ -1,6 +1,8 @@
-"""DifferenceHashSimilarityDetector implementation."""
+"""DifferenceHashSimilarityConfig and DifferenceHashSimilarityDetector."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -8,9 +10,25 @@ from divergencesplitter.detector._configured import ConfiguredDetector
 from divergencesplitter.detector.common import dhash_bits, frame_dhash, to_gray
 from divergencesplitter.detector.models import (
     DetectionResult,
-    DifferenceHashSimilarityConfig,
+    FrozenConfigImage,
+    _validate_frozen_config_image,
 )
 from divergencesplitter.frame.models import FrameContext
+
+
+@dataclass(frozen=True)
+class DifferenceHashSimilarityConfig:
+    """Configuration for difference-hash similarity detection."""
+
+    reference: FrozenConfigImage
+    hash_size: int = 8
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
+        if type(self.hash_size) is not int or self.hash_size <= 0:
+            raise ValueError(
+                f"hash_size must be a positive integer: {self.hash_size!r}"
+            )
 
 
 class DifferenceHashSimilarityDetector(

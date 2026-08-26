@@ -13,13 +13,11 @@ from divergencesplitter.detector.common import (
 )
 from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.mean_absolute_similarity import (
+    MeanAbsoluteSimilarityConfig,
     MeanAbsoluteSimilarityDetector,
 )
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
-from divergencesplitter.detector.models import (
-    DetectionResult,
-    MeanAbsoluteSimilarityConfig,
-)
+from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame.models import Frame, FrameContext
 
 DARK = np.zeros((2, 3), dtype=np.uint8)

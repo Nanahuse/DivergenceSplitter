@@ -1,7 +1,7 @@
-"""Detector configuration and result data models.
+"""Shared detector result models, type aliases, and configuration helpers.
 
-Detector configuration values remain hashable so equivalent detectors can
-share cache entries.
+Configuration values remain hashable so equivalent detectors can share cache
+entries.
 """
 
 from __future__ import annotations
@@ -10,8 +10,6 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
-
-import numpy as np
 
 Pixel = int | float
 ConfigImage = Sequence[Sequence[Pixel]] | Sequence[Sequence[Sequence[Pixel]]]
@@ -29,77 +27,6 @@ class DetectionResult:
     """
 
     score: float
-
-
-@dataclass(frozen=True)
-class MeanAbsoluteSimilarityConfig:
-    """Configuration for mean absolute similarity detection."""
-
-    reference: FrozenConfigImage
-
-    def __post_init__(self) -> None:
-        _validate_frozen_config_image(self.reference)
-
-
-@dataclass(frozen=True)
-class TemplateMatchConfig:
-    """Configuration for normalized template matching."""
-
-    reference: FrozenConfigImage
-
-    def __post_init__(self) -> None:
-        _validate_frozen_config_image(self.reference)
-        template = np.asarray(self.reference, dtype=np.float32)
-        if np.all(np.ptp(template, axis=(0, 1)) == 0):
-            raise ValueError("template must contain spatial variation")
-
-
-@dataclass(frozen=True)
-class ColorRangeConfig:
-    """Inclusive color bounds used by color-range detection."""
-
-    lower: tuple[Pixel, ...]
-    upper: tuple[Pixel, ...]
-
-    def __post_init__(self) -> None:
-        lower = freeze_pixel_vector(self.lower)
-        upper = freeze_pixel_vector(self.upper)
-        if type(self.lower) is not tuple or type(self.upper) is not tuple:
-            raise ValueError("color bounds must be tuples")
-        if len(lower) not in (1, 3):
-            raise ValueError(f"color bound length must be 1 or 3, got {len(lower)}")
-        if len(lower) != len(upper):
-            raise ValueError(
-                f"color bound length mismatch: {len(lower)} != {len(upper)}"
-            )
-        for lo, hi in zip(lower, upper):
-            if lo > hi:
-                raise ValueError(f"lower bound exceeds upper bound: {lower} > {upper}")
-
-
-@dataclass(frozen=True)
-class PhaseCorrelationConfig:
-    """Configuration for phase-correlation detection."""
-
-    reference: FrozenConfigImage
-
-    def __post_init__(self) -> None:
-        _validate_frozen_config_image(self.reference)
-
-
-@dataclass(frozen=True)
-class DifferenceHashSimilarityConfig:
-    """Configuration for difference-hash similarity detection."""
-
-    reference: FrozenConfigImage
-    hash_size: int = 8
-
-    def __post_init__(self) -> None:
-        _validate_frozen_config_image(self.reference)
-        if type(self.hash_size) is not int or self.hash_size <= 0:
-            raise ValueError(
-                f"hash_size must be a positive integer: {self.hash_size!r}"
-            )
 
 
 def freeze_config_image(image: ConfigImage) -> FrozenConfigImage:

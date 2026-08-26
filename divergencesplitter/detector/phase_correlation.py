@@ -1,16 +1,31 @@
-"""PhaseCorrelationDetector implementation."""
+"""PhaseCorrelationConfig and PhaseCorrelationDetector."""
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
 from divergencesplitter.detector.common import frame_gray, to_gray
-from divergencesplitter.detector.models import DetectionResult, PhaseCorrelationConfig
+from divergencesplitter.detector.models import (
+    DetectionResult,
+    FrozenConfigImage,
+    _validate_frozen_config_image,
+)
 from divergencesplitter.frame.models import FrameContext
+
+
+@dataclass(frozen=True)
+class PhaseCorrelationConfig:
+    """Configuration for phase-correlation detection."""
+
+    reference: FrozenConfigImage
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
 
 
 class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):

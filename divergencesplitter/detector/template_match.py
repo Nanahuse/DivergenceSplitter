@@ -1,15 +1,33 @@
-"""TemplateMatchDetector implementation."""
+"""TemplateMatchConfig and TemplateMatchDetector."""
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
-from divergencesplitter.detector.models import DetectionResult, TemplateMatchConfig
+from divergencesplitter.detector.models import (
+    DetectionResult,
+    FrozenConfigImage,
+    _validate_frozen_config_image,
+)
 from divergencesplitter.frame.models import FrameContext
+
+
+@dataclass(frozen=True)
+class TemplateMatchConfig:
+    """Configuration for normalized template matching."""
+
+    reference: FrozenConfigImage
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
+        template = np.asarray(self.reference, dtype=np.float32)
+        if np.all(np.ptp(template, axis=(0, 1)) == 0):
+            raise ValueError("template must contain spatial variation")
 
 
 class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
