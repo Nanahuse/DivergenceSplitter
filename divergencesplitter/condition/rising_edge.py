@@ -1,6 +1,6 @@
 from divergencesplitter.condition._base import ConditionBase, evaluate_normal
-from divergencesplitter.models import FrameContext
-from divergencesplitter.rule import Condition
+from divergencesplitter.condition.interface import Condition
+from divergencesplitter.frame.models import FrameContext
 
 
 class RisingEdge(ConditionBase):

@@ -5,18 +5,18 @@ import cv2
 import numpy as np
 import pytest
 
-from divergencesplitter.frame_normalizer import (
+from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.normalizer import (
     ClipRegion,
     FrameNormalizer,
     OutputSize,
 )
-from divergencesplitter.frame_source import (
+from divergencesplitter.frame.source import (
     ErrorAction,
     FrameSource,
     FrameSourceState,
 )
-from divergencesplitter.models import Frame
-from divergencesplitter.video_file import (
+from divergencesplitter.frame.video_file import (
     VideoFileDecodeError,
     VideoFileEndOfFileError,
     VideoFileError,

@@ -15,12 +15,8 @@ from typing import cast
 import numpy as np
 
 from divergencesplitter.detector.interface import ImageDetector
-from divergencesplitter.models import (
-    ConfigImage,
-    DetectionResult,
-    FrameContext,
-    ImageArray,
-)
+from divergencesplitter.detector.models import ConfigImage, DetectionResult
+from divergencesplitter.frame.models import FrameContext, ImageArray
 
 FRAME_MEAN_KEY = "frame-mean"
 

@@ -1,5 +1,6 @@
+from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.condition._base import ConditionBase
-from divergencesplitter.models import FrameContext, MonotonicTime
+from divergencesplitter.frame.models import FrameContext
 
 
 class Elapsed(ConditionBase):

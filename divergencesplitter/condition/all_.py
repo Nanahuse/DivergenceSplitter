@@ -4,8 +4,8 @@ from divergencesplitter.condition._base import (
     evaluate_short,
     reset_all,
 )
-from divergencesplitter.models import FrameContext
-from divergencesplitter.rule import Condition
+from divergencesplitter.condition.interface import Condition
+from divergencesplitter.frame.models import FrameContext
 
 
 class All(ConditionBase):

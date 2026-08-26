@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Literal, overload
 
-from divergencesplitter.models import FrameContext
-from divergencesplitter.rule import Condition
+from divergencesplitter.condition.interface import Condition
+from divergencesplitter.frame.models import FrameContext
 
 
 class ConditionBase(ABC):

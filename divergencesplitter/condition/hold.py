@@ -1,6 +1,7 @@
+from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.condition._base import ConditionBase, evaluate_normal
-from divergencesplitter.models import FrameContext, MonotonicTime
-from divergencesplitter.rule import Condition
+from divergencesplitter.condition.interface import Condition
+from divergencesplitter.frame.models import FrameContext
 
 
 class Hold(ConditionBase):

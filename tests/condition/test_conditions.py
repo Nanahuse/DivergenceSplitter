@@ -3,6 +3,7 @@ from typing import Literal, cast, overload
 
 import numpy as np
 
+from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.condition import (
     All,
     Any,
@@ -16,12 +17,8 @@ from divergencesplitter.condition import (
     RisingEdge,
     Then,
 )
-from divergencesplitter.models import (
-    DetectionResult,
-    Frame,
-    FrameContext,
-    MonotonicTime,
-)
+from divergencesplitter.detector.models import DetectionResult
+from divergencesplitter.frame.models import Frame, FrameContext
 
 
 def make_context(nanoseconds: int = 0) -> FrameContext:
