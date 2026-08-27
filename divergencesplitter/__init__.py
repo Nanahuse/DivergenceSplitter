@@ -12,6 +12,7 @@ from divergencesplitter.condition import (
     Not,
     Nth,
     Once,
+    ResetWhen,
     RisingEdge,
     Then,
 )
@@ -103,6 +104,7 @@ __all__ = [
     "OutputSize",
     "PhaseCorrelationConfig",
     "PhaseCorrelationDetector",
+    "ResetWhen",
     "RisingEdge",
     "Rule",
     "RuleDefinition",

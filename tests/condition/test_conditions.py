@@ -14,6 +14,7 @@ from divergencesplitter.condition import (
     Not,
     Nth,
     Once,
+    ResetWhen,
     RisingEdge,
     Then,
 )
@@ -351,6 +352,60 @@ class NthConditionTest(unittest.TestCase):
         for value in (0, -1, True, 1.5):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 Nth(SequenceCondition(True), cast("int", value))
+
+
+class ResetWhenConditionTest(unittest.TestCase):
+    def test_passes_through_condition_result(self) -> None:
+        child = SequenceCondition(False, True)
+        reset_condition = SequenceCondition(False, False)
+        condition = ResetWhen(child, reset_condition)
+
+        self.assertFalse(condition.evaluate(make_context()))
+        self.assertTrue(condition.evaluate(make_context()))
+
+        self.assertEqual(child.calls, [False, False])
+        self.assertEqual(reset_condition.calls, [False, False])
+        self.assertEqual((child.resets, reset_condition.resets), (0, 0))
+
+    def test_trigger_resets_before_evaluating_child(self) -> None:
+        child_source = SequenceCondition(True, False)
+        child = Once(child_source)
+        reset_condition = SequenceCondition(False, True)
+        condition = ResetWhen(child, reset_condition)
+
+        self.assertTrue(condition.evaluate(make_context()))
+        self.assertFalse(condition.evaluate(make_context()))
+
+        self.assertEqual(child_source.calls, [False, False])
+        self.assertEqual(child_source.resets, 1)
+        self.assertEqual(reset_condition.resets, 1)
+
+    def test_short_circuit_updates_child_and_resets_immediately(self) -> None:
+        child = SequenceCondition(None)
+        reset_condition = SequenceCondition(True)
+        condition = ResetWhen(child, reset_condition)
+
+        self.assertIsNone(condition.evaluate(make_context(), is_short_circuited=True))
+
+        self.assertEqual(child.calls, [True])
+        self.assertEqual(reset_condition.calls, [False])
+        self.assertEqual((child.resets, reset_condition.resets), (1, 1))
+
+    def test_explicit_reset_propagates_to_both_children(self) -> None:
+        child = SequenceCondition(False)
+        reset_condition = SequenceCondition(False)
+        ResetWhen(child, reset_condition).reset()
+        self.assertEqual((child.resets, reset_condition.resets), (1, 1))
+
+    def test_rejects_invalid_child_results(self) -> None:
+        with self.assertRaises(TypeError):
+            ResetWhen(SequenceCondition(None), SequenceCondition(False)).evaluate(
+                make_context()
+            )
+        with self.assertRaises(TypeError):
+            ResetWhen(SequenceCondition(False), SequenceCondition(None)).evaluate(
+                make_context()
+            )
 
 
 class ElapsedConditionTest(unittest.TestCase):
