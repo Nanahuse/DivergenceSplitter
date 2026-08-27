@@ -8,6 +8,7 @@ from divergencesplitter.condition.interface import Condition
 from divergencesplitter.condition.not_ import Not
 from divergencesplitter.condition.nth import Nth
 from divergencesplitter.condition.once import Once
+from divergencesplitter.condition.reset_when import ResetWhen
 from divergencesplitter.condition.rising_edge import RisingEdge
 from divergencesplitter.condition.then import Then
 
@@ -22,6 +23,7 @@ __all__ = [
     "Not",
     "Nth",
     "Once",
+    "ResetWhen",
     "RisingEdge",
     "Then",
 ]
