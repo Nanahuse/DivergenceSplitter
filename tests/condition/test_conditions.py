@@ -367,14 +367,17 @@ class ResetWhenConditionTest(unittest.TestCase):
         self.assertEqual(reset_condition.calls, [False, False])
         self.assertEqual((child.resets, reset_condition.resets), (0, 0))
 
-    def test_trigger_resets_both_children_after_preserving_result(self) -> None:
-        child = SequenceCondition(True)
-        reset_condition = SequenceCondition(True)
+    def test_trigger_resets_before_evaluating_child(self) -> None:
+        child_source = SequenceCondition(True, False)
+        child = Once(child_source)
+        reset_condition = SequenceCondition(False, True)
         condition = ResetWhen(child, reset_condition)
 
         self.assertTrue(condition.evaluate(make_context()))
+        self.assertFalse(condition.evaluate(make_context()))
 
-        self.assertEqual(child.resets, 1)
+        self.assertEqual(child_source.calls, [False, False])
+        self.assertEqual(child_source.resets, 1)
         self.assertEqual(reset_condition.resets, 1)
 
     def test_short_circuit_updates_child_and_resets_immediately(self) -> None:

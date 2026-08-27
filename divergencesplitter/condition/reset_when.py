@@ -16,16 +16,14 @@ class ResetWhen(ConditionBase):
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:
-        if is_short_circuited:
-            evaluate_short(self._condition, context)
-            result = None
-        else:
-            result = evaluate_normal(self._condition, context)
-
         should_reset = evaluate_normal(self._reset_condition, context)
         if should_reset:
             self.reset()
-        return result
+
+        if is_short_circuited:
+            evaluate_short(self._condition, context)
+            return None
+        return evaluate_normal(self._condition, context)
 
     def reset(self) -> None:
         reset_all((self._condition, self._reset_condition))
