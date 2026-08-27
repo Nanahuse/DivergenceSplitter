@@ -95,7 +95,8 @@ class VideoFileSource:
         self._frames_read += 1
         return Frame(image=image)
 
-    def handle_error(self, _error: VideoFileError) -> ErrorAction:
+    def handle_error(self, error: VideoFileError) -> ErrorAction:
+        del error
         return ErrorAction.STOP
 
     def close(self) -> None:
