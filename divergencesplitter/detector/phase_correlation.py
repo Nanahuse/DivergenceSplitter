@@ -41,8 +41,6 @@ class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
     positional equality.
     """
 
-    __slots__ = ()
-
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = frame_gray(context)
         reference = to_gray(np.asarray(self.config.reference))

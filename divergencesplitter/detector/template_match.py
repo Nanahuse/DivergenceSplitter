@@ -39,8 +39,6 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
     channel layout and be no larger than the frame in either dimension.
     """
 
-    __slots__ = ()
-
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = np.asarray(context.frame.image, dtype=np.float32)
         template = np.asarray(self.config.reference, dtype=np.float32)

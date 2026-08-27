@@ -31,8 +31,6 @@ class MeanAbsoluteSimilarityDetector(ConfiguredDetector[MeanAbsoluteSimilarityCo
     produce smaller (more negative) scores.
     """
 
-    __slots__ = ()
-
     def detect(self, context: FrameContext) -> DetectionResult:
         diff = frame_mean_abs_diff(context, self.config.reference)
         return DetectionResult(score=-diff)

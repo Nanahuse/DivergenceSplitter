@@ -6,8 +6,6 @@ from __future__ import annotations
 class ConfiguredDetector[ConfigT]:
     """Store an immutable configuration and compare detectors by its value."""
 
-    __slots__ = ("_config",)
-
     def __init__(self, config: ConfigT) -> None:
         self._config = config
 

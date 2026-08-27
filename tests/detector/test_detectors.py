@@ -31,21 +31,15 @@ def make_context(image, now=EPOCH):
     return FrameContext(frame=Frame(image=image), now=now)
 
 
-def assign_attribute(target: object, name: str, value: object) -> None:
-    setattr(target, name, value)
-
-
 class MeanBrightnessDetectorTest(unittest.TestCase):
     def test_implementation_is_not_a_dataclass(self):
         self.assertFalse(is_dataclass(MeanBrightnessDetector))
 
-    def test_implementation_is_immutable_and_value_equivalent(self):
+    def test_implementation_is_value_equivalent(self):
         first = MeanBrightnessDetector()
         second = MeanBrightnessDetector()
         self.assertEqual(first, second)
         self.assertEqual(hash(first), hash(second))
-        with self.assertRaises(AttributeError):
-            assign_attribute(first, "unexpected", True)
 
     def test_known_images(self):
         detector = MeanBrightnessDetector()

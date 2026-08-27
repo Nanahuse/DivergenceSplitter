@@ -41,8 +41,6 @@ class DifferenceHashSimilarityDetector(
     so identical images score ``1.0`` and unrelated images approach ``0.0``.
     """
 
-    __slots__ = ()
-
     def detect(self, context: FrameContext) -> DetectionResult:
         reference_hash = tuple(
             bool(value)

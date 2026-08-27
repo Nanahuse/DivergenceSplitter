@@ -8,8 +8,6 @@ from divergencesplitter.frame.models import FrameContext
 class MeanBrightnessDetector:
     """Level-style detector: reports the frame mean brightness as score."""
 
-    __slots__ = ()
-
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, MeanBrightnessDetector):
             return NotImplemented

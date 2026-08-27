@@ -48,8 +48,6 @@ class ColorRangeDetector(ConfiguredDetector[ColorRangeConfig]):
     single-channel frame) or ``3`` (a three-channel frame).
     """
 
-    __slots__ = ()
-
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = context.frame.image
         channels = len(self.config.lower)
