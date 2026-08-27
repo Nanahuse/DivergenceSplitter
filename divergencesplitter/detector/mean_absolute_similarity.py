@@ -1,14 +1,28 @@
-"""MeanAbsoluteSimilarityDetector implementation."""
+"""MeanAbsoluteSimilarityConfig and MeanAbsoluteSimilarityDetector."""
 
 from dataclasses import dataclass
 
+from divergencesplitter.detector._configured import ConfiguredDetector
 from divergencesplitter.detector.common import frame_mean_abs_diff
-from divergencesplitter.detector.models import ConfigImage, DetectionResult
+from divergencesplitter.detector.models import (
+    DetectionResult,
+    FrozenConfigImage,
+    _validate_frozen_config_image,
+)
 from divergencesplitter.frame.models import FrameContext
 
 
 @dataclass(frozen=True)
-class MeanAbsoluteSimilarityDetector:
+class MeanAbsoluteSimilarityConfig:
+    """Configuration for mean absolute similarity detection."""
+
+    reference: FrozenConfigImage
+
+    def __post_init__(self) -> None:
+        _validate_frozen_config_image(self.reference)
+
+
+class MeanAbsoluteSimilarityDetector(ConfiguredDetector[MeanAbsoluteSimilarityConfig]):
     """Mean-absolute-similarity detector: reports the negated mean absolute
     difference from ``reference`` as score.
 
@@ -17,8 +31,6 @@ class MeanAbsoluteSimilarityDetector:
     produce smaller (more negative) scores.
     """
 
-    reference: ConfigImage
-
     def detect(self, context: FrameContext) -> DetectionResult:
-        diff = frame_mean_abs_diff(context, self.reference)
+        diff = frame_mean_abs_diff(context, self.config.reference)
         return DetectionResult(score=-diff)

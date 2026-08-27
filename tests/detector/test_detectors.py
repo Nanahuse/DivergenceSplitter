@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import is_dataclass
 from typing import cast
 
 import numpy as np
@@ -12,6 +13,7 @@ from divergencesplitter.detector.common import (
 )
 from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.mean_absolute_similarity import (
+    MeanAbsoluteSimilarityConfig,
     MeanAbsoluteSimilarityDetector,
 )
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
@@ -30,6 +32,15 @@ def make_context(image, now=EPOCH):
 
 
 class MeanBrightnessDetectorTest(unittest.TestCase):
+    def test_implementation_is_not_a_dataclass(self):
+        self.assertFalse(is_dataclass(MeanBrightnessDetector))
+
+    def test_implementation_is_value_equivalent(self):
+        first = MeanBrightnessDetector()
+        second = MeanBrightnessDetector()
+        self.assertEqual(first, second)
+        self.assertEqual(hash(first), hash(second))
+
     def test_known_images(self):
         detector = MeanBrightnessDetector()
         dark = evaluate(make_context(DARK), detector)
@@ -51,7 +62,9 @@ class MeanBrightnessDetectorTest(unittest.TestCase):
 
 class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
     def test_known_images(self):
-        detector = MeanAbsoluteSimilarityDetector(reference=REFERENCE)
+        detector = MeanAbsoluteSimilarityDetector(
+            MeanAbsoluteSimilarityConfig(REFERENCE)
+        )
         same = evaluate(make_context(REFERENCE_IMAGE), detector)
         self.assertEqual(same.score, 0.0)
         changed = evaluate(
@@ -60,7 +73,9 @@ class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
         self.assertEqual(changed.score, -10.0)
 
     def test_score_decreases_monotonically_with_difference(self):
-        detector = MeanAbsoluteSimilarityDetector(reference=REFERENCE)
+        detector = MeanAbsoluteSimilarityDetector(
+            MeanAbsoluteSimilarityConfig(REFERENCE)
+        )
         match = evaluate(make_context(REFERENCE_IMAGE), detector).score
         small_diff = evaluate(
             make_context(np.array([[1, 1], [1, 1]], dtype=np.uint8)), detector
@@ -155,7 +170,9 @@ class CacheTest(unittest.TestCase):
         self.assertEqual(context.detection_cache, {})
 
     def test_size_mismatch_raises_and_is_not_cached(self):
-        detector = MeanAbsoluteSimilarityDetector(reference=REFERENCE)
+        detector = MeanAbsoluteSimilarityDetector(
+            MeanAbsoluteSimilarityConfig(REFERENCE)
+        )
         context = make_context(np.zeros((2, 3), dtype=np.uint8))
         with self.assertRaises(ValueError):
             evaluate(context, detector)
@@ -201,7 +218,10 @@ class PreprocessingCacheTest(unittest.TestCase):
 
     def test_detector_diff_is_cached_for_reuse(self):
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(context, MeanAbsoluteSimilarityDetector(reference=REFERENCE))
+        evaluate(
+            context,
+            MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(REFERENCE)),
+        )
         self.assertEqual(frame_mean_abs_diff(context, REFERENCE), 3.0)
         self.assertEqual(
             context.preprocessing_cache[("frame-mean-abs-diff", REFERENCE)], 3.0
@@ -210,8 +230,16 @@ class PreprocessingCacheTest(unittest.TestCase):
     def test_different_references_do_not_share(self):
         other_reference = ((1, 1), (1, 1))
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(context, MeanAbsoluteSimilarityDetector(reference=REFERENCE))
-        evaluate(context, MeanAbsoluteSimilarityDetector(reference=other_reference))
+        evaluate(
+            context,
+            MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(REFERENCE)),
+        )
+        evaluate(
+            context,
+            MeanAbsoluteSimilarityDetector(
+                MeanAbsoluteSimilarityConfig(other_reference)
+            ),
+        )
         self.assertIn(("frame-mean-abs-diff", REFERENCE), context.preprocessing_cache)
         self.assertIn(
             ("frame-mean-abs-diff", other_reference), context.preprocessing_cache
