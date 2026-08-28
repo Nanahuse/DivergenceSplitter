@@ -56,8 +56,6 @@ class LatestFrameBuffer:
     def __init__(self) -> None:
         self._condition = threading.Condition()
         self._frame: CapturedFrame | None = None
-        self._generation = 0
-        self._consumed_generation = 0
         self._stopped = False
 
     def publish(self, frame: CapturedFrame) -> PublishResult:
@@ -67,10 +65,9 @@ class LatestFrameBuffer:
                 return PublishResult.STOPPED
             result = (
                 PublishResult.OVERWROTE
-                if self._generation > self._consumed_generation
+                if self._frame is not None
                 else PublishResult.PUBLISHED
             )
-            self._generation += 1
             self._frame = frame
             self._condition.notify_all()
             return result
@@ -78,13 +75,11 @@ class LatestFrameBuffer:
     def take(self) -> CapturedFrame | None:
         """Wait for and consume the newest frame, or return ``None`` on stop."""
         with self._condition:
-            while self._generation <= self._consumed_generation:
+            while self._frame is None:
                 if self._stopped:
                     return None
                 self._condition.wait()
             frame = self._frame
-            assert frame is not None
-            self._consumed_generation = self._generation
             self._frame = None
             return frame
 
