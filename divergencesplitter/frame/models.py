@@ -22,6 +22,14 @@ class Frame:
     image: ImageArray
 
 
+@dataclass(frozen=True)
+class CapturedFrame:
+    """A frame paired with the time at which its source returned it."""
+
+    frame: Frame
+    captured_at: MonotonicTime
+
+
 @dataclass
 class FrameContext:
     frame: Frame

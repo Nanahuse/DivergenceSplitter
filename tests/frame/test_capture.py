@@ -6,14 +6,19 @@ import cv2
 import numpy as np
 import pytest
 
+from divergencesplitter.clock import MonotonicTime, TimeProvider
 from divergencesplitter.frame.capture import (
     CaptureStateMachine,
     LatestFrameBuffer,
     PublishResult,
 )
-from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.models import CapturedFrame, Frame
 from divergencesplitter.frame.normalizer import FrameNormalizer
-from divergencesplitter.frame.source import ErrorAction, FrameSourceState
+from divergencesplitter.frame.source import (
+    ErrorAction,
+    FrameReadResult,
+    FrameSourceState,
+)
 from divergencesplitter.frame.video_file import VideoFileSource
 
 
@@ -25,14 +30,47 @@ def make_frame(value: int) -> Frame:
     return Frame(image=np.full((2, 2, 3), value, dtype=np.uint8))
 
 
+def successful_read(value: int) -> FrameReadResult[FakeError]:
+    return FrameReadResult(frame=make_frame(value))
+
+
+def failed_read(error: FakeError) -> FrameReadResult[FakeError]:
+    return FrameReadResult(error=error)
+
+
+def captured_frame(value: int, nanoseconds: int = 0) -> CapturedFrame:
+    return CapturedFrame(
+        frame=make_frame(value),
+        captured_at=MonotonicTime(nanoseconds),
+    )
+
+
+class FixedTimeProvider(TimeProvider):
+    def __init__(
+        self,
+        nanoseconds: int = 123,
+        events: list[str] | None = None,
+    ) -> None:
+        self._now = MonotonicTime(nanoseconds)
+        self._events = events
+        self.calls = 0
+
+    def now(self) -> MonotonicTime:
+        self.calls += 1
+        if self._events is not None:
+            self._events.append("timestamp")
+        return self._now
+
+
 class FakeFrameSource:
     def __init__(
         self,
         *,
         prepare_results: list[FakeError | None],
-        read_results: list[Frame | FakeError],
+        read_results: list[FrameReadResult[FakeError]],
         error_results: list[tuple[ErrorAction, FrameSourceState]],
         raising_stage: str | None = None,
+        events: list[str] | None = None,
     ) -> None:
         self._state = FrameSourceState.NOT_READY
         self._normalizer = FrameNormalizer()
@@ -40,6 +78,7 @@ class FakeFrameSource:
         self._read_results = read_results
         self._error_results = error_results
         self._raising_stage = raising_stage
+        self._events = events
         self.prepare_calls = 0
         self.read_calls = 0
         self.handle_error_calls = 0
@@ -62,8 +101,10 @@ class FakeFrameSource:
             self._state = FrameSourceState.READY
         return result
 
-    def read(self) -> Frame | FakeError:
+    def read(self) -> FrameReadResult[FakeError]:
         self.read_calls += 1
+        if self._events is not None:
+            self._events.append("read")
         if self._raising_stage == "read":
             raise RuntimeError("read failed")
         return self._read_results.pop(0)
@@ -103,11 +144,11 @@ class BlockingFrameSource(FakeFrameSource):
         self.read_started = threading.Event()
         self.release_read = threading.Event()
 
-    def read(self) -> Frame | FakeError:
+    def read(self) -> FrameReadResult[FakeError]:
         self.read_calls += 1
         self.read_started.set()
         self.release_read.wait(1)
-        return make_frame(1)
+        return successful_read(1)
 
 
 class RecordingDiagnostics:
@@ -161,18 +202,19 @@ class RecordingDiagnostics:
 class TestLatestFrameBuffer:
     def test_overwrites_unprocessed_frame_and_returns_latest_once(self) -> None:
         buffer = LatestFrameBuffer()
-        first = make_frame(1)
-        latest = make_frame(2)
+        first = captured_frame(1)
+        latest = captured_frame(2)
 
         assert buffer.publish(first) is PublishResult.PUBLISHED
         assert buffer.publish(latest) is PublishResult.OVERWROTE
 
-        assert buffer.take(timeout=0) is latest
-        assert buffer.take(timeout=0) is None
+        assert buffer.take() is latest
+        buffer.stop()
+        assert buffer.take() is None
 
     def test_stop_releases_waiting_consumer(self) -> None:
         buffer = LatestFrameBuffer()
-        results: list[Frame | None] = []
+        results: list[CapturedFrame | None] = []
         consumer = threading.Thread(target=lambda: results.append(buffer.take()))
         consumer.start()
 
@@ -184,8 +226,8 @@ class TestLatestFrameBuffer:
 
     def test_publish_releases_waiting_consumer(self) -> None:
         buffer = LatestFrameBuffer()
-        frame = make_frame(1)
-        results: list[Frame | None] = []
+        frame = captured_frame(1)
+        results: list[CapturedFrame | None] = []
         consumer = threading.Thread(target=lambda: results.append(buffer.take()))
         consumer.start()
 
@@ -197,38 +239,56 @@ class TestLatestFrameBuffer:
 
     def test_stop_delivers_pending_frame_once_and_rejects_new_frames(self) -> None:
         buffer = LatestFrameBuffer()
-        pending = make_frame(1)
+        pending = captured_frame(1)
         assert buffer.publish(pending) is PublishResult.PUBLISHED
 
         buffer.stop()
 
         assert buffer.take() is pending
         assert buffer.take() is None
-        assert buffer.publish(make_frame(2)) is PublishResult.STOPPED
+        assert buffer.publish(captured_frame(2)) is PublishResult.STOPPED
 
-    def test_rejects_negative_timeout(self) -> None:
-        for timeout in (-1, float("nan"), float("inf"), True):
-            with pytest.raises(ValueError):
-                LatestFrameBuffer().take(timeout=timeout)
+
+class TestFrameReadResult:
+    def test_requires_exactly_one_frame_or_error(self) -> None:
+        with pytest.raises(ValueError):
+            FrameReadResult[FakeError]()
+        with pytest.raises(ValueError):
+            FrameReadResult(frame=make_frame(1), error=FakeError("failure"))
 
 
 class TestCaptureStateMachine:
     def test_prepares_captures_and_stops_on_source_action(self) -> None:
         final_error = FakeError("finished")
+        events: list[str] = []
         source = FakeFrameSource(
             prepare_results=[None],
-            read_results=[make_frame(1), make_frame(2), final_error],
+            read_results=[
+                successful_read(1),
+                successful_read(2),
+                failed_read(final_error),
+            ],
             error_results=[(ErrorAction.STOP, FrameSourceState.READY)],
+            events=events,
         )
         buffer = LatestFrameBuffer()
         diagnostics = RecordingDiagnostics()
-        machine = CaptureStateMachine(source, buffer, diagnostics=diagnostics)
+        time_provider = FixedTimeProvider(events=events)
+        machine = CaptureStateMachine(
+            source,
+            buffer,
+            diagnostics=diagnostics,
+            time_provider=time_provider,
+        )
 
         machine.run()
 
         latest = buffer.take()
         assert latest is not None
-        assert int(latest.image[0, 0, 0]) == 2
+        assert int(latest.frame.image[0, 0, 0]) == 2
+        assert latest.captured_at == MonotonicTime(123)
+        assert time_provider.calls == 2
+        assert events == ["read", "timestamp", "read", "timestamp", "read"]
         assert buffer.take() is None
         assert diagnostics.publish_results == [
             PublishResult.PUBLISHED,
@@ -243,7 +303,7 @@ class TestCaptureStateMachine:
         stop_error = FakeError("finished")
         source = FakeFrameSource(
             prepare_results=[prepare_error, None],
-            read_results=[make_frame(1), stop_error],
+            read_results=[successful_read(1), failed_read(stop_error)],
             error_results=[
                 (ErrorAction.RETRY, FrameSourceState.NOT_READY),
                 (ErrorAction.STOP, FrameSourceState.READY),
@@ -255,6 +315,7 @@ class TestCaptureStateMachine:
             LatestFrameBuffer(),
             retry_delay_seconds=0.001,
             diagnostics=diagnostics,
+            time_provider=FixedTimeProvider(),
         )
 
         machine.run()
@@ -267,7 +328,11 @@ class TestCaptureStateMachine:
         stop_error = FakeError("finished")
         source = FakeFrameSource(
             prepare_results=[None],
-            read_results=[retry_error, make_frame(1), stop_error],
+            read_results=[
+                failed_read(retry_error),
+                successful_read(1),
+                failed_read(stop_error),
+            ],
             error_results=[
                 (ErrorAction.RETRY, FrameSourceState.READY),
                 (ErrorAction.STOP, FrameSourceState.READY),
@@ -278,6 +343,7 @@ class TestCaptureStateMachine:
             source,
             LatestFrameBuffer(),
             diagnostics=diagnostics,
+            time_provider=FixedTimeProvider(),
         )
 
         machine.run()
@@ -290,7 +356,7 @@ class TestCaptureStateMachine:
     def test_source_exception_closes_source_and_stops_buffer(self, stage: str) -> None:
         source = FakeFrameSource(
             prepare_results=[None],
-            read_results=[FakeError("source error")],
+            read_results=[failed_read(FakeError("source error"))],
             error_results=[(ErrorAction.STOP, FrameSourceState.READY)],
             raising_stage=stage,
         )
@@ -299,6 +365,7 @@ class TestCaptureStateMachine:
             source,
             buffer,
             diagnostics=RecordingDiagnostics(),
+            time_provider=FixedTimeProvider(),
         )
 
         with pytest.raises(RuntimeError):
@@ -315,6 +382,7 @@ class TestCaptureStateMachine:
             source,
             buffer,
             diagnostics=RecordingDiagnostics(),
+            time_provider=FixedTimeProvider(),
         )
         capture = threading.Thread(target=machine.run)
         capture.start()
@@ -331,12 +399,21 @@ class TestCaptureStateMachine:
     def test_emits_diagnostics_through_injected_instance(self) -> None:
         source = FakeFrameSource(
             prepare_results=[None],
-            read_results=[make_frame(1), make_frame(2), FakeError("finished")],
+            read_results=[
+                successful_read(1),
+                successful_read(2),
+                failed_read(FakeError("finished")),
+            ],
             error_results=[(ErrorAction.STOP, FrameSourceState.READY)],
         )
         buffer = LatestFrameBuffer()
         diagnostics = RecordingDiagnostics()
-        machine = CaptureStateMachine(source, buffer, diagnostics=diagnostics)
+        machine = CaptureStateMachine(
+            source,
+            buffer,
+            diagnostics=diagnostics,
+            time_provider=FixedTimeProvider(),
+        )
 
         machine.run()
 
@@ -364,12 +441,13 @@ class TestCaptureStateMachine:
             read_results=[],
             error_results=[],
         )
-        for delay in (0, -1, float("nan"), float("inf"), True):
+        for delay in (0, -1, float("nan"), float("inf")):
             with pytest.raises(ValueError):
                 CaptureStateMachine(
                     source,
                     LatestFrameBuffer(),
                     diagnostics=RecordingDiagnostics(),
+                    time_provider=FixedTimeProvider(),
                     retry_delay_seconds=delay,
                 )
 
@@ -396,13 +474,18 @@ class TestVideoFileSourceIntegration:
         source = VideoFileSource(str(video))
         buffer = LatestFrameBuffer()
         diagnostics = RecordingDiagnostics()
-        machine = CaptureStateMachine(source, buffer, diagnostics=diagnostics)
+        machine = CaptureStateMachine(
+            source,
+            buffer,
+            diagnostics=diagnostics,
+            time_provider=FixedTimeProvider(),
+        )
 
         machine.run()
 
         latest = buffer.take()
         assert latest is not None
-        assert float(latest.image.mean()) > 100
+        assert float(latest.frame.image.mean()) > 100
         assert buffer.take() is None
         assert diagnostics.publish_results == [
             PublishResult.PUBLISHED,

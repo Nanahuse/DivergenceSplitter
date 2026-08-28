@@ -17,7 +17,11 @@ from divergencesplitter.frame.normalizer import (
     FrameNormalizer,
     OutputSize,
 )
-from divergencesplitter.frame.source import ErrorAction, FrameSourceState
+from divergencesplitter.frame.source import (
+    ErrorAction,
+    FrameReadResult,
+    FrameSourceState,
+)
 
 DEFAULT_FPS = 30.0
 
@@ -85,15 +89,17 @@ class VideoFileSource:
         self._state = FrameSourceState.READY
         return None
 
-    def read(self) -> Frame | VideoFileError:
+    def read(self) -> FrameReadResult[VideoFileError]:
         if self._state is not FrameSourceState.READY or self._capture is None:
-            return VideoFileReadBeforeReadyError("source is not READY")
+            return FrameReadResult(
+                error=VideoFileReadBeforeReadyError("source is not READY")
+            )
         self._wait_for_slot()
         retval, image = self._capture.read()
         if not retval or image is None:
-            return self._classify_failure()
+            return FrameReadResult(error=self._classify_failure())
         self._frames_read += 1
-        return Frame(image=image)
+        return FrameReadResult(frame=Frame(image=image))
 
     def handle_error(self, error: VideoFileError) -> ErrorAction:
         del error

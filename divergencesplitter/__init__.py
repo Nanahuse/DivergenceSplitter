@@ -33,6 +33,7 @@ from divergencesplitter.detector import (
 )
 from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame import (
+    CapturedFrame,
     CaptureDiagnostics,
     CaptureStateMachine,
     ClipRegion,
@@ -42,6 +43,7 @@ from divergencesplitter.frame import (
     FrameContext,
     FrameNormalizationError,
     FrameNormalizer,
+    FrameReadResult,
     FrameResizeError,
     FrameSource,
     FrameSourceState,
@@ -75,6 +77,7 @@ __all__ = [
     "Any",
     "CaptureDiagnostics",
     "CaptureStateMachine",
+    "CapturedFrame",
     "ClipRegion",
     "ColorRangeConfig",
     "ColorRangeDetector",
@@ -91,6 +94,7 @@ __all__ = [
     "FrameContext",
     "FrameNormalizationError",
     "FrameNormalizer",
+    "FrameReadResult",
     "FrameResizeError",
     "FrameSource",
     "FrameSourceState",

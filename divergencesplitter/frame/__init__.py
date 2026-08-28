@@ -4,7 +4,12 @@ from divergencesplitter.frame.capture import (
     LatestFrameBuffer,
     PublishResult,
 )
-from divergencesplitter.frame.models import Frame, FrameContext, ImageArray
+from divergencesplitter.frame.models import (
+    CapturedFrame,
+    Frame,
+    FrameContext,
+    ImageArray,
+)
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
     FrameClipError,
@@ -13,7 +18,12 @@ from divergencesplitter.frame.normalizer import (
     FrameResizeError,
     OutputSize,
 )
-from divergencesplitter.frame.source import ErrorAction, FrameSource, FrameSourceState
+from divergencesplitter.frame.source import (
+    ErrorAction,
+    FrameReadResult,
+    FrameSource,
+    FrameSourceState,
+)
 from divergencesplitter.frame.video_file import (
     VideoFileDecodeError,
     VideoFileEndOfFileError,
@@ -26,6 +36,7 @@ from divergencesplitter.frame.video_file import (
 __all__ = [
     "CaptureDiagnostics",
     "CaptureStateMachine",
+    "CapturedFrame",
     "ClipRegion",
     "ErrorAction",
     "Frame",
@@ -33,6 +44,7 @@ __all__ = [
     "FrameContext",
     "FrameNormalizationError",
     "FrameNormalizer",
+    "FrameReadResult",
     "FrameResizeError",
     "FrameSource",
     "FrameSourceState",

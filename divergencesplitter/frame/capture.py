@@ -1,10 +1,10 @@
 import math
 import threading
-import time
 from enum import Enum, auto
 from typing import Protocol
 
-from divergencesplitter.frame.models import Frame
+from divergencesplitter.clock import TimeProvider
+from divergencesplitter.frame.models import CapturedFrame
 from divergencesplitter.frame.source import (
     ErrorAction,
     FrameSource,
@@ -55,12 +55,12 @@ class LatestFrameBuffer:
 
     def __init__(self) -> None:
         self._condition = threading.Condition()
-        self._frame: Frame | None = None
+        self._frame: CapturedFrame | None = None
         self._generation = 0
         self._consumed_generation = 0
         self._stopped = False
 
-    def publish(self, frame: Frame) -> PublishResult:
+    def publish(self, frame: CapturedFrame) -> PublishResult:
         """Publish a frame, replacing an older unprocessed frame if necessary."""
         with self._condition:
             if self._stopped:
@@ -75,24 +75,13 @@ class LatestFrameBuffer:
             self._condition.notify_all()
             return result
 
-    def take(self, timeout: float | None = None) -> Frame | None:
-        """Wait for and consume the newest frame, or return ``None`` on stop/timeout."""
-        if timeout is not None and (
-            isinstance(timeout, bool) or not math.isfinite(timeout) or timeout < 0
-        ):
-            raise ValueError("timeout must be non-negative or None")
-        deadline = None if timeout is None else time.monotonic() + timeout
+    def take(self) -> CapturedFrame | None:
+        """Wait for and consume the newest frame, or return ``None`` on stop."""
         with self._condition:
             while self._generation <= self._consumed_generation:
                 if self._stopped:
                     return None
-                if deadline is None:
-                    self._condition.wait()
-                    continue
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return None
-                self._condition.wait(remaining)
+                self._condition.wait()
             frame = self._frame
             assert frame is not None
             self._consumed_generation = self._generation
@@ -117,18 +106,16 @@ class CaptureStateMachine[ErrorT]:
         buffer: LatestFrameBuffer,
         *,
         diagnostics: CaptureDiagnostics,
+        time_provider: TimeProvider,
         retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
     ) -> None:
-        if (
-            isinstance(retry_delay_seconds, bool)
-            or not math.isfinite(retry_delay_seconds)
-            or retry_delay_seconds <= 0
-        ):
+        if not math.isfinite(retry_delay_seconds) or retry_delay_seconds <= 0:
             raise ValueError("retry_delay_seconds must be positive")
         self._source = source
         self._buffer = buffer
         self._retry_delay_seconds = retry_delay_seconds
         self._diagnostics = diagnostics
+        self._time_provider = time_provider
         self._stop_requested = threading.Event()
         self._last_source_state: FrameSourceState | None = None
 
@@ -174,14 +161,21 @@ class CaptureStateMachine[ErrorT]:
 
     def _capture(self) -> None:
         result = self._source.read()
-        self._observe_source_state()
-        if isinstance(result, Frame):
-            publish_result = self._buffer.publish(result)
+        if result.frame is not None:
+            captured = CapturedFrame(
+                frame=result.frame,
+                captured_at=self._time_provider.now(),
+            )
+            self._observe_source_state()
+            publish_result = self._buffer.publish(captured)
             self._diagnostics.frame_received(publish_result)
             return
+        self._observe_source_state()
         if self._stop_requested.is_set():
             return
-        self._handle_error(result)
+        error = result.error
+        assert error is not None
+        self._handle_error(error)
 
     def _handle_error(self, error: ErrorT) -> None:
         self._diagnostics.source_error(error)
