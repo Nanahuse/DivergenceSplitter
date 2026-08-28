@@ -33,6 +33,7 @@ from divergencesplitter.detector import (
 )
 from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame import (
+    CaptureDiagnostics,
     CaptureStateMachine,
     ClipRegion,
     ErrorAction,
@@ -47,6 +48,7 @@ from divergencesplitter.frame import (
     ImageArray,
     LatestFrameBuffer,
     OutputSize,
+    PublishResult,
     VideoFileDecodeError,
     VideoFileEndOfFileError,
     VideoFileError,
@@ -71,6 +73,7 @@ __all__ = [
     "Action",
     "All",
     "Any",
+    "CaptureDiagnostics",
     "CaptureStateMachine",
     "ClipRegion",
     "ColorRangeConfig",
@@ -108,6 +111,7 @@ __all__ = [
     "OutputSize",
     "PhaseCorrelationConfig",
     "PhaseCorrelationDetector",
+    "PublishResult",
     "ResetWhen",
     "RisingEdge",
     "Rule",

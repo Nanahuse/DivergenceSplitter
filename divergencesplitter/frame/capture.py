@@ -1,7 +1,9 @@
-import logging
 import math
 import threading
 import time
+from collections.abc import Mapping
+from enum import Enum, auto
+from typing import Protocol
 
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.source import (
@@ -13,65 +15,40 @@ from divergencesplitter.frame.source import (
 DEFAULT_RETRY_DELAY_SECONDS = 0.1
 
 
+class CaptureDiagnostics(Protocol):
+    def record(self, event: str, fields: Mapping[str, object]) -> None: ...
+
+
+class PublishResult(Enum):
+    PUBLISHED = auto()
+    OVERWROTE = auto()
+    STOPPED = auto()
+
+
 class LatestFrameBuffer:
     """Thread-safe single-slot buffer that delivers each publish at most once."""
 
-    def __init__(self, *, logger: logging.Logger | None = None) -> None:
+    def __init__(self) -> None:
         self._condition = threading.Condition()
-        self._logger = logger or logging.getLogger(__name__)
         self._frame: Frame | None = None
         self._generation = 0
         self._consumed_generation = 0
         self._stopped = False
-        self._received_count = 0
-        self._overwritten_count = 0
-        self._processed_count = 0
 
-    @property
-    def received_count(self) -> int:
-        with self._condition:
-            return self._received_count
-
-    @property
-    def overwritten_count(self) -> int:
-        with self._condition:
-            return self._overwritten_count
-
-    @property
-    def processed_count(self) -> int:
-        with self._condition:
-            return self._processed_count
-
-    @property
-    def pending_count(self) -> int:
-        with self._condition:
-            return int(self._generation > self._consumed_generation)
-
-    @property
-    def is_stopped(self) -> bool:
-        with self._condition:
-            return self._stopped
-
-    def publish(self, frame: Frame) -> bool:
+    def publish(self, frame: Frame) -> PublishResult:
         """Publish a frame, replacing an older unprocessed frame if necessary."""
         with self._condition:
             if self._stopped:
-                return False
-            if self._generation > self._consumed_generation:
-                self._overwritten_count += 1
+                return PublishResult.STOPPED
+            result = (
+                PublishResult.OVERWROTE
+                if self._generation > self._consumed_generation
+                else PublishResult.PUBLISHED
+            )
             self._generation += 1
             self._frame = frame
-            self._received_count += 1
-            received_count = self._received_count
-            overwritten_count = self._overwritten_count
             self._condition.notify_all()
-        self._log(
-            logging.DEBUG,
-            "frame_buffer.published",
-            received_count=received_count,
-            overwritten_count=overwritten_count,
-        )
-        return True
+            return result
 
     def take(self, timeout: float | None = None) -> Frame | None:
         """Wait for and consume the newest frame, or return ``None`` on stop/timeout."""
@@ -95,14 +72,7 @@ class LatestFrameBuffer:
             assert frame is not None
             self._consumed_generation = self._generation
             self._frame = None
-            self._processed_count += 1
-            processed_count = self._processed_count
-        self._log(
-            logging.DEBUG,
-            "frame_buffer.processed",
-            processed_count=processed_count,
-        )
-        return frame
+            return frame
 
     def stop(self) -> None:
         """Reject future publishes and release all waiting consumers."""
@@ -111,17 +81,6 @@ class LatestFrameBuffer:
                 return
             self._stopped = True
             self._condition.notify_all()
-        self._log(logging.INFO, "frame_buffer.stopped")
-
-    def _log(self, level: int, event: str, **extra: object) -> None:
-        try:
-            self._logger.log(
-                level,
-                event,
-                extra={"event_name": event, **extra},
-            )
-        except Exception:  # noqa: BLE001
-            return
 
 
 class CaptureStateMachine[ErrorT]:
@@ -132,8 +91,8 @@ class CaptureStateMachine[ErrorT]:
         source: FrameSource[ErrorT],
         buffer: LatestFrameBuffer,
         *,
+        diagnostics: CaptureDiagnostics,
         retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
-        logger: logging.Logger | None = None,
     ) -> None:
         if (
             isinstance(retry_delay_seconds, bool)
@@ -144,19 +103,9 @@ class CaptureStateMachine[ErrorT]:
         self._source = source
         self._buffer = buffer
         self._retry_delay_seconds = retry_delay_seconds
-        self._logger = logger or logging.getLogger(__name__)
+        self._diagnostics = diagnostics
         self._stop_requested = threading.Event()
         self._last_source_state: FrameSourceState | None = None
-        self._received_count = 0
-        self._retry_count = 0
-
-    @property
-    def received_count(self) -> int:
-        return self._received_count
-
-    @property
-    def retry_count(self) -> int:
-        return self._retry_count
 
     @property
     def is_stopped(self) -> bool:
@@ -181,17 +130,16 @@ class CaptureStateMachine[ErrorT]:
             try:
                 self._observe_source_state()
             except Exception as error:  # noqa: BLE001
-                self._log(
-                    logging.WARNING,
+                self._diagnose(
                     "capture.source_state_unavailable",
                     exception_type=type(error).__name__,
                     exception_message=str(error),
                 )
-            self._log(logging.INFO, "capture.source_closed")
-            self._log(logging.INFO, "capture.stopped")
+            self._diagnose("capture.source_closed")
+            self._diagnose("capture.stopped")
 
     def _prepare(self) -> None:
-        self._log(logging.DEBUG, "capture.preparing")
+        self._diagnose("capture.preparing")
         error = self._source.prepare()
         self._observe_source_state()
         if self._stop_requested.is_set():
@@ -199,7 +147,7 @@ class CaptureStateMachine[ErrorT]:
         if error is not None:
             self._handle_error(error)
             return
-        self._log(logging.DEBUG, "capture.prepared")
+        self._diagnose("capture.prepared")
         if self._source.state is FrameSourceState.NOT_READY:
             self._wait_before_retry()
 
@@ -207,15 +155,10 @@ class CaptureStateMachine[ErrorT]:
         result = self._source.read()
         self._observe_source_state()
         if isinstance(result, Frame):
-            self._received_count += 1
-            accepted = self._buffer.publish(result)
-            self._log(
-                logging.DEBUG,
+            publish_result = self._buffer.publish(result)
+            self._diagnose(
                 "capture.frame_received",
-                received_count=self._received_count,
-                accepted=accepted,
-                overwritten_count=self._buffer.overwritten_count,
-                processed_count=self._buffer.processed_count,
+                publish_result=publish_result.name,
             )
             return
         if self._stop_requested.is_set():
@@ -223,16 +166,14 @@ class CaptureStateMachine[ErrorT]:
         self._handle_error(result)
 
     def _handle_error(self, error: ErrorT) -> None:
-        self._log(
-            logging.WARNING,
+        self._diagnose(
             "capture.source_error",
             exception_type=type(error).__name__,
             exception_message=str(error),
         )
         action = self._source.handle_error(error)
         state = self._observe_source_state()
-        self._log(
-            logging.INFO,
+        self._diagnose(
             "capture.error_handled",
             error_action=action.name,
             source_state=state.name,
@@ -242,7 +183,6 @@ class CaptureStateMachine[ErrorT]:
             return
         if action is not ErrorAction.RETRY:
             raise ValueError(f"invalid error action: {action!r}")
-        self._retry_count += 1
         if state is FrameSourceState.NOT_READY:
             self._wait_before_retry()
 
@@ -254,20 +194,15 @@ class CaptureStateMachine[ErrorT]:
         if state is not self._last_source_state:
             previous = self._last_source_state
             self._last_source_state = state
-            self._log(
-                logging.INFO,
+            self._diagnose(
                 "capture.source_state_changed",
                 previous_source_state=None if previous is None else previous.name,
                 source_state=state.name,
             )
         return state
 
-    def _log(self, level: int, event: str, **extra: object) -> None:
+    def _diagnose(self, event: str, **fields: object) -> None:
         try:
-            self._logger.log(
-                level,
-                event,
-                extra={"event_name": event, **extra},
-            )
+            self._diagnostics.record(event, fields)
         except Exception:  # noqa: BLE001
             return

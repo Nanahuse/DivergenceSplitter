@@ -1,5 +1,5 @@
-import logging
 import threading
+from collections.abc import Mapping
 from types import TracebackType
 from typing import Self
 
@@ -7,7 +7,11 @@ import cv2
 import numpy as np
 import pytest
 
-from divergencesplitter.frame.capture import CaptureStateMachine, LatestFrameBuffer
+from divergencesplitter.frame.capture import (
+    CaptureStateMachine,
+    LatestFrameBuffer,
+    PublishResult,
+)
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import FrameNormalizer
 from divergencesplitter.frame.source import ErrorAction, FrameSourceState
@@ -107,9 +111,21 @@ class BlockingFrameSource(FakeFrameSource):
         return make_frame(1)
 
 
-class RaisingHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord) -> None:
-        raise RuntimeError("logging failed")
+class RecordingDiagnostics:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def record(self, event: str, fields: Mapping[str, object]) -> None:
+        self.events.append((event, dict(fields)))
+
+    def fields_for(self, event: str) -> list[dict[str, object]]:
+        return [fields for name, fields in self.events if name == event]
+
+
+class RaisingDiagnostics:
+    def record(self, event: str, fields: Mapping[str, object]) -> None:
+        del event, fields
+        raise RuntimeError("diagnostics failed")
 
 
 class TestLatestFrameBuffer:
@@ -118,16 +134,11 @@ class TestLatestFrameBuffer:
         first = make_frame(1)
         latest = make_frame(2)
 
-        assert buffer.publish(first)
-        assert buffer.publish(latest)
+        assert buffer.publish(first) is PublishResult.PUBLISHED
+        assert buffer.publish(latest) is PublishResult.OVERWROTE
 
-        assert buffer.pending_count == 1
-        assert buffer.received_count == 2
-        assert buffer.overwritten_count == 1
         assert buffer.take(timeout=0) is latest
         assert buffer.take(timeout=0) is None
-        assert buffer.processed_count == 1
-        assert buffer.pending_count == 0
 
     def test_stop_releases_waiting_consumer(self) -> None:
         buffer = LatestFrameBuffer()
@@ -148,7 +159,7 @@ class TestLatestFrameBuffer:
         consumer = threading.Thread(target=lambda: results.append(buffer.take()))
         consumer.start()
 
-        assert buffer.publish(frame)
+        assert buffer.publish(frame) is PublishResult.PUBLISHED
         consumer.join(timeout=1)
 
         assert not consumer.is_alive()
@@ -157,14 +168,13 @@ class TestLatestFrameBuffer:
     def test_stop_delivers_pending_frame_once_and_rejects_new_frames(self) -> None:
         buffer = LatestFrameBuffer()
         pending = make_frame(1)
-        assert buffer.publish(pending)
+        assert buffer.publish(pending) is PublishResult.PUBLISHED
 
         buffer.stop()
 
         assert buffer.take() is pending
         assert buffer.take() is None
-        assert not buffer.publish(make_frame(2))
-        assert buffer.received_count == 1
+        assert buffer.publish(make_frame(2)) is PublishResult.STOPPED
 
     def test_rejects_negative_timeout(self) -> None:
         for timeout in (-1, float("nan"), float("inf"), True):
@@ -181,7 +191,8 @@ class TestCaptureStateMachine:
             error_results=[(ErrorAction.STOP, FrameSourceState.READY)],
         )
         buffer = LatestFrameBuffer()
-        machine = CaptureStateMachine(source, buffer)
+        diagnostics = RecordingDiagnostics()
+        machine = CaptureStateMachine(source, buffer, diagnostics=diagnostics)
 
         machine.run()
 
@@ -189,8 +200,10 @@ class TestCaptureStateMachine:
         assert latest is not None
         assert int(latest.image[0, 0, 0]) == 2
         assert buffer.take() is None
-        assert machine.received_count == 2
-        assert buffer.overwritten_count == 1
+        assert [
+            fields["publish_result"]
+            for fields in diagnostics.fields_for("capture.frame_received")
+        ] == ["PUBLISHED", "OVERWROTE"]
         assert source.close_calls == 1
         assert source.state is FrameSourceState.NOT_READY
         assert machine.is_stopped
@@ -206,17 +219,21 @@ class TestCaptureStateMachine:
                 (ErrorAction.STOP, FrameSourceState.READY),
             ],
         )
+        diagnostics = RecordingDiagnostics()
         machine = CaptureStateMachine(
             source,
             LatestFrameBuffer(),
             retry_delay_seconds=0.001,
+            diagnostics=diagnostics,
         )
 
         machine.run()
 
         assert source.prepare_calls == 2
-        assert machine.retry_count == 1
-        assert machine.received_count == 1
+        assert (
+            diagnostics.fields_for("capture.error_handled")[0]["error_action"]
+            == "RETRY"
+        )
 
     def test_retry_continues_reading_when_source_stays_ready(self) -> None:
         retry_error = FakeError("temporary")
@@ -229,14 +246,21 @@ class TestCaptureStateMachine:
                 (ErrorAction.STOP, FrameSourceState.READY),
             ],
         )
-        machine = CaptureStateMachine(source, LatestFrameBuffer())
+        diagnostics = RecordingDiagnostics()
+        machine = CaptureStateMachine(
+            source,
+            LatestFrameBuffer(),
+            diagnostics=diagnostics,
+        )
 
         machine.run()
 
         assert source.prepare_calls == 1
         assert source.read_calls == 3
-        assert machine.retry_count == 1
-        assert machine.received_count == 1
+        assert (
+            diagnostics.fields_for("capture.error_handled")[0]["error_action"]
+            == "RETRY"
+        )
 
     @pytest.mark.parametrize("stage", ["prepare", "read", "handle_error"])
     def test_source_exception_closes_source_and_stops_buffer(self, stage: str) -> None:
@@ -247,19 +271,27 @@ class TestCaptureStateMachine:
             raising_stage=stage,
         )
         buffer = LatestFrameBuffer()
-        machine = CaptureStateMachine(source, buffer)
+        machine = CaptureStateMachine(
+            source,
+            buffer,
+            diagnostics=RecordingDiagnostics(),
+        )
 
         with pytest.raises(RuntimeError):
             machine.run()
 
         assert source.close_calls == 1
-        assert buffer.is_stopped
+        assert buffer.take() is None
         assert machine.is_stopped
 
     def test_request_stop_releases_consumer_and_closes_after_finite_read(self) -> None:
         source = BlockingFrameSource()
         buffer = LatestFrameBuffer()
-        machine = CaptureStateMachine(source, buffer)
+        machine = CaptureStateMachine(
+            source,
+            buffer,
+            diagnostics=RecordingDiagnostics(),
+        )
         capture = threading.Thread(target=machine.run)
         capture.start()
         assert source.read_started.wait(1)
@@ -271,47 +303,45 @@ class TestCaptureStateMachine:
         assert not capture.is_alive()
         assert buffer.take() is None
         assert source.close_calls == 1
-        assert machine.received_count == 1
-        assert buffer.received_count == 0
 
-    def test_logging_failure_does_not_stop_capture(self) -> None:
-        logger = logging.getLogger(f"raising.{self.__class__.__name__}")
-        logger.handlers = [RaisingHandler()]
-        logger.propagate = False
+    def test_diagnostics_failure_does_not_stop_capture(self) -> None:
         source = FakeFrameSource(
             prepare_results=[None],
             read_results=[make_frame(1), FakeError("finished")],
             error_results=[(ErrorAction.STOP, FrameSourceState.READY)],
         )
-        buffer = LatestFrameBuffer(logger=logger)
-        machine = CaptureStateMachine(source, buffer, logger=logger)
+        machine = CaptureStateMachine(
+            source,
+            LatestFrameBuffer(),
+            diagnostics=RaisingDiagnostics(),
+        )
 
         machine.run()
 
-        assert machine.received_count == 1
         assert source.close_calls == 1
 
-    def test_records_state_and_counter_diagnostics(self, caplog) -> None:
+    def test_emits_diagnostics_through_injected_instance(self) -> None:
         source = FakeFrameSource(
             prepare_results=[None],
-            read_results=[make_frame(1), FakeError("finished")],
+            read_results=[make_frame(1), make_frame(2), FakeError("finished")],
             error_results=[(ErrorAction.STOP, FrameSourceState.READY)],
         )
         buffer = LatestFrameBuffer()
-        machine = CaptureStateMachine(source, buffer)
+        diagnostics = RecordingDiagnostics()
+        machine = CaptureStateMachine(source, buffer, diagnostics=diagnostics)
 
-        with caplog.at_level(logging.DEBUG):
-            machine.run()
-            buffer.take()
+        machine.run()
 
-        events = {record.event_name for record in caplog.records}
+        events = {event for event, _fields in diagnostics.events}
         assert "capture.source_state_changed" in events
         assert "capture.frame_received" in events
         assert "capture.error_handled" in events
-        assert "frame_buffer.published" in events
-        assert "frame_buffer.processed" in events
         assert "capture.source_closed" in events
         assert "capture.stopped" in events
+        assert [
+            fields["publish_result"]
+            for fields in diagnostics.fields_for("capture.frame_received")
+        ] == ["PUBLISHED", "OVERWROTE"]
 
     def test_rejects_non_positive_retry_delay(self) -> None:
         source = FakeFrameSource(
@@ -324,6 +354,7 @@ class TestCaptureStateMachine:
                 CaptureStateMachine(
                     source,
                     LatestFrameBuffer(),
+                    diagnostics=RecordingDiagnostics(),
                     retry_delay_seconds=delay,
                 )
 
@@ -349,7 +380,8 @@ class TestVideoFileSourceIntegration:
         make_video(video, frame_count=3)
         source = VideoFileSource(str(video))
         buffer = LatestFrameBuffer()
-        machine = CaptureStateMachine(source, buffer)
+        diagnostics = RecordingDiagnostics()
+        machine = CaptureStateMachine(source, buffer, diagnostics=diagnostics)
 
         machine.run()
 
@@ -357,8 +389,8 @@ class TestVideoFileSourceIntegration:
         assert latest is not None
         assert float(latest.image.mean()) > 100
         assert buffer.take() is None
-        assert machine.received_count == 3
-        assert buffer.received_count == 3
-        assert buffer.overwritten_count == 2
-        assert buffer.processed_count == 1
+        assert [
+            fields["publish_result"]
+            for fields in diagnostics.fields_for("capture.frame_received")
+        ] == ["PUBLISHED", "OVERWROTE", "OVERWROTE"]
         assert source.state is FrameSourceState.NOT_READY

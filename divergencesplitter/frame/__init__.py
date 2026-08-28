@@ -1,4 +1,9 @@
-from divergencesplitter.frame.capture import CaptureStateMachine, LatestFrameBuffer
+from divergencesplitter.frame.capture import (
+    CaptureDiagnostics,
+    CaptureStateMachine,
+    LatestFrameBuffer,
+    PublishResult,
+)
 from divergencesplitter.frame.models import Frame, FrameContext, ImageArray
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
@@ -19,6 +24,7 @@ from divergencesplitter.frame.video_file import (
 )
 
 __all__ = [
+    "CaptureDiagnostics",
     "CaptureStateMachine",
     "ClipRegion",
     "ErrorAction",
@@ -33,6 +39,7 @@ __all__ = [
     "ImageArray",
     "LatestFrameBuffer",
     "OutputSize",
+    "PublishResult",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
     "VideoFileError",
