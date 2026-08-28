@@ -1,7 +1,6 @@
 import math
 import threading
 import time
-from collections.abc import Mapping
 from enum import Enum, auto
 from typing import Protocol
 
@@ -15,14 +14,40 @@ from divergencesplitter.frame.source import (
 DEFAULT_RETRY_DELAY_SECONDS = 0.1
 
 
-class CaptureDiagnostics(Protocol):
-    def record(self, event: str, fields: Mapping[str, object]) -> None: ...
-
-
 class PublishResult(Enum):
     PUBLISHED = auto()
     OVERWROTE = auto()
     STOPPED = auto()
+
+
+class CaptureDiagnostics(Protocol):
+    """Receives capture facts without raising exceptions to the caller."""
+
+    def preparing(self) -> None: ...
+
+    def prepared(self) -> None: ...
+
+    def frame_received(self, publish_result: PublishResult) -> None: ...
+
+    def source_error(self, error: object) -> None: ...
+
+    def error_handled(
+        self,
+        action: ErrorAction,
+        state: FrameSourceState,
+    ) -> None: ...
+
+    def source_state_changed(
+        self,
+        previous: FrameSourceState | None,
+        current: FrameSourceState,
+    ) -> None: ...
+
+    def source_state_unavailable(self, error: Exception) -> None: ...
+
+    def source_closed(self) -> None: ...
+
+    def stopped(self) -> None: ...
 
 
 class LatestFrameBuffer:
@@ -130,16 +155,12 @@ class CaptureStateMachine[ErrorT]:
             try:
                 self._observe_source_state()
             except Exception as error:  # noqa: BLE001
-                self._diagnose(
-                    "capture.source_state_unavailable",
-                    exception_type=type(error).__name__,
-                    exception_message=str(error),
-                )
-            self._diagnose("capture.source_closed")
-            self._diagnose("capture.stopped")
+                self._diagnostics.source_state_unavailable(error)
+            self._diagnostics.source_closed()
+            self._diagnostics.stopped()
 
     def _prepare(self) -> None:
-        self._diagnose("capture.preparing")
+        self._diagnostics.preparing()
         error = self._source.prepare()
         self._observe_source_state()
         if self._stop_requested.is_set():
@@ -147,7 +168,7 @@ class CaptureStateMachine[ErrorT]:
         if error is not None:
             self._handle_error(error)
             return
-        self._diagnose("capture.prepared")
+        self._diagnostics.prepared()
         if self._source.state is FrameSourceState.NOT_READY:
             self._wait_before_retry()
 
@@ -156,28 +177,17 @@ class CaptureStateMachine[ErrorT]:
         self._observe_source_state()
         if isinstance(result, Frame):
             publish_result = self._buffer.publish(result)
-            self._diagnose(
-                "capture.frame_received",
-                publish_result=publish_result.name,
-            )
+            self._diagnostics.frame_received(publish_result)
             return
         if self._stop_requested.is_set():
             return
         self._handle_error(result)
 
     def _handle_error(self, error: ErrorT) -> None:
-        self._diagnose(
-            "capture.source_error",
-            exception_type=type(error).__name__,
-            exception_message=str(error),
-        )
+        self._diagnostics.source_error(error)
         action = self._source.handle_error(error)
         state = self._observe_source_state()
-        self._diagnose(
-            "capture.error_handled",
-            error_action=action.name,
-            source_state=state.name,
-        )
+        self._diagnostics.error_handled(action, state)
         if action is ErrorAction.STOP:
             self._stop_requested.set()
             return
@@ -194,15 +204,5 @@ class CaptureStateMachine[ErrorT]:
         if state is not self._last_source_state:
             previous = self._last_source_state
             self._last_source_state = state
-            self._diagnose(
-                "capture.source_state_changed",
-                previous_source_state=None if previous is None else previous.name,
-                source_state=state.name,
-            )
+            self._diagnostics.source_state_changed(previous, state)
         return state
-
-    def _diagnose(self, event: str, **fields: object) -> None:
-        try:
-            self._diagnostics.record(event, fields)
-        except Exception:  # noqa: BLE001
-            return

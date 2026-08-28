@@ -1,5 +1,4 @@
 import threading
-from collections.abc import Mapping
 from types import TracebackType
 from typing import Self
 
@@ -113,19 +112,50 @@ class BlockingFrameSource(FakeFrameSource):
 
 class RecordingDiagnostics:
     def __init__(self) -> None:
-        self.events: list[tuple[str, dict[str, object]]] = []
+        self.preparing_calls = 0
+        self.prepared_calls = 0
+        self.publish_results: list[PublishResult] = []
+        self.source_errors: list[object] = []
+        self.handled_errors: list[tuple[ErrorAction, FrameSourceState]] = []
+        self.state_changes: list[tuple[FrameSourceState | None, FrameSourceState]] = []
+        self.unavailable_errors: list[Exception] = []
+        self.source_closed_calls = 0
+        self.stopped_calls = 0
 
-    def record(self, event: str, fields: Mapping[str, object]) -> None:
-        self.events.append((event, dict(fields)))
+    def preparing(self) -> None:
+        self.preparing_calls += 1
 
-    def fields_for(self, event: str) -> list[dict[str, object]]:
-        return [fields for name, fields in self.events if name == event]
+    def prepared(self) -> None:
+        self.prepared_calls += 1
 
+    def frame_received(self, publish_result: PublishResult) -> None:
+        self.publish_results.append(publish_result)
 
-class RaisingDiagnostics:
-    def record(self, event: str, fields: Mapping[str, object]) -> None:
-        del event, fields
-        raise RuntimeError("diagnostics failed")
+    def source_error(self, error: object) -> None:
+        self.source_errors.append(error)
+
+    def error_handled(
+        self,
+        action: ErrorAction,
+        state: FrameSourceState,
+    ) -> None:
+        self.handled_errors.append((action, state))
+
+    def source_state_changed(
+        self,
+        previous: FrameSourceState | None,
+        current: FrameSourceState,
+    ) -> None:
+        self.state_changes.append((previous, current))
+
+    def source_state_unavailable(self, error: Exception) -> None:
+        self.unavailable_errors.append(error)
+
+    def source_closed(self) -> None:
+        self.source_closed_calls += 1
+
+    def stopped(self) -> None:
+        self.stopped_calls += 1
 
 
 class TestLatestFrameBuffer:
@@ -200,10 +230,10 @@ class TestCaptureStateMachine:
         assert latest is not None
         assert int(latest.image[0, 0, 0]) == 2
         assert buffer.take() is None
-        assert [
-            fields["publish_result"]
-            for fields in diagnostics.fields_for("capture.frame_received")
-        ] == ["PUBLISHED", "OVERWROTE"]
+        assert diagnostics.publish_results == [
+            PublishResult.PUBLISHED,
+            PublishResult.OVERWROTE,
+        ]
         assert source.close_calls == 1
         assert source.state is FrameSourceState.NOT_READY
         assert machine.is_stopped
@@ -230,10 +260,7 @@ class TestCaptureStateMachine:
         machine.run()
 
         assert source.prepare_calls == 2
-        assert (
-            diagnostics.fields_for("capture.error_handled")[0]["error_action"]
-            == "RETRY"
-        )
+        assert diagnostics.handled_errors[0][0] is ErrorAction.RETRY
 
     def test_retry_continues_reading_when_source_stays_ready(self) -> None:
         retry_error = FakeError("temporary")
@@ -257,10 +284,7 @@ class TestCaptureStateMachine:
 
         assert source.prepare_calls == 1
         assert source.read_calls == 3
-        assert (
-            diagnostics.fields_for("capture.error_handled")[0]["error_action"]
-            == "RETRY"
-        )
+        assert diagnostics.handled_errors[0][0] is ErrorAction.RETRY
 
     @pytest.mark.parametrize("stage", ["prepare", "read", "handle_error"])
     def test_source_exception_closes_source_and_stops_buffer(self, stage: str) -> None:
@@ -304,22 +328,6 @@ class TestCaptureStateMachine:
         assert buffer.take() is None
         assert source.close_calls == 1
 
-    def test_diagnostics_failure_does_not_stop_capture(self) -> None:
-        source = FakeFrameSource(
-            prepare_results=[None],
-            read_results=[make_frame(1), FakeError("finished")],
-            error_results=[(ErrorAction.STOP, FrameSourceState.READY)],
-        )
-        machine = CaptureStateMachine(
-            source,
-            LatestFrameBuffer(),
-            diagnostics=RaisingDiagnostics(),
-        )
-
-        machine.run()
-
-        assert source.close_calls == 1
-
     def test_emits_diagnostics_through_injected_instance(self) -> None:
         source = FakeFrameSource(
             prepare_results=[None],
@@ -332,16 +340,23 @@ class TestCaptureStateMachine:
 
         machine.run()
 
-        events = {event for event, _fields in diagnostics.events}
-        assert "capture.source_state_changed" in events
-        assert "capture.frame_received" in events
-        assert "capture.error_handled" in events
-        assert "capture.source_closed" in events
-        assert "capture.stopped" in events
-        assert [
-            fields["publish_result"]
-            for fields in diagnostics.fields_for("capture.frame_received")
-        ] == ["PUBLISHED", "OVERWROTE"]
+        assert diagnostics.preparing_calls == 1
+        assert diagnostics.prepared_calls == 1
+        assert diagnostics.state_changes == [
+            (None, FrameSourceState.NOT_READY),
+            (FrameSourceState.NOT_READY, FrameSourceState.READY),
+            (FrameSourceState.READY, FrameSourceState.NOT_READY),
+        ]
+        assert diagnostics.publish_results == [
+            PublishResult.PUBLISHED,
+            PublishResult.OVERWROTE,
+        ]
+        assert len(diagnostics.source_errors) == 1
+        assert diagnostics.handled_errors == [
+            (ErrorAction.STOP, FrameSourceState.READY)
+        ]
+        assert diagnostics.source_closed_calls == 1
+        assert diagnostics.stopped_calls == 1
 
     def test_rejects_non_positive_retry_delay(self) -> None:
         source = FakeFrameSource(
@@ -389,8 +404,9 @@ class TestVideoFileSourceIntegration:
         assert latest is not None
         assert float(latest.image.mean()) > 100
         assert buffer.take() is None
-        assert [
-            fields["publish_result"]
-            for fields in diagnostics.fields_for("capture.frame_received")
-        ] == ["PUBLISHED", "OVERWROTE", "OVERWROTE"]
+        assert diagnostics.publish_results == [
+            PublishResult.PUBLISHED,
+            PublishResult.OVERWROTE,
+            PublishResult.OVERWROTE,
+        ]
         assert source.state is FrameSourceState.NOT_READY
