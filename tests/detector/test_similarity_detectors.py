@@ -36,7 +36,7 @@ PATTERN = ((0, 255), (255, 0))
 
 
 def make_context(image: np.ndarray) -> FrameContext:
-    return FrameContext(frame=Frame(image=image), now=EPOCH)
+    return FrameContext(frame=Frame(image=image, captured_at=EPOCH), now=EPOCH)
 
 
 def assign_attribute(target: object, name: str, value: object) -> None:

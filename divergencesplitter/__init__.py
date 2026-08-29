@@ -33,7 +33,6 @@ from divergencesplitter.detector import (
 )
 from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame import (
-    CapturedFrame,
     CaptureDiagnostics,
     CaptureStateMachine,
     ClipRegion,
@@ -76,7 +75,6 @@ __all__ = [
     "Any",
     "CaptureDiagnostics",
     "CaptureStateMachine",
-    "CapturedFrame",
     "ClipRegion",
     "ColorRangeConfig",
     "ColorRangeDetector",

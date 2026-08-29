@@ -3,8 +3,7 @@ import threading
 from enum import Enum, auto
 from typing import Protocol
 
-from divergencesplitter.clock import TimeProvider
-from divergencesplitter.frame.models import CapturedFrame, Frame
+from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.source import (
     ErrorAction,
     FrameSource,
@@ -55,10 +54,10 @@ class LatestFrameBuffer:
 
     def __init__(self) -> None:
         self._condition = threading.Condition()
-        self._frame: CapturedFrame | None = None
+        self._frame: Frame | None = None
         self._stopped = False
 
-    def publish(self, frame: CapturedFrame) -> PublishResult:
+    def publish(self, frame: Frame) -> PublishResult:
         """Publish a frame, replacing an older unprocessed frame if necessary."""
         with self._condition:
             if self._stopped:
@@ -72,7 +71,7 @@ class LatestFrameBuffer:
             self._condition.notify_all()
             return result
 
-    def take(self) -> CapturedFrame | None:
+    def take(self) -> Frame | None:
         """Wait for and consume the newest frame, or return ``None`` on stop."""
         with self._condition:
             while self._frame is None:
@@ -101,7 +100,6 @@ class CaptureStateMachine[ErrorT]:
         buffer: LatestFrameBuffer,
         *,
         diagnostics: CaptureDiagnostics,
-        time_provider: TimeProvider,
         retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
     ) -> None:
         if not math.isfinite(retry_delay_seconds) or retry_delay_seconds <= 0:
@@ -110,7 +108,6 @@ class CaptureStateMachine[ErrorT]:
         self._buffer = buffer
         self._retry_delay_seconds = retry_delay_seconds
         self._diagnostics = diagnostics
-        self._time_provider = time_provider
         self._stop_requested = threading.Event()
         self._last_source_state: FrameSourceState | None = None
 
@@ -157,12 +154,8 @@ class CaptureStateMachine[ErrorT]:
     def _capture(self) -> None:
         result = self._source.read()
         if isinstance(result, Frame):
-            captured = CapturedFrame(
-                frame=result,
-                captured_at=self._time_provider.now(),
-            )
             self._observe_source_state()
-            publish_result = self._buffer.publish(captured)
+            publish_result = self._buffer.publish(result)
             self._diagnostics.frame_received(publish_result)
             return
         self._observe_source_state()

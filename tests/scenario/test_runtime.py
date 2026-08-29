@@ -126,7 +126,10 @@ def update(
 
 def context(nanoseconds: int = 0) -> FrameContext:
     return FrameContext(
-        frame=Frame(image=np.zeros((1, 1), dtype=np.uint8)),
+        frame=Frame(
+            image=np.zeros((1, 1), dtype=np.uint8),
+            captured_at=MonotonicTime(nanoseconds),
+        ),
         now=MonotonicTime(nanoseconds),
     )
 

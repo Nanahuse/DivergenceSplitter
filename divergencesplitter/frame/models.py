@@ -1,7 +1,7 @@
 """Frame data models.
 
-``Frame`` intentionally holds only the NumPy image array. Array copy and
-ownership rules are guaranteed by each frame source implementation.
+Array copy and ownership rules are guaranteed by each frame source
+implementation.
 """
 
 from __future__ import annotations
@@ -17,16 +17,9 @@ ImageArray = np.ndarray
 
 @dataclass(frozen=True)
 class Frame:
-    """A single captured frame carrying only its image array."""
+    """A captured image and its monotonic acquisition time."""
 
     image: ImageArray
-
-
-@dataclass(frozen=True)
-class CapturedFrame:
-    """A frame paired with the time at which its source returned it."""
-
-    frame: Frame
     captured_at: MonotonicTime
 
 

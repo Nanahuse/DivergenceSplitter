@@ -11,6 +11,7 @@ from typing import Self
 
 import cv2
 
+from divergencesplitter.clock import TimeProvider
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
@@ -50,11 +51,15 @@ class VideoFileSource:
         path: str,
         clip_region: ClipRegion | None = None,
         output_size: OutputSize | None = None,
+        time_provider: TimeProvider | None = None,
     ) -> None:
         self._normalizer = FrameNormalizer(
             clip_region=clip_region, output_size=output_size
         )
         self._path = path
+        self._time_provider = (
+            time_provider if time_provider is not None else TimeProvider()
+        )
         self._capture: cv2.VideoCapture | None = None
         self._state = FrameSourceState.NOT_READY
         self._fps = DEFAULT_FPS
@@ -93,7 +98,7 @@ class VideoFileSource:
         if not retval or image is None:
             return self._classify_failure()
         self._frames_read += 1
-        return Frame(image=image)
+        return Frame(image=image, captured_at=self._time_provider.now())
 
     def handle_error(self, error: VideoFileError) -> ErrorAction:
         del error

@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
+from divergencesplitter.clock import MonotonicTime, TimeProvider
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
@@ -26,6 +27,16 @@ from divergencesplitter.frame.video_file import (
 )
 
 SIZE = (16, 16)
+
+
+class FixedTimeProvider(TimeProvider):
+    def __init__(self, nanoseconds: int) -> None:
+        self._now = MonotonicTime(nanoseconds)
+        self.calls = 0
+
+    def now(self) -> MonotonicTime:
+        self.calls += 1
+        return self._now
 
 
 def _fourcc(code: str) -> int:
@@ -93,11 +104,14 @@ class TestRead:
     def test_read_returns_frame_after_prepare(self, tmp_path):
         video = tmp_path / "movie.avi"
         make_video(video, frame_count=2)
-        source = VideoFileSource(str(video))
+        time_provider = FixedTimeProvider(123)
+        source = VideoFileSource(str(video), time_provider=time_provider)
         source.prepare()
         result = read_frame(source)
         assert result.image.shape == (*SIZE, 3)
         assert int(result.image[0, 0, 0]) == 0
+        assert result.captured_at == MonotonicTime(123)
+        assert time_provider.calls == 1
 
     def test_read_before_ready_is_source_error(self, tmp_path):
         source = VideoFileSource(str(tmp_path / "movie.avi"))
