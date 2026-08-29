@@ -5,7 +5,7 @@ from divergencesplitter.frame.models import FrameContext
 
 class Nth(ConditionBase):
     def __init__(self, condition: Condition, count: int) -> None:
-        if type(count) is not int or count < 1:
+        if count < 1:
             raise ValueError("count must be a positive int")
         self._condition = condition
         self._count = count

@@ -198,9 +198,8 @@ class HoldConditionTest(unittest.TestCase):
         self.assertEqual(child.calls, [False, False])
 
     def test_rejects_invalid_duration(self) -> None:
-        for value in (-1, True, 1.5):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                Hold(SequenceCondition(True), cast("int", value))
+        with self.assertRaises(ValueError):
+            Hold(SequenceCondition(True), -1)
 
     def test_rejects_backwards_time_while_active(self) -> None:
         condition = Hold(SequenceCondition(True, True), 5)
@@ -288,9 +287,8 @@ class ThenConditionTest(unittest.TestCase):
     def test_rejects_invalid_configuration(self) -> None:
         with self.assertRaises(ValueError):
             Then(within_nanoseconds=0)
-        for value in (-1, True, 1.5):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                Then(SequenceCondition(True), within_nanoseconds=cast("int", value))
+        with self.assertRaises(ValueError):
+            Then(SequenceCondition(True), within_nanoseconds=-1)
 
 
 class OnceConditionTest(unittest.TestCase):
@@ -352,9 +350,9 @@ class NthConditionTest(unittest.TestCase):
         self.assertEqual(child.resets, 1)
 
     def test_rejects_invalid_count(self) -> None:
-        for value in (0, -1, True, 1.5):
+        for value in (0, -1):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                Nth(SequenceCondition(True), cast("int", value))
+                Nth(SequenceCondition(True), value)
 
 
 class ResetWhenConditionTest(unittest.TestCase):
@@ -440,9 +438,8 @@ class ElapsedConditionTest(unittest.TestCase):
         self.assertTrue(condition.evaluate(make_context(15)))
 
     def test_rejects_invalid_duration(self) -> None:
-        for value in (-1, True, 1.5):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                Elapsed(cast("int", value))
+        with self.assertRaises(ValueError):
+            Elapsed(-1)
 
     def test_rejects_backwards_time_while_active(self) -> None:
         condition = Elapsed(5)

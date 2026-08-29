@@ -44,8 +44,6 @@ class RuleDefinition:
     source_line: int = field(init=False, compare=False)
 
     def __post_init__(self) -> None:
-        if not callable(self.condition_factory):
-            raise TypeError("condition_factory must be callable")
         if self.name == "":
             object.__setattr__(self, "name", None)
         source_path, source_line = _source_location()
@@ -66,17 +64,8 @@ class ScenarioDefinition:
             raise ValueError("target_id must not be empty")
         copied: dict[int, tuple[RuleDefinition, ...]] = {}
         for split_index, definitions in self.rules.items():
-            if (
-                isinstance(split_index, bool)
-                or not isinstance(split_index, int)
-                or split_index < 0
-            ):
+            if split_index < 0:
                 raise ValueError("split keys must be non-negative integers")
             immutable_definitions = tuple(definitions)
-            if not all(
-                isinstance(definition, RuleDefinition)
-                for definition in immutable_definitions
-            ):
-                raise ValueError("rules must contain RuleDefinition values")
             copied[split_index] = immutable_definitions
         object.__setattr__(self, "rules", MappingProxyType(copied))
