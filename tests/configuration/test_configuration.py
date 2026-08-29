@@ -1,9 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, cast
 
 from divergencesplitter import (
+    FrameSourceState,
     LiveSplitConnection,
     LiveSplitSnapshot,
     Scenario,
@@ -56,7 +56,13 @@ def make_snapshot(
 class ScenarioModuleLoadingTest(unittest.TestCase):
     def test_loads_preconstructed_exports_without_preparing_source(self) -> None:
         source = """
-from divergencesplitter import LiveSplitConnection, Scenario
+from divergencesplitter import (
+    ErrorAction,
+    FrameNormalizer,
+    FrameSourceState,
+    LiveSplitConnection,
+    Scenario,
+)
 
 class Condition:
     def evaluate(self, context, *, is_short_circuited=False):
@@ -65,9 +71,20 @@ class Condition:
         pass
 
 class Source:
-    prepared = False
+    state = FrameSourceState.NOT_READY
+    normalizer = FrameNormalizer()
     def prepare(self):
-        self.prepared = True
+        self.state = FrameSourceState.READY
+    def read(self):
+        return RuntimeError('no frame')
+    def handle_error(self, error):
+        return ErrorAction.STOP
+    def close(self):
+        pass
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
 
 scenarios = (
     Scenario(
@@ -84,7 +101,7 @@ frame_source = Source()
             scenarios, frame_source = load_scenario_module(path)
 
         self.assertEqual(scenarios[0].connection.rpc_endpoint, "rpc")
-        self.assertFalse(cast("Any", frame_source).prepared)
+        self.assertIs(frame_source.state, FrameSourceState.NOT_READY)
 
     def test_import_exception_is_forwarded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -100,6 +117,43 @@ frame_source = Source()
             with self.assertRaises(ExceptionGroup) as raised:
                 load_scenario_module(path)
         self.assertEqual(len(raised.exception.exceptions), 2)
+
+    def test_export_type_errors_are_aggregated(self) -> None:
+        source = """
+scenarios = []
+frame_source = object()
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scenario_module.py"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaises(ExceptionGroup) as raised:
+                load_scenario_module(path)
+        self.assertEqual(len(raised.exception.exceptions), 2)
+        self.assertTrue(
+            all(isinstance(error, TypeError) for error in raised.exception.exceptions)
+        )
+
+    def test_missing_and_invalid_exports_are_aggregated_together(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scenario_module.py"
+            path.write_text("frame_source = object()", encoding="utf-8")
+            with self.assertRaises(ExceptionGroup) as raised:
+                load_scenario_module(path)
+        self.assertEqual(len(raised.exception.exceptions), 2)
+
+    def test_invalid_scenario_positions_are_reported(self) -> None:
+        source = """
+scenarios = (object(), object())
+frame_source = object()
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scenario_module.py"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaises(ExceptionGroup) as raised:
+                load_scenario_module(path)
+        messages = tuple(str(error) for error in raised.exception.exceptions)
+        self.assertTrue(any("scenarios[0]" in message for message in messages))
+        self.assertTrue(any("scenarios[1]" in message for message in messages))
 
 
 class ConfigurationValidationTest(unittest.TestCase):
