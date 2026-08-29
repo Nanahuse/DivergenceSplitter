@@ -1,5 +1,6 @@
+"""Evaluation state for one configured scenario."""
+
 import logging
-from dataclasses import dataclass
 
 from divergencesplitter.frame.models import FrameContext
 from divergencesplitter.livesplit.models import (
@@ -9,73 +10,32 @@ from divergencesplitter.livesplit.models import (
     TimerPhase,
 )
 from divergencesplitter.rule import Action, Rule
-from divergencesplitter.scenario.definition import RuleDefinition, ScenarioDefinition
+from divergencesplitter.scenario.models import Scenario
 
 SPLIT_TRANSITION_TIMEOUT_NANOSECONDS = 1_000_000_000
-
-
-@dataclass(frozen=True)
-class _RuntimeRule:
-    definition: RuleDefinition
-    rule: Rule
 
 
 class ScenarioRuntime:
     def __init__(
         self,
-        definition: ScenarioDefinition,
+        scenario: Scenario,
         *,
         logger: logging.Logger | None = None,
     ) -> None:
-        self._definition = definition
+        self._scenario = scenario
         self._logger = logger or logging.getLogger(__name__)
-        self._rules = self._build_rules(definition)
+        self._reset_rules = tuple(
+            Rule(condition=condition, action=Action(operation="reset"))
+            for condition in scenario.reset_conditions
+        )
         self._snapshot: LiveSplitSnapshot | None = None
         self._awaiting_resync = False
         self._configuration_valid = True
+        self._pending_action: Action | None = None
         self._action_started_at: int | None = None
-
-    @staticmethod
-    def _build_rules(
-        definition: ScenarioDefinition,
-    ) -> dict[int, tuple[_RuntimeRule, ...]]:
-        result: dict[int, tuple[_RuntimeRule, ...]] = {}
-        condition_ids: set[int] = set()
-        for split_index, rule_definitions in definition.rules.items():
-            runtime_rules: list[_RuntimeRule] = []
-            for rule_definition in rule_definitions:
-                action = rule_definition.action
-                if action.scenario_id != definition.scenario_id:
-                    raise ValueError(
-                        "Action scenario_id does not match ScenarioDefinition"
-                    )
-                if action.target_id != definition.target_id:
-                    raise ValueError(
-                        "Action target_id does not match ScenarioDefinition"
-                    )
-                condition = rule_definition.condition_factory()
-                if id(condition) in condition_ids:
-                    raise ValueError("condition_factory must return a fresh Condition")
-                condition_ids.add(id(condition))
-                runtime_rules.append(
-                    _RuntimeRule(
-                        definition=rule_definition,
-                        rule=Rule(condition=condition, action=action),
-                    )
-                )
-            result[split_index] = tuple(runtime_rules)
-        return result
 
     def apply_livesplit_update(self, update: LiveSplitUpdate) -> None:
         snapshot = update.snapshot
-        if snapshot.target_id != self._definition.target_id:
-            self._log(
-                logging.WARNING,
-                "scenario_runtime.target_mismatch",
-                received_target_id=snapshot.target_id,
-            )
-            return
-
         current = self._snapshot
         if current is None:
             if update.kind not in (
@@ -96,9 +56,6 @@ class ScenarioRuntime:
                     received_session_id=snapshot.session_id,
                 )
                 return
-            self._reset_all_rules()
-            self._action_started_at = None
-            self._awaiting_resync = False
             self._establish_baseline(snapshot)
             self._log(logging.INFO, "scenario_runtime.session_resynced")
             return
@@ -143,8 +100,13 @@ class ScenarioRuntime:
         self._snapshot = snapshot
         self._configuration_valid = self._validate_split_count(snapshot)
         if update.kind is LiveSplitUpdateKind.TRANSITION:
-            self._action_started_at = None
-            self._reset_destination(snapshot)
+            self._apply_transition_resets(current, snapshot)
+            if (
+                self._pending_action is None
+                or snapshot.phase is TimerPhase.NOT_RUNNING
+                or self._pending_action.operation != "reset"
+            ):
+                self._clear_pending_action()
             self._log(logging.INFO, "scenario_runtime.transition")
 
     @staticmethod
@@ -163,45 +125,90 @@ class ScenarioRuntime:
         snapshot = self._snapshot
         if snapshot is None or self._awaiting_resync or not self._configuration_valid:
             return None
+        if snapshot.phase is TimerPhase.NOT_RUNNING:
+            return None
+        if (
+            self._pending_action is not None
+            and self._pending_action.operation == "reset"
+        ):
+            return None
 
-        if self._action_started_at is not None:
+        reset_action = self._evaluate_rules(
+            self._reset_rules,
+            context,
+            snapshot,
+            group="reset",
+            split_index=None,
+        )
+        if reset_action is not None:
+            self._start_action(reset_action, context)
+            return reset_action
+
+        if self._pending_action is not None:
+            if self._action_started_at is None:
+                return None
             elapsed = context.now.nanoseconds - self._action_started_at
             if elapsed < SPLIT_TRANSITION_TIMEOUT_NANOSECONDS:
                 return None
             self._reset_destination(snapshot)
-            self._action_started_at = None
+            self._clear_pending_action()
             self._log(logging.WARNING, "scenario_runtime.transition_timeout")
-
-        if snapshot.phase not in (TimerPhase.RUNNING, TimerPhase.PAUSED):
             return None
 
-        for rule_index, runtime_rule in enumerate(
-            self._rules.get(snapshot.split_index, ())
-        ):
+        split_index = self._evaluation_index(snapshot)
+        if split_index is None or split_index >= len(self._scenario.splits):
+            return None
+        rules = self._scenario.splits[split_index]
+        if rules is None:
+            return None
+        action = self._evaluate_rules(
+            rules,
+            context,
+            snapshot,
+            group="main",
+            split_index=split_index,
+        )
+        if action is not None:
+            self._start_action(action, context)
+        return action
+
+    def _evaluate_rules(
+        self,
+        rules: tuple[Rule, ...],
+        context: FrameContext,
+        snapshot: LiveSplitSnapshot,
+        *,
+        group: str,
+        split_index: int | None,
+    ) -> Action | None:
+        for rule_index, rule in enumerate(rules):
             try:
-                action = runtime_rule.rule.evaluate(context)
+                action = rule.evaluate(context)
             except Exception as error:  # noqa: BLE001
                 self._log_rule_exception(
-                    error,
-                    snapshot,
-                    snapshot.split_index,
-                    rule_index,
-                    runtime_rule.definition,
+                    error, snapshot, group, split_index, rule_index
                 )
                 continue
             if action is not None:
-                self._action_started_at = context.now.nanoseconds
                 self._log_rule(
                     logging.INFO,
                     "scenario_runtime.action",
                     snapshot,
-                    snapshot.split_index,
+                    group,
+                    split_index,
                     rule_index,
-                    runtime_rule.definition,
                     operation=action.operation,
                 )
                 return action
         return None
+
+    def _start_action(self, action: Action, context: FrameContext) -> None:
+        self._pending_action = action
+        self._action_started_at = context.now.nanoseconds
+
+    def _clear_pending_action(self) -> None:
+        self._pending_action = None
+        self._action_started_at = None
 
     def _apply_resync(
         self,
@@ -212,59 +219,86 @@ class ScenarioRuntime:
             self._log(logging.WARNING, "scenario_runtime.revision_regressed")
             return
         revision_advanced = snapshot.state_revision > current.state_revision
+        run_changed = snapshot.split_count != current.split_count
         self._snapshot = snapshot
         self._configuration_valid = self._validate_split_count(snapshot)
         self._awaiting_resync = False
-        if revision_advanced:
-            self._action_started_at = None
-            self._reset_destination(snapshot)
+        self._clear_pending_action()
+        if revision_advanced or run_changed:
+            self._reset_all_rules()
         self._log(
             logging.INFO,
             "scenario_runtime.resynced",
             revision_advanced=revision_advanced,
+            run_changed=run_changed,
         )
 
     def _establish_baseline(self, snapshot: LiveSplitSnapshot) -> None:
         self._snapshot = snapshot
         self._awaiting_resync = False
         self._configuration_valid = self._validate_split_count(snapshot)
+        self._clear_pending_action()
+        self._reset_all_rules()
         self._log(logging.INFO, "scenario_runtime.baseline")
 
     def _validate_split_count(self, snapshot: LiveSplitSnapshot) -> bool:
         if snapshot.phase is TimerPhase.NOT_RUNNING and snapshot.split_count == 0:
             return True
-        invalid_keys = [
-            split_index
-            for split_index in self._rules
-            if split_index >= snapshot.split_count
-        ]
-        if invalid_keys:
+        if len(self._scenario.splits) > snapshot.split_count + 1:
             self._log(
                 logging.ERROR,
                 "scenario_runtime.split_count_mismatch",
-                invalid_split_indices=tuple(sorted(invalid_keys)),
+                configured_split_slots=len(self._scenario.splits),
+                maximum_split_slots=snapshot.split_count + 1,
             )
             return False
         return True
 
-    def _reset_destination(self, snapshot: LiveSplitSnapshot) -> None:
-        if snapshot.phase not in (TimerPhase.RUNNING, TimerPhase.PAUSED):
+    @staticmethod
+    def _evaluation_index(snapshot: LiveSplitSnapshot) -> int | None:
+        if snapshot.phase in (TimerPhase.RUNNING, TimerPhase.PAUSED):
+            return snapshot.split_index
+        if snapshot.phase is TimerPhase.ENDED:
+            return snapshot.split_count
+        return None
+
+    def _apply_transition_resets(
+        self,
+        current: LiveSplitSnapshot,
+        snapshot: LiveSplitSnapshot,
+    ) -> None:
+        if (
+            snapshot.phase is TimerPhase.NOT_RUNNING
+            or snapshot.split_count != current.split_count
+        ):
+            self._reset_all_rules()
             return
-        self._reset_group(snapshot.split_index)
+        destination = self._evaluation_index(snapshot)
+        if destination is not None and (
+            destination != self._evaluation_index(current)
+            or snapshot.phase is current.phase
+        ):
+            self._reset_group(destination)
+
+    def _reset_destination(self, snapshot: LiveSplitSnapshot) -> None:
+        split_index = self._evaluation_index(snapshot)
+        if split_index is not None:
+            self._reset_group(split_index)
 
     def _reset_group(self, split_index: int) -> None:
-        for rule_index, runtime_rule in enumerate(self._rules.get(split_index, ())):
+        if split_index >= len(self._scenario.splits):
+            return
+        rules = self._scenario.splits[split_index]
+        if rules is None:
+            return
+        for rule_index, rule in enumerate(rules):
             try:
-                runtime_rule.rule.reset()
+                rule.reset()
             except Exception as error:  # noqa: BLE001
                 snapshot = self._snapshot
                 if snapshot is not None:
                     self._log_rule_exception(
-                        error,
-                        snapshot,
-                        split_index,
-                        rule_index,
-                        runtime_rule.definition,
+                        error, snapshot, "main", split_index, rule_index
                     )
         self._log(
             logging.DEBUG,
@@ -273,24 +307,31 @@ class ScenarioRuntime:
         )
 
     def _reset_all_rules(self) -> None:
-        for split_index in self._rules:
+        snapshot = self._snapshot
+        for rule_index, rule in enumerate(self._reset_rules):
+            try:
+                rule.reset()
+            except Exception as error:  # noqa: BLE001
+                if snapshot is not None:
+                    self._log_rule_exception(error, snapshot, "reset", None, rule_index)
+        for split_index in range(len(self._scenario.splits)):
             self._reset_group(split_index)
 
     def _log_rule_exception(
         self,
         error: Exception,
         snapshot: LiveSplitSnapshot,
-        split_index: int,
+        group: str,
+        split_index: int | None,
         rule_index: int,
-        definition: RuleDefinition,
     ) -> None:
         self._log_rule(
             logging.ERROR,
             "scenario_runtime.rule_exception",
             snapshot,
+            group,
             split_index,
             rule_index,
-            definition,
             exception_type=type(error).__name__,
             exception_message=str(error),
             exc_info=error,
@@ -301,20 +342,18 @@ class ScenarioRuntime:
         level: int,
         event: str,
         snapshot: LiveSplitSnapshot,
-        split_index: int,
+        group: str,
+        split_index: int | None,
         rule_index: int,
-        definition: RuleDefinition,
         exc_info: BaseException | bool | None = None,
         **extra: object,
     ) -> None:
         self._log(
             level,
             event,
-            split_index=split_index,
+            rule_group=group,
+            rule_split_index=split_index,
             rule_index=rule_index,
-            rule_name=definition.name,
-            rule_source_path=definition.source_path,
-            rule_source_line=definition.source_line,
             session_id=snapshot.session_id,
             state_revision=snapshot.state_revision,
             event_sequence=snapshot.event_sequence,
@@ -330,11 +369,7 @@ class ScenarioRuntime:
         exc_info: BaseException | bool | None = None,
         **extra: object,
     ) -> None:
-        fields: dict[str, object] = {
-            "event_name": event,
-            "scenario_id": self._definition.scenario_id,
-            "target_id": self._definition.target_id,
-        }
+        fields: dict[str, object] = {"event_name": event}
         snapshot = self._snapshot
         if snapshot is not None:
             fields.update(

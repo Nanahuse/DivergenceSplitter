@@ -56,7 +56,7 @@ class RecordingCondition:
 
 
 def make_action() -> Action:
-    return Action(scenario_id="scenario", target_id="game", operation="split")
+    return Action(operation="split")
 
 
 class RuleEvaluateTest(unittest.TestCase):
