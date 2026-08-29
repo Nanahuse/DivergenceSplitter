@@ -6,7 +6,7 @@ from divergencesplitter.frame.models import FrameContext
 
 class Hold(ConditionBase):
     def __init__(self, condition: Condition, duration_nanoseconds: int) -> None:
-        if type(duration_nanoseconds) is not int or duration_nanoseconds < 0:
+        if duration_nanoseconds < 0:
             raise ValueError("duration_nanoseconds must be a non-negative int")
         self._condition = condition
         self._duration_nanoseconds = duration_nanoseconds

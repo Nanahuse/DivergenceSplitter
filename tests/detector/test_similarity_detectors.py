@@ -18,7 +18,6 @@ from divergencesplitter.detector.mean_absolute_similarity import (
 )
 from divergencesplitter.detector.models import (
     ConfigImage,
-    FrozenConfigImage,
     freeze_config_image,
 )
 from divergencesplitter.detector.phase_correlation import (
@@ -144,8 +143,6 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
     def test_rejects_invalid_hash_size(self) -> None:
         with self.assertRaises(ValueError):
             DifferenceHashSimilarityConfig(PATTERN, hash_size=0)
-        with self.assertRaises(ValueError):
-            DifferenceHashSimilarityConfig(PATTERN, hash_size=True)
 
     def test_frame_hash_is_shared_by_hash_size(self) -> None:
         frame = np.tile(np.arange(9, dtype=np.uint8), (8, 1))
@@ -244,16 +241,12 @@ class ConfigImageTest(unittest.TestCase):
         second = evaluate(context, equivalent)
         self.assertIs(first, second)
 
-    def test_configuration_requires_frozen_reference(self) -> None:
-        with self.assertRaises(ValueError):
-            MeanAbsoluteSimilarityConfig(cast(FrozenConfigImage, [[0, 0], [0, 0]]))
-
     def test_freezes_color_image(self) -> None:
         frozen = freeze_config_image([[[0, 1, 2], [3, 4, 5]]])
         self.assertEqual(frozen, (((0, 1, 2), (3, 4, 5)),))
         hash(frozen)
 
     def test_rejects_invalid_config_images(self) -> None:
-        for image in ([], [[], []], [[0], [0, 1]], [[float("inf")]], [["x"]]):
+        for image in ([], [[], []], [[0], [0, 1]], [[float("inf")]]):
             with self.subTest(image=image), self.assertRaises(ValueError):
                 freeze_config_image(cast(ConfigImage, image))

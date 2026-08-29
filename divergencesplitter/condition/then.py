@@ -13,7 +13,7 @@ class Then(ConditionBase):
     def __init__(self, *conditions: Condition, within_nanoseconds: int) -> None:
         if not conditions:
             raise ValueError("Then requires at least one condition")
-        if type(within_nanoseconds) is not int or within_nanoseconds < 0:
+        if within_nanoseconds < 0:
             raise ValueError("within_nanoseconds must be a non-negative int")
         self._conditions = conditions
         self._within_nanoseconds = within_nanoseconds

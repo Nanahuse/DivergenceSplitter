@@ -38,8 +38,6 @@ def freeze_config_image(image: ConfigImage) -> FrozenConfigImage:
     if len(image) == 0:
         raise ValueError("image config must not be empty")
     first = image[0]
-    if type(first) is int or type(first) is float:
-        raise ValueError("image rows must be sequences")
     if len(first) == 0:
         raise ValueError("image rows must not be empty")
     if isinstance(first[0], Sequence):
@@ -56,19 +54,8 @@ def freeze_pixel_vector(values: Sequence[Pixel]) -> tuple[Pixel, ...]:
 
 
 def _validate_frozen_config_image(image: FrozenConfigImage) -> None:
-    """Validate an image and require its complete structure to use tuples."""
+    """Validate the semantic constraints of a frozen configuration image."""
     freeze_config_image(image)
-    if not _contains_only_tuples(image):
-        raise ValueError("reference image must use nested tuples")
-
-
-def _contains_only_tuples(value: object) -> bool:
-    if type(value) is not tuple:
-        return False
-    return all(
-        type(item) is int or type(item) is float or _contains_only_tuples(item)
-        for item in value
-    )
 
 
 def _freeze_2d(image: Sequence[Sequence[Pixel]]) -> tuple[tuple[Pixel, ...], ...]:
@@ -105,8 +92,6 @@ def _freeze_row(row: Sequence[Pixel]) -> tuple[Pixel, ...]:
 
 
 def _freeze_pixel(value: Pixel) -> Pixel:
-    if type(value) is not int and type(value) is not float:
-        raise ValueError(f"image values must be numbers: {value!r}")
-    if type(value) is float and not math.isfinite(value):
+    if not math.isfinite(value):
         raise ValueError(f"image values must be finite: {value!r}")
     return value

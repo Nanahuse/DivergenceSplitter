@@ -26,8 +26,6 @@ class ColorRangeConfig:
     def __post_init__(self) -> None:
         lower = freeze_pixel_vector(self.lower)
         upper = freeze_pixel_vector(self.upper)
-        if type(self.lower) is not tuple or type(self.upper) is not tuple:
-            raise ValueError("color bounds must be tuples")
         if len(lower) not in (1, 3):
             raise ValueError(f"color bound length must be 1 or 3, got {len(lower)}")
         if len(lower) != len(upper):

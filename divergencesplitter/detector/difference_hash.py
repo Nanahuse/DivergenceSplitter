@@ -25,7 +25,7 @@ class DifferenceHashSimilarityConfig:
 
     def __post_init__(self) -> None:
         _validate_frozen_config_image(self.reference)
-        if type(self.hash_size) is not int or self.hash_size <= 0:
+        if self.hash_size <= 0:
             raise ValueError(
                 f"hash_size must be a positive integer: {self.hash_size!r}"
             )

@@ -5,7 +5,7 @@ from divergencesplitter.frame.models import FrameContext
 
 class Elapsed(ConditionBase):
     def __init__(self, duration_nanoseconds: int) -> None:
-        if type(duration_nanoseconds) is not int or duration_nanoseconds < 0:
+        if duration_nanoseconds < 0:
             raise ValueError("duration_nanoseconds must be a non-negative int")
         self._duration_nanoseconds = duration_nanoseconds
         self._started_at: MonotonicTime | None = None
