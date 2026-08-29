@@ -16,6 +16,12 @@ from divergencesplitter.condition import (
     RisingEdge,
     Then,
 )
+from divergencesplitter.configuration import (
+    ConfigurationExports,
+    load_configuration,
+    validate_scenarios,
+    validate_split_count,
+)
 from divergencesplitter.detector import (
     ColorRangeConfig,
     ColorRangeDetector,
@@ -57,17 +63,14 @@ from divergencesplitter.frame import (
     VideoFileSource,
 )
 from divergencesplitter.livesplit import (
+    LiveSplitConnection,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
 )
 from divergencesplitter.rule import Action, Rule
-from divergencesplitter.scenario import (
-    RuleDefinition,
-    ScenarioDefinition,
-    ScenarioRuntime,
-)
+from divergencesplitter.scenario import Scenario, ScenarioRuntime
 
 __all__ = [
     "Action",
@@ -79,6 +82,7 @@ __all__ = [
     "ColorRangeConfig",
     "ColorRangeDetector",
     "Condition",
+    "ConfigurationExports",
     "Detected",
     "DetectionResult",
     "DifferenceHashSimilarityConfig",
@@ -98,6 +102,7 @@ __all__ = [
     "ImageArray",
     "ImageDetector",
     "LatestFrameBuffer",
+    "LiveSplitConnection",
     "LiveSplitSnapshot",
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",
@@ -115,8 +120,7 @@ __all__ = [
     "ResetWhen",
     "RisingEdge",
     "Rule",
-    "RuleDefinition",
-    "ScenarioDefinition",
+    "Scenario",
     "ScenarioRuntime",
     "TemplateMatchConfig",
     "TemplateMatchDetector",
@@ -130,4 +134,7 @@ __all__ = [
     "VideoFileReadBeforeReadyError",
     "VideoFileSource",
     "evaluate",
+    "load_configuration",
+    "validate_scenarios",
+    "validate_split_count",
 ]

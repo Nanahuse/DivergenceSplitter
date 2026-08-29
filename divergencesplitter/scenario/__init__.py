@@ -1,8 +1,7 @@
-from divergencesplitter.scenario.definition import RuleDefinition, ScenarioDefinition
+from divergencesplitter.scenario.models import Scenario
 from divergencesplitter.scenario.runtime import ScenarioRuntime
 
 __all__ = [
-    "RuleDefinition",
-    "ScenarioDefinition",
+    "Scenario",
     "ScenarioRuntime",
 ]

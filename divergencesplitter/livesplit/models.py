@@ -19,8 +19,13 @@ def _require_non_negative_integer(name: str, value: int) -> None:
 
 
 @dataclass(frozen=True)
+class LiveSplitConnection:
+    rpc_endpoint: str
+    event_endpoint: str
+
+
+@dataclass(frozen=True)
 class LiveSplitSnapshot:
-    target_id: str
     session_id: int
     state_revision: int
     event_sequence: int
@@ -29,8 +34,6 @@ class LiveSplitSnapshot:
     split_count: int
 
     def __post_init__(self) -> None:
-        if not self.target_id:
-            raise ValueError("target_id must not be empty")
         for name in ("session_id", "state_revision", "event_sequence", "split_count"):
             _require_non_negative_integer(name, getattr(self, name))
         if self.phase is TimerPhase.NOT_RUNNING:

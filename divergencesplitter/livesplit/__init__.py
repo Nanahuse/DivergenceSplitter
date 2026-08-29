@@ -1,4 +1,5 @@
 from divergencesplitter.livesplit.models import (
+    LiveSplitConnection,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -6,6 +7,7 @@ from divergencesplitter.livesplit.models import (
 )
 
 __all__ = [
+    "LiveSplitConnection",
     "LiveSplitSnapshot",
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",
