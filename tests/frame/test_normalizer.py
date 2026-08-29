@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
+from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
@@ -13,6 +14,7 @@ from divergencesplitter.frame.normalizer import (
 )
 
 SIZE = (16, 16)
+CAPTURED_AT = MonotonicTime(123)
 
 
 def make_pattern_image(width=16, height=16):
@@ -21,6 +23,12 @@ def make_pattern_image(width=16, height=16):
         dtype=np.uint8,
     )
     return np.stack([stripe, stripe, stripe], axis=-1)
+
+
+def make_frame(image=None) -> Frame:
+    if image is None:
+        image = make_pattern_image()
+    return Frame(image=image, captured_at=CAPTURED_AT)
 
 
 class TestConstruction:
@@ -56,7 +64,7 @@ class TestConstruction:
 class TestNoTransform:
     def test_no_settings_returns_same_frame(self):
         normalizer = FrameNormalizer()
-        frame = Frame(image=make_pattern_image())
+        frame = make_frame()
         assert normalizer.normalize(frame) is frame
 
 
@@ -64,15 +72,16 @@ class TestClip:
     def test_clip_returns_clipped_shape(self):
         region = ClipRegion(x=2, y=3, width=6, height=5)
         normalizer = FrameNormalizer(clip_region=region)
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, Frame)
         assert result.image.shape == (region.height, region.width, 3)
+        assert result.captured_at == CAPTURED_AT
 
     def test_clip_matches_manual_slice_of_full_frame(self):
         region = ClipRegion(x=2, y=3, width=6, height=5)
         normalizer = FrameNormalizer(clip_region=region)
         image = make_pattern_image()
-        result = normalizer.normalize(Frame(image=image))
+        result = normalizer.normalize(make_frame(image))
         assert isinstance(result, Frame)
         expected = image[
             region.y : region.y + region.height,
@@ -84,7 +93,7 @@ class TestClip:
         normalizer = FrameNormalizer(
             clip_region=ClipRegion(x=0, y=0, width=8, height=8)
         )
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, Frame)
         assert result.image.flags.owndata
         assert result.image.base is None
@@ -93,7 +102,7 @@ class TestClip:
         normalizer = FrameNormalizer(
             clip_region=ClipRegion(x=1, y=0, width=16, height=16)
         )
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, FrameClipError)
         assert isinstance(result, FrameNormalizationError)
 
@@ -101,7 +110,7 @@ class TestClip:
         normalizer = FrameNormalizer(
             clip_region=ClipRegion(x=0, y=1, width=16, height=16)
         )
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, FrameClipError)
         assert isinstance(result, FrameNormalizationError)
 
@@ -111,7 +120,7 @@ class TestResize:
         size = OutputSize(width=12, height=10)
         normalizer = FrameNormalizer(output_size=size)
         image = make_pattern_image()
-        result = normalizer.normalize(Frame(image=image))
+        result = normalizer.normalize(make_frame(image))
         assert isinstance(result, Frame)
         expected = cv2.resize(
             image, (size.width, size.height), interpolation=cv2.INTER_LINEAR
@@ -123,8 +132,9 @@ class TestResize:
         size = OutputSize(width=12, height=10)
         normalizer = FrameNormalizer(clip_region=region, output_size=size)
         image = make_pattern_image()
-        result = normalizer.normalize(Frame(image=image))
+        result = normalizer.normalize(make_frame(image))
         assert isinstance(result, Frame)
+        assert result.captured_at == CAPTURED_AT
         manual_clip = image[
             region.y : region.y + region.height,
             region.x : region.x + region.width,
@@ -136,7 +146,7 @@ class TestResize:
 
     def test_resized_frame_owns_its_data(self):
         normalizer = FrameNormalizer(output_size=OutputSize(width=12, height=10))
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, Frame)
         assert result.image.flags.owndata
         assert result.image.base is None
@@ -146,7 +156,7 @@ class TestResize:
             clip_region=ClipRegion(x=0, y=0, width=8, height=8),
             output_size=OutputSize(width=12, height=10),
         )
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, Frame)
         assert result.image.flags.owndata
         assert result.image.base is None
@@ -166,7 +176,7 @@ class TestResize:
             )
             shapes = []
             for _ in range(3):
-                result = normalizer.normalize(Frame(image=make_pattern_image()))
+                result = normalizer.normalize(make_frame())
                 assert isinstance(result, Frame)
                 shapes.append(result.image.shape)
                 assert result.image.shape[-1] == 3
@@ -183,7 +193,7 @@ class TestResize:
 
         monkeypatch.setattr(cv2, "resize", counting_resize)
         normalizer = FrameNormalizer(output_size=OutputSize(width=12, height=10))
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, Frame)
         assert calls["count"] == 1
 
@@ -197,7 +207,7 @@ class TestResize:
 
         monkeypatch.setattr(cv2, "resize", counting_resize)
         normalizer = FrameNormalizer()
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, Frame)
         assert calls["count"] == 0
 
@@ -209,6 +219,6 @@ class TestResizeError:
 
         monkeypatch.setattr(cv2, "resize", raise_resize_error)
         normalizer = FrameNormalizer(output_size=OutputSize(width=12, height=10))
-        result = normalizer.normalize(Frame(image=make_pattern_image()))
+        result = normalizer.normalize(make_frame())
         assert isinstance(result, FrameResizeError)
         assert isinstance(result, FrameNormalizationError)

@@ -28,7 +28,7 @@ EPOCH = MonotonicTime(nanoseconds=0)
 
 
 def make_context(image, now=EPOCH):
-    return FrameContext(frame=Frame(image=image), now=now)
+    return FrameContext(frame=Frame(image=image, captured_at=now), now=now)
 
 
 class MeanBrightnessDetectorTest(unittest.TestCase):

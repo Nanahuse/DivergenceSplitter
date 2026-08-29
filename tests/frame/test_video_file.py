@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
+from divergencesplitter.clock import MonotonicTime, TimeProvider
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
@@ -28,6 +29,16 @@ from divergencesplitter.frame.video_file import (
 SIZE = (16, 16)
 
 
+class FixedTimeProvider(TimeProvider):
+    def __init__(self, nanoseconds: int) -> None:
+        self._now = MonotonicTime(nanoseconds)
+        self.calls = 0
+
+    def now(self) -> MonotonicTime:
+        self.calls += 1
+        return self._now
+
+
 def _fourcc(code: str) -> int:
     return cv2.VideoWriter_fourcc(*code)  # type: ignore
 
@@ -41,6 +52,18 @@ def make_video(path, frame_count, fps=30.0, width=16, height=16):
             writer.write(image)
     finally:
         writer.release()
+
+
+def read_frame(source: VideoFileSource) -> Frame:
+    result = source.read()
+    assert isinstance(result, Frame)
+    return result
+
+
+def read_error(source: VideoFileSource) -> VideoFileError:
+    result = source.read()
+    assert isinstance(result, VideoFileError)
+    return result
 
 
 class TestState:
@@ -81,16 +104,18 @@ class TestRead:
     def test_read_returns_frame_after_prepare(self, tmp_path):
         video = tmp_path / "movie.avi"
         make_video(video, frame_count=2)
-        source = VideoFileSource(str(video))
+        time_provider = FixedTimeProvider(123)
+        source = VideoFileSource(str(video), time_provider=time_provider)
         source.prepare()
-        result = source.read()
-        assert isinstance(result, Frame)
+        result = read_frame(source)
         assert result.image.shape == (*SIZE, 3)
         assert int(result.image[0, 0, 0]) == 0
+        assert result.captured_at == MonotonicTime(123)
+        assert time_provider.calls == 1
 
     def test_read_before_ready_is_source_error(self, tmp_path):
         source = VideoFileSource(str(tmp_path / "movie.avi"))
-        assert isinstance(source.read(), VideoFileReadBeforeReadyError)
+        assert isinstance(read_error(source), VideoFileReadBeforeReadyError)
 
     def test_read_after_close_is_source_error(self, tmp_path):
         video = tmp_path / "movie.avi"
@@ -98,7 +123,7 @@ class TestRead:
         source = VideoFileSource(str(video))
         source.prepare()
         source.close()
-        assert isinstance(source.read(), VideoFileReadBeforeReadyError)
+        assert isinstance(read_error(source), VideoFileReadBeforeReadyError)
 
     def test_frames_follow_recording_order(self, tmp_path):
         video = tmp_path / "movie.avi"
@@ -107,8 +132,7 @@ class TestRead:
         source.prepare()
         values = []
         for _ in range(3):
-            result = source.read()
-            assert isinstance(result, Frame)
+            result = read_frame(source)
             values.append(int(result.image[0, 0, 0]))
         assert values[0] < values[1] < values[2]
 
@@ -148,8 +172,8 @@ class TestEof:
         make_video(video, frame_count=1)
         source = VideoFileSource(str(video))
         source.prepare()
-        assert isinstance(source.read(), Frame)
-        assert isinstance(source.read(), VideoFileEndOfFileError)
+        read_frame(source)
+        assert isinstance(read_error(source), VideoFileEndOfFileError)
         assert source.state is FrameSourceState.READY
 
     def test_eof_repeats_on_further_reads(self, tmp_path):
@@ -157,9 +181,9 @@ class TestEof:
         make_video(video, frame_count=1)
         source = VideoFileSource(str(video))
         source.prepare()
-        assert isinstance(source.read(), Frame)
-        assert isinstance(source.read(), VideoFileEndOfFileError)
-        assert isinstance(source.read(), VideoFileEndOfFileError)
+        read_frame(source)
+        assert isinstance(read_error(source), VideoFileEndOfFileError)
+        assert isinstance(read_error(source), VideoFileEndOfFileError)
 
 
 class TestContextManager:
@@ -219,8 +243,7 @@ class TestPacing:
         source.prepare()
         start = time.monotonic()
         for _ in range(frame_count):
-            result = source.read()
-            assert isinstance(result, Frame)
+            read_frame(source)
         elapsed = time.monotonic() - start
         expected = (frame_count - 1) / fps
         assert elapsed >= expected, "frames were delivered faster than real time"
@@ -235,8 +258,7 @@ class TestPacing:
         source.prepare()
         start = time.monotonic()
         for _ in range(frame_count):
-            result = source.read()
-            assert isinstance(result, Frame)
+            read_frame(source)
         elapsed = time.monotonic() - start
         assert elapsed >= (frame_count - 1) / fps
 
@@ -285,8 +307,7 @@ class TestNormalizer:
             str(video), clip_region=ClipRegion(x=2, y=3, width=6, height=5)
         )
         source.prepare()
-        raw = source.read()
-        assert isinstance(raw, Frame)
+        raw = read_frame(source)
         assert raw.image.shape == (*SIZE, 3)
         result = source.normalizer.normalize(raw)
         assert isinstance(result, Frame)
@@ -309,9 +330,7 @@ class TestNormalizer:
         source.prepare()
         raws = []
         for _ in range(3):
-            result = source.read()
-            assert isinstance(result, Frame)
-            raws.append(result)
+            raws.append(read_frame(source))
         assert calls["count"] == 0
         normalized = source.normalizer.normalize(raws[1])
         assert isinstance(normalized, Frame)

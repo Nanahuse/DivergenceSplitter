@@ -12,7 +12,7 @@ EPOCH = MonotonicTime(nanoseconds=0)
 
 def make_context() -> FrameContext:
     return FrameContext(
-        frame=Frame(image=np.zeros((2, 3), dtype=np.uint8)),
+        frame=Frame(image=np.zeros((2, 3), dtype=np.uint8), captured_at=EPOCH),
         now=EPOCH,
     )
 

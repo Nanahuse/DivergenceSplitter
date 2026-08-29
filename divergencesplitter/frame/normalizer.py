@@ -79,7 +79,7 @@ class FrameNormalizer:
                 region.x : region.x + region.width,
             ]
             if self._output_size is None:
-                return Frame(image=image.copy())
+                return Frame(image=image.copy(), captured_at=frame.captured_at)
         if self._output_size is not None:
             try:
                 image = cv2.resize(
@@ -89,5 +89,5 @@ class FrameNormalizer:
                 )
             except cv2.error as error:
                 return FrameResizeError(f"failed to resize frame: {error}")
-            return Frame(image=image)
+            return Frame(image=image, captured_at=frame.captured_at)
         return frame
