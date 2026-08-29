@@ -20,7 +20,6 @@ from divergencesplitter.frame.normalizer import (
 )
 from divergencesplitter.frame.source import (
     ErrorAction,
-    FrameReadResult,
     FrameSource,
     FrameSourceState,
 )
@@ -44,7 +43,6 @@ __all__ = [
     "FrameContext",
     "FrameNormalizationError",
     "FrameNormalizer",
-    "FrameReadResult",
     "FrameResizeError",
     "FrameSource",
     "FrameSourceState",

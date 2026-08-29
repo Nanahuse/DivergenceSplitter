@@ -45,16 +45,14 @@ def make_video(path, frame_count, fps=30.0, width=16, height=16):
 
 def read_frame(source: VideoFileSource) -> Frame:
     result = source.read()
-    assert result.error is None
-    assert result.frame is not None
-    return result.frame
+    assert isinstance(result, Frame)
+    return result
 
 
 def read_error(source: VideoFileSource) -> VideoFileError:
     result = source.read()
-    assert result.frame is None
-    assert result.error is not None
-    return result.error
+    assert isinstance(result, VideoFileError)
+    return result
 
 
 class TestState:
@@ -148,10 +146,10 @@ class TestEof:
         frames = 0
         while True:
             result = source.read()
-            if result.error is not None:
-                assert isinstance(result.error, VideoFileEndOfFileError)
+            if isinstance(result, VideoFileError):
+                assert isinstance(result, VideoFileEndOfFileError)
                 break
-            assert result.frame is not None
+            assert isinstance(result, Frame)
             frames += 1
         assert frames == frame_count
 
@@ -265,10 +263,10 @@ class TestDecodeError:
         decoded = 0
         while True:
             result = source.read()
-            if result.error is not None:
-                assert isinstance(result.error, VideoFileDecodeError)
+            if isinstance(result, VideoFileError):
+                assert isinstance(result, VideoFileDecodeError)
                 break
-            assert result.frame is not None
+            assert isinstance(result, Frame)
             decoded += 1
         assert 0 < decoded < 20
 

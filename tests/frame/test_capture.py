@@ -16,7 +16,6 @@ from divergencesplitter.frame.models import CapturedFrame, Frame
 from divergencesplitter.frame.normalizer import FrameNormalizer
 from divergencesplitter.frame.source import (
     ErrorAction,
-    FrameReadResult,
     FrameSourceState,
 )
 from divergencesplitter.frame.video_file import VideoFileSource
@@ -30,12 +29,12 @@ def make_frame(value: int) -> Frame:
     return Frame(image=np.full((2, 2, 3), value, dtype=np.uint8))
 
 
-def successful_read(value: int) -> FrameReadResult[FakeError]:
-    return FrameReadResult(frame=make_frame(value))
+def successful_read(value: int) -> Frame:
+    return make_frame(value)
 
 
-def failed_read(error: FakeError) -> FrameReadResult[FakeError]:
-    return FrameReadResult(error=error)
+def failed_read(error: FakeError) -> FakeError:
+    return error
 
 
 def captured_frame(value: int, nanoseconds: int = 0) -> CapturedFrame:
@@ -67,7 +66,7 @@ class FakeFrameSource:
         self,
         *,
         prepare_results: list[FakeError | None],
-        read_results: list[FrameReadResult[FakeError]],
+        read_results: list[Frame | FakeError],
         error_results: list[tuple[ErrorAction, FrameSourceState]],
         raising_stage: str | None = None,
         events: list[str] | None = None,
@@ -101,7 +100,7 @@ class FakeFrameSource:
             self._state = FrameSourceState.READY
         return result
 
-    def read(self) -> FrameReadResult[FakeError]:
+    def read(self) -> Frame | FakeError:
         self.read_calls += 1
         if self._events is not None:
             self._events.append("read")
@@ -144,7 +143,7 @@ class BlockingFrameSource(FakeFrameSource):
         self.read_started = threading.Event()
         self.release_read = threading.Event()
 
-    def read(self) -> FrameReadResult[FakeError]:
+    def read(self) -> Frame | FakeError:
         self.read_calls += 1
         self.read_started.set()
         self.release_read.wait(1)
@@ -247,14 +246,6 @@ class TestLatestFrameBuffer:
         assert buffer.take() is pending
         assert buffer.take() is None
         assert buffer.publish(captured_frame(2)) is PublishResult.STOPPED
-
-
-class TestFrameReadResult:
-    def test_requires_exactly_one_frame_or_error(self) -> None:
-        with pytest.raises(ValueError):
-            FrameReadResult[FakeError]()
-        with pytest.raises(ValueError):
-            FrameReadResult(frame=make_frame(1), error=FakeError("failure"))
 
 
 class TestCaptureStateMachine:

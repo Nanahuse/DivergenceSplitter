@@ -4,7 +4,7 @@ from enum import Enum, auto
 from typing import Protocol
 
 from divergencesplitter.clock import TimeProvider
-from divergencesplitter.frame.models import CapturedFrame
+from divergencesplitter.frame.models import CapturedFrame, Frame
 from divergencesplitter.frame.source import (
     ErrorAction,
     FrameSource,
@@ -156,9 +156,9 @@ class CaptureStateMachine[ErrorT]:
 
     def _capture(self) -> None:
         result = self._source.read()
-        if result.frame is not None:
+        if isinstance(result, Frame):
             captured = CapturedFrame(
-                frame=result.frame,
+                frame=result,
                 captured_at=self._time_provider.now(),
             )
             self._observe_source_state()
@@ -168,9 +168,7 @@ class CaptureStateMachine[ErrorT]:
         self._observe_source_state()
         if self._stop_requested.is_set():
             return
-        error = result.error
-        assert error is not None
-        self._handle_error(error)
+        self._handle_error(result)
 
     def _handle_error(self, error: ErrorT) -> None:
         self._diagnostics.source_error(error)
