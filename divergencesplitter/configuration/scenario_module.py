@@ -1,4 +1,4 @@
-"""Trusted Python configuration loading."""
+"""Trusted Python scenario module loading."""
 
 from pathlib import Path
 from runpy import run_path
@@ -9,20 +9,20 @@ from divergencesplitter.scenario.models import Scenario
 
 from .validation import validate_scenarios
 
-ConfigurationExports = tuple[tuple[Scenario, ...], FrameSource[Any]]
 
-
-def load_configuration(path: str | Path) -> ConfigurationExports:
-    """Execute a trusted configuration module and extract its fixed exports."""
+def load_scenario_module(
+    path: str | Path,
+) -> tuple[tuple[Scenario, ...], FrameSource[Any]]:
+    """Execute a trusted Python module and extract its fixed exports."""
 
     namespace = run_path(str(path))
     missing = [
-        ValueError(f"configuration must export {name!r}")
+        ValueError(f"scenario module must export {name!r}")
         for name in ("scenarios", "frame_source")
         if name not in namespace
     ]
     if missing:
-        raise ExceptionGroup("configuration exports are incomplete", missing)
+        raise ExceptionGroup("scenario module exports are incomplete", missing)
 
     scenarios = cast("tuple[Scenario, ...]", namespace["scenarios"])
     frame_source = cast("FrameSource[Any]", namespace["frame_source"])

@@ -8,7 +8,7 @@ from divergencesplitter import (
     LiveSplitSnapshot,
     Scenario,
     TimerPhase,
-    load_configuration,
+    load_scenario_module,
     validate_scenarios,
     validate_split_count,
 )
@@ -53,7 +53,7 @@ def make_snapshot(
     )
 
 
-class ConfigurationLoaderTest(unittest.TestCase):
+class ScenarioModuleLoadingTest(unittest.TestCase):
     def test_loads_preconstructed_exports_without_preparing_source(self) -> None:
         source = """
 from divergencesplitter import LiveSplitConnection, Scenario
@@ -79,26 +79,26 @@ scenarios = (
 frame_source = Source()
 """
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "configuration.py"
+            path = Path(directory) / "scenario_module.py"
             path.write_text(source, encoding="utf-8")
-            scenarios, frame_source = load_configuration(path)
+            scenarios, frame_source = load_scenario_module(path)
 
         self.assertEqual(scenarios[0].connection.rpc_endpoint, "rpc")
         self.assertFalse(cast("Any", frame_source).prepared)
 
     def test_import_exception_is_forwarded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "configuration.py"
+            path = Path(directory) / "scenario_module.py"
             path.write_text("raise RuntimeError('broken')", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "broken"):
-                load_configuration(path)
+                load_scenario_module(path)
 
     def test_missing_exports_are_aggregated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "configuration.py"
+            path = Path(directory) / "scenario_module.py"
             path.write_text("value = 1", encoding="utf-8")
             with self.assertRaises(ExceptionGroup) as raised:
-                load_configuration(path)
+                load_scenario_module(path)
         self.assertEqual(len(raised.exception.exceptions), 2)
 
 

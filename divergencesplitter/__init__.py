@@ -17,8 +17,7 @@ from divergencesplitter.condition import (
     Then,
 )
 from divergencesplitter.configuration import (
-    ConfigurationExports,
-    load_configuration,
+    load_scenario_module,
     validate_scenarios,
     validate_split_count,
 )
@@ -82,7 +81,6 @@ __all__ = [
     "ColorRangeConfig",
     "ColorRangeDetector",
     "Condition",
-    "ConfigurationExports",
     "Detected",
     "DetectionResult",
     "DifferenceHashSimilarityConfig",
@@ -134,7 +132,7 @@ __all__ = [
     "VideoFileReadBeforeReadyError",
     "VideoFileSource",
     "evaluate",
-    "load_configuration",
+    "load_scenario_module",
     "validate_scenarios",
     "validate_split_count",
 ]
