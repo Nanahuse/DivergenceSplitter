@@ -35,6 +35,10 @@ class ScenarioRuntime:
         self._pending_action: Action | None = None
         self._action_started_at: int | None = None
 
+    @property
+    def current_snapshot(self) -> LiveSplitSnapshot | None:
+        return self._snapshot
+
     def apply_livesplit_update(self, update: LiveSplitUpdate) -> None:
         snapshot = update.snapshot
         current = self._snapshot
