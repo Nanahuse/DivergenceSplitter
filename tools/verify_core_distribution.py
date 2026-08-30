@@ -11,8 +11,17 @@ import divergencesplitter
 EXPECTED_PUBLIC_API = (
     "Condition",
     "FrameSource",
+    "LiveSplitConnection",
     "Rule",
     "Scenario",
+)
+
+RUNTIME_ONLY_PUBLIC_API = (
+    "LiveSplitBridgeAdapter",
+    "LiveSplitSnapshot",
+    "LiveSplitUpdate",
+    "LiveSplitUpdateKind",
+    "TimerPhase",
 )
 
 
@@ -24,18 +33,30 @@ def main() -> None:
     for name in EXPECTED_PUBLIC_API:
         if not hasattr(divergencesplitter, name):
             raise RuntimeError(f"core public API is missing {name!r}")
+    for name in RUNTIME_ONLY_PUBLIC_API:
+        if hasattr(divergencesplitter, name):
+            raise RuntimeError(f"core public API includes runtime-only {name!r}")
 
     if util.find_spec("divergencesplitter_runtime") is not None:
         raise RuntimeError("the core installation includes the runtime module")
 
     requirements = metadata.requires("divergencesplitter") or ()
-    if any(
-        requirement.lower().startswith(
-            ("divergencesplitter-runtime", "divergencesplitter_runtime")
-        )
+    forbidden_dependencies = (
+        "divergencesplitter-runtime",
+        "divergencesplitter_runtime",
+        "livesplit-bridge-client",
+        "protobuf",
+        "pyzmq",
+    )
+    forbidden = tuple(
+        requirement
         for requirement in requirements
-    ):
-        raise RuntimeError("the core distribution depends on the runtime distribution")
+        if requirement.lower().startswith(forbidden_dependencies)
+    )
+    if forbidden:
+        raise RuntimeError(
+            f"the core distribution has runtime dependencies: {forbidden!r}"
+        )
 
     files = metadata.files("divergencesplitter") or ()
     included_tests = tuple(

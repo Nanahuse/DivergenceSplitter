@@ -5,11 +5,11 @@ from pathlib import Path
 from divergencesplitter import (
     FrameSourceState,
     LiveSplitConnection,
-    LiveSplitSnapshot,
     Scenario,
-    TimerPhase,
 )
 from divergencesplitter_runtime import (
+    LiveSplitSnapshot,
+    TimerPhase,
     load_scenario_module,
     validate_scenarios,
     validate_split_count,
