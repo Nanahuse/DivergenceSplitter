@@ -13,6 +13,7 @@ from divergencesplitter_runtime.configuration import (
 )
 from divergencesplitter_runtime.livesplit import (
     LiveSplitBridgeAdapter,
+    LiveSplitBridgeDiagnostics,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -25,6 +26,7 @@ __all__ = [
     "CaptureStateMachine",
     "LatestFrameBuffer",
     "LiveSplitBridgeAdapter",
+    "LiveSplitBridgeDiagnostics",
     "LiveSplitSnapshot",
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",

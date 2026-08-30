@@ -1,9 +1,10 @@
 import unittest
 from unittest.mock import create_autospec, patch
 
-from divergencesplitter import LiveSplitConnection
+from divergencesplitter import Action, LiveSplitConnection
 from divergencesplitter_runtime import (
     LiveSplitBridgeAdapter,
+    LiveSplitBridgeDiagnostics,
     LiveSplitSnapshot,
     LiveSplitUpdateKind,
     TimerPhase,
@@ -15,6 +16,9 @@ from divergencesplitter_runtime.livesplit import (
 from livesplit_bridge import (
     BridgeClient,
     BridgeEventSubscriber,
+    BridgeProtocolError,
+    BridgeRemoteError,
+    BridgeTimeoutError,
     common_pb2,
 )
 
@@ -51,6 +55,72 @@ def proto_event(
         type=event_type,
         snapshot=snapshot,
     )
+
+
+def domain_snapshot(
+    *,
+    session_id: int = 1,
+    state_revision: int = 2,
+    event_sequence: int = 3,
+    phase: TimerPhase = TimerPhase.RUNNING,
+    split_index: int = 0,
+    split_count: int = 2,
+) -> LiveSplitSnapshot:
+    return LiveSplitSnapshot(
+        session_id=session_id,
+        state_revision=state_revision,
+        event_sequence=event_sequence,
+        phase=phase,
+        split_index=split_index,
+        split_count=split_count,
+    )
+
+
+class RecordingDiagnostics(LiveSplitBridgeDiagnostics):
+    def __init__(self) -> None:
+        self.events: list[tuple[object, ...]] = []
+
+    def snapshot_failed(self, action: Action, error: Exception) -> None:
+        self.events.append(("snapshot_failed", action, error))
+
+    def snapshot_mismatched(
+        self,
+        action: Action,
+        expected: LiveSplitSnapshot,
+        actual: LiveSplitSnapshot,
+    ) -> None:
+        self.events.append(("snapshot_mismatched", action, expected, actual))
+
+    def action_precondition_failed(
+        self,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+    ) -> None:
+        self.events.append(("action_precondition_failed", action, snapshot))
+
+    def action_succeeded(
+        self,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+    ) -> None:
+        self.events.append(("action_succeeded", action, snapshot))
+
+    def action_rejected(
+        self,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+        code: int | None,
+        message: str,
+    ) -> None:
+        self.events.append(("action_rejected", action, snapshot, code, message))
+
+    def action_result_unknown(
+        self,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+        error: Exception,
+    ) -> None:
+        self.events.append(("action_result_unknown", action, snapshot, error))
 
 
 class MappingTest(unittest.TestCase):
@@ -152,6 +222,7 @@ class AdapterTest(unittest.TestCase):
         ):
             adapter = LiveSplitBridgeAdapter(
                 connection,
+                diagnostics=RecordingDiagnostics(),
                 rpc_timeout_ms=10,
                 event_timeout_ms=20,
             )
@@ -170,6 +241,7 @@ class AdapterTest(unittest.TestCase):
 
         with LiveSplitBridgeAdapter(
             LiveSplitConnection("rpc", "event"),
+            diagnostics=RecordingDiagnostics(),
             client=client,
             subscriber=subscriber,
         ) as adapter:
@@ -206,7 +278,10 @@ class AdapterTest(unittest.TestCase):
             ),
             self.assertRaisesRegex(RuntimeError, "subscriber failed"),
         ):
-            LiveSplitBridgeAdapter(LiveSplitConnection("rpc", "event"))
+            LiveSplitBridgeAdapter(
+                LiveSplitConnection("rpc", "event"),
+                diagnostics=RecordingDiagnostics(),
+            )
 
         client_type.return_value.close.assert_called_once_with()
 
@@ -215,6 +290,7 @@ class AdapterTest(unittest.TestCase):
         subscriber = create_autospec(BridgeEventSubscriber, instance=True)
         adapter = LiveSplitBridgeAdapter(
             LiveSplitConnection("rpc", "event"),
+            diagnostics=RecordingDiagnostics(),
             client=client,
             subscriber=subscriber,
         )
@@ -224,6 +300,222 @@ class AdapterTest(unittest.TestCase):
 
         subscriber.close.assert_called_once_with()
         client.close.assert_called_once_with()
+
+
+class ActionExecutionTest(unittest.TestCase):
+    def make_adapter(
+        self,
+        client: BridgeClient,
+        diagnostics: LiveSplitBridgeDiagnostics,
+    ) -> LiveSplitBridgeAdapter:
+        return LiveSplitBridgeAdapter(
+            LiveSplitConnection("rpc", "event"),
+            diagnostics=diagnostics,
+            client=client,
+            subscriber=create_autospec(BridgeEventSubscriber, instance=True),
+        )
+
+    def assert_no_operation(self, client: BridgeClient) -> None:
+        for operation in ("split", "skip", "undo", "reset", "pause", "resume"):
+            getattr(client, operation).assert_not_called()
+
+    def test_maps_each_action_to_one_client_operation(self) -> None:
+        cases = (
+            ("split", common_pb2.RUNNING, 0, 2),
+            ("skip", common_pb2.RUNNING, 0, 2),
+            ("undo", common_pb2.PAUSED, 1, 2),
+            ("reset", common_pb2.ENDED, 2, 2),
+            ("pause", common_pb2.RUNNING, 0, 2),
+            ("resume", common_pb2.PAUSED, 0, 2),
+        )
+        for operation, phase, split_index, split_count in cases:
+            with self.subTest(operation=operation):
+                client = create_autospec(BridgeClient, instance=True)
+                client.snapshot.return_value = proto_snapshot(
+                    phase=phase,
+                    split_index=split_index,
+                    split_count=split_count,
+                )
+                getattr(client, operation).return_value = common_pb2.OperationResponse(
+                    success=True
+                )
+                diagnostics = RecordingDiagnostics()
+                action = Action(operation=operation)
+                adapter = self.make_adapter(client, diagnostics)
+
+                result = adapter.execute_action(
+                    action,
+                    snapshot_from_proto(client.snapshot.return_value),
+                )
+
+                self.assertIsNone(result)
+                client.snapshot.assert_called_once_with()
+                getattr(client, operation).assert_called_once_with()
+                expected = snapshot_from_proto(client.snapshot.return_value)
+                self.assertEqual(
+                    diagnostics.events,
+                    [("action_succeeded", action, expected)],
+                )
+
+    def test_compares_expected_state_but_ignores_event_sequence(self) -> None:
+        expected = domain_snapshot()
+        changed_states = (
+            domain_snapshot(session_id=2),
+            domain_snapshot(state_revision=3),
+            domain_snapshot(phase=TimerPhase.PAUSED),
+            domain_snapshot(split_index=1),
+            domain_snapshot(split_count=3),
+        )
+        for actual in changed_states:
+            with self.subTest(actual=actual):
+                client = create_autospec(BridgeClient, instance=True)
+                client.snapshot.return_value = proto_snapshot(
+                    session_id=actual.session_id,
+                    state_revision=actual.state_revision,
+                    event_sequence=actual.event_sequence,
+                    phase={
+                        TimerPhase.RUNNING: common_pb2.RUNNING,
+                        TimerPhase.PAUSED: common_pb2.PAUSED,
+                    }[actual.phase],
+                    split_index=actual.split_index,
+                    split_count=actual.split_count,
+                )
+                diagnostics = RecordingDiagnostics()
+                action = Action(operation="split")
+
+                self.make_adapter(client, diagnostics).execute_action(action, expected)
+
+                self.assert_no_operation(client)
+                self.assertEqual(
+                    diagnostics.events,
+                    [("snapshot_mismatched", action, expected, actual)],
+                )
+
+        client = create_autospec(BridgeClient, instance=True)
+        client.snapshot.return_value = proto_snapshot(event_sequence=99)
+        client.split.return_value = common_pb2.OperationResponse(success=True)
+        diagnostics = RecordingDiagnostics()
+        action = Action(operation="split")
+
+        self.make_adapter(client, diagnostics).execute_action(action, expected)
+
+        client.split.assert_called_once_with()
+        actual = domain_snapshot(event_sequence=99)
+        self.assertEqual(
+            diagnostics.events,
+            [("action_succeeded", action, actual)],
+        )
+
+    def test_rejects_actions_whose_phase_or_position_is_invalid(self) -> None:
+        cases = (
+            ("split", common_pb2.PAUSED, 0, 2),
+            ("skip", common_pb2.RUNNING, 1, 2),
+            ("undo", common_pb2.RUNNING, 0, 2),
+            ("undo", common_pb2.PAUSED, 0, 2),
+            ("reset", common_pb2.NOT_RUNNING, -1, 2),
+            ("pause", common_pb2.PAUSED, 0, 2),
+            ("resume", common_pb2.RUNNING, 0, 2),
+        )
+        for operation, phase, split_index, split_count in cases:
+            with self.subTest(operation=operation, phase=phase):
+                client = create_autospec(BridgeClient, instance=True)
+                client.snapshot.return_value = proto_snapshot(
+                    phase=phase,
+                    split_index=split_index,
+                    split_count=split_count,
+                )
+                diagnostics = RecordingDiagnostics()
+                action = Action(operation=operation)
+                snapshot = snapshot_from_proto(client.snapshot.return_value)
+
+                self.make_adapter(client, diagnostics).execute_action(action, snapshot)
+
+                self.assert_no_operation(client)
+                self.assertEqual(
+                    diagnostics.events,
+                    [("action_precondition_failed", action, snapshot)],
+                )
+
+    def test_snapshot_failure_does_not_send_an_operation(self) -> None:
+        client = create_autospec(BridgeClient, instance=True)
+        error = BridgeTimeoutError("snapshot timed out")
+        client.snapshot.side_effect = error
+        diagnostics = RecordingDiagnostics()
+        action = Action(operation="split")
+
+        self.make_adapter(client, diagnostics).execute_action(action, domain_snapshot())
+
+        self.assert_no_operation(client)
+        self.assertEqual(diagnostics.events, [("snapshot_failed", action, error)])
+
+    def test_reports_operation_rejection_without_retry(self) -> None:
+        cases = (
+            (common_pb2.OperationResponse(success=False, message="not allowed"), None),
+            (None, BridgeRemoteError(12, "remote rejected")),
+        )
+        for response, error in cases:
+            with self.subTest(error=error):
+                client = create_autospec(BridgeClient, instance=True)
+                client.snapshot.return_value = proto_snapshot()
+                if error is None:
+                    client.split.return_value = response
+                    code = None
+                    message = "not allowed"
+                else:
+                    client.split.side_effect = error
+                    code = 12
+                    message = "remote rejected"
+                diagnostics = RecordingDiagnostics()
+                action = Action(operation="split")
+
+                self.make_adapter(client, diagnostics).execute_action(
+                    action, domain_snapshot()
+                )
+
+                client.split.assert_called_once_with()
+                self.assertEqual(
+                    diagnostics.events,
+                    [("action_rejected", action, domain_snapshot(), code, message)],
+                )
+
+    def test_reports_unknown_operation_result_without_retry(self) -> None:
+        for error in (
+            BridgeTimeoutError("operation timed out"),
+            BridgeProtocolError("invalid response"),
+        ):
+            with self.subTest(error=error):
+                client = create_autospec(BridgeClient, instance=True)
+                client.snapshot.return_value = proto_snapshot()
+                client.split.side_effect = error
+                diagnostics = RecordingDiagnostics()
+                action = Action(operation="split")
+
+                self.make_adapter(client, diagnostics).execute_action(
+                    action, domain_snapshot()
+                )
+
+                client.split.assert_called_once_with()
+                self.assertEqual(
+                    diagnostics.events,
+                    [("action_result_unknown", action, domain_snapshot(), error)],
+                )
+
+    def test_does_not_map_the_operation_response_snapshot(self) -> None:
+        client = create_autospec(BridgeClient, instance=True)
+        client.snapshot.return_value = proto_snapshot()
+        client.split.return_value = common_pb2.OperationResponse(
+            success=True,
+            snapshot=proto_snapshot(phase=common_pb2.TIMER_PHASE_UNSPECIFIED),
+        )
+        diagnostics = RecordingDiagnostics()
+        action = Action(operation="split")
+
+        self.make_adapter(client, diagnostics).execute_action(action, domain_snapshot())
+
+        self.assertEqual(
+            diagnostics.events,
+            [("action_succeeded", action, domain_snapshot())],
+        )
 
 
 if __name__ == "__main__":

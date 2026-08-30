@@ -136,6 +136,15 @@ class ModelValidationTest(unittest.TestCase):
 
 
 class ScenarioRuntimeEvaluationTest(unittest.TestCase):
+    def test_current_snapshot_is_none_before_sync_and_tracks_baseline(self) -> None:
+        runtime = ScenarioRuntime(make_scenario((None,)))
+        self.assertIsNone(runtime.current_snapshot)
+        snapshot = make_snapshot(split_count=1)
+
+        runtime.apply_livesplit_update(update(snapshot))
+
+        self.assertIs(runtime.current_snapshot, snapshot)
+
     def test_initial_baseline_resets_every_rule_without_evaluating(self) -> None:
         reset = RecordingCondition(False)
         first = RecordingCondition(False)
