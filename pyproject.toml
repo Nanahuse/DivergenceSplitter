@@ -1,13 +1,21 @@
 [project]
-name = "divergencesplitter"
+name = "divergencesplitter-workspace"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "numpy>=2.5.2",
-    "opencv-python>=5.0.0.93",
+    "divergencesplitter",
+    "divergencesplitter-runtime",
 ]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+divergencesplitter = { workspace = true }
+divergencesplitter-runtime = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/*"]
 
 [dependency-groups]
 dev = [
@@ -17,5 +25,4 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]
+testpaths = ["packages/*/tests"]

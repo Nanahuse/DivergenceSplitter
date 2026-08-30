@@ -3,7 +3,6 @@ import unittest
 from typing import Literal, overload
 
 import numpy as np
-
 from divergencesplitter import (
     Action,
     Frame,
@@ -15,9 +14,9 @@ from divergencesplitter import (
     MonotonicTime,
     Rule,
     Scenario,
-    ScenarioRuntime,
     TimerPhase,
 )
+from divergencesplitter_runtime import ScenarioRuntime
 
 
 class RecordingCondition:

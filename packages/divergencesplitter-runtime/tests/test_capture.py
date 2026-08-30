@@ -5,13 +5,7 @@ from typing import Self
 import cv2
 import numpy as np
 import pytest
-
 from divergencesplitter.clock import MonotonicTime
-from divergencesplitter.frame.capture import (
-    CaptureStateMachine,
-    LatestFrameBuffer,
-    PublishResult,
-)
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import FrameNormalizer
 from divergencesplitter.frame.source import (
@@ -19,6 +13,11 @@ from divergencesplitter.frame.source import (
     FrameSourceState,
 )
 from divergencesplitter.frame.video_file import VideoFileSource
+from divergencesplitter_runtime.capture import (
+    CaptureStateMachine,
+    LatestFrameBuffer,
+    PublishResult,
+)
 
 
 class FakeError(Exception):

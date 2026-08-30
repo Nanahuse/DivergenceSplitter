@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import pytest
-
 from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (

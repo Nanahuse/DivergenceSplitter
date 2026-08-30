@@ -4,7 +4,6 @@ from typing import cast
 from unittest.mock import patch
 
 import numpy as np
-
 from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.detector.color_range import ColorRangeConfig, ColorRangeDetector
 from divergencesplitter.detector.common import evaluate

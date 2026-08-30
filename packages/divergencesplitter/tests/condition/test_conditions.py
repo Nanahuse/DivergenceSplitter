@@ -2,7 +2,6 @@ import unittest
 from typing import Literal, cast, overload
 
 import numpy as np
-
 from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.condition import (
     All,

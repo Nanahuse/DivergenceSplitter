@@ -8,6 +8,8 @@ from divergencesplitter import (
     LiveSplitSnapshot,
     Scenario,
     TimerPhase,
+)
+from divergencesplitter_runtime import (
     load_scenario_module,
     validate_scenarios,
     validate_split_count,
