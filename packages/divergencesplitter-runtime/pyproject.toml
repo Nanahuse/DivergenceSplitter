@@ -1,0 +1,23 @@
+[project]
+name = "divergencesplitter-runtime"
+version = "0.1.0"
+description = "Runtime services for DivergenceSplitter"
+requires-python = ">=3.14"
+dependencies = ["divergencesplitter"]
+
+[tool.uv.sources]
+divergencesplitter = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff",
+    "ty",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -2,6 +2,13 @@ version = 1
 revision = 3
 requires-python = ">=3.14"
 
+[manifest]
+members = [
+    "divergencesplitter",
+    "divergencesplitter-runtime",
+    "divergencesplitter-workspace",
+]
+
 [[package]]
 name = "colorama"
 version = "0.4.6"
@@ -14,7 +21,7 @@ wheels = [
 [[package]]
 name = "divergencesplitter"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "packages/divergencesplitter" }
 dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
@@ -31,6 +38,60 @@ dev = [
 requires-dist = [
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[[package]]
+name = "divergencesplitter-runtime"
+version = "0.1.0"
+source = { editable = "packages/divergencesplitter-runtime" }
+dependencies = [
+    { name = "divergencesplitter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "divergencesplitter", editable = "packages/divergencesplitter" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[[package]]
+name = "divergencesplitter-workspace"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "divergencesplitter" },
+    { name = "divergencesplitter-runtime" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "divergencesplitter", editable = "packages/divergencesplitter" },
+    { name = "divergencesplitter-runtime", editable = "packages/divergencesplitter-runtime" },
 ]
 
 [package.metadata.requires-dev]

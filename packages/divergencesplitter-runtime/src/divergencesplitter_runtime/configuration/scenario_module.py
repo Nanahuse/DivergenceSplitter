@@ -7,7 +7,7 @@ from typing import Any, TypeIs
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.scenario.models import Scenario
 
-from .validation import validate_scenarios
+from divergencesplitter_runtime.configuration.validation import validate_scenarios
 
 
 def load_scenario_module(

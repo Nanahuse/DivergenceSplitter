@@ -3,7 +3,6 @@ from dataclasses import is_dataclass
 from typing import cast
 
 import numpy as np
-
 from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.detector.common import (
     evaluate,

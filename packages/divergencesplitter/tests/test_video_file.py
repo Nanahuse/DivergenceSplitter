@@ -4,7 +4,6 @@ from typing import get_protocol_members
 import cv2
 import numpy as np
 import pytest
-
 from divergencesplitter.clock import MonotonicTime, TimeProvider
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
