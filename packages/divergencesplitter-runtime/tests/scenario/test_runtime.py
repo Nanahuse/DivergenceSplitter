@@ -8,15 +8,17 @@ from divergencesplitter import (
     Frame,
     FrameContext,
     LiveSplitConnection,
-    LiveSplitSnapshot,
-    LiveSplitUpdate,
-    LiveSplitUpdateKind,
     MonotonicTime,
     Rule,
     Scenario,
+)
+from divergencesplitter_runtime import (
+    LiveSplitSnapshot,
+    LiveSplitUpdate,
+    LiveSplitUpdateKind,
+    ScenarioRuntime,
     TimerPhase,
 )
-from divergencesplitter_runtime import ScenarioRuntime
 
 
 class RecordingCondition:

@@ -52,13 +52,7 @@ from divergencesplitter.frame import (
     VideoFileReadBeforeReadyError,
     VideoFileSource,
 )
-from divergencesplitter.livesplit import (
-    LiveSplitConnection,
-    LiveSplitSnapshot,
-    LiveSplitUpdate,
-    LiveSplitUpdateKind,
-    TimerPhase,
-)
+from divergencesplitter.livesplit import LiveSplitConnection
 from divergencesplitter.rule import Action, Rule
 from divergencesplitter.scenario import Scenario
 
@@ -89,9 +83,6 @@ __all__ = [
     "ImageArray",
     "ImageDetector",
     "LiveSplitConnection",
-    "LiveSplitSnapshot",
-    "LiveSplitUpdate",
-    "LiveSplitUpdateKind",
     "MeanAbsoluteSimilarityConfig",
     "MeanAbsoluteSimilarityDetector",
     "MeanBrightnessDetector",
@@ -110,7 +101,6 @@ __all__ = [
     "TemplateMatchDetector",
     "Then",
     "TimeProvider",
-    "TimerPhase",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
     "VideoFileError",

@@ -1,7 +1,8 @@
 """Semantic startup validation for pre-constructed configuration objects."""
 
-from divergencesplitter.livesplit.models import LiveSplitSnapshot, TimerPhase
 from divergencesplitter.scenario.models import Scenario
+
+from divergencesplitter_runtime.livesplit.models import LiveSplitSnapshot, TimerPhase
 
 
 def validate_scenarios(scenarios: tuple[Scenario, ...]) -> None:

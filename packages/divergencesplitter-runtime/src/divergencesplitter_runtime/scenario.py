@@ -3,14 +3,15 @@
 import logging
 
 from divergencesplitter.frame.models import FrameContext
-from divergencesplitter.livesplit.models import (
+from divergencesplitter.rule import Action, Rule
+from divergencesplitter.scenario.models import Scenario
+
+from divergencesplitter_runtime.livesplit.models import (
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
 )
-from divergencesplitter.rule import Action, Rule
-from divergencesplitter.scenario.models import Scenario
 
 SPLIT_TRANSITION_TIMEOUT_NANOSECONDS = 1_000_000_000
 
