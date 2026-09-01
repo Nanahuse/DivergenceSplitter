@@ -10,8 +10,6 @@ from divergencesplitter_runtime.capture import LatestFrameBuffer
 from divergencesplitter_runtime.livesplit.worker import BridgeWorker
 from divergencesplitter_runtime.scenario import ScenarioRuntime
 
-DEFAULT_FRAME_WAIT_SECONDS = 0.05
-
 
 class ProcessingDiagnostics(Protocol):
     def frame_processing_started(
@@ -38,18 +36,14 @@ class ProcessingRuntime:
         *,
         diagnostics: ProcessingDiagnostics,
         time_provider: TimeProvider | None = None,
-        frame_wait_seconds: float = DEFAULT_FRAME_WAIT_SECONDS,
     ) -> None:
         if len(scenarios) != len(workers):
             raise ValueError("each scenario runtime must have one Bridge worker")
-        if frame_wait_seconds < 0:
-            raise ValueError("frame_wait_seconds must be non-negative")
         self._scenarios = scenarios
         self._workers = workers
         self._frame_buffer = frame_buffer
         self._diagnostics = diagnostics
         self._time_provider = time_provider or TimeProvider()
-        self._frame_wait_seconds = frame_wait_seconds
         self._stop_requested = threading.Event()
 
     def request_stop(self) -> None:
@@ -58,10 +52,10 @@ class ProcessingRuntime:
 
     def run(self) -> None:
         while not self._stop_requested.is_set():
-            self._apply_bridge_updates()
-            frame = self._frame_buffer.take(self._frame_wait_seconds)
+            frame = self._frame_buffer.take()
             if frame is None or self._stop_requested.is_set():
-                continue
+                return
+            self._apply_bridge_updates()
             now = self._time_provider.now()
             self._diagnostics.frame_processing_started(frame, now)
             context = FrameContext(frame=frame, now=now)

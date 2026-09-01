@@ -71,19 +71,13 @@ class LatestFrameBuffer:
             self._condition.notify_all()
             return result
 
-    def take(self, timeout_seconds: float | None = None) -> Frame | None:
+    def take(self) -> Frame | None:
         """Wait for and consume the newest frame, or return ``None`` on stop."""
-        if timeout_seconds is not None and (
-            not math.isfinite(timeout_seconds) or timeout_seconds < 0
-        ):
-            raise ValueError("timeout_seconds must be non-negative and finite")
         with self._condition:
-            self._condition.wait_for(
-                lambda: self._frame is not None or self._stopped,
-                timeout_seconds,
-            )
-            if self._frame is None:
-                return None
+            while self._frame is None:
+                if self._stopped:
+                    return None
+                self._condition.wait()
             frame = self._frame
             self._frame = None
             return frame

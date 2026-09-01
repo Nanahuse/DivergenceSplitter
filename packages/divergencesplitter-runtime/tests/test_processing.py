@@ -85,6 +85,16 @@ class FakeWorker(BridgeWorker):
         return ActionSubmission.ACCEPTED
 
 
+class SignalingBuffer(LatestFrameBuffer):
+    def __init__(self) -> None:
+        super().__init__()
+        self.take_started = threading.Event()
+
+    def take(self) -> Frame | None:
+        self.take_started.set()
+        return super().take()
+
+
 class RecordingDiagnostics:
     def __init__(self) -> None:
         self.frames: list[tuple[Frame, MonotonicTime]] = []
@@ -183,3 +193,31 @@ def test_unavailable_worker_applies_updates_but_skips_evaluation() -> None:
     assert scenario.updates == [initial]
     assert scenario.contexts == []
     assert worker.requests == []
+
+
+def test_waits_for_each_frame_without_a_fixed_polling_period() -> None:
+    initial = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot())
+    scenario = FakeScenarioRuntime()
+    worker = FakeWorker((initial,))
+    buffer = SignalingBuffer()
+    diagnostics = RecordingDiagnostics()
+    runtime = ProcessingRuntime(
+        (scenario,),
+        (worker,),
+        buffer,
+        diagnostics=diagnostics,
+        time_provider=FakeTimeProvider(),
+    )
+    thread = threading.Thread(target=runtime.run)
+    thread.start()
+    assert buffer.take_started.wait(1)
+
+    assert scenario.updates == []
+
+    buffer.publish(frame())
+    assert diagnostics.frame_started.wait(1)
+    runtime.request_stop()
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert scenario.updates == [initial]
