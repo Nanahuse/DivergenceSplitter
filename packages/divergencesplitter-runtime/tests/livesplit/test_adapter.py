@@ -5,7 +5,9 @@ from divergencesplitter import Action, LiveSplitConnection
 from divergencesplitter_runtime import (
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
+    LiveSplitResyncReason,
     LiveSplitSnapshot,
+    LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
 )
@@ -15,10 +17,11 @@ from divergencesplitter_runtime.livesplit import (
 )
 from livesplit_bridge import (
     BridgeClient,
-    BridgeEventSubscriber,
+    BridgeConnectionLostError,
     BridgeProtocolError,
     BridgeRemoteError,
-    BridgeTimeoutError,
+    BridgeResponseTimeoutError,
+    bridge_pb2,
     common_pb2,
 )
 
@@ -79,6 +82,7 @@ def domain_snapshot(
 class RecordingDiagnostics(LiveSplitBridgeDiagnostics):
     def __init__(self) -> None:
         self.events: list[tuple[object, ...]] = []
+        self.stream_events: list[tuple[object, ...]] = []
 
     def snapshot_failed(self, action: Action, error: Exception) -> None:
         self.events.append(("snapshot_failed", action, error))
@@ -121,6 +125,51 @@ class RecordingDiagnostics(LiveSplitBridgeDiagnostics):
         error: Exception,
     ) -> None:
         self.events.append(("action_result_unknown", action, snapshot, error))
+
+    def gap_detected(
+        self,
+        connection: LiveSplitConnection,
+        baseline: LiveSplitSnapshot,
+        received_session_id: int,
+        received_event_sequence: int,
+    ) -> None:
+        self.stream_events.append(
+            (
+                "gap_detected",
+                connection,
+                baseline,
+                received_session_id,
+                received_event_sequence,
+            )
+        )
+
+    def heartbeat_received(
+        self,
+        connection: LiveSplitConnection,
+        session_id: int,
+        event_sequence: int,
+    ) -> None:
+        self.stream_events.append(
+            ("heartbeat_received", connection, session_id, event_sequence)
+        )
+
+    def resync_started(
+        self,
+        connection: LiveSplitConnection,
+        reason: LiveSplitResyncReason,
+    ) -> None:
+        self.stream_events.append(("resync_started", connection, reason))
+
+    def resync_completed(
+        self,
+        connection: LiveSplitConnection,
+        reason: LiveSplitResyncReason,
+        previous: LiveSplitSnapshot,
+        current: LiveSplitSnapshot,
+    ) -> None:
+        self.stream_events.append(
+            ("resync_completed", connection, reason, previous, current)
+        )
 
 
 class MappingTest(unittest.TestCase):
@@ -208,43 +257,44 @@ class MappingTest(unittest.TestCase):
 
 
 class AdapterTest(unittest.TestCase):
-    def test_uses_connection_endpoints_for_client_instances(self) -> None:
+    def test_uses_connection_endpoints_for_integrated_client(self) -> None:
         connection = LiveSplitConnection("tcp://rpc", "tcp://event")
-        with (
-            patch(
-                "divergencesplitter_runtime.livesplit.adapter.BridgeClient",
-                autospec=True,
-            ) as client_type,
-            patch(
-                "divergencesplitter_runtime.livesplit.adapter.BridgeEventSubscriber",
-                autospec=True,
-            ) as subscriber_type,
-        ):
+        with patch(
+            "divergencesplitter_runtime.livesplit.adapter.BridgeClient",
+            autospec=True,
+        ) as client_type:
             adapter = LiveSplitBridgeAdapter(
                 connection,
                 diagnostics=RecordingDiagnostics(),
                 rpc_timeout_ms=10,
-                event_timeout_ms=20,
+                heartbeat_timeout_ms=20,
             )
             adapter.close()
 
-        client_type.assert_called_once_with("tcp://rpc", timeout_ms=10)
-        subscriber_type.assert_called_once_with("tcp://event", timeout_ms=20)
-        subscriber_type.return_value.close.assert_called_once_with()
+        client_type.assert_called_once_with(
+            "tcp://rpc",
+            "tcp://event",
+            response_timeout_ms=10,
+            heartbeat_timeout_ms=20,
+        )
         client_type.return_value.close.assert_called_once_with()
 
-    def test_converts_client_snapshot_and_subscriber_event(self) -> None:
+    def test_attach_establishes_initial_snapshot_and_converts_events(self) -> None:
         client = create_autospec(BridgeClient, instance=True)
-        subscriber = create_autospec(BridgeEventSubscriber, instance=True)
+        client.attach.return_value = bridge_pb2.AttachResponse(
+            session_id=1,
+            snapshot=proto_snapshot(event_sequence=2),
+        )
         client.snapshot.return_value = proto_snapshot()
-        subscriber.receive.return_value = proto_event(common_pb2.EVENT_TIMER_SPLIT)
+        client.receive.return_value = proto_event(common_pb2.EVENT_TIMER_SPLIT)
 
         with LiveSplitBridgeAdapter(
             LiveSplitConnection("rpc", "event"),
             diagnostics=RecordingDiagnostics(),
             client=client,
-            subscriber=subscriber,
         ) as adapter:
+            initial = adapter.attach()
+            self.assertIs(initial.kind, LiveSplitUpdateKind.INITIAL)
             self.assertEqual(
                 adapter.snapshot(),
                 LiveSplitSnapshot(
@@ -256,49 +306,112 @@ class AdapterTest(unittest.TestCase):
                     split_count=2,
                 ),
             )
-            self.assertIs(
-                adapter.receive(timeout_ms=15).kind,
-                LiveSplitUpdateKind.TRANSITION,
-            )
+            update = adapter.receive(timeout_ms=15)
+            self.assertIsNotNone(update)
+            assert isinstance(update, LiveSplitUpdate)
+            self.assertIs(update.kind, LiveSplitUpdateKind.TRANSITION)
 
-        subscriber.receive.assert_called_once_with(timeout_ms=15)
-        subscriber.close.assert_called_once_with()
+        client.receive.assert_called_once_with(timeout_ms=15)
         client.close.assert_called_once_with()
 
-    def test_closes_constructed_client_when_subscriber_construction_fails(self) -> None:
-        with (
-            patch(
-                "divergencesplitter_runtime.livesplit.adapter.BridgeClient",
-                autospec=True,
-            ) as client_type,
-            patch(
-                "divergencesplitter_runtime.livesplit.adapter.BridgeEventSubscriber",
-                autospec=True,
-                side_effect=RuntimeError("subscriber failed"),
-            ),
-            self.assertRaisesRegex(RuntimeError, "subscriber failed"),
-        ):
-            LiveSplitBridgeAdapter(
-                LiveSplitConnection("rpc", "event"),
-                diagnostics=RecordingDiagnostics(),
-            )
-
-        client_type.return_value.close.assert_called_once_with()
-
-    def test_close_is_idempotent(self) -> None:
+    def test_heartbeat_is_consumed_and_next_sequence_requests_resync(self) -> None:
         client = create_autospec(BridgeClient, instance=True)
-        subscriber = create_autospec(BridgeEventSubscriber, instance=True)
+        client.attach.return_value = bridge_pb2.AttachResponse(
+            session_id=1,
+            snapshot=proto_snapshot(event_sequence=3),
+        )
+        client.receive.side_effect = (
+            common_pb2.BridgeEvent(
+                session_id=1,
+                event_sequence=3,
+                type=common_pb2.EVENT_HEARTBEAT,
+            ),
+            common_pb2.BridgeEvent(
+                session_id=1,
+                event_sequence=4,
+                type=common_pb2.EVENT_HEARTBEAT,
+            ),
+        )
+        client.snapshot.return_value = proto_snapshot(event_sequence=4)
+        diagnostics = RecordingDiagnostics()
+        connection = LiveSplitConnection("rpc", "event")
+        adapter = LiveSplitBridgeAdapter(
+            connection,
+            diagnostics=diagnostics,
+            client=client,
+        )
+        adapter.attach()
+
+        self.assertIsNone(adapter.receive(timeout_ms=0))
+        reason = adapter.receive(timeout_ms=0)
+
+        self.assertIs(reason, LiveSplitResyncReason.GAP)
+        assert isinstance(reason, LiveSplitResyncReason)
+        update = adapter.resync(reason)
+        self.assertIs(update.kind, LiveSplitUpdateKind.RESYNC)
+        self.assertEqual(update.snapshot.event_sequence, 4)
+        client.snapshot.assert_called_once_with()
+        self.assertEqual(
+            diagnostics.stream_events[:3],
+            [
+                ("heartbeat_received", connection, 1, 3),
+                ("heartbeat_received", connection, 1, 4),
+                (
+                    "gap_detected",
+                    connection,
+                    domain_snapshot(event_sequence=3),
+                    1,
+                    4,
+                ),
+            ],
+        )
+        self.assertEqual(
+            diagnostics.stream_events[3:],
+            [
+                ("resync_started", connection, LiveSplitResyncReason.GAP),
+                (
+                    "resync_completed",
+                    connection,
+                    LiveSplitResyncReason.GAP,
+                    domain_snapshot(event_sequence=3),
+                    domain_snapshot(event_sequence=4),
+                ),
+            ],
+        )
+
+    def test_connection_loss_marks_unsynchronized_until_reconnect(self) -> None:
+        client = create_autospec(BridgeClient, instance=True)
+        client.attach.return_value = bridge_pb2.AttachResponse(
+            session_id=1,
+            snapshot=proto_snapshot(),
+        )
+        client.receive.side_effect = BridgeConnectionLostError("lost")
+        client.reconnect.return_value = proto_snapshot(session_id=2, event_sequence=0)
         adapter = LiveSplitBridgeAdapter(
             LiveSplitConnection("rpc", "event"),
             diagnostics=RecordingDiagnostics(),
             client=client,
-            subscriber=subscriber,
+        )
+        adapter.attach()
+
+        with self.assertRaises(BridgeConnectionLostError):
+            adapter.receive(timeout_ms=0)
+
+        update = adapter.reconnect()
+
+        self.assertIs(update.kind, LiveSplitUpdateKind.RESYNC)
+
+    def test_close_is_idempotent(self) -> None:
+        client = create_autospec(BridgeClient, instance=True)
+        adapter = LiveSplitBridgeAdapter(
+            LiveSplitConnection("rpc", "event"),
+            diagnostics=RecordingDiagnostics(),
+            client=client,
         )
 
         adapter.close()
         adapter.close()
 
-        subscriber.close.assert_called_once_with()
         client.close.assert_called_once_with()
 
 
@@ -312,7 +425,6 @@ class ActionExecutionTest(unittest.TestCase):
             LiveSplitConnection("rpc", "event"),
             diagnostics=diagnostics,
             client=client,
-            subscriber=create_autospec(BridgeEventSubscriber, instance=True),
         )
 
     def assert_no_operation(self, client: BridgeClient) -> None:
@@ -438,7 +550,7 @@ class ActionExecutionTest(unittest.TestCase):
 
     def test_snapshot_failure_does_not_send_an_operation(self) -> None:
         client = create_autospec(BridgeClient, instance=True)
-        error = BridgeTimeoutError("snapshot timed out")
+        error = BridgeResponseTimeoutError("snapshot timed out")
         client.snapshot.side_effect = error
         diagnostics = RecordingDiagnostics()
         action = Action(operation="split")
@@ -480,7 +592,7 @@ class ActionExecutionTest(unittest.TestCase):
 
     def test_reports_unknown_operation_result_without_retry(self) -> None:
         for error in (
-            BridgeTimeoutError("operation timed out"),
+            BridgeResponseTimeoutError("operation timed out"),
             BridgeProtocolError("invalid response"),
         ):
             with self.subTest(error=error):
