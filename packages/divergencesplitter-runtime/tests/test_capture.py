@@ -210,6 +210,21 @@ class TestLatestFrameBuffer:
         assert not consumer.is_alive()
         assert results == [frame]
 
+    def test_take_timeout_returns_without_consuming_future_frame(self) -> None:
+        buffer = LatestFrameBuffer()
+
+        assert buffer.take(timeout_seconds=0) is None
+
+        frame = make_frame(1)
+        assert buffer.publish(frame) is PublishResult.PUBLISHED
+        assert buffer.take(timeout_seconds=0) is frame
+
+    def test_take_rejects_invalid_timeout(self) -> None:
+        buffer = LatestFrameBuffer()
+        for timeout in (-1, float("nan"), float("inf")):
+            with pytest.raises(ValueError):
+                buffer.take(timeout_seconds=timeout)
+
     def test_stop_delivers_pending_frame_once_and_rejects_new_frames(self) -> None:
         buffer = LatestFrameBuffer()
         pending = make_frame(1)

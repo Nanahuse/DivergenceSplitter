@@ -47,6 +47,13 @@ class LiveSplitUpdateKind(Enum):
     TRANSITION = auto()
 
 
+class LiveSplitResyncReason(Enum):
+    GAP = auto()
+    SESSION_CHANGED = auto()
+    CONNECTION_LOST = auto()
+    UPDATE_QUEUE_OVERFLOW = auto()
+
+
 @dataclass(frozen=True)
 class LiveSplitUpdate:
     kind: LiveSplitUpdateKind

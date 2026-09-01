@@ -10,7 +10,7 @@ dependencies = [
 
 [tool.uv.sources]
 divergencesplitter = { workspace = true }
-livesplit-bridge-client = { git = "https://github.com/Nanahuse/livesplit-bridge-client.git", rev = "f9174f34041e105bb549ec7a8dbe44d868ffc204" }
+livesplit-bridge-client = { git = "https://github.com/Nanahuse/livesplit-bridge-client.git", rev = "f40f17c75e8355afd97a9bc6cf79f258721ffe0a" }
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13"]
