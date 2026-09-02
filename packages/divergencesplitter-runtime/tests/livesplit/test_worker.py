@@ -10,6 +10,7 @@ from divergencesplitter import (
     ErrorAction,
     Frame,
     FrameNormalizer,
+    FrameSourceError,
     FrameSourceState,
     LiveSplitConnection,
     MonotonicTime,
@@ -92,7 +93,7 @@ class RecordingDiagnostics:
     def frame_received(self, publish_result: object) -> None:
         pass
 
-    def source_error(self, error: object) -> None:
+    def source_error(self, error: FrameSourceError) -> None:
         pass
 
     def error_handled(self, action: ErrorAction, state: FrameSourceState) -> None:
@@ -447,10 +448,10 @@ class StoppingSource:
         self.prepare_calls += 1
         self.state = FrameSourceState.READY
 
-    def read(self) -> RuntimeError:
-        return RuntimeError("finished")
+    def read(self) -> FrameSourceError:
+        return FrameSourceError()
 
-    def handle_error(self, error: RuntimeError) -> ErrorAction:
+    def handle_error(self, error: FrameSourceError) -> ErrorAction:
         return ErrorAction.STOP
 
     def close(self) -> None:

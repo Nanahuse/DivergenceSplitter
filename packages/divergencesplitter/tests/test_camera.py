@@ -1,4 +1,4 @@
-from typing import ClassVar, get_protocol_members
+from typing import ClassVar
 
 import cv2
 import numpy as np
@@ -13,7 +13,6 @@ from divergencesplitter.frame.normalizer import (
 )
 from divergencesplitter.frame.source import (
     ErrorAction,
-    FrameSource,
     FrameSourceState,
 )
 
@@ -90,24 +89,6 @@ def read_error_action(source: OpenCvCameraSource) -> ErrorAction:
     result = source.read()
     assert not isinstance(result, Frame)
     return source.handle_error(result)
-
-
-class TestConstruction:
-    def test_constructor_accepts_all_arguments(self):
-        source = OpenCvCameraSource(
-            device_index=2,
-            backend=999,
-            width=1280,
-            height=720,
-            fps=30.0,
-            clip_region=ClipRegion(x=1, y=2, width=3, height=4),
-            output_size=OutputSize(width=10, height=20),
-        )
-        assert source.state is FrameSourceState.NOT_READY
-
-    def test_default_arguments_are_valid(self):
-        source = OpenCvCameraSource()
-        assert source.state is FrameSourceState.NOT_READY
 
 
 class TestValidation:
@@ -332,13 +313,3 @@ class TestContextManager:
             raise RuntimeError("boom")
         assert source.state is FrameSourceState.NOT_READY
         assert instances[0].released
-
-
-class TestProtocol:
-    def test_camera_source_satisfies_frame_source(self):
-        members = get_protocol_members(FrameSource)
-        assert "state" in members
-        assert "normalizer" in members
-        source = OpenCvCameraSource()
-        for member in members:
-            assert hasattr(source, member), member

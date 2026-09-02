@@ -1,4 +1,5 @@
 import threading
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
 
@@ -10,6 +11,7 @@ from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import FrameNormalizer
 from divergencesplitter.frame.source import (
     ErrorAction,
+    FrameSourceError,
     FrameSourceState,
 )
 from divergencesplitter.frame.video_file import VideoFileSource
@@ -20,8 +22,9 @@ from divergencesplitter_runtime.capture import (
 )
 
 
-class FakeError(Exception):
-    pass
+@dataclass(frozen=True)
+class FakeError(FrameSourceError):
+    message: str
 
 
 def make_frame(value: int, nanoseconds: int = 123) -> Frame:
@@ -82,7 +85,7 @@ class FakeFrameSource:
             raise RuntimeError("read failed")
         return self._read_results.pop(0)
 
-    def handle_error(self, error: FakeError) -> ErrorAction:
+    def handle_error(self, error: FrameSourceError) -> ErrorAction:
         del error
         self.handle_error_calls += 1
         if self._raising_stage == "handle_error":
@@ -129,7 +132,7 @@ class RecordingDiagnostics:
         self.preparing_calls = 0
         self.prepared_calls = 0
         self.publish_results: list[PublishResult] = []
-        self.source_errors: list[object] = []
+        self.source_errors: list[FrameSourceError] = []
         self.handled_errors: list[tuple[ErrorAction, FrameSourceState]] = []
         self.state_changes: list[tuple[FrameSourceState | None, FrameSourceState]] = []
         self.unavailable_errors: list[Exception] = []
@@ -145,7 +148,7 @@ class RecordingDiagnostics:
     def frame_received(self, publish_result: PublishResult) -> None:
         self.publish_results.append(publish_result)
 
-    def source_error(self, error: object) -> None:
+    def source_error(self, error: FrameSourceError) -> None:
         self.source_errors.append(error)
 
     def error_handled(

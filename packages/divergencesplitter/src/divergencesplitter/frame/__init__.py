@@ -11,16 +11,10 @@ from divergencesplitter.frame.normalizer import (
 from divergencesplitter.frame.source import (
     ErrorAction,
     FrameSource,
+    FrameSourceError,
     FrameSourceState,
 )
-from divergencesplitter.frame.video_file import (
-    VideoFileDecodeError,
-    VideoFileEndOfFileError,
-    VideoFileError,
-    VideoFileOpenError,
-    VideoFileReadBeforeReadyError,
-    VideoFileSource,
-)
+from divergencesplitter.frame.video_file import VideoFileSource
 
 __all__ = [
     "ClipRegion",
@@ -32,14 +26,10 @@ __all__ = [
     "FrameNormalizer",
     "FrameResizeError",
     "FrameSource",
+    "FrameSourceError",
     "FrameSourceState",
     "ImageArray",
     "OpenCvCameraSource",
     "OutputSize",
-    "VideoFileDecodeError",
-    "VideoFileEndOfFileError",
-    "VideoFileError",
-    "VideoFileOpenError",
-    "VideoFileReadBeforeReadyError",
     "VideoFileSource",
 ]

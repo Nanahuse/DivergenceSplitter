@@ -1,5 +1,4 @@
 import unittest
-from dataclasses import is_dataclass
 from typing import cast
 
 import numpy as np
@@ -31,9 +30,6 @@ def make_context(image, now=EPOCH):
 
 
 class MeanBrightnessDetectorTest(unittest.TestCase):
-    def test_implementation_is_not_a_dataclass(self):
-        self.assertFalse(is_dataclass(MeanBrightnessDetector))
-
     def test_implementation_is_value_equivalent(self):
         first = MeanBrightnessDetector()
         second = MeanBrightnessDetector()

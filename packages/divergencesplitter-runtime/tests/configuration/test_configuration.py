@@ -61,6 +61,7 @@ class ScenarioModuleLoadingTest(unittest.TestCase):
 from divergencesplitter import (
     ErrorAction,
     FrameNormalizer,
+    FrameSourceError,
     FrameSourceState,
     LiveSplitConnection,
     Scenario,
@@ -78,7 +79,7 @@ class Source:
     def prepare(self):
         self.state = FrameSourceState.READY
     def read(self):
-        return RuntimeError('no frame')
+        return FrameSourceError()
     def handle_error(self, error):
         return ErrorAction.STOP
     def close(self):

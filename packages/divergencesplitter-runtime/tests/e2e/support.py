@@ -10,6 +10,7 @@ from divergencesplitter import (
     ErrorAction,
     Frame,
     FrameContext,
+    FrameSourceError,
     FrameSourceState,
     LiveSplitConnection,
     MonotonicTime,
@@ -290,7 +291,7 @@ class RecordingDiagnostics:
         if publish_result is PublishResult.OVERWROTE:
             self.frame_overwritten.set()
 
-    def source_error(self, error: object) -> None:
+    def source_error(self, error: FrameSourceError) -> None:
         pass
 
     def error_handled(self, action: ErrorAction, state: FrameSourceState) -> None:

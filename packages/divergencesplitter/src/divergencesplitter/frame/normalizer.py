@@ -31,8 +31,11 @@ class OutputSize:
             raise ValueError(f"output size must be positive: {self}")
 
 
-class FrameNormalizationError(Exception):
+@dataclass(frozen=True)
+class FrameNormalizationError:
     """Base type for errors returned by ``FrameNormalizer.normalize``."""
+
+    message: str
 
 
 class FrameClipError(FrameNormalizationError):

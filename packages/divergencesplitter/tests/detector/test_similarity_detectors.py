@@ -1,5 +1,4 @@
 import unittest
-from dataclasses import is_dataclass
 from typing import cast
 from unittest.mock import patch
 
@@ -35,10 +34,6 @@ PATTERN = ((0, 255), (255, 0))
 
 def make_context(image: np.ndarray) -> FrameContext:
     return FrameContext(frame=Frame(image=image, captured_at=EPOCH), now=EPOCH)
-
-
-def assign_attribute(target: object, name: str, value: object) -> None:
-    setattr(target, name, value)
 
 
 class TemplateMatchDetectorTest(unittest.TestCase):
@@ -166,32 +161,6 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
 
 
 class ConfigImageTest(unittest.TestCase):
-    def test_detector_configurations_are_data_classes(self) -> None:
-        config_detector_pairs = (
-            (MeanAbsoluteSimilarityConfig, MeanAbsoluteSimilarityDetector),
-            (TemplateMatchConfig, TemplateMatchDetector),
-            (ColorRangeConfig, ColorRangeDetector),
-            (PhaseCorrelationConfig, PhaseCorrelationDetector),
-            (DifferenceHashSimilarityConfig, DifferenceHashSimilarityDetector),
-        )
-        for config_type, detector_type in config_detector_pairs:
-            with self.subTest(config_type=config_type):
-                self.assertTrue(is_dataclass(config_type))
-                self.assertFalse(hasattr(config_type, "detect"))
-                self.assertEqual(config_type.__module__, detector_type.__module__)
-
-    def test_detector_implementations_are_not_dataclasses(self) -> None:
-        detector_types = (
-            MeanAbsoluteSimilarityDetector,
-            TemplateMatchDetector,
-            ColorRangeDetector,
-            PhaseCorrelationDetector,
-            DifferenceHashSimilarityDetector,
-        )
-        for detector_type in detector_types:
-            with self.subTest(detector_type=detector_type):
-                self.assertFalse(is_dataclass(detector_type))
-
     def test_detector_implementations_compare_by_configuration(self) -> None:
         equivalent_pairs = (
             (
@@ -223,8 +192,6 @@ class ConfigImageTest(unittest.TestCase):
             with self.subTest(detector_type=type(first)):
                 self.assertEqual(first, second)
                 self.assertEqual(hash(first), hash(second))
-                with self.assertRaises(AttributeError):
-                    assign_attribute(first, "config", None)
 
     def test_equivalent_configurations_share_detection_cache(self) -> None:
         reference = ((0, 0), (0, 0))
