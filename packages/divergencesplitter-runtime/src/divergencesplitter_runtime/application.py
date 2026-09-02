@@ -62,6 +62,7 @@ class ApplicationRuntime:
             self._scenario_runtimes,
             self._workers,
             self._frame_buffer,
+            frame_source.normalizer,
             diagnostics=diagnostics,
         )
         self._scenarios = scenarios

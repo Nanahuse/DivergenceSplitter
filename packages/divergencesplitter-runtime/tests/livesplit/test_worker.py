@@ -9,6 +9,7 @@ from divergencesplitter import (
     Action,
     ErrorAction,
     Frame,
+    FrameNormalizationError,
     FrameNormalizer,
     FrameSourceError,
     FrameSourceState,
@@ -120,6 +121,9 @@ class RecordingDiagnostics:
         frame: Frame,
         processing_started_at: MonotonicTime,
     ) -> None:
+        pass
+
+    def frame_normalization_failed(self, error: FrameNormalizationError) -> None:
         pass
 
     def scenario_evaluation_failed(

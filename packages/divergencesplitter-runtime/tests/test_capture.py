@@ -226,6 +226,24 @@ class TestLatestFrameBuffer:
 
 
 class TestCaptureStateMachine:
+    def test_stops_source_when_processing_has_stopped_buffer(self) -> None:
+        source = FakeFrameSource(
+            prepare_results=[None],
+            read_results=[successful_read(1)],
+            error_results=[],
+        )
+        buffer = LatestFrameBuffer()
+        buffer.stop()
+        diagnostics = RecordingDiagnostics()
+        machine = CaptureStateMachine(source, buffer, diagnostics=diagnostics)
+
+        machine.run()
+
+        assert source.read_calls == 1
+        assert source.close_calls == 1
+        assert diagnostics.publish_results == [PublishResult.STOPPED]
+        assert machine.is_stopped
+
     def test_prepares_captures_and_stops_on_source_action(self) -> None:
         final_error = FakeError("finished")
         source = FakeFrameSource(
