@@ -22,23 +22,23 @@ from divergencesplitter.frame.normalizer import (
 from divergencesplitter.frame.source import ErrorAction, FrameSourceState
 
 
-class _OpenCvCameraError(Exception):
+class OpenCvCameraError(Exception):
     """Base type for all ``OpenCvCameraSource``-specific errors."""
 
 
-class _OpenCvCameraOpenError(_OpenCvCameraError):
+class OpenCvCameraOpenError(OpenCvCameraError):
     """The camera device could not be opened."""
 
 
-class _OpenCvCameraConfigurationError(_OpenCvCameraError):
+class OpenCvCameraConfigurationError(OpenCvCameraError):
     """The camera device rejected the requested capture configuration."""
 
 
-class _OpenCvCameraReadError(_OpenCvCameraError):
+class OpenCvCameraReadError(OpenCvCameraError):
     """A frame could not be read from the camera device."""
 
 
-class _OpenCvCameraReadBeforeReadyError(_OpenCvCameraError):
+class OpenCvCameraReadBeforeReadyError(OpenCvCameraError):
     """``read`` was attempted while the source is not READY."""
 
 
@@ -86,7 +86,7 @@ class OpenCvCameraSource:
     def normalizer(self) -> FrameNormalizer:
         return self._normalizer
 
-    def prepare(self) -> _OpenCvCameraError | None:
+    def prepare(self) -> Exception | None:
         if self._state is FrameSourceState.READY:
             return None
         capture = cv2.VideoCapture(self._device_index, self._backend)
@@ -94,7 +94,7 @@ class OpenCvCameraSource:
             capture.release()
             self._capture = None
             self._state = FrameSourceState.NOT_READY
-            return _OpenCvCameraOpenError(
+            return OpenCvCameraOpenError(
                 "cannot open camera device "
                 f"{self._device_index!r} with backend {self._backend!r}"
             )
@@ -108,25 +108,25 @@ class OpenCvCameraSource:
                 capture.release()
                 self._capture = None
                 self._state = FrameSourceState.NOT_READY
-                return _OpenCvCameraConfigurationError(
+                return OpenCvCameraConfigurationError(
                     f"cannot configure camera property {prop} to {value!r}"
                 )
         self._state = FrameSourceState.READY
         return None
 
-    def read(self) -> Frame | _OpenCvCameraError:
+    def read(self) -> Frame | Exception:
         if self._state is not FrameSourceState.READY or self._capture is None:
-            return _OpenCvCameraReadBeforeReadyError("source is not READY")
+            return OpenCvCameraReadBeforeReadyError("source is not READY")
         retval, image = self._capture.read()
         if not retval or image is None:
             self._capture.release()
             self._capture = None
             self._state = FrameSourceState.NOT_READY
-            return _OpenCvCameraReadError("failed to read a frame from the camera")
+            return OpenCvCameraReadError("failed to read a frame from the camera")
         return Frame(image=image, captured_at=self._time_provider.now())
 
-    def handle_error(self, error: _OpenCvCameraError) -> ErrorAction:
-        if isinstance(error, (_OpenCvCameraOpenError, _OpenCvCameraReadError)):
+    def handle_error(self, error: Exception) -> ErrorAction:
+        if isinstance(error, (OpenCvCameraOpenError, OpenCvCameraReadError)):
             return ErrorAction.RETRY
         return ErrorAction.STOP
 
