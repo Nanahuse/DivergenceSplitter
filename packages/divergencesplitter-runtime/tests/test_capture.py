@@ -82,7 +82,7 @@ class FakeFrameSource:
             raise RuntimeError("read failed")
         return self._read_results.pop(0)
 
-    def handle_error(self, error: FakeError) -> ErrorAction:
+    def handle_error(self, error: Exception) -> ErrorAction:
         del error
         self.handle_error_calls += 1
         if self._raising_stage == "handle_error":

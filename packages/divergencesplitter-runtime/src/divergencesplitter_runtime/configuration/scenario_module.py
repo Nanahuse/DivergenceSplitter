@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from runpy import run_path
-from typing import Any, TypeIs
+from typing import TypeIs
 
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.scenario.models import Scenario
@@ -12,13 +12,13 @@ from divergencesplitter_runtime.configuration.validation import validate_scenari
 
 def load_scenario_module(
     path: str | Path,
-) -> tuple[tuple[Scenario, ...], FrameSource[Any]]:
+) -> tuple[tuple[Scenario, ...], FrameSource]:
     """Execute a trusted Python module and extract its fixed exports."""
 
     namespace = run_path(str(path))
     errors: list[Exception] = []
     scenarios: tuple[Scenario, ...] | None = None
-    frame_source: FrameSource[Any] | None = None
+    frame_source: FrameSource | None = None
 
     if "scenarios" not in namespace:
         errors.append(ValueError("scenario module must export 'scenarios'"))

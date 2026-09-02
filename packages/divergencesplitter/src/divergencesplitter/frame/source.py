@@ -10,12 +10,10 @@ as decoded, so un-evaluated frames are never transformed.
 
 from enum import Enum, auto
 from types import TracebackType
-from typing import Protocol, Self, TypeVar, runtime_checkable
+from typing import Protocol, Self, runtime_checkable
 
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import FrameNormalizer
-
-ErrorT = TypeVar("ErrorT")
 
 
 class FrameSourceState(Enum):
@@ -33,7 +31,7 @@ class ErrorAction(Enum):
 
 
 @runtime_checkable
-class FrameSource(Protocol[ErrorT]):
+class FrameSource(Protocol):
     """Input contract for obtaining raw frames."""
 
     @property
@@ -42,11 +40,11 @@ class FrameSource(Protocol[ErrorT]):
     @property
     def normalizer(self) -> FrameNormalizer: ...
 
-    def prepare(self) -> ErrorT | None: ...
+    def prepare(self) -> Exception | None: ...
 
-    def read(self) -> Frame | ErrorT: ...
+    def read(self) -> Frame | Exception: ...
 
-    def handle_error(self, error: ErrorT) -> ErrorAction: ...
+    def handle_error(self, error: Exception) -> ErrorAction: ...
 
     def close(self) -> None: ...
 

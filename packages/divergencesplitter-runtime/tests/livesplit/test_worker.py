@@ -450,7 +450,7 @@ class StoppingSource:
     def read(self) -> RuntimeError:
         return RuntimeError("finished")
 
-    def handle_error(self, error: RuntimeError) -> ErrorAction:
+    def handle_error(self, error: Exception) -> ErrorAction:
         return ErrorAction.STOP
 
     def close(self) -> None:

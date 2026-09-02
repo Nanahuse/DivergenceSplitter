@@ -91,12 +91,12 @@ class LatestFrameBuffer:
             self._condition.notify_all()
 
 
-class CaptureStateMachine[ErrorT]:
+class CaptureStateMachine:
     """Own a FrameSource and publish its frames until stopped."""
 
     def __init__(
         self,
-        source: FrameSource[ErrorT],
+        source: FrameSource,
         buffer: LatestFrameBuffer,
         *,
         diagnostics: CaptureDiagnostics,
@@ -163,7 +163,7 @@ class CaptureStateMachine[ErrorT]:
             return
         self._handle_error(result)
 
-    def _handle_error(self, error: ErrorT) -> None:
+    def _handle_error(self, error: Exception) -> None:
         self._diagnostics.source_error(error)
         action = self._source.handle_error(error)
         state = self._observe_source_state()

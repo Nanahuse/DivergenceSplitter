@@ -2,7 +2,7 @@
 
 import threading
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Protocol
 
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.scenario.models import Scenario
@@ -42,7 +42,7 @@ class ApplicationRuntime:
     def __init__(
         self,
         scenarios: tuple[Scenario, ...],
-        frame_source: FrameSource[Any],
+        frame_source: FrameSource,
         *,
         diagnostics: ApplicationDiagnostics,
     ) -> None:
