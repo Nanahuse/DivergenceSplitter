@@ -1,3 +1,4 @@
+from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.models import Frame, FrameContext, ImageArray
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
@@ -33,6 +34,7 @@ __all__ = [
     "FrameSource",
     "FrameSourceState",
     "ImageArray",
+    "OpenCvCameraSource",
     "OutputSize",
     "VideoFileDecodeError",
     "VideoFileEndOfFileError",
