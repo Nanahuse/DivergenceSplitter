@@ -4,14 +4,7 @@ import cv2
 import numpy as np
 import pytest
 from divergencesplitter.clock import MonotonicTime, TimeProvider
-from divergencesplitter.frame.camera import (
-    OpenCvCameraConfigurationError,
-    OpenCvCameraError,
-    OpenCvCameraOpenError,
-    OpenCvCameraReadBeforeReadyError,
-    OpenCvCameraReadError,
-    OpenCvCameraSource,
-)
+from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
@@ -93,10 +86,10 @@ def read_frame(source: OpenCvCameraSource) -> Frame:
     return result
 
 
-def read_error(source: OpenCvCameraSource) -> OpenCvCameraError:
+def read_error_action(source: OpenCvCameraSource) -> ErrorAction:
     result = source.read()
-    assert isinstance(result, OpenCvCameraError)
-    return result
+    assert not isinstance(result, Frame)
+    return source.handle_error(result)
 
 
 class TestConstruction:
@@ -180,7 +173,8 @@ class TestPrepare:
         instances = patch_capture(monkeypatch, NotOpeningCapture)
         source = OpenCvCameraSource()
         result = source.prepare()
-        assert isinstance(result, OpenCvCameraOpenError)
+        assert result is not None
+        assert source.handle_error(result) is ErrorAction.RETRY
         assert source.state is FrameSourceState.NOT_READY
         assert instances[0].released
 
@@ -190,7 +184,8 @@ class TestPrepare:
         instances = patch_capture(monkeypatch, FailingSetCapture)
         source = OpenCvCameraSource(width=640, height=480, fps=30.0)
         result = source.prepare()
-        assert isinstance(result, OpenCvCameraConfigurationError)
+        assert result is not None
+        assert source.handle_error(result) is ErrorAction.STOP
         assert source.state is FrameSourceState.NOT_READY
         assert instances[0].released
 
@@ -233,14 +228,14 @@ class TestRead:
     def test_read_before_ready_is_source_error(self, monkeypatch):
         patch_capture(monkeypatch)
         source = OpenCvCameraSource()
-        assert isinstance(read_error(source), OpenCvCameraReadBeforeReadyError)
+        assert read_error_action(source) is ErrorAction.STOP
 
     def test_read_after_close_is_source_error(self, monkeypatch):
         patch_capture(monkeypatch)
         source = OpenCvCameraSource()
         source.prepare()
         source.close()
-        assert isinstance(read_error(source), OpenCvCameraReadBeforeReadyError)
+        assert read_error_action(source) is ErrorAction.STOP
 
     def test_read_failure_releases_and_returns_read_error(self, monkeypatch):
         instances = patch_capture(monkeypatch)
@@ -249,7 +244,8 @@ class TestRead:
         capture = instances[0]
         capture.read_results.append((False, None))
         result = source.read()
-        assert isinstance(result, OpenCvCameraReadError)
+        assert not isinstance(result, Frame)
+        assert source.handle_error(result) is ErrorAction.RETRY
         assert capture.released
         assert source.state is FrameSourceState.NOT_READY
 
@@ -259,7 +255,8 @@ class TestRead:
         source.prepare()
         instances[0].read_results.append((True, None))
         result = source.read()
-        assert isinstance(result, OpenCvCameraReadError)
+        assert not isinstance(result, Frame)
+        assert source.handle_error(result) is ErrorAction.RETRY
         assert source.state is FrameSourceState.NOT_READY
 
     def test_retry_after_read_failure_reprepares(self, monkeypatch):
@@ -268,40 +265,12 @@ class TestRead:
         source.prepare()
         first = instances[0]
         first.read_results.append((False, None))
-        assert isinstance(read_error(source), OpenCvCameraReadError)
+        assert read_error_action(source) is ErrorAction.RETRY
         assert source.state is FrameSourceState.NOT_READY
         assert source.prepare() is None
         assert source.state is FrameSourceState.READY
         assert len(instances) == 2
         assert instances[1] is not first
-
-
-class TestHandleError:
-    def test_open_and_read_errors_retry(self):
-        source = OpenCvCameraSource()
-        assert source.handle_error(OpenCvCameraOpenError("open")) is ErrorAction.RETRY
-        assert source.handle_error(OpenCvCameraReadError("read")) is ErrorAction.RETRY
-
-    def test_configuration_and_read_before_ready_errors_stop(self):
-        source = OpenCvCameraSource()
-        assert (
-            source.handle_error(OpenCvCameraConfigurationError("config"))
-            is ErrorAction.STOP
-        )
-        assert (
-            source.handle_error(OpenCvCameraReadBeforeReadyError("not ready"))
-            is ErrorAction.STOP
-        )
-
-    def test_all_errors_are_open_cv_camera_errors(self):
-        errors = (
-            OpenCvCameraOpenError("open"),
-            OpenCvCameraConfigurationError("config"),
-            OpenCvCameraReadError("read"),
-            OpenCvCameraReadBeforeReadyError("not ready"),
-        )
-        for error in errors:
-            assert isinstance(error, OpenCvCameraError)
 
 
 class TestNormalizer:
@@ -377,28 +346,28 @@ class TestProtocol:
 
 class TestExports:
     def test_camera_source_is_exported_from_frame_package(self):
-        from divergencesplitter.frame import (
-            OpenCvCameraConfigurationError,
-            OpenCvCameraError,
-            OpenCvCameraOpenError,
-            OpenCvCameraReadBeforeReadyError,
-            OpenCvCameraReadError,
-            OpenCvCameraSource,
-        )
+        from divergencesplitter.frame import OpenCvCameraSource
 
         assert OpenCvCameraSource is not None
-        assert OpenCvCameraError is not None
-        assert OpenCvCameraOpenError is not None
-        assert OpenCvCameraConfigurationError is not None
-        assert OpenCvCameraReadError is not None
-        assert OpenCvCameraReadBeforeReadyError is not None
 
     def test_camera_source_is_exported_from_top_level(self):
         import divergencesplitter as ds
 
         assert ds.OpenCvCameraSource is OpenCvCameraSource
-        assert ds.OpenCvCameraError is OpenCvCameraError
-        assert ds.OpenCvCameraOpenError is OpenCvCameraOpenError
-        assert ds.OpenCvCameraConfigurationError is OpenCvCameraConfigurationError
-        assert ds.OpenCvCameraReadError is OpenCvCameraReadError
-        assert ds.OpenCvCameraReadBeforeReadyError is OpenCvCameraReadBeforeReadyError
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "OpenCvCameraError",
+            "OpenCvCameraOpenError",
+            "OpenCvCameraConfigurationError",
+            "OpenCvCameraReadError",
+            "OpenCvCameraReadBeforeReadyError",
+        ],
+    )
+    def test_camera_errors_are_not_reexported(self, name):
+        import divergencesplitter as ds
+        import divergencesplitter.frame as frame_api
+
+        assert not hasattr(ds, name)
+        assert not hasattr(frame_api, name)
