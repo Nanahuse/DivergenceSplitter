@@ -14,6 +14,10 @@ from divergencesplitter_runtime import (
     validate_scenarios,
     validate_split_count,
 )
+from divergencesplitter_runtime.configuration.scenario_module import (
+    ScenarioModuleExecutionError,
+    ScenarioModuleValidationError,
+)
 
 
 class PassiveCondition:
@@ -106,18 +110,35 @@ frame_source = Source()
         self.assertEqual(scenarios[0].connection.rpc_endpoint, "rpc")
         self.assertIs(frame_source.state, FrameSourceState.NOT_READY)
 
-    def test_import_exception_is_forwarded(self) -> None:
+    def test_import_exception_is_reported_as_module_execution_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text("raise RuntimeError('broken')", encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "broken"):
+            with self.assertRaises(ScenarioModuleExecutionError) as raised:
+                load_scenario_module(path)
+        self.assertIsInstance(raised.exception.error, RuntimeError)
+        self.assertEqual(str(raised.exception.error), "broken")
+
+    def test_module_system_exit_is_reported_as_execution_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scenario_module.py"
+            path.write_text("raise SystemExit(7)", encoding="utf-8")
+            with self.assertRaises(ScenarioModuleExecutionError) as raised:
+                load_scenario_module(path)
+        self.assertIsInstance(raised.exception.error, SystemExit)
+
+    def test_keyboard_interrupt_is_not_wrapped(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scenario_module.py"
+            path.write_text("raise KeyboardInterrupt", encoding="utf-8")
+            with self.assertRaises(KeyboardInterrupt):
                 load_scenario_module(path)
 
     def test_missing_exports_are_aggregated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text("value = 1", encoding="utf-8")
-            with self.assertRaises(ExceptionGroup) as raised:
+            with self.assertRaises(ScenarioModuleValidationError) as raised:
                 load_scenario_module(path)
         self.assertEqual(len(raised.exception.exceptions), 2)
 
@@ -129,7 +150,7 @@ frame_source = object()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text(source, encoding="utf-8")
-            with self.assertRaises(ExceptionGroup) as raised:
+            with self.assertRaises(ScenarioModuleValidationError) as raised:
                 load_scenario_module(path)
         self.assertEqual(len(raised.exception.exceptions), 2)
         self.assertTrue(
@@ -140,7 +161,7 @@ frame_source = object()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text("frame_source = object()", encoding="utf-8")
-            with self.assertRaises(ExceptionGroup) as raised:
+            with self.assertRaises(ScenarioModuleValidationError) as raised:
                 load_scenario_module(path)
         self.assertEqual(len(raised.exception.exceptions), 2)
 
@@ -152,7 +173,7 @@ frame_source = object()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text(source, encoding="utf-8")
-            with self.assertRaises(ExceptionGroup) as raised:
+            with self.assertRaises(ScenarioModuleValidationError) as raised:
                 load_scenario_module(path)
         messages = tuple(str(error) for error in raised.exception.exceptions)
         self.assertTrue(any("scenarios[0]" in message for message in messages))

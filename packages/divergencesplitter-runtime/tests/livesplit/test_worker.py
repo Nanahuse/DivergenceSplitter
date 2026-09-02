@@ -28,6 +28,7 @@ from divergencesplitter_runtime import (
     LiveSplitUpdateKind,
     TimerPhase,
 )
+from divergencesplitter_runtime.application import ApplicationStartupValidationError
 from livesplit_bridge import BridgeConnectionLostError
 
 
@@ -516,7 +517,7 @@ def test_application_does_not_start_capture_when_split_count_is_invalid() -> Non
             "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
             FakeAdapter,
         ),
-        pytest.raises(ValueError, match="more split slots"),
+        pytest.raises(ApplicationStartupValidationError, match="more split slots"),
     ):
         runtime.run()
 

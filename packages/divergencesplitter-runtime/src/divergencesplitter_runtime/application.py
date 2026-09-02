@@ -36,6 +36,14 @@ class ApplicationDiagnostics(
     """Combined typed diagnostics consumed by the application components."""
 
 
+class ApplicationStartupValidationError(Exception):
+    """A constraint requiring the initial LiveSplit snapshot was violated."""
+
+    def __init__(self, error: ValueError) -> None:
+        self.error = error
+        super().__init__(str(error))
+
+
 class ApplicationRuntime:
     """Coordinate startup and cooperative shutdown of all runtime threads."""
 
@@ -136,7 +144,10 @@ class ApplicationRuntime:
             if not updates:
                 raise RuntimeError("Bridge worker produced no initial update")
             initial = updates[0]
-            validate_split_count(scenario, initial.snapshot)
+            try:
+                validate_split_count(scenario, initial.snapshot)
+            except ValueError as error:
+                raise ApplicationStartupValidationError(error) from error
             runtime.apply_livesplit_update(initial)
             for update in updates[1:]:
                 runtime.apply_livesplit_update(update)
