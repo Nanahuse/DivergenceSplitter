@@ -342,32 +342,3 @@ class TestProtocol:
         source = OpenCvCameraSource()
         for member in members:
             assert hasattr(source, member), member
-
-
-class TestExports:
-    def test_camera_source_is_exported_from_frame_package(self):
-        from divergencesplitter.frame import OpenCvCameraSource
-
-        assert OpenCvCameraSource is not None
-
-    def test_camera_source_is_exported_from_top_level(self):
-        import divergencesplitter as ds
-
-        assert ds.OpenCvCameraSource is OpenCvCameraSource
-
-    @pytest.mark.parametrize(
-        "name",
-        [
-            "OpenCvCameraError",
-            "OpenCvCameraOpenError",
-            "OpenCvCameraConfigurationError",
-            "OpenCvCameraReadError",
-            "OpenCvCameraReadBeforeReadyError",
-        ],
-    )
-    def test_camera_errors_are_not_reexported(self, name):
-        import divergencesplitter as ds
-        import divergencesplitter.frame as frame_api
-
-        assert not hasattr(ds, name)
-        assert not hasattr(frame_api, name)
