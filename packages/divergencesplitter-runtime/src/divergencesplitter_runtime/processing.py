@@ -5,6 +5,10 @@ from typing import Protocol
 
 from divergencesplitter.clock import MonotonicTime, TimeProvider
 from divergencesplitter.frame.models import Frame, FrameContext
+from divergencesplitter.frame.normalizer import (
+    FrameNormalizationError,
+    FrameNormalizer,
+)
 
 from divergencesplitter_runtime.capture import LatestFrameBuffer
 from divergencesplitter_runtime.livesplit.worker import BridgeWorker
@@ -16,6 +20,11 @@ class ProcessingDiagnostics(Protocol):
         self,
         frame: Frame,
         processing_started_at: MonotonicTime,
+    ) -> None: ...
+
+    def frame_normalization_failed(
+        self,
+        error: FrameNormalizationError,
     ) -> None: ...
 
     def scenario_evaluation_failed(
@@ -33,6 +42,7 @@ class ProcessingRuntime:
         scenarios: tuple[ScenarioRuntime, ...],
         workers: tuple[BridgeWorker, ...],
         frame_buffer: LatestFrameBuffer,
+        normalizer: FrameNormalizer,
         *,
         diagnostics: ProcessingDiagnostics,
         time_provider: TimeProvider | None = None,
@@ -42,6 +52,7 @@ class ProcessingRuntime:
         self._scenarios = scenarios
         self._workers = workers
         self._frame_buffer = frame_buffer
+        self._normalizer = normalizer
         self._diagnostics = diagnostics
         self._time_provider = time_provider or TimeProvider()
         self._stop_requested = threading.Event()
@@ -58,7 +69,12 @@ class ProcessingRuntime:
             self._apply_bridge_updates()
             now = self._time_provider.now()
             self._diagnostics.frame_processing_started(frame, now)
-            context = FrameContext(frame=frame, now=now)
+            normalized = self._normalizer.normalize(frame)
+            if isinstance(normalized, FrameNormalizationError):
+                self._diagnostics.frame_normalization_failed(normalized)
+                self.request_stop()
+                return
+            context = FrameContext(frame=normalized, now=now)
             self._evaluate_scenarios(context)
 
     def _apply_bridge_updates(self) -> None:

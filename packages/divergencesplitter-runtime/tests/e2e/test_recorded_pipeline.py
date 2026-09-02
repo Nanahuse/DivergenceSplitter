@@ -11,12 +11,14 @@ import pytest
 from divergencesplitter import (
     Action,
     All,
+    ClipRegion,
     Detected,
     Elapsed,
     FallingEdge,
     Hold,
     LiveSplitConnection,
     MeanBrightnessDetector,
+    OutputSize,
     RisingEdge,
     Rule,
     Scenario,
@@ -64,6 +66,23 @@ def write_recording(
         writer.release()
 
 
+def write_image_recording(
+    path: Path,
+    image: np.ndarray,
+    *,
+    frame_count: int,
+    fps: float,
+) -> None:
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # type: ignore
+    writer = cv2.VideoWriter(str(path), fourcc, fps, FRAME_SIZE)
+    assert writer.isOpened(), "could not create the E2E recording"
+    try:
+        for _ in range(frame_count):
+            writer.write(image)
+    finally:
+        writer.release()
+
+
 def start_runtime(
     runtime: ApplicationRuntime,
 ) -> tuple[threading.Thread, list[BaseException]]:
@@ -92,6 +111,7 @@ def assert_runtime_stopped(
     assert not thread.is_alive()
     assert errors == []
     assert diagnostics.scenario_errors == []
+    assert diagnostics.normalization_errors == []
     assert diagnostics.source_closed_event.is_set()
     assert diagnostics.capture_stopped.is_set()
     assert diagnostics.worker_stopped_event.is_set()
@@ -100,6 +120,90 @@ def assert_runtime_stopped(
 
 def impossible_reset_condition() -> Detected:
     return Detected(MeanBrightnessDetector(), minimum_score=300)
+
+
+def test_recording_is_normalized_before_scenario_evaluation(tmp_path: Path) -> None:
+    video = tmp_path / "normalized.avi"
+    image = np.full((*FRAME_SIZE, 3), DARK, dtype=np.uint8)
+    image[:, :4] = BRIGHT
+    write_image_recording(video, image, frame_count=12, fps=20)
+    connection = LiveSplitConnection("normalized-rpc", "normalized-event")
+    scenario = Scenario(
+        connection=connection,
+        reset_conditions=(impossible_reset_condition(),),
+        splits=(
+            (Rule(Detected(MeanBrightnessDetector(), THRESHOLD), Action("split")),),
+        ),
+    )
+    script = BridgeScript(snapshot())
+    diagnostics = RecordingDiagnostics()
+    ScriptedBridgeAdapter.scripts = {connection: script}
+    runtime = ApplicationRuntime(
+        (scenario,),
+        VideoFileSource(
+            str(video),
+            clip_region=ClipRegion(x=0, y=0, width=4, height=16),
+            output_size=OutputSize(width=8, height=8),
+        ),
+        diagnostics=diagnostics,
+    )
+
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        ScriptedBridgeAdapter,
+    ):
+        thread, errors = start_runtime(runtime)
+        assert script.wait_for_actions(1, 2)
+        assert_runtime_stopped(
+            thread,
+            errors,
+            diagnostics,
+            script,
+            timeout_seconds=3,
+        )
+
+    assert [action.operation for action, _ in script.actions] == ["split"]
+
+
+def test_normalization_failure_stops_the_recording_pipeline(tmp_path: Path) -> None:
+    video = tmp_path / "normalization-failure.avi"
+    write_recording(video, ((BRIGHT, 12),), fps=20)
+    connection = LiveSplitConnection("failure-rpc", "failure-event")
+    scenario = Scenario(
+        connection=connection,
+        reset_conditions=(impossible_reset_condition(),),
+        splits=(
+            (Rule(Detected(MeanBrightnessDetector(), THRESHOLD), Action("split")),),
+        ),
+    )
+    script = BridgeScript(snapshot())
+    diagnostics = RecordingDiagnostics()
+    ScriptedBridgeAdapter.scripts = {connection: script}
+    runtime = ApplicationRuntime(
+        (scenario,),
+        VideoFileSource(
+            str(video),
+            clip_region=ClipRegion(x=0, y=0, width=17, height=17),
+        ),
+        diagnostics=diagnostics,
+    )
+
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        ScriptedBridgeAdapter,
+    ):
+        thread, errors = start_runtime(runtime)
+        thread.join(3)
+
+    assert not thread.is_alive()
+    assert errors == []
+    assert len(diagnostics.normalization_errors) == 1
+    assert diagnostics.scenario_errors == []
+    assert script.actions == []
+    assert diagnostics.source_closed_event.is_set()
+    assert diagnostics.capture_stopped.is_set()
+    assert diagnostics.worker_stopped_event.is_set()
+    assert script.closed.is_set()
 
 
 def test_recording_reaches_finish_and_refires_after_external_undo(

@@ -1,7 +1,16 @@
 import threading
 
 import numpy as np
-from divergencesplitter import Action, Frame, MonotonicTime
+from divergencesplitter import (
+    Action,
+    ClipRegion,
+    Frame,
+    FrameContext,
+    FrameNormalizationError,
+    FrameNormalizer,
+    MonotonicTime,
+    OutputSize,
+)
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter_runtime import (
     ActionSubmission,
@@ -48,7 +57,7 @@ class FakeScenarioRuntime(ScenarioRuntime):
         self.action = action
         self._fake_snapshot: LiveSplitSnapshot | None = None
         self.updates: list[LiveSplitUpdate] = []
-        self.contexts: list[object] = []
+        self.contexts: list[FrameContext] = []
 
     @property
     def current_snapshot(self) -> LiveSplitSnapshot | None:
@@ -58,7 +67,7 @@ class FakeScenarioRuntime(ScenarioRuntime):
         self.updates.append(update)
         self._fake_snapshot = update.snapshot
 
-    def evaluate(self, context: object) -> Action | None:
+    def evaluate(self, context: FrameContext) -> Action | None:
         self.contexts.append(context)
         return self.action
 
@@ -95,17 +104,38 @@ class SignalingBuffer(LatestFrameBuffer):
         return super().take()
 
 
+class RecordingNormalizer(FrameNormalizer):
+    def __init__(
+        self,
+        *,
+        clip_region: ClipRegion | None = None,
+        output_size: OutputSize | None = None,
+    ) -> None:
+        super().__init__(clip_region=clip_region, output_size=output_size)
+        self.frames: list[Frame] = []
+
+    def normalize(self, frame: Frame) -> Frame | FrameNormalizationError:
+        self.frames.append(frame)
+        return super().normalize(frame)
+
+
 class RecordingDiagnostics:
     def __init__(self) -> None:
         self.frames: list[tuple[Frame, MonotonicTime]] = []
         self.errors: list[tuple[int, Exception]] = []
         self.frame_started = threading.Event()
+        self.normalization_errors: list[FrameNormalizationError] = []
+        self.normalization_failed = threading.Event()
 
     def frame_processing_started(
         self, frame: Frame, processing_started_at: MonotonicTime
     ) -> None:
         self.frames.append((frame, processing_started_at))
         self.frame_started.set()
+
+    def frame_normalization_failed(self, error: FrameNormalizationError) -> None:
+        self.normalization_errors.append(error)
+        self.normalization_failed.set()
 
     def scenario_evaluation_failed(self, scenario_index: int, error: Exception) -> None:
         self.errors.append((scenario_index, error))
@@ -136,6 +166,7 @@ def test_applies_updates_before_evaluation_and_submits_action_with_snapshot() ->
         (scenario,),
         (worker,),
         buffer,
+        FrameNormalizer(),
         diagnostics=diagnostics,
         time_provider=clock,
     )
@@ -162,6 +193,7 @@ def test_all_scenarios_share_one_context_and_one_clock_read() -> None:
         (first, second),
         (first_worker, second_worker),
         buffer,
+        FrameNormalizer(),
         diagnostics=diagnostics,
         time_provider=clock,
     )
@@ -184,6 +216,7 @@ def test_unavailable_worker_applies_updates_but_skips_evaluation() -> None:
         (scenario,),
         (worker,),
         buffer,
+        FrameNormalizer(),
         diagnostics=diagnostics,
         time_provider=FakeTimeProvider(),
     )
@@ -205,6 +238,7 @@ def test_waits_for_each_frame_without_a_fixed_polling_period() -> None:
         (scenario,),
         (worker,),
         buffer,
+        FrameNormalizer(),
         diagnostics=diagnostics,
         time_provider=FakeTimeProvider(),
     )
@@ -221,3 +255,63 @@ def test_waits_for_each_frame_without_a_fixed_polling_period() -> None:
 
     assert not thread.is_alive()
     assert scenario.updates == [initial]
+
+
+def test_normalizes_frame_once_before_scenario_evaluation() -> None:
+    initial = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot())
+    scenario = FakeScenarioRuntime()
+    worker = FakeWorker((initial,))
+    buffer = LatestFrameBuffer()
+    pending_frame = Frame(
+        image=np.arange(16, dtype=np.uint8).reshape((4, 4)),
+        captured_at=MonotonicTime(10),
+    )
+    buffer.publish(pending_frame)
+    diagnostics = RecordingDiagnostics()
+    normalizer = RecordingNormalizer(
+        clip_region=ClipRegion(x=1, y=1, width=2, height=2),
+        output_size=OutputSize(width=1, height=1),
+    )
+    runtime = ProcessingRuntime(
+        (scenario,),
+        (worker,),
+        buffer,
+        normalizer,
+        diagnostics=diagnostics,
+        time_provider=FakeTimeProvider(),
+    )
+
+    process_one_frame(runtime, diagnostics)
+
+    evaluated = scenario.contexts[0].frame
+    assert normalizer.frames == [pending_frame]
+    assert evaluated.image.shape == (1, 1)
+    assert evaluated.captured_at == pending_frame.captured_at
+    assert diagnostics.frames == [(pending_frame, MonotonicTime(20))]
+
+
+def test_normalization_error_stops_processing_without_evaluating_scenario() -> None:
+    initial = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot())
+    scenario = FakeScenarioRuntime()
+    worker = FakeWorker((initial,))
+    buffer = LatestFrameBuffer()
+    buffer.publish(frame())
+    diagnostics = RecordingDiagnostics()
+    runtime = ProcessingRuntime(
+        (scenario,),
+        (worker,),
+        buffer,
+        FrameNormalizer(clip_region=ClipRegion(x=0, y=0, width=2, height=2)),
+        diagnostics=diagnostics,
+        time_provider=FakeTimeProvider(),
+    )
+    thread = threading.Thread(target=runtime.run)
+
+    thread.start()
+    assert diagnostics.normalization_failed.wait(1)
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert scenario.contexts == []
+    assert len(diagnostics.normalization_errors) == 1
+    assert buffer.take() is None

@@ -158,6 +158,8 @@ class CaptureStateMachine:
             self._observe_source_state()
             publish_result = self._buffer.publish(result)
             self._diagnostics.frame_received(publish_result)
+            if publish_result is PublishResult.STOPPED:
+                self._stop_requested.set()
             return
         self._observe_source_state()
         if self._stop_requested.is_set():

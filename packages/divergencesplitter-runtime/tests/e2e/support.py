@@ -10,6 +10,7 @@ from divergencesplitter import (
     ErrorAction,
     Frame,
     FrameContext,
+    FrameNormalizationError,
     FrameSourceError,
     FrameSourceState,
     LiveSplitConnection,
@@ -271,6 +272,7 @@ class RecordingDiagnostics:
     def __init__(self, *, bright_threshold: float = 128) -> None:
         self.publish_results: list[PublishResult] = []
         self.scenario_errors: list[Exception] = []
+        self.normalization_errors: list[FrameNormalizationError] = []
         self.connection_errors: list[Exception] = []
         self.first_frame_started = threading.Event()
         self.bright_frame_started = threading.Event()
@@ -322,6 +324,9 @@ class RecordingDiagnostics:
         self.first_frame_started.set()
         if float(np.mean(frame.image)) >= self._bright_threshold:
             self.bright_frame_started.set()
+
+    def frame_normalization_failed(self, error: FrameNormalizationError) -> None:
+        self.normalization_errors.append(error)
 
     def scenario_evaluation_failed(
         self,
