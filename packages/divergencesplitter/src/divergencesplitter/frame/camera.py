@@ -7,6 +7,7 @@ the selected backend.
 """
 
 import math
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
 
@@ -19,11 +20,18 @@ from divergencesplitter.frame.normalizer import (
     FrameNormalizer,
     OutputSize,
 )
-from divergencesplitter.frame.source import ErrorAction, FrameSourceState
+from divergencesplitter.frame.source import (
+    ErrorAction,
+    FrameSourceError,
+    FrameSourceState,
+)
 
 
-class OpenCvCameraError(Exception):
+@dataclass(frozen=True)
+class OpenCvCameraError(FrameSourceError):
     """Base type for all ``OpenCvCameraSource``-specific errors."""
+
+    message: str
 
 
 class OpenCvCameraOpenError(OpenCvCameraError):
@@ -86,7 +94,7 @@ class OpenCvCameraSource:
     def normalizer(self) -> FrameNormalizer:
         return self._normalizer
 
-    def prepare(self) -> Exception | None:
+    def prepare(self) -> FrameSourceError | None:
         if self._state is FrameSourceState.READY:
             return None
         capture = cv2.VideoCapture(self._device_index, self._backend)
@@ -114,7 +122,7 @@ class OpenCvCameraSource:
         self._state = FrameSourceState.READY
         return None
 
-    def read(self) -> Frame | Exception:
+    def read(self) -> Frame | FrameSourceError:
         if self._state is not FrameSourceState.READY or self._capture is None:
             return OpenCvCameraReadBeforeReadyError("source is not READY")
         retval, image = self._capture.read()
@@ -125,7 +133,7 @@ class OpenCvCameraSource:
             return OpenCvCameraReadError("failed to read a frame from the camera")
         return Frame(image=image, captured_at=self._time_provider.now())
 
-    def handle_error(self, error: Exception) -> ErrorAction:
+    def handle_error(self, error: FrameSourceError) -> ErrorAction:
         if isinstance(error, (OpenCvCameraOpenError, OpenCvCameraReadError)):
             return ErrorAction.RETRY
         return ErrorAction.STOP

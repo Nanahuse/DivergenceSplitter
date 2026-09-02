@@ -7,6 +7,7 @@ from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.source import (
     ErrorAction,
     FrameSource,
+    FrameSourceError,
     FrameSourceState,
 )
 
@@ -28,7 +29,7 @@ class CaptureDiagnostics(Protocol):
 
     def frame_received(self, publish_result: PublishResult) -> None: ...
 
-    def source_error(self, error: object) -> None: ...
+    def source_error(self, error: FrameSourceError) -> None: ...
 
     def error_handled(
         self,
@@ -163,7 +164,7 @@ class CaptureStateMachine:
             return
         self._handle_error(result)
 
-    def _handle_error(self, error: Exception) -> None:
+    def _handle_error(self, error: FrameSourceError) -> None:
         self._diagnostics.source_error(error)
         action = self._source.handle_error(error)
         state = self._observe_source_state()

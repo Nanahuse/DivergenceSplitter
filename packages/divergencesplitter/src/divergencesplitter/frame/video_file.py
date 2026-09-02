@@ -6,6 +6,7 @@ inputs are separate implementations.
 """
 
 import time
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
 
@@ -18,13 +19,20 @@ from divergencesplitter.frame.normalizer import (
     FrameNormalizer,
     OutputSize,
 )
-from divergencesplitter.frame.source import ErrorAction, FrameSourceState
+from divergencesplitter.frame.source import (
+    ErrorAction,
+    FrameSourceError,
+    FrameSourceState,
+)
 
 DEFAULT_FPS = 30.0
 
 
-class VideoFileError(Exception):
+@dataclass(frozen=True)
+class VideoFileError(FrameSourceError):
     """Base type for all ``VideoFileSource``-specific errors."""
+
+    message: str
 
 
 class VideoFileOpenError(VideoFileError):
@@ -74,7 +82,7 @@ class VideoFileSource:
     def normalizer(self) -> FrameNormalizer:
         return self._normalizer
 
-    def prepare(self) -> Exception | None:
+    def prepare(self) -> FrameSourceError | None:
         if self._state is FrameSourceState.READY:
             return None
         capture = cv2.VideoCapture(self._path)
@@ -90,7 +98,7 @@ class VideoFileSource:
         self._state = FrameSourceState.READY
         return None
 
-    def read(self) -> Frame | Exception:
+    def read(self) -> Frame | FrameSourceError:
         if self._state is not FrameSourceState.READY or self._capture is None:
             return VideoFileReadBeforeReadyError("source is not READY")
         self._wait_for_slot()
@@ -100,7 +108,7 @@ class VideoFileSource:
         self._frames_read += 1
         return Frame(image=image, captured_at=self._time_provider.now())
 
-    def handle_error(self, error: Exception) -> ErrorAction:
+    def handle_error(self, error: FrameSourceError) -> ErrorAction:
         del error
         return ErrorAction.STOP
 

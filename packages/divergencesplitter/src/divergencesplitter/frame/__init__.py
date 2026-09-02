@@ -11,6 +11,7 @@ from divergencesplitter.frame.normalizer import (
 from divergencesplitter.frame.source import (
     ErrorAction,
     FrameSource,
+    FrameSourceError,
     FrameSourceState,
 )
 from divergencesplitter.frame.video_file import VideoFileSource
@@ -25,6 +26,7 @@ __all__ = [
     "FrameNormalizer",
     "FrameResizeError",
     "FrameSource",
+    "FrameSourceError",
     "FrameSourceState",
     "ImageArray",
     "OpenCvCameraSource",
