@@ -13,14 +13,7 @@ from divergencesplitter.frame.source import (
     FrameSource,
     FrameSourceState,
 )
-from divergencesplitter.frame.video_file import (
-    VideoFileDecodeError,
-    VideoFileEndOfFileError,
-    VideoFileError,
-    VideoFileOpenError,
-    VideoFileReadBeforeReadyError,
-    VideoFileSource,
-)
+from divergencesplitter.frame.video_file import VideoFileSource
 
 __all__ = [
     "ClipRegion",
@@ -36,10 +29,5 @@ __all__ = [
     "ImageArray",
     "OpenCvCameraSource",
     "OutputSize",
-    "VideoFileDecodeError",
-    "VideoFileEndOfFileError",
-    "VideoFileError",
-    "VideoFileOpenError",
-    "VideoFileReadBeforeReadyError",
     "VideoFileSource",
 ]

@@ -74,7 +74,7 @@ class VideoFileSource:
     def normalizer(self) -> FrameNormalizer:
         return self._normalizer
 
-    def prepare(self) -> VideoFileError | None:
+    def prepare(self) -> Exception | None:
         if self._state is FrameSourceState.READY:
             return None
         capture = cv2.VideoCapture(self._path)
@@ -90,7 +90,7 @@ class VideoFileSource:
         self._state = FrameSourceState.READY
         return None
 
-    def read(self) -> Frame | VideoFileError:
+    def read(self) -> Frame | Exception:
         if self._state is not FrameSourceState.READY or self._capture is None:
             return VideoFileReadBeforeReadyError("source is not READY")
         self._wait_for_slot()
@@ -100,7 +100,7 @@ class VideoFileSource:
         self._frames_read += 1
         return Frame(image=image, captured_at=self._time_provider.now())
 
-    def handle_error(self, error: VideoFileError) -> ErrorAction:
+    def handle_error(self, error: Exception) -> ErrorAction:
         del error
         return ErrorAction.STOP
 

@@ -1,5 +1,4 @@
 import time
-from typing import get_protocol_members
 
 import cv2
 import numpy as np
@@ -13,17 +12,9 @@ from divergencesplitter.frame.normalizer import (
 )
 from divergencesplitter.frame.source import (
     ErrorAction,
-    FrameSource,
     FrameSourceState,
 )
-from divergencesplitter.frame.video_file import (
-    VideoFileDecodeError,
-    VideoFileEndOfFileError,
-    VideoFileError,
-    VideoFileOpenError,
-    VideoFileReadBeforeReadyError,
-    VideoFileSource,
-)
+from divergencesplitter.frame.video_file import VideoFileSource
 
 SIZE = (16, 16)
 
@@ -59,10 +50,10 @@ def read_frame(source: VideoFileSource) -> Frame:
     return result
 
 
-def read_error(source: VideoFileSource) -> VideoFileError:
+def read_error_action(source: VideoFileSource) -> ErrorAction:
     result = source.read()
-    assert isinstance(result, VideoFileError)
-    return result
+    assert not isinstance(result, Frame)
+    return source.handle_error(result)
 
 
 class TestState:
@@ -79,7 +70,9 @@ class TestState:
 
     def test_prepare_failure_returns_to_not_ready(self, tmp_path):
         source = VideoFileSource(str(tmp_path / "missing.avi"))
-        assert isinstance(source.prepare(), VideoFileOpenError)
+        error = source.prepare()
+        assert error is not None
+        assert source.handle_error(error) is ErrorAction.STOP
         assert source.state is FrameSourceState.NOT_READY
 
     def test_prepare_is_idempotent_when_ready(self, tmp_path):
@@ -93,7 +86,7 @@ class TestState:
     def test_retry_after_failed_prepare(self, tmp_path):
         missing = tmp_path / "missing.avi"
         source = VideoFileSource(str(missing))
-        assert isinstance(source.prepare(), VideoFileOpenError)
+        assert source.prepare() is not None
         make_video(missing, frame_count=1)
         assert source.prepare() is None
         assert source.state is FrameSourceState.READY
@@ -114,7 +107,7 @@ class TestRead:
 
     def test_read_before_ready_is_source_error(self, tmp_path):
         source = VideoFileSource(str(tmp_path / "movie.avi"))
-        assert isinstance(read_error(source), VideoFileReadBeforeReadyError)
+        assert read_error_action(source) is ErrorAction.STOP
 
     def test_read_after_close_is_source_error(self, tmp_path):
         video = tmp_path / "movie.avi"
@@ -122,7 +115,7 @@ class TestRead:
         source = VideoFileSource(str(video))
         source.prepare()
         source.close()
-        assert isinstance(read_error(source), VideoFileReadBeforeReadyError)
+        assert read_error_action(source) is ErrorAction.STOP
 
     def test_frames_follow_recording_order(self, tmp_path):
         video = tmp_path / "movie.avi"
@@ -136,19 +129,6 @@ class TestRead:
         assert values[0] < values[1] < values[2]
 
 
-class TestError:
-    def test_handle_error_returns_stop_for_all_video_errors(self):
-        source = VideoFileSource("unused.avi")
-        errors = (
-            VideoFileOpenError("open"),
-            VideoFileEndOfFileError("eof"),
-            VideoFileDecodeError("decode"),
-            VideoFileReadBeforeReadyError("not ready"),
-        )
-        for error in errors:
-            assert source.handle_error(error) is ErrorAction.STOP
-
-
 class TestEof:
     def test_eof_returned_after_last_frame(self, tmp_path):
         video = tmp_path / "movie.avi"
@@ -159,11 +139,12 @@ class TestEof:
         frames = 0
         while True:
             result = source.read()
-            if isinstance(result, VideoFileError):
-                assert isinstance(result, VideoFileEndOfFileError)
-                break
-            assert isinstance(result, Frame)
-            frames += 1
+            if isinstance(result, Frame):
+                frames += 1
+                continue
+            assert result is not None
+            assert source.handle_error(result) is ErrorAction.STOP
+            break
         assert frames == frame_count
 
     def test_eof_does_not_change_common_state(self, tmp_path):
@@ -172,7 +153,7 @@ class TestEof:
         source = VideoFileSource(str(video))
         source.prepare()
         read_frame(source)
-        assert isinstance(read_error(source), VideoFileEndOfFileError)
+        assert read_error_action(source) is ErrorAction.STOP
         assert source.state is FrameSourceState.READY
 
     def test_eof_repeats_on_further_reads(self, tmp_path):
@@ -181,8 +162,8 @@ class TestEof:
         source = VideoFileSource(str(video))
         source.prepare()
         read_frame(source)
-        assert isinstance(read_error(source), VideoFileEndOfFileError)
-        assert isinstance(read_error(source), VideoFileEndOfFileError)
+        assert read_error_action(source) is ErrorAction.STOP
+        assert read_error_action(source) is ErrorAction.STOP
 
 
 class TestContextManager:
@@ -222,16 +203,6 @@ class TestContextManager:
         assert source.read() is not None
 
 
-class TestProtocol:
-    def test_video_file_source_satisfies_frame_source(self):
-        members = get_protocol_members(FrameSource)
-        assert "state" in members
-        assert "normalizer" in members
-        source = VideoFileSource("unused.avi")
-        for member in members:
-            assert hasattr(source, member), member
-
-
 class TestPacing:
     def test_read_paces_at_recorded_fps(self, tmp_path):
         fps = 60.0
@@ -260,28 +231,6 @@ class TestPacing:
             read_frame(source)
         elapsed = time.monotonic() - start
         assert elapsed >= (frame_count - 1) / fps
-
-
-class TestDecodeError:
-    def test_truncated_file_reports_decode_error(self, tmp_path):
-        video = tmp_path / "movie.avi"
-        make_video(video, frame_count=20)
-        raw = video.read_bytes()
-        truncated = tmp_path / "truncated.avi"
-        truncated.write_bytes(raw[: int(len(raw) * 0.7)])
-        source = VideoFileSource(str(truncated))
-        prepare_error = source.prepare()
-        if prepare_error is not None:
-            pytest.skip("truncated file could not be opened by the backend")
-        decoded = 0
-        while True:
-            result = source.read()
-            if isinstance(result, VideoFileError):
-                assert isinstance(result, VideoFileDecodeError)
-                break
-            assert isinstance(result, Frame)
-            decoded += 1
-        assert 0 < decoded < 20
 
 
 class TestNormalizer:

@@ -46,11 +46,6 @@ from divergencesplitter.frame import (
     ImageArray,
     OpenCvCameraSource,
     OutputSize,
-    VideoFileDecodeError,
-    VideoFileEndOfFileError,
-    VideoFileError,
-    VideoFileOpenError,
-    VideoFileReadBeforeReadyError,
     VideoFileSource,
 )
 from divergencesplitter.livesplit import LiveSplitConnection
@@ -103,11 +98,6 @@ __all__ = [
     "TemplateMatchDetector",
     "Then",
     "TimeProvider",
-    "VideoFileDecodeError",
-    "VideoFileEndOfFileError",
-    "VideoFileError",
-    "VideoFileOpenError",
-    "VideoFileReadBeforeReadyError",
     "VideoFileSource",
     "evaluate",
 ]
