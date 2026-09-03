@@ -29,6 +29,7 @@ from divergencesplitter_runtime.livesplit import (
     LiveSplitUpdateKind,
     TimerPhase,
 )
+from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.processing import (
     ProcessingDiagnostics,
     ProcessingRuntime,
@@ -55,6 +56,7 @@ __all__ = [
     "ProcessingDiagnostics",
     "ProcessingRuntime",
     "PublishResult",
+    "RuntimeMetricsSnapshot",
     "ScenarioRuntime",
     "TimerPhase",
     "load_scenario_module",
