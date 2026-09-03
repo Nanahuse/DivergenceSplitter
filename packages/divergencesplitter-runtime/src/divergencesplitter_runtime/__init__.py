@@ -15,6 +15,7 @@ from divergencesplitter_runtime.configuration import (
     validate_scenarios,
     validate_split_count,
 )
+from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.livesplit import (
     ActionSubmission,
     BridgeActionRequest,
@@ -50,6 +51,7 @@ __all__ = [
     "LiveSplitSnapshot",
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",
+    "OperationalDiagnostics",
     "ProcessingDiagnostics",
     "ProcessingRuntime",
     "PublishResult",

@@ -84,47 +84,63 @@ class RecordingDiagnostics(LiveSplitBridgeDiagnostics):
         self.events: list[tuple[object, ...]] = []
         self.stream_events: list[tuple[object, ...]] = []
 
-    def snapshot_failed(self, action: Action, error: Exception) -> None:
-        self.events.append(("snapshot_failed", action, error))
+    def snapshot_failed(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        error: Exception,
+    ) -> None:
+        self.events.append(("snapshot_failed", connection, action, error))
 
     def snapshot_mismatched(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         expected: LiveSplitSnapshot,
         actual: LiveSplitSnapshot,
     ) -> None:
-        self.events.append(("snapshot_mismatched", action, expected, actual))
+        self.events.append(
+            ("snapshot_mismatched", connection, action, expected, actual)
+        )
 
     def action_precondition_failed(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
     ) -> None:
-        self.events.append(("action_precondition_failed", action, snapshot))
+        self.events.append(("action_precondition_failed", connection, action, snapshot))
 
     def action_succeeded(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
     ) -> None:
-        self.events.append(("action_succeeded", action, snapshot))
+        self.events.append(("action_succeeded", connection, action, snapshot))
 
     def action_rejected(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         code: int | None,
         message: str,
     ) -> None:
-        self.events.append(("action_rejected", action, snapshot, code, message))
+        self.events.append(
+            ("action_rejected", connection, action, snapshot, code, message)
+        )
 
     def action_result_unknown(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         error: Exception,
     ) -> None:
-        self.events.append(("action_result_unknown", action, snapshot, error))
+        self.events.append(
+            ("action_result_unknown", connection, action, snapshot, error)
+        )
 
     def gap_detected(
         self,
@@ -466,7 +482,14 @@ class ActionExecutionTest(unittest.TestCase):
                 expected = snapshot_from_proto(client.snapshot.return_value)
                 self.assertEqual(
                     diagnostics.events,
-                    [("action_succeeded", action, expected)],
+                    [
+                        (
+                            "action_succeeded",
+                            LiveSplitConnection("rpc", "event"),
+                            action,
+                            expected,
+                        )
+                    ],
                 )
 
     def test_compares_expected_state_but_ignores_event_sequence(self) -> None:
@@ -500,7 +523,15 @@ class ActionExecutionTest(unittest.TestCase):
                 self.assert_no_operation(client)
                 self.assertEqual(
                     diagnostics.events,
-                    [("snapshot_mismatched", action, expected, actual)],
+                    [
+                        (
+                            "snapshot_mismatched",
+                            LiveSplitConnection("rpc", "event"),
+                            action,
+                            expected,
+                            actual,
+                        )
+                    ],
                 )
 
         client = create_autospec(BridgeClient, instance=True)
@@ -515,7 +546,14 @@ class ActionExecutionTest(unittest.TestCase):
         actual = domain_snapshot(event_sequence=99)
         self.assertEqual(
             diagnostics.events,
-            [("action_succeeded", action, actual)],
+            [
+                (
+                    "action_succeeded",
+                    LiveSplitConnection("rpc", "event"),
+                    action,
+                    actual,
+                )
+            ],
         )
 
     def test_rejects_actions_whose_phase_or_position_is_invalid(self) -> None:
@@ -545,7 +583,14 @@ class ActionExecutionTest(unittest.TestCase):
                 self.assert_no_operation(client)
                 self.assertEqual(
                     diagnostics.events,
-                    [("action_precondition_failed", action, snapshot)],
+                    [
+                        (
+                            "action_precondition_failed",
+                            LiveSplitConnection("rpc", "event"),
+                            action,
+                            snapshot,
+                        )
+                    ],
                 )
 
     def test_snapshot_failure_does_not_send_an_operation(self) -> None:
@@ -558,7 +603,17 @@ class ActionExecutionTest(unittest.TestCase):
         self.make_adapter(client, diagnostics).execute_action(action, domain_snapshot())
 
         self.assert_no_operation(client)
-        self.assertEqual(diagnostics.events, [("snapshot_failed", action, error)])
+        self.assertEqual(
+            diagnostics.events,
+            [
+                (
+                    "snapshot_failed",
+                    LiveSplitConnection("rpc", "event"),
+                    action,
+                    error,
+                )
+            ],
+        )
 
     def test_reports_operation_rejection_without_retry(self) -> None:
         cases = (
@@ -587,7 +642,16 @@ class ActionExecutionTest(unittest.TestCase):
                 client.split.assert_called_once_with()
                 self.assertEqual(
                     diagnostics.events,
-                    [("action_rejected", action, domain_snapshot(), code, message)],
+                    [
+                        (
+                            "action_rejected",
+                            LiveSplitConnection("rpc", "event"),
+                            action,
+                            domain_snapshot(),
+                            code,
+                            message,
+                        )
+                    ],
                 )
 
     def test_reports_unknown_operation_result_without_retry(self) -> None:
@@ -609,7 +673,15 @@ class ActionExecutionTest(unittest.TestCase):
                 client.split.assert_called_once_with()
                 self.assertEqual(
                     diagnostics.events,
-                    [("action_result_unknown", action, domain_snapshot(), error)],
+                    [
+                        (
+                            "action_result_unknown",
+                            LiveSplitConnection("rpc", "event"),
+                            action,
+                            domain_snapshot(),
+                            error,
+                        )
+                    ],
                 )
 
     def test_does_not_map_the_operation_response_snapshot(self) -> None:
@@ -626,7 +698,14 @@ class ActionExecutionTest(unittest.TestCase):
 
         self.assertEqual(
             diagnostics.events,
-            [("action_succeeded", action, domain_snapshot())],
+            [
+                (
+                    "action_succeeded",
+                    LiveSplitConnection("rpc", "event"),
+                    action,
+                    domain_snapshot(),
+                )
+            ],
         )
 
 

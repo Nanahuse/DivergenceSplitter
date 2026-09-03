@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from types import TracebackType
@@ -9,6 +10,7 @@ from divergencesplitter import (
     Action,
     ErrorAction,
     Frame,
+    FrameContext,
     FrameNormalizationError,
     FrameNormalizer,
     FrameSourceError,
@@ -86,13 +88,16 @@ class RecordingDiagnostics:
     def worker_stopped(self, connection: LiveSplitConnection) -> None:
         pass
 
+    def scenario_logger(self, scenario_index: int) -> logging.Logger:
+        return logging.getLogger(f"test-worker-scenario-{scenario_index}")
+
     def preparing(self) -> None:
         pass
 
     def prepared(self) -> None:
         pass
 
-    def frame_received(self, publish_result: object) -> None:
+    def frame_received(self, frame: Frame, publish_result: object) -> None:
         pass
 
     def source_error(self, error: FrameSourceError) -> None:
@@ -127,6 +132,9 @@ class RecordingDiagnostics:
     def frame_normalization_failed(self, error: FrameNormalizationError) -> None:
         pass
 
+    def frame_processing_completed(self, context: FrameContext) -> None:
+        pass
+
     def scenario_evaluation_failed(
         self,
         scenario_index: int,
@@ -134,11 +142,17 @@ class RecordingDiagnostics:
     ) -> None:
         pass
 
-    def snapshot_failed(self, action: Action, error: Exception) -> None:
+    def snapshot_failed(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        error: Exception,
+    ) -> None:
         pass
 
     def snapshot_mismatched(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         expected: LiveSplitSnapshot,
         actual: LiveSplitSnapshot,
@@ -146,15 +160,24 @@ class RecordingDiagnostics:
         pass
 
     def action_precondition_failed(
-        self, action: Action, snapshot: LiveSplitSnapshot
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
     ) -> None:
         pass
 
-    def action_succeeded(self, action: Action, snapshot: LiveSplitSnapshot) -> None:
+    def action_succeeded(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+    ) -> None:
         pass
 
     def action_rejected(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         code: int | None,
@@ -164,6 +187,7 @@ class RecordingDiagnostics:
 
     def action_result_unknown(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         error: Exception,

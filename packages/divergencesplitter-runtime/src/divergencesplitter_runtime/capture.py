@@ -27,7 +27,7 @@ class CaptureDiagnostics(Protocol):
 
     def prepared(self) -> None: ...
 
-    def frame_received(self, publish_result: PublishResult) -> None: ...
+    def frame_received(self, frame: Frame, publish_result: PublishResult) -> None: ...
 
     def source_error(self, error: FrameSourceError) -> None: ...
 
@@ -157,7 +157,7 @@ class CaptureStateMachine:
         if isinstance(result, Frame):
             self._observe_source_state()
             publish_result = self._buffer.publish(result)
-            self._diagnostics.frame_received(publish_result)
+            self._diagnostics.frame_received(result, publish_result)
             if publish_result is PublishResult.STOPPED:
                 self._stop_requested.set()
             return

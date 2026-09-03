@@ -81,7 +81,8 @@ def test_runs_loaded_instances_and_returns_completed() -> None:
     result, stderr, runtime, scenarios, frame_source = run_with_fake_runtime()
 
     assert result == EXIT_COMPLETED
-    assert stderr == ""
+    assert "cli.completed" in stderr
+    assert len(stderr.splitlines()) == 1
     assert runtime.scenarios is scenarios
     assert runtime.frame_source is frame_source
 
@@ -94,8 +95,19 @@ def test_invalid_arguments_return_usage_error(arguments: list[str]) -> None:
         result = main(arguments)
 
     assert result == EXIT_USAGE_ERROR
-    assert "usage-error" in stderr.getvalue()
+    assert "cli.usage_failed" in stderr.getvalue()
     assert "scenario_module" in stderr.getvalue()
+
+
+def test_invalid_log_level_returns_usage_error() -> None:
+    stderr = StringIO()
+
+    with patch("sys.stderr", stderr):
+        result = main(["--log-level", "TRACE", "scenario.py"])
+
+    assert result == EXIT_USAGE_ERROR
+    assert "cli.usage_failed" in stderr.getvalue()
+    assert "invalid choice" in stderr.getvalue()
 
 
 def test_missing_module_returns_scenario_module_error(tmp_path: Path) -> None:
@@ -105,7 +117,7 @@ def test_missing_module_returns_scenario_module_error(tmp_path: Path) -> None:
         result = main([str(tmp_path / "missing.py")])
 
     assert result == EXIT_SCENARIO_MODULE_ERROR
-    assert "scenario-module-error" in stderr.getvalue()
+    assert "cli.scenario_module_failed" in stderr.getvalue()
     assert "FileNotFoundError" in stderr.getvalue()
 
 
@@ -123,7 +135,8 @@ def test_module_system_exit_is_reported_as_module_error() -> None:
         result = main(["scenario.py"])
 
     assert result == EXIT_SCENARIO_MODULE_ERROR
-    assert "SystemExit: 7" in stderr.getvalue()
+    assert 'exception_type="SystemExit"' in stderr.getvalue()
+    assert 'exception_message="7"' in stderr.getvalue()
     assert FakeRuntime.instances == []
 
 
@@ -145,9 +158,12 @@ def test_module_validation_error_is_reported_with_each_cause() -> None:
 
     output = stderr.getvalue()
     assert result == EXIT_STARTUP_VALIDATION_ERROR
-    assert "startup-validation-error" in output
-    assert "ValueError: first" in output
-    assert "TypeError: second" in output
+    assert "cli.startup_validation_failed" in output
+    assert 'exception.0.type="ValueError"' in output
+    assert 'exception.0.message="first"' in output
+    assert 'exception.1.type="TypeError"' in output
+    assert 'exception.1.message="second"' in output
+    assert len(output.splitlines()) == 1
     assert FakeRuntime.instances == []
 
 
@@ -157,7 +173,8 @@ def test_initial_snapshot_validation_error_is_startup_failure() -> None:
     )
 
     assert result == EXIT_STARTUP_VALIDATION_ERROR
-    assert "ValueError: too many split slots" in stderr
+    assert 'exception_type="ValueError"' in stderr
+    assert 'exception_message="too many split slots"' in stderr
     assert runtime.stop_requests == 0
 
 
@@ -167,15 +184,16 @@ def test_runtime_exception_group_is_runtime_failure() -> None:
     )
 
     assert result == EXIT_RUNTIME_ERROR
-    assert "runtime-error" in stderr
-    assert "RuntimeError: boom" in stderr
+    assert "cli.runtime_failed" in stderr
+    assert 'exception.0.type="RuntimeError"' in stderr
+    assert 'exception.0.message="boom"' in stderr
 
 
 def test_keyboard_interrupt_requests_stop_and_returns_130() -> None:
     result, stderr, runtime, _, _ = run_with_fake_runtime(KeyboardInterrupt())
 
     assert result == EXIT_INTERRUPTED
-    assert "interrupted" in stderr
+    assert "cli.interrupted" in stderr
     assert runtime.stop_requests == 1
 
 
@@ -192,7 +210,7 @@ def test_keyboard_interrupt_during_module_load_returns_130() -> None:
         result = main(["scenario.py"])
 
     assert result == EXIT_INTERRUPTED
-    assert "interrupted" in stderr.getvalue()
+    assert "cli.interrupted" in stderr.getvalue()
     assert FakeRuntime.instances == []
 
 

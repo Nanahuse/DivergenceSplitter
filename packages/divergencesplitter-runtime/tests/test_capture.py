@@ -145,7 +145,8 @@ class RecordingDiagnostics:
     def prepared(self) -> None:
         self.prepared_calls += 1
 
-    def frame_received(self, publish_result: PublishResult) -> None:
+    def frame_received(self, frame: Frame, publish_result: PublishResult) -> None:
+        del frame
         self.publish_results.append(publish_result)
 
     def source_error(self, error: FrameSourceError) -> None:

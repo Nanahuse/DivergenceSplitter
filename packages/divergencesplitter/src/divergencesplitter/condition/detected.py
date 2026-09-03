@@ -8,6 +8,14 @@ class Detected(ConditionBase):
         self._detector = detector
         self._minimum_score = minimum_score
 
+    @property
+    def detector(self) -> ImageDetector:
+        return self._detector
+
+    @property
+    def minimum_score(self) -> float:
+        return self._minimum_score
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:

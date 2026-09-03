@@ -137,6 +137,9 @@ class RecordingDiagnostics:
         self.normalization_errors.append(error)
         self.normalization_failed.set()
 
+    def frame_processing_completed(self, context: FrameContext) -> None:
+        pass
+
     def scenario_evaluation_failed(self, scenario_index: int, error: Exception) -> None:
         self.errors.append((scenario_index, error))
 

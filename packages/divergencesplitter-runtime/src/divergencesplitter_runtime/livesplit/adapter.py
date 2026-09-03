@@ -27,10 +27,16 @@ from divergencesplitter_runtime.livesplit.models import (
 class LiveSplitBridgeDiagnostics(Protocol):
     """Receives Bridge operation facts without raising exceptions to the caller."""
 
-    def snapshot_failed(self, action: Action, error: Exception) -> None: ...
+    def snapshot_failed(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        error: Exception,
+    ) -> None: ...
 
     def snapshot_mismatched(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         expected: LiveSplitSnapshot,
         actual: LiveSplitSnapshot,
@@ -38,18 +44,21 @@ class LiveSplitBridgeDiagnostics(Protocol):
 
     def action_precondition_failed(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
     ) -> None: ...
 
     def action_succeeded(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
     ) -> None: ...
 
     def action_rejected(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         code: int | None,
@@ -58,6 +67,7 @@ class LiveSplitBridgeDiagnostics(Protocol):
 
     def action_result_unknown(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         error: Exception,
@@ -225,18 +235,21 @@ class LiveSplitBridgeAdapter:
         try:
             actual_snapshot = self.snapshot()
         except Exception as error:  # noqa: BLE001
-            self._diagnostics.snapshot_failed(action, error)
+            self._diagnostics.snapshot_failed(self._connection, action, error)
             return
 
         if not self._matches_expected_state(expected_snapshot, actual_snapshot):
             self._diagnostics.snapshot_mismatched(
+                self._connection,
                 action,
                 expected_snapshot,
                 actual_snapshot,
             )
             return
         if not self._meets_action_precondition(action, actual_snapshot):
-            self._diagnostics.action_precondition_failed(action, actual_snapshot)
+            self._diagnostics.action_precondition_failed(
+                self._connection, action, actual_snapshot
+            )
             return
 
         operation: Callable[[], common_pb2.OperationResponse] = {
@@ -251,6 +264,7 @@ class LiveSplitBridgeAdapter:
             response = operation()
         except BridgeRemoteError as error:
             self._diagnostics.action_rejected(
+                self._connection,
                 action,
                 actual_snapshot,
                 error.code,
@@ -258,18 +272,21 @@ class LiveSplitBridgeAdapter:
             )
             return
         except BridgeClientError as error:
-            self._diagnostics.action_result_unknown(action, actual_snapshot, error)
+            self._diagnostics.action_result_unknown(
+                self._connection, action, actual_snapshot, error
+            )
             return
 
         if not response.success:
             self._diagnostics.action_rejected(
+                self._connection,
                 action,
                 actual_snapshot,
                 None,
                 response.message,
             )
             return
-        self._diagnostics.action_succeeded(action, actual_snapshot)
+        self._diagnostics.action_succeeded(self._connection, action, actual_snapshot)
 
     @staticmethod
     def _matches_expected_state(

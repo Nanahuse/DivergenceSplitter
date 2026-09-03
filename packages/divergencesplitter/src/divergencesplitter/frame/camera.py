@@ -91,6 +91,26 @@ class OpenCvCameraSource:
         return self._state
 
     @property
+    def device_index(self) -> int:
+        return self._device_index
+
+    @property
+    def backend(self) -> int:
+        return self._backend
+
+    @property
+    def width(self) -> int | None:
+        return self._width
+
+    @property
+    def height(self) -> int | None:
+        return self._height
+
+    @property
+    def fps(self) -> float | None:
+        return self._fps
+
+    @property
     def normalizer(self) -> FrameNormalizer:
         return self._normalizer
 

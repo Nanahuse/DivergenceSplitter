@@ -27,6 +27,8 @@ class ProcessingDiagnostics(Protocol):
         error: FrameNormalizationError,
     ) -> None: ...
 
+    def frame_processing_completed(self, context: FrameContext) -> None: ...
+
     def scenario_evaluation_failed(
         self,
         scenario_index: int,
@@ -76,6 +78,7 @@ class ProcessingRuntime:
                 return
             context = FrameContext(frame=normalized, now=now)
             self._evaluate_scenarios(context)
+            self._diagnostics.frame_processing_completed(context)
 
     def _apply_bridge_updates(self) -> None:
         for scenario, worker in zip(self._scenarios, self._workers, strict=True):
