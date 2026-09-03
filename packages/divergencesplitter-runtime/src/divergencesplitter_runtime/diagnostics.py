@@ -33,6 +33,7 @@ from divergencesplitter import (
     PhaseCorrelationConfig,
     Scenario,
     TemplateMatchConfig,
+    TimeProvider,
     VideoFileSource,
 )
 
@@ -45,6 +46,11 @@ from divergencesplitter_runtime.livesplit.worker import (
     ActionSubmission,
     BridgeActionRequest,
 )
+from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
+
+_METRICS_WINDOW_NANOSECONDS = 1_000_000_000
+_METRICS_BUCKET_NANOSECONDS = 50_000_000
+_METRICS_BUCKET_COUNT = _METRICS_WINDOW_NANOSECONDS // _METRICS_BUCKET_NANOSECONDS + 1
 
 _BUILTIN_LOG_RECORD_FIELDS = frozenset(
     logging.LogRecord("", 0, "", 0, "", (), None).__dict__
@@ -101,7 +107,13 @@ class _ScenarioLoggerAdapter(logging.LoggerAdapter):
 class OperationalDiagnostics:
     """Write typed runtime facts as safe, human-readable one-line logs."""
 
-    def __init__(self, stream: TextIO, *, level: int = logging.INFO) -> None:
+    def __init__(
+        self,
+        stream: TextIO,
+        *,
+        level: int = logging.INFO,
+        time_provider: TimeProvider | None = None,
+    ) -> None:
         self._logger = logging.getLogger(
             f"divergencesplitter.operational.{uuid.uuid4().hex}"
         )
@@ -113,6 +125,12 @@ class OperationalDiagnostics:
         self._connections: dict[LiveSplitConnection, int] = {}
         self._source_fields: dict[str, object] = {}
         self._context_lock = threading.Lock()
+        self._time_provider = time_provider or TimeProvider()
+        self._metrics_lock = threading.Lock()
+        self._input_rate = _TimeBucketRate()
+        self._processing_rate = _TimeBucketRate()
+        self._input_frames_total = 0
+        self._processed_frames_total = 0
 
     def set_level(self, level: int) -> None:
         self._logger.setLevel(level)
@@ -177,6 +195,9 @@ class OperationalDiagnostics:
         self._emit(logging.INFO, "capture.prepared", **self._source_context())
 
     def frame_received(self, frame: Frame, publish_result: PublishResult) -> None:
+        with self._metrics_lock:
+            self._input_rate.record(frame.captured_at)
+            self._input_frames_total += 1
         self._emit(
             logging.DEBUG,
             "capture.frame_received",
@@ -252,9 +273,17 @@ class OperationalDiagnostics:
         )
 
     def frame_processing_completed(self, context: FrameContext) -> None:
+        completed_at = self._time_provider.now()
+        with self._metrics_lock:
+            self._processing_rate.record(completed_at)
+            self._processed_frames_total += 1
         fields: dict[str, object] = {
             **_frame_fields(context.frame),
             "processing_started_at_ns": context.now.nanoseconds,
+            "processing_completed_at_ns": completed_at.nanoseconds,
+            "processing_duration_ns": (
+                completed_at.nanoseconds - context.now.nanoseconds
+            ),
             "detector_count": len(context.detection_cache),
             "preprocessing_cache_entries": len(context.preprocessing_cache),
         }
@@ -262,6 +291,32 @@ class OperationalDiagnostics:
             for name, value in _detector_fields(detector, result).items():
                 fields[f"detector.{index}.{name}"] = value
         self._emit(logging.DEBUG, "processing.frame_completed", **fields)
+
+    def metrics_snapshot(self) -> RuntimeMetricsSnapshot:
+        """Copy current throughput metrics without consuming aggregation state."""
+
+        with self._metrics_lock:
+            sampled_at = self._time_provider.now()
+            return RuntimeMetricsSnapshot(
+                sampled_at=sampled_at,
+                window_seconds=(_METRICS_WINDOW_NANOSECONDS / 1_000_000_000),
+                input_fps=self._input_rate.rate(sampled_at),
+                processing_fps=self._processing_rate.rate(sampled_at),
+                input_frames_total=self._input_frames_total,
+                processed_frames_total=self._processed_frames_total,
+            )
+
+    def runtime_fps(self, snapshot: RuntimeMetricsSnapshot) -> None:
+        self._emit(
+            logging.INFO,
+            "runtime.fps",
+            sampled_at_ns=snapshot.sampled_at.nanoseconds,
+            window_seconds=snapshot.window_seconds,
+            input_fps=snapshot.input_fps,
+            processing_fps=snapshot.processing_fps,
+            input_frames_total=snapshot.input_frames_total,
+            processed_frames_total=snapshot.processed_frames_total,
+        )
 
     def frame_normalization_failed(self, error: FrameNormalizationError) -> None:
         self._emit(
@@ -558,6 +613,41 @@ class OperationalDiagnostics:
             )
         except Exception:  # noqa: BLE001
             return
+
+
+class _TimeBucketRate:
+    """Count events in a fixed-memory approximation of the latest time window."""
+
+    def __init__(self) -> None:
+        self._bucket_ids = [-1] * _METRICS_BUCKET_COUNT
+        self._counts = [0] * _METRICS_BUCKET_COUNT
+
+    def record(self, occurred_at: MonotonicTime) -> None:
+        bucket_id = occurred_at.nanoseconds // _METRICS_BUCKET_NANOSECONDS
+        index = bucket_id % _METRICS_BUCKET_COUNT
+        if self._bucket_ids[index] != bucket_id:
+            self._bucket_ids[index] = bucket_id
+            self._counts[index] = 0
+        self._counts[index] += 1
+
+    def rate(self, sampled_at: MonotonicTime) -> float:
+        cutoff = sampled_at.nanoseconds - _METRICS_WINDOW_NANOSECONDS
+        oldest_bucket_id = cutoff // _METRICS_BUCKET_NANOSECONDS
+        newest_bucket_id = sampled_at.nanoseconds // _METRICS_BUCKET_NANOSECONDS
+        oldest_overlap = (
+            (oldest_bucket_id + 1) * _METRICS_BUCKET_NANOSECONDS - cutoff
+        ) / _METRICS_BUCKET_NANOSECONDS
+        count = 0.0
+        for bucket_id, bucket_count in zip(
+            self._bucket_ids,
+            self._counts,
+            strict=True,
+        ):
+            if not oldest_bucket_id <= bucket_id <= newest_bucket_id:
+                continue
+            weight = oldest_overlap if bucket_id == oldest_bucket_id else 1.0
+            count += bucket_count * weight
+        return count / (_METRICS_WINDOW_NANOSECONDS / 1_000_000_000)
 
 
 def _frame_fields(frame: Frame) -> dict[str, object]:

@@ -1,5 +1,6 @@
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from io import StringIO
 
@@ -19,6 +20,7 @@ from divergencesplitter import (
     Scenario,
     VideoFileSource,
 )
+from divergencesplitter.clock import TimeProvider
 from divergencesplitter_runtime.capture import PublishResult
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.livesplit.models import (
@@ -50,6 +52,14 @@ class UnprintableError(Exception):
 
     def flush(self) -> None:
         raise OSError("stream unavailable")
+
+
+class MutableTimeProvider(TimeProvider):
+    def __init__(self, nanoseconds: int = 0) -> None:
+        self.nanoseconds = nanoseconds
+
+    def now(self) -> MonotonicTime:
+        return MonotonicTime(self.nanoseconds)
 
 
 def test_writes_human_readable_physical_one_line_with_escaped_values() -> None:
@@ -135,6 +145,8 @@ def test_debug_frame_log_contains_frame_and_detector_configuration() -> None:
     assert 'frame_dtype="uint8"' in lines[0]
     assert 'publish_result="PUBLISHED"' in lines[0]
     assert "processing.frame_completed" in lines[1]
+    assert "processing_completed_at_ns=" in lines[1]
+    assert "processing_duration_ns=" in lines[1]
     assert 'detector.0.type="ColorRangeDetector"' in lines[1]
     assert "detector.0.score=0.875" in lines[1]
     assert "lower:[0]" in lines[1]
@@ -246,3 +258,93 @@ def test_stream_failure_does_not_escape_diagnostics() -> None:
     diagnostics = OperationalDiagnostics(BrokenStream())
 
     diagnostics.runtime_failed(RuntimeError("boom"))
+
+
+def test_metrics_snapshot_reports_independent_recent_throughput() -> None:
+    clock = MutableTimeProvider(900_000_000)
+    diagnostics = OperationalDiagnostics(StringIO(), time_provider=clock)
+    image = np.zeros((1, 1), dtype=np.uint8)
+    for captured_at in (100_000_000, 400_000_000, 850_000_000):
+        diagnostics.frame_received(
+            Frame(image, MonotonicTime(captured_at)),
+            PublishResult.PUBLISHED,
+        )
+    context = FrameContext(
+        frame=Frame(image, MonotonicTime(850_000_000)),
+        now=MonotonicTime(875_000_000),
+    )
+    diagnostics.frame_processing_completed(context)
+
+    snapshot = diagnostics.metrics_snapshot()
+
+    assert snapshot.sampled_at == MonotonicTime(900_000_000)
+    assert snapshot.window_seconds == 1.0
+    assert snapshot.input_fps == 3.0
+    assert snapshot.processing_fps == 1.0
+    assert snapshot.input_frames_total == 3
+    assert snapshot.processed_frames_total == 1
+
+
+def test_metrics_reads_do_not_reset_rates_and_old_buckets_expire() -> None:
+    clock = MutableTimeProvider(500_000_000)
+    diagnostics = OperationalDiagnostics(StringIO(), time_provider=clock)
+    frame = Frame(np.zeros((1, 1), dtype=np.uint8), MonotonicTime(500_000_000))
+    diagnostics.frame_received(frame, PublishResult.OVERWROTE)
+    diagnostics.frame_processing_completed(
+        FrameContext(frame, MonotonicTime(500_000_000))
+    )
+
+    first = diagnostics.metrics_snapshot()
+    second = diagnostics.metrics_snapshot()
+    clock.nanoseconds = 1_600_000_000
+    expired = diagnostics.metrics_snapshot()
+
+    assert first == second
+    assert expired.input_fps == 0.0
+    assert expired.processing_fps == 0.0
+    assert expired.input_frames_total == 1
+    assert expired.processed_frames_total == 1
+
+
+def test_runtime_fps_log_contains_snapshot_values() -> None:
+    clock = MutableTimeProvider(250_000_000)
+    stream = StringIO()
+    diagnostics = OperationalDiagnostics(stream, time_provider=clock)
+    frame = Frame(np.zeros((1, 1), dtype=np.uint8), MonotonicTime(250_000_000))
+    diagnostics.frame_received(frame, PublishResult.PUBLISHED)
+
+    diagnostics.runtime_fps(diagnostics.metrics_snapshot())
+
+    output = stream.getvalue()
+    assert "runtime.fps" in output
+    assert "sampled_at_ns=250000000" in output
+    assert "window_seconds=1.0" in output
+    assert "input_fps=1.0" in output
+    assert "processing_fps=0.0" in output
+    assert "input_frames_total=1" in output
+    assert "processed_frames_total=0" in output
+
+
+def test_metrics_are_thread_safe_across_capture_processing_and_readers() -> None:
+    clock = MutableTimeProvider(500_000_000)
+    diagnostics = OperationalDiagnostics(StringIO(), time_provider=clock)
+    frame = Frame(np.zeros((1, 1), dtype=np.uint8), MonotonicTime(500_000_000))
+    context = FrameContext(frame, MonotonicTime(500_000_000))
+
+    def record() -> None:
+        for _ in range(100):
+            diagnostics.frame_received(frame, PublishResult.PUBLISHED)
+            diagnostics.frame_processing_completed(context)
+            diagnostics.metrics_snapshot()
+
+    threads = [threading.Thread(target=record) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    snapshot = diagnostics.metrics_snapshot()
+    assert snapshot.input_fps == 400.0
+    assert snapshot.processing_fps == 400.0
+    assert snapshot.input_frames_total == 400
+    assert snapshot.processed_frames_total == 400

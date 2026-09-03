@@ -1,3 +1,4 @@
+import threading
 from io import StringIO
 from pathlib import Path
 from typing import ClassVar
@@ -15,12 +16,15 @@ from divergencesplitter_runtime.cli import (
     EXIT_SCENARIO_MODULE_ERROR,
     EXIT_STARTUP_VALIDATION_ERROR,
     EXIT_USAGE_ERROR,
+    _StatusReporter,
     main,
 )
 from divergencesplitter_runtime.configuration.scenario_module import (
     ScenarioModuleExecutionError,
     ScenarioModuleValidationError,
 )
+from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 
 
 class FakeRuntime:
@@ -51,11 +55,38 @@ class FakeRuntime:
         self.stop_requests += 1
 
 
+class FakeStatusReporter:
+    instances: ClassVar[list[FakeStatusReporter]] = []
+
+    def __init__(self, diagnostics: object) -> None:
+        self.diagnostics = diagnostics
+        self.events: list[str] = []
+        self.instances.append(self)
+
+    def start(self) -> None:
+        self.events.append("started")
+
+    def stop(self) -> None:
+        self.events.append("stopped")
+
+
+class SignalingDiagnostics(OperationalDiagnostics):
+    def __init__(self) -> None:
+        super().__init__(StringIO())
+        self.reported = threading.Event()
+        self.snapshot: RuntimeMetricsSnapshot | None = None
+
+    def runtime_fps(self, snapshot: RuntimeMetricsSnapshot) -> None:
+        self.snapshot = snapshot
+        self.reported.set()
+
+
 @pytest.fixture(autouse=True)
 def reset_fake_runtime() -> None:
     FakeRuntime.instances = []
     FakeRuntime.outcome = None
     FakeRuntime.diagnostic_error = None
+    FakeStatusReporter.instances = []
 
 
 def run_with_fake_runtime(
@@ -71,6 +102,7 @@ def run_with_fake_runtime(
             return_value=(scenarios, frame_source),
         ),
         patch("divergencesplitter_runtime.cli.ApplicationRuntime", FakeRuntime),
+        patch("divergencesplitter_runtime.cli._StatusReporter", FakeStatusReporter),
         patch("sys.stderr", stderr),
     ):
         result = main(["scenario.py"])
@@ -85,6 +117,18 @@ def test_runs_loaded_instances_and_returns_completed() -> None:
     assert len(stderr.splitlines()) == 1
     assert runtime.scenarios is scenarios
     assert runtime.frame_source is frame_source
+    assert FakeStatusReporter.instances[0].events == ["started", "stopped"]
+
+
+def test_status_reporter_publishes_snapshot_and_stops_promptly() -> None:
+    diagnostics = SignalingDiagnostics()
+    reporter = _StatusReporter(diagnostics, interval_seconds=0.01)
+
+    reporter.start()
+    assert diagnostics.reported.wait(1)
+    reporter.stop()
+
+    assert diagnostics.snapshot is not None
 
 
 @pytest.mark.parametrize("arguments", [[], ["one.py", "two.py"]])
@@ -187,6 +231,7 @@ def test_runtime_exception_group_is_runtime_failure() -> None:
     assert "cli.runtime_failed" in stderr
     assert 'exception.0.type="RuntimeError"' in stderr
     assert 'exception.0.message="boom"' in stderr
+    assert FakeStatusReporter.instances[0].events == ["started", "stopped"]
 
 
 def test_keyboard_interrupt_requests_stop_and_returns_130() -> None:
@@ -195,6 +240,7 @@ def test_keyboard_interrupt_requests_stop_and_returns_130() -> None:
     assert result == EXIT_INTERRUPTED
     assert "cli.interrupted" in stderr
     assert runtime.stop_requests == 1
+    assert FakeStatusReporter.instances[0].events == ["started", "stopped"]
 
 
 def test_keyboard_interrupt_during_module_load_returns_130() -> None:

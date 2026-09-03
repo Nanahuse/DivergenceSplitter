@@ -3,6 +3,7 @@
 import argparse
 import logging
 import sys
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Never
@@ -31,6 +32,32 @@ _LOG_LEVELS = {
     "WARNING": logging.WARNING,
     "ERROR": logging.ERROR,
 }
+_STATUS_INTERVAL_SECONDS = 1.0
+
+
+class _StatusReporter:
+    def __init__(
+        self,
+        diagnostics: OperationalDiagnostics,
+        *,
+        interval_seconds: float = _STATUS_INTERVAL_SECONDS,
+    ) -> None:
+        self._diagnostics = diagnostics
+        self._interval_seconds = interval_seconds
+        self._stop_requested = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="status-reporter")
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_requested.set()
+        self._thread.join()
+
+    def _run(self) -> None:
+        while not self._stop_requested.wait(self._interval_seconds):
+            snapshot = self._diagnostics.metrics_snapshot()
+            self._diagnostics.runtime_fps(snapshot)
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -90,6 +117,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         diagnostics.runtime_failed(error)
         return EXIT_RUNTIME_ERROR
 
+    reporter = _StatusReporter(diagnostics)
+    reporter.start()
     try:
         runtime.run()
     except KeyboardInterrupt:
@@ -102,5 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as error:  # noqa: BLE001
         diagnostics.runtime_failed(error)
         return EXIT_RUNTIME_ERROR
+    finally:
+        reporter.stop()
     diagnostics.completed()
     return EXIT_COMPLETED
