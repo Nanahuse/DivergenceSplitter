@@ -1,25 +1,24 @@
-# Performance baseline
+# パフォーマンスレポート
 
-Run the checked-in measurement with:
+リポジトリに含まれる計測スクリプトは、次のコマンドで実行する。
 
 ```console
 uv run python benchmarks/measure_processing.py --duration 5
 ```
 
-The workload supplies a preallocated BGR frame at a 60 fps cadence through the
-real single-slot `LatestFrameBuffer`. A processing thread evaluates
-`MeanBrightnessDetector`, `ColorRangeDetector`,
-`DifferenceHashSimilarityDetector`, and `TemplateMatchDetector` once per frame,
-then reads one cached result. It reports capture-to-completion and detector p95
-latency, cache-hit p95 latency, overwritten frames, and peak Python-traced
-memory. It does not emulate camera-driver copies, scenario-specific reference
-images, or network latency.
+このワークロードは、事前に確保したBGRフレームを60 fps周期で実際の単一スロット
+`LatestFrameBuffer`へ供給する。処理スレッドはフレームごとに
+`MeanBrightnessDetector`、`ColorRangeDetector`、
+`DifferenceHashSimilarityDetector`、`TemplateMatchDetector`を1回ずつ評価し、
+その後にキャッシュ済み結果を1回取得する。取得から処理完了までのp95遅延、Detector
+処理のp95遅延、キャッシュヒットのp95遅延、上書きされたフレーム数、およびPythonが
+追跡したピークメモリを出力する。カメラドライバによるコピー、Scenario固有の参照画像、
+ネットワーク遅延は再現しない。
 
-## 2026-09-03 baseline
+## 2026-09-03 基準値
 
-Environment and results are recorded from the Windows development host in the
-one-line output below. Rerun the command on release hardware before treating
-the values as capacity guarantees.
+Windows開発環境で測定した環境情報と結果を、以下の1行ログとして記録する。これらの値を
+処理能力の保証として扱う前に、リリース対象のハードウェアで同じコマンドを再実行する。
 
 ```text
 benchmark.environment python=3.14.6 platform=Windows-11-10.0.26200-SP0 duration_seconds=5.0 target_input_fps=60.0 scenario=four_builtin_detectors bridge=not_measured
@@ -27,36 +26,34 @@ benchmark.processing resolution=640x360 input_fps=59.84 processing_fps=55.05 pub
 benchmark.processing resolution=1280x720 input_fps=59.22 processing_fps=15.00 published=300 processed=76 overwritten=224 capture_to_completed_p95_ms=82.298 detectors_p95_ms=69.044 cache_hit_p95_ms=0.006 peak_traced_mib=17.185 detector.MeanBrightnessDetector.p95_ms=1.570 detector.ColorRangeDetector.p95_ms=2.066 detector.DifferenceHashSimilarityDetector.p95_ms=10.537 detector.TemplateMatchDetector.p95_ms=55.997
 ```
 
-The 720p workload does not process every input frame. The buffer remains
-bounded and drops stale frames, but the aggregate detector cost is the current
-bottleneck. Per-detector fields from subsequent runs identify which detector
-dominates before any parallelism is considered.
+720pのワークロードでは、すべての入力フレームを処理できていない。バッファは有限のまま
+古いフレームを破棄するが、Detector全体の処理時間が現在のボトルネックである。並列化を
+検討する前に、再測定時のDetector別フィールドから支配的なDetectorを特定する。
 
-A 15-second confirmation processed 831/900 frames at 640x360 with 4.453 MiB
-peak traced memory, and 224/900 frames at 1280x720 with 17.224 MiB. Compared
-with the five-second peaks (4.309 MiB and 17.185 MiB), both remained within
-0.15 MiB despite the additional 600 input frames. Template matching remained
-the dominant detector at 14.501 ms and 57.813 ms p95 respectively.
+15秒の確認計測では、640x360で900フレーム中831フレームを処理し、追跡対象のピーク
+メモリは4.453 MiBだった。1280x720では900フレーム中224フレームを処理し、ピークは
+17.224 MiBだった。5秒計測時のピーク（4.309 MiB、17.185 MiB）と比較すると、入力が
+600フレーム増えても差はどちらも0.15 MiB以内だった。`TemplateMatchDetector`は
+引き続き支配的なDetectorで、p95はそれぞれ14.501 msと57.813 msだった。
 
-## Initial SLO
+## 初期SLO
 
-For the recorded four-detector workload:
+記録した4種類のDetectorを使うワークロードに対して、次を初期SLOとする。
 
-- measured input throughput must remain at least 58 fps;
-- processing throughput must remain at least 50 fps at 640x360 and 14 fps at
-  1280x720;
-- capture-to-completion p95 must remain below 50 ms at 640x360 and 100 ms at
-  1280x720;
-- the single-slot buffer must not accumulate frames, and peak traced memory
-  must remain stable when the duration is increased;
-- cached detector lookup p95 must remain below 0.10 ms.
+- 実測入力スループットを58 fps以上に保つ。
+- 処理スループットを640x360では50 fps以上、1280x720では14 fps以上に保つ。
+- 取得から処理完了までのp95遅延を640x360では50 ms未満、1280x720では100 ms未満に
+  保つ。
+- 単一スロットバッファへフレームを蓄積せず、計測時間を延ばしても追跡対象のピークメモリを
+  安定させる。
+- キャッシュ済みDetector結果の取得にかかるp95遅延を0.10 ms未満に保つ。
 
-Processing every 60 fps frame is a performance target, not an initial SLO. It
-is currently unmet at both resolutions (55.05 fps and 15.00 fps). The runtime's
-intended degradation is visible frame replacement rather than queue growth;
-optimize the measured detector bottleneck before considering parallelism.
+60 fpsの全フレームを処理することは性能目標であり、初期SLOには含めない。現在は両解像度
+とも未達である（55.05 fps、15.00 fps）。Runtimeは性能不足時にキューを増大させず、古い
+フレームを観測可能な形で上書きする。並列化を検討する前に、計測で特定したDetectorの
+ボトルネックを最適化する。
 
-Bridge latency is intentionally not assigned a local SLO: an in-process test
-double does not represent ZeroMQ, LiveSplit's UI thread, or host load. Runtime
-logs identify Bridge timeouts and action outcomes; an end-to-end Bridge latency
-baseline must be recorded on the deployment host before release.
+Bridge遅延にはローカル環境のSLOを設定しない。プロセス内のテストダブルでは、ZeroMQ、
+LiveSplitのUIスレッド、ホスト負荷を再現できないためである。RuntimeログからBridgeの
+タイムアウトとAction結果を識別できる。リリース前に、配備先ホストでエンドツーエンドのBridge遅延
+基準を記録する。
