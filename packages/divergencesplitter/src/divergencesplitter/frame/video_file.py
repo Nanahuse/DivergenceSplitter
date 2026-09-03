@@ -79,6 +79,10 @@ class VideoFileSource:
         return self._state
 
     @property
+    def path(self) -> str:
+        return self._path
+
+    @property
     def normalizer(self) -> FrameNormalizer:
         return self._normalizer
 

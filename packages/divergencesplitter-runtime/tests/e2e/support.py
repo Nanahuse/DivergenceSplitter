@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from collections import deque
 from typing import ClassVar, Literal, overload
@@ -288,7 +289,7 @@ class RecordingDiagnostics:
     def prepared(self) -> None:
         pass
 
-    def frame_received(self, publish_result: PublishResult) -> None:
+    def frame_received(self, frame: Frame, publish_result: PublishResult) -> None:
         self.publish_results.append(publish_result)
         if publish_result is PublishResult.OVERWROTE:
             self.frame_overwritten.set()
@@ -327,6 +328,9 @@ class RecordingDiagnostics:
 
     def frame_normalization_failed(self, error: FrameNormalizationError) -> None:
         self.normalization_errors.append(error)
+
+    def frame_processing_completed(self, context: FrameContext) -> None:
+        pass
 
     def scenario_evaluation_failed(
         self,
@@ -374,11 +378,20 @@ class RecordingDiagnostics:
     def worker_stopped(self, connection: LiveSplitConnection) -> None:
         self.worker_stopped_event.set()
 
-    def snapshot_failed(self, action: Action, error: Exception) -> None:
+    def scenario_logger(self, scenario_index: int) -> logging.Logger:
+        return logging.getLogger(f"e2e-scenario-{scenario_index}")
+
+    def snapshot_failed(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        error: Exception,
+    ) -> None:
         pass
 
     def snapshot_mismatched(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         expected: LiveSplitSnapshot,
         actual: LiveSplitSnapshot,
@@ -387,6 +400,7 @@ class RecordingDiagnostics:
 
     def action_precondition_failed(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
     ) -> None:
@@ -394,6 +408,7 @@ class RecordingDiagnostics:
 
     def action_succeeded(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
     ) -> None:
@@ -401,6 +416,7 @@ class RecordingDiagnostics:
 
     def action_rejected(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         code: int | None,
@@ -410,6 +426,7 @@ class RecordingDiagnostics:
 
     def action_result_unknown(
         self,
+        connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
         error: Exception,

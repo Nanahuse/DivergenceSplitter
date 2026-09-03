@@ -1,7 +1,11 @@
 """Evaluation state for one configured scenario."""
 
 import logging
+import re
+from typing import NotRequired, TypedDict
 
+from divergencesplitter.condition import Detected
+from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame.models import FrameContext
 from divergencesplitter.rule import Action, Rule
 from divergencesplitter.scenario.models import Scenario
@@ -16,12 +20,20 @@ from divergencesplitter_runtime.livesplit.models import (
 SPLIT_TRANSITION_TIMEOUT_NANOSECONDS = 1_000_000_000
 
 
+class _RuleEvaluationFields(TypedDict):
+    condition_type: NotRequired[str]
+    detector_type: NotRequired[str]
+    detector_minimum_score: NotRequired[float]
+    detector_cache_hit: NotRequired[bool]
+    detector_score: NotRequired[float | None]
+
+
 class ScenarioRuntime:
     def __init__(
         self,
         scenario: Scenario,
         *,
-        logger: logging.Logger | None = None,
+        logger: logging.Logger | logging.LoggerAdapter | None = None,
     ) -> None:
         self._scenario = scenario
         self._logger = logger or logging.getLogger(__name__)
@@ -112,7 +124,15 @@ class ScenarioRuntime:
                 or self._pending_action.operation != "reset"
             ):
                 self._clear_pending_action()
-            self._log(logging.INFO, "scenario_runtime.transition")
+            self._log(
+                logging.INFO,
+                "scenario_runtime.transition",
+                previous_phase=current.phase.name,
+                previous_split_index=current.split_index,
+                previous_split_count=current.split_count,
+                previous_state_revision=current.state_revision,
+                previous_event_sequence=current.event_sequence,
+            )
 
     @staticmethod
     def _state_changed(
@@ -156,8 +176,19 @@ class ScenarioRuntime:
             if elapsed < SPLIT_TRANSITION_TIMEOUT_NANOSECONDS:
                 return None
             self._reset_destination(snapshot)
+            action_started_at = self._action_started_at
             self._clear_pending_action()
-            self._log(logging.WARNING, "scenario_runtime.transition_timeout")
+            self._log(
+                logging.WARNING,
+                "scenario_runtime.transition_timeout",
+                action_started_at_ns=action_started_at,
+                action_deadline_ns=(
+                    None
+                    if action_started_at is None
+                    else action_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
+                ),
+                observed_at_ns=context.now.nanoseconds,
+            )
             return None
 
         split_index = self._evaluation_index(snapshot)
@@ -187,13 +218,31 @@ class ScenarioRuntime:
         split_index: int | None,
     ) -> Action | None:
         for rule_index, rule in enumerate(rules):
+            evaluation_fields = _rule_evaluation_fields(rule, context)
             try:
                 action = rule.evaluate(context)
             except Exception as error:  # noqa: BLE001
                 self._log_rule_exception(
-                    error, snapshot, group, split_index, rule_index
+                    error,
+                    rule,
+                    snapshot,
+                    group,
+                    split_index,
+                    rule_index,
+                    **evaluation_fields,
                 )
                 continue
+            evaluation_fields.update(_rule_evaluation_result_fields(rule, context))
+            self._log_rule(
+                logging.DEBUG,
+                "scenario_runtime.rule_evaluated",
+                snapshot,
+                group,
+                split_index,
+                rule_index,
+                **evaluation_fields,
+                matched=action is not None,
+            )
             if action is not None:
                 self._log_rule(
                     logging.INFO,
@@ -203,6 +252,10 @@ class ScenarioRuntime:
                     split_index,
                     rule_index,
                     operation=action.operation,
+                    action_started_at_ns=context.now.nanoseconds,
+                    action_deadline_ns=(
+                        context.now.nanoseconds + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
+                    ),
                 )
                 return action
         return None
@@ -303,7 +356,12 @@ class ScenarioRuntime:
                 snapshot = self._snapshot
                 if snapshot is not None:
                     self._log_rule_exception(
-                        error, snapshot, "main", split_index, rule_index
+                        error,
+                        rule,
+                        snapshot,
+                        "main",
+                        split_index,
+                        rule_index,
                     )
         self._log(
             logging.DEBUG,
@@ -318,18 +376,30 @@ class ScenarioRuntime:
                 rule.reset()
             except Exception as error:  # noqa: BLE001
                 if snapshot is not None:
-                    self._log_rule_exception(error, snapshot, "reset", None, rule_index)
+                    self._log_rule_exception(
+                        error, rule, snapshot, "reset", None, rule_index
+                    )
+        if self._reset_rules:
+            self._log(
+                logging.DEBUG,
+                "scenario_runtime.rules_reset",
+                rule_group="reset",
+                reset_split_index=None,
+            )
         for split_index in range(len(self._scenario.splits)):
             self._reset_group(split_index)
 
     def _log_rule_exception(
         self,
         error: Exception,
+        rule: Rule,
         snapshot: LiveSplitSnapshot,
         group: str,
         split_index: int | None,
         rule_index: int,
+        **extra: object,
     ) -> None:
+        extra.setdefault("condition_type", type(rule.condition).__name__)
         self._log_rule(
             logging.ERROR,
             "scenario_runtime.rule_exception",
@@ -338,8 +408,9 @@ class ScenarioRuntime:
             split_index,
             rule_index,
             exception_type=type(error).__name__,
-            exception_message=str(error),
+            exception_message=_safe_exception_message(error),
             exc_info=error,
+            **extra,
         )
 
     def _log_rule(
@@ -382,9 +453,48 @@ class ScenarioRuntime:
                 session_id=snapshot.session_id,
                 state_revision=snapshot.state_revision,
                 event_sequence=snapshot.event_sequence,
+                phase=snapshot.phase.name,
+                split_count=snapshot.split_count,
             )
         fields.update(extra)
         try:
             self._logger.log(level, event, extra=fields, exc_info=exc_info)
         except Exception:  # noqa: BLE001
             return
+
+
+def _safe_exception_message(error: Exception) -> str:
+    try:
+        return re.sub(
+            r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]+@",
+            r"\g<scheme>",
+            str(error),
+        )
+    except Exception:  # noqa: BLE001
+        return f"<{type(error).__name__} could not be formatted>"
+
+
+def _rule_evaluation_fields(
+    rule: Rule,
+    context: FrameContext,
+) -> _RuleEvaluationFields:
+    fields = _RuleEvaluationFields(condition_type=type(rule.condition).__name__)
+    if isinstance(rule.condition, Detected):
+        fields.update(
+            detector_type=type(rule.condition.detector).__name__,
+            detector_minimum_score=rule.condition.minimum_score,
+            detector_cache_hit=rule.condition.detector in context.detection_cache,
+        )
+    return fields
+
+
+def _rule_evaluation_result_fields(
+    rule: Rule,
+    context: FrameContext,
+) -> _RuleEvaluationFields:
+    if not isinstance(rule.condition, Detected):
+        return {}
+    result = context.detection_cache.get(rule.condition.detector)
+    return {
+        "detector_score": result.score if isinstance(result, DetectionResult) else None
+    }

@@ -1,5 +1,6 @@
 """Top-level lifecycle for Capture, Processing, and Bridge workers."""
 
+import logging
 import threading
 from collections.abc import Callable
 from typing import Protocol
@@ -35,6 +36,11 @@ class ApplicationDiagnostics(
 ):
     """Combined typed diagnostics consumed by the application components."""
 
+    def scenario_logger(
+        self,
+        scenario_index: int,
+    ) -> logging.Logger | logging.LoggerAdapter: ...
+
 
 class ApplicationStartupValidationError(Exception):
     """A constraint requiring the initial LiveSplit snapshot was violated."""
@@ -57,7 +63,10 @@ class ApplicationRuntime:
         validate_scenarios(scenarios)
         self._diagnostics = diagnostics
         self._frame_buffer = LatestFrameBuffer()
-        self._scenario_runtimes = tuple(ScenarioRuntime(item) for item in scenarios)
+        self._scenario_runtimes = tuple(
+            ScenarioRuntime(item, logger=diagnostics.scenario_logger(index))
+            for index, item in enumerate(scenarios)
+        )
         self._workers = tuple(
             BridgeWorker(item.connection, diagnostics=diagnostics) for item in scenarios
         )
