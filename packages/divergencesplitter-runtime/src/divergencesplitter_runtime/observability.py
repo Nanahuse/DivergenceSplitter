@@ -13,6 +13,7 @@ from divergencesplitter import (
     ConditionStatus,
     Detected,
     ImageDetector,
+    LiveSplitConnection,
     ObservableCondition,
     ReferenceImage,
     Rule,
@@ -62,6 +63,7 @@ class ScenarioNode:
     """The display structure of one scenario."""
 
     scenario_index: int
+    connection: LiveSplitConnection
     reset_conditions: tuple[ConditionNode, ...]
     splits: tuple[SplitNode, ...]
 
@@ -103,6 +105,7 @@ def build_detector_tree(scenarios: tuple[Scenario, ...]) -> DetectorTreeSnapshot
 def _scenario_node(scenario_index: int, scenario: Scenario) -> ScenarioNode:
     return ScenarioNode(
         scenario_index=scenario_index,
+        connection=scenario.connection,
         reset_conditions=tuple(
             _condition_node(item) for item in scenario.reset_conditions
         ),

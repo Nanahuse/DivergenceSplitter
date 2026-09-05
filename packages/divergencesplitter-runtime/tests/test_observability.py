@@ -65,6 +65,7 @@ class TestDetectorTree:
         assert len(tree.scenarios) == 1
         scenario_node = tree.scenarios[0]
         assert scenario_node.scenario_index == 0
+        assert scenario_node.connection == scenario.connection
 
         assert len(scenario_node.reset_conditions) == 1
         reset_condition = scenario_node.reset_conditions[0]
