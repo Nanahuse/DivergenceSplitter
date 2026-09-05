@@ -37,6 +37,10 @@ class SequenceCondition:
         self.calls: list[bool] = []
         self.resets = 0
 
+    @property
+    def children(self) -> tuple:
+        return ()
+
     @overload
     def evaluate(
         self,
@@ -70,6 +74,10 @@ class CountingDetector:
     def __init__(self, score: float) -> None:
         self.score = score
         self.calls = 0
+
+    @property
+    def reference_images(self) -> tuple:
+        return ()
 
     def detect(self, context: FrameContext) -> DetectionResult:
         self.calls += 1

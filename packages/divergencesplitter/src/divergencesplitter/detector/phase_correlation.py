@@ -13,6 +13,7 @@ from divergencesplitter.detector.common import frame_gray, to_gray
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
+    ReferenceImage,
     _validate_frozen_config_image,
 )
 from divergencesplitter.frame.models import FrameContext
@@ -40,6 +41,10 @@ class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
     detects the same content regardless of where it appears in the frame, not
     positional equality.
     """
+
+    @property
+    def reference_images(self) -> tuple[ReferenceImage, ...]:
+        return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = frame_gray(context)

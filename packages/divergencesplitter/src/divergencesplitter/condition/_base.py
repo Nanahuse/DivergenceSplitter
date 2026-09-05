@@ -6,6 +6,12 @@ from divergencesplitter.frame.models import FrameContext
 
 
 class ConditionBase(ABC):
+    @property
+    @abstractmethod
+    def children(self) -> tuple[Condition, ...]:
+        """Read-only child conditions in declaration order (leaves return ``()``)."""
+        ...
+
     @overload
     def evaluate(
         self,

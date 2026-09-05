@@ -13,6 +13,10 @@ class ResetWhen(ConditionBase):
         self._condition = condition
         self._reset_condition = reset_condition
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition, self._reset_condition)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:

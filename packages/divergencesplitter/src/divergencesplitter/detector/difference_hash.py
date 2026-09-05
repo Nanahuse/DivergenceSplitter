@@ -11,6 +11,7 @@ from divergencesplitter.detector.common import dhash_bits, frame_dhash, to_gray
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
+    ReferenceImage,
     _validate_frozen_config_image,
 )
 from divergencesplitter.frame.models import FrameContext
@@ -40,6 +41,10 @@ class DifferenceHashSimilarityDetector(
     by comparing adjacent columns. The score is ``1 - hamming / hash_size**2``,
     so identical images score ``1.0`` and unrelated images approach ``0.0``.
     """
+
+    @property
+    def reference_images(self) -> tuple[ReferenceImage, ...]:
+        return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
         reference_hash = tuple(

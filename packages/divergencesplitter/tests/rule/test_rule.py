@@ -22,6 +22,10 @@ class RecordingCondition:
         self.calls: list[bool] = []
         self.resets = 0
 
+    @property
+    def children(self) -> tuple:
+        return ()
+
     def inject(self, result: object) -> None:
         self.result = cast("bool | None", result)
 

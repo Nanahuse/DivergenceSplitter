@@ -8,6 +8,10 @@ class FallingEdge(ConditionBase):
         self._condition = condition
         self._previous: bool | None = None
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition,)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:

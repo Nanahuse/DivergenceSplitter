@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 members = [
     "divergencesplitter",
     "divergencesplitter-runtime",
+    "divergencesplitter-ui",
     "divergencesplitter-workspace",
 ]
 
@@ -78,6 +79,14 @@ wheels = [
 ]
 
 [[package]]
+name = "dearpygui"
+version = "2.3.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/56/93b2310891589063e0226cb07fe05e08fbdb3f409f80f9edefb1cebea84e/dearpygui-2.3.1-cp314-cp314-win_amd64.whl", hash = "sha256:272cc52c66bc5a4a332f13a3af5e603070d47ca7cc4976e6a8c247594e2b3dd0", size = 1943067, upload-time = "2026-05-01T22:45:52.255Z" },
+]
+
+[[package]]
 name = "divergencesplitter"
 version = "0.1.0"
 source = { editable = "packages/divergencesplitter" }
@@ -128,6 +137,35 @@ requires-dist = [
     { name = "divergencesplitter", editable = "packages/divergencesplitter" },
     { name = "livesplit-bridge-client", git = "https://github.com/Nanahuse/livesplit-bridge-client.git?rev=f40f17c75e8355afd97a9bc6cf79f258721ffe0a" },
     { name = "windows-capture-device-list", marker = "sys_platform == 'win32'", git = "https://github.com/Nanahuse/windows-capture-device-list.git?rev=7ca9e0d44fb488d0d05fdf2039536cb1be70d94b" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[[package]]
+name = "divergencesplitter-ui"
+version = "0.1.0"
+source = { editable = "packages/divergencesplitter-ui" }
+dependencies = [
+    { name = "dearpygui", marker = "sys_platform == 'win32'" },
+    { name = "divergencesplitter-runtime" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dearpygui", marker = "sys_platform == 'win32'", specifier = ">=2.3.1,<3" },
+    { name = "divergencesplitter-runtime", editable = "packages/divergencesplitter-runtime" },
 ]
 
 [package.metadata.requires-dev]

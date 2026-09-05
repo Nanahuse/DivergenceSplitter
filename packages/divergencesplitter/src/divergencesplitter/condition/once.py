@@ -8,6 +8,10 @@ class Once(ConditionBase):
         self._condition = condition
         self._completed = False
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition,)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:

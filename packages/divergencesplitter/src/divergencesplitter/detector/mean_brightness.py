@@ -1,12 +1,16 @@
 """MeanBrightnessDetector implementation."""
 
 from divergencesplitter.detector.common import frame_mean
-from divergencesplitter.detector.models import DetectionResult
+from divergencesplitter.detector.models import DetectionResult, ReferenceImage
 from divergencesplitter.frame.models import FrameContext
 
 
 class MeanBrightnessDetector:
     """Level-style detector: reports the frame mean brightness as score."""
+
+    @property
+    def reference_images(self) -> tuple[ReferenceImage, ...]:
+        return ()
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, MeanBrightnessDetector):

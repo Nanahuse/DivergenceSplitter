@@ -161,6 +161,24 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
 
 
 class ConfigImageTest(unittest.TestCase):
+    def test_reference_based_detectors_expose_a_labeled_reference_image(self) -> None:
+        reference_based = (
+            TemplateMatchDetector(TemplateMatchConfig(PATTERN)),
+            PhaseCorrelationDetector(PhaseCorrelationConfig(PATTERN)),
+            DifferenceHashSimilarityDetector(DifferenceHashSimilarityConfig(PATTERN)),
+            MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(PATTERN)),
+        )
+        for detector in reference_based:
+            with self.subTest(detector_type=type(detector).__name__):
+                images = detector.reference_images
+                self.assertEqual(len(images), 1)
+                self.assertEqual(images[0].label, "reference")
+                self.assertEqual(images[0].image, PATTERN)
+
+    def test_color_range_detector_has_no_reference_images(self) -> None:
+        detector = ColorRangeDetector(ColorRangeConfig((0,), (255,)))
+        self.assertEqual(detector.reference_images, ())
+
     def test_detector_implementations_compare_by_configuration(self) -> None:
         equivalent_pairs = (
             (

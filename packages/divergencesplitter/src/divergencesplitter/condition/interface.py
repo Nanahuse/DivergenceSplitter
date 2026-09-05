@@ -4,6 +4,15 @@ from divergencesplitter.frame.models import FrameContext
 
 
 class Condition(Protocol):
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        """Read-only child conditions in declaration order.
+
+        Leaf conditions return an empty tuple. This exposes structure for
+        display only; it does not perform evaluation, reset, or state changes.
+        """
+        ...
+
     @overload
     def evaluate(
         self,

@@ -12,6 +12,10 @@ class Any(ConditionBase):
     def __init__(self, *conditions: Condition) -> None:
         self._conditions = conditions
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return self._conditions
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:

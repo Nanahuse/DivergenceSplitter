@@ -1,4 +1,5 @@
 from divergencesplitter.condition._base import ConditionBase
+from divergencesplitter.condition.interface import Condition
 from divergencesplitter.detector import ImageDetector, evaluate
 from divergencesplitter.frame.models import FrameContext
 
@@ -15,6 +16,10 @@ class Detected(ConditionBase):
     @property
     def minimum_score(self) -> float:
         return self._minimum_score
+
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return ()
 
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool

@@ -12,6 +12,10 @@ class Nth(ConditionBase):
         self._observed = 0
         self._completed = False
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition,)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:

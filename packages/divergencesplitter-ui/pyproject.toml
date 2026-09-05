@@ -1,0 +1,29 @@
+[project]
+name = "divergencesplitter-ui"
+version = "0.1.0"
+description = "Windows desktop UI for DivergenceSplitter"
+requires-python = ">=3.14"
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    "divergencesplitter-runtime",
+    "dearpygui>=2.3.1,<3; sys_platform == 'win32'",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+divergencesplitter-runtime = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff",
+    "ty",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

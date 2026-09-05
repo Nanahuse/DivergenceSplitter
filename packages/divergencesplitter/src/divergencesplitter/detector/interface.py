@@ -6,7 +6,7 @@ docstring.
 
 from typing import Protocol
 
-from divergencesplitter.detector.models import DetectionResult
+from divergencesplitter.detector.models import DetectionResult, ReferenceImage
 from divergencesplitter.frame.models import FrameContext
 
 
@@ -23,5 +23,13 @@ class ImageDetector(Protocol):
     implementation must invert the value inside ``detect`` so this contract
     holds.
     """
+
+    @property
+    def reference_images(self) -> tuple[ReferenceImage, ...]:
+        """Read-only labeled reference images used for detection.
+
+        Detectors without a reference image return an empty tuple.
+        """
+        ...
 
     def detect(self, context: FrameContext) -> DetectionResult: ...

@@ -1,5 +1,6 @@
 from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.condition._base import ConditionBase
+from divergencesplitter.condition.interface import Condition
 from divergencesplitter.frame.models import FrameContext
 
 
@@ -10,6 +11,10 @@ class Elapsed(ConditionBase):
         self._duration_nanoseconds = duration_nanoseconds
         self._started_at: MonotonicTime | None = None
         self._completed = False
+
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return ()
 
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool

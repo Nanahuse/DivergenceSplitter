@@ -21,6 +21,10 @@ class Then(ConditionBase):
         self._started_at: MonotonicTime | None = None
         self._completed = False
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return self._conditions
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:

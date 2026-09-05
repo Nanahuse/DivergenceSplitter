@@ -28,6 +28,10 @@ class RecordingCondition:
         self.calls = 0
         self.resets = 0
 
+    @property
+    def children(self) -> tuple:
+        return ()
+
     @overload
     def evaluate(
         self,

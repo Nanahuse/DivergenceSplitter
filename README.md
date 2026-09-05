@@ -22,16 +22,23 @@ packages are published to a package index.
 
 ## Packages
 
-This repository is managed as a uv workspace with two independently installable
-packages:
+This repository is managed as a uv workspace with three independently
+installable packages:
 
 - `divergencesplitter` contains the public scenario-authoring API, detectors,
   conditions, rules, frame sources, and shared models.
 - `divergencesplitter-runtime` contains scenario loading and the runtime state
   machines. It depends on `divergencesplitter`.
+- `divergencesplitter-ui` is the Windows-only desktop UI. It depends on
+  `divergencesplitter-runtime` and Dear PyGui. Core and runtime install without
+  any GUI dependency.
 
-The desktop UI will be added later as its own workspace package. It is not
-included until a UI is implemented.
+Custom `Condition` implementations must expose a read-only `children` property
+returning their child conditions in declaration order (an empty tuple for
+leaves). Custom `ImageDetector` implementations must expose a read-only
+`reference_images` property returning labeled immutable reference images (an
+empty tuple when there are none). These properties feed the desktop UI display
+only; they never perform evaluation, reset, or state changes.
 
 Scenario modules only import the authoring library and export `scenarios`. A
 minimal `scenario.py` is:
