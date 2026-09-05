@@ -5,8 +5,8 @@ import numpy as np
 from divergencesplitter import (
     Action,
     All,
+    ConditionStatus,
     Detected,
-    DetectionResult,
     Frame,
     FrameContext,
     LiveSplitConnection,
@@ -162,36 +162,69 @@ class TestObservableFrameSlot:
         assert diagnostics.take_latest_input_frame() is frame
 
 
-class TestObservableDetectorScore:
-    def test_scores_are_reported_per_detector_and_consumed(self) -> None:
+class TestConditionObservations:
+    def test_bind_reports_unobserved_conditions_with_none_scores(self) -> None:
         diagnostics = OperationalDiagnostics(StringIO())
         detector = MeanBrightnessDetector()
-        context = FrameContext(frame=make_frame(100), now=MonotonicTime(150))
-        context.detection_cache[detector] = DetectionResult(score=0.75)
+        scenario = make_scenario(detector)
+        split_rules = scenario.splits[0]
+        assert split_rules is not None
 
+        diagnostics.bind_runtime((scenario,), make_frame_source())
+        observations = diagnostics.take_condition_observations()
+
+        assert {item.condition for item in observations} == {
+            scenario.reset_conditions[0],
+            split_rules[0].condition,
+        }
+        for item in observations:
+            assert item.status is None
+            assert item.latest_score is None
+            assert item.max_score is None
+
+    def test_reused_condition_is_reported_once_and_take_consumes_updates(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+        detector = MeanBrightnessDetector()
+        shared = Detected(detector, 100.0)
+        scenario = Scenario(
+            connection=LiveSplitConnection("rpc", "event"),
+            reset_conditions=(shared, shared),
+            splits=(),
+        )
+
+        diagnostics.bind_runtime((scenario,), make_frame_source())
+        observations = diagnostics.take_condition_observations()
+
+        assert len(observations) == 1
+        assert observations[0].condition is shared
+        assert diagnostics.take_condition_observations() == ()
+
+    def test_short_circuited_child_is_skipped_without_current_score(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+        detector = MeanBrightnessDetector()
+        skipped = Detected(detector, -1.0)
+        skipped.evaluate(make_context())
+        condition = All(Detected(detector, 1.0), skipped)
+        scenario = Scenario(
+            connection=LiveSplitConnection("rpc", "event"),
+            reset_conditions=(),
+            splits=((Rule(condition, Action("split")),),),
+        )
+        context = make_context()
+
+        diagnostics.bind_runtime((scenario,), make_frame_source())
+        diagnostics.take_condition_observations()
+        assert condition.evaluate(context) is False
         diagnostics.frame_processing_completed(context)
 
-        scores = diagnostics.take_detector_scores()
-        assert len(scores) == 1
-        assert scores[0].detector is detector
-        assert scores[0].score == 0.75
-        assert diagnostics.take_detector_scores() == ()
-
-    def test_re_evaluation_keeps_only_the_newest_score(self) -> None:
-        diagnostics = OperationalDiagnostics(StringIO())
-        detector = MeanBrightnessDetector()
-
-        first = FrameContext(frame=make_frame(100), now=MonotonicTime(150))
-        first.detection_cache[detector] = DetectionResult(score=0.5)
-        diagnostics.frame_processing_completed(first)
-
-        second = FrameContext(frame=make_frame(200), now=MonotonicTime(250))
-        second.detection_cache[detector] = DetectionResult(score=0.9)
-        diagnostics.frame_processing_completed(second)
-
-        scores = diagnostics.take_detector_scores()
-        assert len(scores) == 1
-        assert scores[0].score == 0.9
+        observations = {
+            item.condition: item for item in diagnostics.take_condition_observations()
+        }
+        assert observations[condition].status is ConditionStatus.FALSE
+        assert observations[skipped].status is ConditionStatus.SKIPPED
+        assert observations[skipped].latest_score is None
+        assert observations[skipped].max_score == 0.0
+        assert diagnostics.take_condition_observations() == ()
 
 
 class TestObservabilityBoundary:
@@ -218,3 +251,7 @@ def make_frame_source():
     from divergencesplitter import VideoFileSource
 
     return VideoFileSource("recording.mp4")
+
+
+def make_context() -> FrameContext:
+    return FrameContext(frame=make_frame(), now=MonotonicTime(150))

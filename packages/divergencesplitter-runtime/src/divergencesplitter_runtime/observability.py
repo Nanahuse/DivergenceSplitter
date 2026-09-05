@@ -10,8 +10,10 @@ from dataclasses import dataclass
 
 from divergencesplitter import (
     Condition,
+    ConditionStatus,
     Detected,
     ImageDetector,
+    ObservableCondition,
     ReferenceImage,
     Rule,
     Scenario,
@@ -32,6 +34,7 @@ class DetectorNode:
 class ConditionNode:
     """A condition and its nested children in the display tree."""
 
+    condition: Condition
     condition_type: str
     children: tuple[ConditionNode, ...] = ()
     detector: DetectorNode | None = None
@@ -71,11 +74,19 @@ class DetectorTreeSnapshot:
 
 
 @dataclass(frozen=True)
-class DetectorScore:
-    """One detector's latest unevaluated score."""
+class ConditionObservation:
+    """One condition's latest evaluation outcome and detector scores.
 
-    detector: ImageDetector
-    score: float
+    ``latest_score`` and ``max_score`` are ``None`` for conditions without a
+    detector and for a detector that has not run since start or reset. The
+    observation carries the source ``condition`` so consumers can join it to the
+    display tree by identity without reading the condition's private state.
+    """
+
+    condition: Condition
+    status: ConditionStatus | None
+    latest_score: float | None
+    max_score: float | None
 
 
 def build_detector_tree(scenarios: tuple[Scenario, ...]) -> DetectorTreeSnapshot:
@@ -124,6 +135,7 @@ def _condition_node(condition: Condition) -> ConditionNode:
     if isinstance(condition, Detected):
         detector = condition.detector
         return ConditionNode(
+            condition=condition,
             condition_type=type(condition).__name__,
             detector=DetectorNode(
                 detector=detector,
@@ -133,6 +145,57 @@ def _condition_node(condition: Condition) -> ConditionNode:
             ),
         )
     return ConditionNode(
+        condition=condition,
         condition_type=type(condition).__name__,
         children=tuple(_condition_node(item) for item in condition.children),
     )
+
+
+def _collect_condition_observations(
+    scenarios: tuple[Scenario, ...],
+) -> tuple[ConditionObservation, ...]:
+    """Read the latest evaluation outcome of every condition in ``scenarios``.
+
+    Each condition instance is reported once even when it is reused in several
+    positions, preserving the shared-state meaning of a reused instance. Values
+    are copied out so the result does not expose mutable condition state.
+    """
+
+    seen: set[int] = set()
+    observations: list[ConditionObservation] = []
+
+    def visit(condition: Condition) -> None:
+        identity = id(condition)
+        if identity in seen:
+            return
+        seen.add(identity)
+        latest_score: float | None = None
+        max_score: float | None = None
+        if isinstance(condition, Detected):
+            if condition.status in (ConditionStatus.TRUE, ConditionStatus.FALSE):
+                latest_score = condition.latest_score
+            max_score = condition.max_score
+        status = (
+            condition.status if isinstance(condition, ObservableCondition) else None
+        )
+        observations.append(
+            ConditionObservation(
+                condition=condition,
+                status=status,
+                latest_score=latest_score,
+                max_score=max_score,
+            )
+        )
+        for child in condition.children:
+            visit(child)
+
+    for scenario in scenarios:
+        for condition in scenario.reset_conditions:
+            visit(condition)
+        for rules in scenario.splits:
+            if rules is None:
+                continue
+            for rule in rules:
+                visit(rule.condition)
+
+    return tuple(observations)

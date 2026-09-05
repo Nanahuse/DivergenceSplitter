@@ -21,6 +21,6 @@ class FallingEdge(ConditionBase):
         fired = previous is not None and previous and not current
         return None if is_short_circuited else fired
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._previous = None
         self._condition.reset()

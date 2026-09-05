@@ -29,5 +29,5 @@ class ResetWhen(ConditionBase):
             return None
         return evaluate_normal(self._condition, context)
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         reset_all((self._condition, self._reset_condition))

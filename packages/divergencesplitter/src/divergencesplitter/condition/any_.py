@@ -31,5 +31,5 @@ class Any(ConditionBase):
                 result = evaluate_normal(condition, context)
         return result
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         reset_all(self._conditions)

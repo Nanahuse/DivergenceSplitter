@@ -26,7 +26,6 @@ from divergencesplitter import (
     FrameSource,
     FrameSourceError,
     FrameSourceState,
-    ImageDetector,
     LiveSplitConnection,
     MeanAbsoluteSimilarityConfig,
     MonotonicTime,
@@ -49,8 +48,9 @@ from divergencesplitter_runtime.livesplit.worker import (
 )
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
-    DetectorScore,
+    ConditionObservation,
     DetectorTreeSnapshot,
+    _collect_condition_observations,
     build_detector_tree,
 )
 
@@ -139,7 +139,8 @@ class OperationalDiagnostics:
         self._processed_frames_total = 0
         self._observable_lock = threading.Lock()
         self._latest_input_frame: Frame | None = None
-        self._detector_scores: dict[ImageDetector, float] = {}
+        self._scenarios: tuple[Scenario, ...] = ()
+        self._condition_observations: tuple[ConditionObservation, ...] = ()
         self._detector_tree: DetectorTreeSnapshot | None = None
 
     def set_level(self, level: int) -> None:
@@ -164,9 +165,14 @@ class OperationalDiagnostics:
                 self._source_fields = {"source_type": type(frame_source).__name__}
         with self._observable_lock:
             try:
+                self._scenarios = scenarios
                 self._detector_tree = build_detector_tree(scenarios)
+                self._condition_observations = _collect_condition_observations(
+                    scenarios
+                )
             except Exception:  # noqa: BLE001
                 self._detector_tree = None
+                self._condition_observations = ()
 
     def scenario_logger(
         self,
@@ -294,11 +300,12 @@ class OperationalDiagnostics:
 
     def frame_processing_completed(self, context: FrameContext) -> None:
         completed_at = self._time_provider.now()
+        observations = _collect_condition_observations(self._scenarios)
         with self._metrics_lock:
             self._processing_rate.record(completed_at)
             self._processed_frames_total += 1
         with self._observable_lock:
-            self._record_detector_scores(context.detection_cache)
+            self._condition_observations = observations
         fields: dict[str, object] = {
             **_frame_fields(context.frame),
             "processing_started_at_ns": context.now.nanoseconds,
@@ -325,18 +332,12 @@ class OperationalDiagnostics:
             self._latest_input_frame = None
             return frame
 
-    def take_detector_scores(self) -> tuple[DetectorScore, ...]:
-        """Return each detector's latest score and clear the pending values.
-
-        A detector re-evaluated before a read keeps only its newest score.
-        """
+    def take_condition_observations(self) -> tuple[ConditionObservation, ...]:
+        """Return the latest condition values and clear the pending snapshot."""
         with self._observable_lock:
-            scores = tuple(
-                DetectorScore(detector=detector, score=score)
-                for detector, score in self._detector_scores.items()
-            )
-            self._detector_scores.clear()
-            return scores
+            observations = self._condition_observations
+            self._condition_observations = ()
+            return observations
 
     def detector_tree(self) -> DetectorTreeSnapshot | None:
         """Return the immutable display tree built at runtime bind time."""
@@ -345,13 +346,6 @@ class OperationalDiagnostics:
 
     def runtime_started(self) -> None:
         self._emit(logging.INFO, "runtime.started")
-
-    def _record_detector_scores(
-        self,
-        cache: Mapping[ImageDetector, DetectionResult],
-    ) -> None:
-        for detector, result in cache.items():
-            self._detector_scores[detector] = result.score
 
     def metrics_snapshot(self) -> RuntimeMetricsSnapshot:
         """Copy current throughput metrics without consuming aggregation state."""

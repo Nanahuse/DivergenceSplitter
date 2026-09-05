@@ -42,8 +42,8 @@ from divergencesplitter_runtime.livesplit import (
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
     ConditionNode,
+    ConditionObservation,
     DetectorNode,
-    DetectorScore,
     DetectorTreeSnapshot,
     RuleNode,
     ScenarioNode,
@@ -69,8 +69,8 @@ __all__ = [
     "CaptureDiagnostics",
     "CaptureStateMachine",
     "ConditionNode",
+    "ConditionObservation",
     "DetectorNode",
-    "DetectorScore",
     "DetectorTreeSnapshot",
     "LatestFrameBuffer",
     "LiveSplitBridgeAdapter",

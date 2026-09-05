@@ -1,6 +1,28 @@
-from typing import Literal, Protocol, overload
+from enum import Enum, auto
+from typing import Literal, Protocol, overload, runtime_checkable
 
 from divergencesplitter.frame.models import FrameContext
+
+
+class ConditionStatus(Enum):
+    """Typed outcome of the most recent condition evaluation.
+
+    ``SKIPPED`` marks a condition whose result was not used because a parent
+    short-circuited it. The absence of a status (``None``) means the condition
+    has not been evaluated since it started or was last reset.
+    """
+
+    TRUE = auto()
+    FALSE = auto()
+    SKIPPED = auto()
+
+
+@runtime_checkable
+class ObservableCondition(Protocol):
+    @property
+    def status(self) -> ConditionStatus | None:
+        """Latest typed evaluation outcome, or ``None`` after reset."""
+        ...
 
 
 class Condition(Protocol):

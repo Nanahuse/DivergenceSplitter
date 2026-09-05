@@ -23,5 +23,5 @@ class Not(ConditionBase):
             return None
         return not evaluate_normal(self._condition, context)
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._condition.reset()

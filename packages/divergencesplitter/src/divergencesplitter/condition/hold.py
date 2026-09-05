@@ -32,6 +32,6 @@ class Hold(ConditionBase):
             result = elapsed >= self._duration_nanoseconds
         return None if is_short_circuited else result
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._started_at = None
         self._condition.reset()

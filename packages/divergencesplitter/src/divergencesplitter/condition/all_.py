@@ -31,5 +31,5 @@ class All(ConditionBase):
                 evaluate_short(condition, context)
         return result
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         reset_all(self._conditions)

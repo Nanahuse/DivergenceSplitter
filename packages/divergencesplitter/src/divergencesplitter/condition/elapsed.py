@@ -30,6 +30,6 @@ class Elapsed(ConditionBase):
             self._completed = True
         return None if is_short_circuited else self._completed
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._started_at = None
         self._completed = False

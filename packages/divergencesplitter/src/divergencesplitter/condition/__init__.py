@@ -4,7 +4,11 @@ from divergencesplitter.condition.detected import Detected
 from divergencesplitter.condition.elapsed import Elapsed
 from divergencesplitter.condition.falling_edge import FallingEdge
 from divergencesplitter.condition.hold import Hold
-from divergencesplitter.condition.interface import Condition
+from divergencesplitter.condition.interface import (
+    Condition,
+    ConditionStatus,
+    ObservableCondition,
+)
 from divergencesplitter.condition.not_ import Not
 from divergencesplitter.condition.nth import Nth
 from divergencesplitter.condition.once import Once
@@ -16,12 +20,14 @@ __all__ = [
     "All",
     "Any",
     "Condition",
+    "ConditionStatus",
     "Detected",
     "Elapsed",
     "FallingEdge",
     "Hold",
     "Not",
     "Nth",
+    "ObservableCondition",
     "Once",
     "ResetWhen",
     "RisingEdge",

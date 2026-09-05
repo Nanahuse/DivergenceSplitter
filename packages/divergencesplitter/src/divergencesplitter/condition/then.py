@@ -57,7 +57,7 @@ class Then(ConditionBase):
                 fired = True
         return None if is_short_circuited else fired
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._index = 0
         self._started_at = None
         self._completed = False

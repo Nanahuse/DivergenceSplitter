@@ -6,6 +6,7 @@ from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.condition import (
     All,
     Any,
+    ConditionStatus,
     Detected,
     Elapsed,
     FallingEdge,
@@ -483,6 +484,95 @@ class DetectedConditionTest(unittest.TestCase):
         condition.reset()
         self.assertTrue(condition.evaluate(context))
         self.assertEqual(detector.calls, 1)
+
+
+class ConditionStatusTest(unittest.TestCase):
+    def test_status_is_none_until_first_evaluation(self) -> None:
+        condition = Detected(CountingDetector(1.0), 0.5)
+        self.assertIsNone(condition.status)
+
+    def test_status_reflects_normal_and_short_circuited_evaluation(self) -> None:
+        condition = Detected(CountingDetector(1.0), 0.5)
+        self.assertTrue(condition.evaluate(make_context()))
+        self.assertIs(condition.status, ConditionStatus.TRUE)
+        condition.evaluate(make_context(), is_short_circuited=True)
+        self.assertIs(condition.status, ConditionStatus.SKIPPED)
+
+    def test_reset_clears_status(self) -> None:
+        condition = Detected(CountingDetector(1.0), 0.5)
+        condition.evaluate(make_context())
+        condition.reset()
+        self.assertIsNone(condition.status)
+
+    def test_latched_parent_marks_unevaluated_child_skipped(self) -> None:
+        detector = CountingDetector(1.0)
+        child = Detected(detector, 0.5)
+        condition = Once(child)
+
+        self.assertTrue(condition.evaluate(make_context()))
+        self.assertTrue(condition.evaluate(make_context()))
+
+        self.assertIs(child.status, ConditionStatus.SKIPPED)
+        self.assertEqual(child.max_score, 1.0)
+        self.assertEqual(detector.calls, 1)
+
+
+class DetectedScoreObservationTest(unittest.TestCase):
+    def test_scores_none_until_normal_evaluation(self) -> None:
+        condition = Detected(CountingDetector(1.0), 0.5)
+        self.assertIsNone(condition.latest_score)
+        self.assertIsNone(condition.max_score)
+
+    def test_short_circuit_does_not_update_scores(self) -> None:
+        condition = Detected(CountingDetector(1.0), 0.5)
+        condition.evaluate(make_context(), is_short_circuited=True)
+        self.assertIsNone(condition.latest_score)
+        self.assertIsNone(condition.max_score)
+
+    def test_normal_evaluation_updates_latest_and_max(self) -> None:
+        condition = Detected(CountingDetector(0.4), 0.5)
+        condition.evaluate(make_context())
+        self.assertEqual(condition.latest_score, 0.4)
+        self.assertEqual(condition.max_score, 0.4)
+
+    def test_max_tracks_highest_observed_score(self) -> None:
+        condition = Detected(SequenceDetector((0.4, 0.9, 0.6)), 0.0)
+        condition.evaluate(make_context())
+        condition.evaluate(make_context())
+        condition.evaluate(make_context())
+        self.assertEqual(condition.latest_score, 0.6)
+        self.assertEqual(condition.max_score, 0.9)
+
+    def test_reset_returns_scores_to_unobserved(self) -> None:
+        condition = Detected(SequenceDetector((0.4,)), 0.0)
+        condition.evaluate(make_context())
+        condition.reset()
+        self.assertIsNone(condition.latest_score)
+        self.assertIsNone(condition.max_score)
+
+    def test_shared_detector_keeps_independent_max_per_condition(self) -> None:
+        detector = SequenceDetector((0.4,))
+        low = Detected(detector, 0.0)
+        high = Detected(detector, 0.6)
+        self.assertTrue(low.evaluate(make_context()))
+        high.evaluate(make_context(), is_short_circuited=True)
+        self.assertEqual(low.max_score, 0.4)
+        self.assertIsNone(high.max_score)
+        self.assertEqual(detector.calls, 1)
+
+
+class SequenceDetector:
+    def __init__(self, scores: tuple[float, ...]) -> None:
+        self._scores = list(scores)
+        self.calls = 0
+
+    @property
+    def reference_images(self) -> tuple:
+        return ()
+
+    def detect(self, context: FrameContext) -> DetectionResult:
+        self.calls += 1
+        return DetectionResult(score=self._scores.pop(0))
 
 
 if __name__ == "__main__":
