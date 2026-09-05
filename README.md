@@ -113,10 +113,11 @@ enumeration ID to disambiguate devices with the same name:
 }
 ```
 
-The runtime enumerates devices with `windows-capture-device-list`. A unique name
-match is accepted even if its ID changed. If several devices have the same
-name, the saved ID must match one of them. Relative scenario and video paths are
-resolved from the configuration file's directory.
+On Windows, the runtime enumerates devices with
+`windows-capture-device-list`. A unique name match is accepted even if its ID
+changed. If several devices have the same name, the saved ID must match one of
+them. Relative scenario and video paths are resolved from the configuration
+file's directory.
 
 Before using a camera/backend combination in production, manually confirm that
 it opens, continuously captures frames, releases the device on shutdown, and

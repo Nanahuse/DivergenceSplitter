@@ -1,13 +1,13 @@
 """Build frame sources from parsed configuration values."""
 
+import importlib
 from collections.abc import Sequence
 from pathlib import Path
-from typing import assert_never
+from typing import Protocol, assert_never
 
 from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.frame.video_file import VideoFileSource
-from windows_capture_device_list import CaptureDevice, list_devices
 
 from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
@@ -21,6 +21,16 @@ class SourceConfigurationError(Exception):
     """A configured frame source cannot be resolved or constructed."""
 
 
+class CameraDeviceInfo(Protocol):
+    """A camera device as reported by the platform-specific enumerator."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def id(self) -> int: ...
+
+
 def build_frame_source(
     configuration: SourceConfiguration,
     *,
@@ -30,7 +40,7 @@ def build_frame_source(
 
     if isinstance(configuration, CameraSourceConfiguration):
         try:
-            devices = list_devices()
+            devices = _list_camera_devices()
         except Exception as error:
             raise SourceConfigurationError(
                 "failed to enumerate camera devices"
@@ -48,9 +58,16 @@ def build_frame_source(
     assert_never(configuration)
 
 
+def _list_camera_devices() -> Sequence[CameraDeviceInfo]:
+    """Enumerate camera devices through the Windows-only boundary package."""
+
+    module = importlib.import_module("windows_capture_device_list")
+    return module.list_devices()
+
+
 def resolve_camera_device(
     configured: CameraDeviceConfiguration,
-    devices: Sequence[CaptureDevice],
+    devices: Sequence[CameraDeviceInfo],
 ) -> int:
     """Resolve a saved name and disambiguating id to the current device id."""
 

@@ -113,7 +113,7 @@ source = { editable = "packages/divergencesplitter-runtime" }
 dependencies = [
     { name = "divergencesplitter" },
     { name = "livesplit-bridge-client" },
-    { name = "windows-capture-device-list" },
+    { name = "windows-capture-device-list", marker = "sys_platform == 'win32'" },
 ]
 
 [package.dev-dependencies]
@@ -127,7 +127,7 @@ dev = [
 requires-dist = [
     { name = "divergencesplitter", editable = "packages/divergencesplitter" },
     { name = "livesplit-bridge-client", git = "https://github.com/Nanahuse/livesplit-bridge-client.git?rev=f40f17c75e8355afd97a9bc6cf79f258721ffe0a" },
-    { name = "windows-capture-device-list", git = "https://github.com/Nanahuse/windows-capture-device-list.git?rev=7ca9e0d44fb488d0d05fdf2039536cb1be70d94b" },
+    { name = "windows-capture-device-list", marker = "sys_platform == 'win32'", git = "https://github.com/Nanahuse/windows-capture-device-list.git?rev=7ca9e0d44fb488d0d05fdf2039536cb1be70d94b" },
 ]
 
 [package.metadata.requires-dev]

@@ -18,12 +18,12 @@ from divergencesplitter_runtime.configuration.models import (
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
+    CameraDeviceInfo,
     SourceConfigurationError,
     build_frame_source,
     resolve_camera_device,
     resolve_configuration_path,
 )
-from windows_capture_device_list import CaptureDevice
 
 
 def camera_configuration() -> dict[str, object]:
@@ -130,7 +130,7 @@ def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
 def test_resolves_unique_name_even_when_saved_id_changed() -> None:
     configured = CameraDeviceConfiguration("USB Camera", 2)
     devices = cast(
-        list[CaptureDevice],
+        list[CameraDeviceInfo],
         [SimpleNamespace(name="USB Camera", id=7)],
     )
 
@@ -140,7 +140,7 @@ def test_resolves_unique_name_even_when_saved_id_changed() -> None:
 def test_resolves_duplicate_name_with_saved_id() -> None:
     configured = CameraDeviceConfiguration("USB Camera", 2)
     devices = cast(
-        list[CaptureDevice],
+        list[CameraDeviceInfo],
         [
             SimpleNamespace(name="USB Camera", id=1),
             SimpleNamespace(name="USB Camera", id=2),
@@ -164,7 +164,7 @@ def test_camera_resolution_failure_requires_reselection(devices: list[object]) -
     configured = CameraDeviceConfiguration("USB Camera", 2)
 
     with pytest.raises(SourceConfigurationError):
-        resolve_camera_device(configured, cast(list[CaptureDevice], devices))
+        resolve_camera_device(configured, cast(list[CameraDeviceInfo], devices))
 
 
 def test_builds_camera_source_from_current_device_id(tmp_path: Path) -> None:
@@ -177,7 +177,7 @@ def test_builds_camera_source_from_current_device_id(tmp_path: Path) -> None:
     devices = [SimpleNamespace(name="USB Camera", id=7)]
 
     with patch(
-        "divergencesplitter_runtime.configuration.source_builder.list_devices",
+        "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
         return_value=devices,
     ):
         source = build_frame_source(configuration, base_directory=tmp_path)
@@ -187,6 +187,27 @@ def test_builds_camera_source_from_current_device_id(tmp_path: Path) -> None:
     assert source.width == 1280
     assert source.height == 720
     assert source.fps == 60.0
+
+
+def test_camera_enumeration_failure_is_reported(tmp_path: Path) -> None:
+    configuration = CameraSourceConfiguration(
+        CameraDeviceConfiguration("USB Camera", 2),
+        1280,
+        720,
+        60.0,
+    )
+
+    with (
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
+            side_effect=RuntimeError("enumeration failed"),
+        ),
+        pytest.raises(
+            SourceConfigurationError,
+            match="failed to enumerate camera devices",
+        ),
+    ):
+        build_frame_source(configuration, base_directory=tmp_path)
 
 
 def test_builds_video_source_relative_to_configuration(tmp_path: Path) -> None:
