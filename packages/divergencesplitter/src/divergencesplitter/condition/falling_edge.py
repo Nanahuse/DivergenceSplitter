@@ -8,6 +8,10 @@ class FallingEdge(ConditionBase):
         self._condition = condition
         self._previous: bool | None = None
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition,)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:
@@ -17,6 +21,6 @@ class FallingEdge(ConditionBase):
         fired = previous is not None and previous and not current
         return None if is_short_circuited else fired
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._previous = None
         self._condition.reset()

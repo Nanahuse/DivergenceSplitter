@@ -7,10 +7,15 @@ implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from divergencesplitter.clock import MonotonicTime
+
+if TYPE_CHECKING:
+    from divergencesplitter.detector.interface import ImageDetector
+    from divergencesplitter.detector.models import DetectionResult
 
 ImageArray = np.ndarray
 
@@ -28,4 +33,4 @@ class FrameContext:
     frame: Frame
     now: MonotonicTime
     preprocessing_cache: dict[object, object] = field(default_factory=dict)
-    detection_cache: dict[object, object] = field(default_factory=dict)
+    detection_cache: dict[ImageDetector, DetectionResult] = field(default_factory=dict)

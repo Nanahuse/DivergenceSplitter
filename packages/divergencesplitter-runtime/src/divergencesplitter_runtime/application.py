@@ -41,6 +41,8 @@ class ApplicationDiagnostics(
         scenario_index: int,
     ) -> logging.Logger | logging.LoggerAdapter: ...
 
+    def runtime_started(self) -> None: ...
+
 
 class ApplicationStartupValidationError(Exception):
     """A constraint requiring the initial LiveSplit snapshot was violated."""
@@ -123,6 +125,7 @@ class ApplicationRuntime:
                 ),
                 name="capture",
             )
+            self._diagnostics.runtime_started()
             processing_thread.start()
             capture_thread.start()
             capture_thread.join()

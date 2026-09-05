@@ -12,6 +12,7 @@ from divergencesplitter.detector._configured import ConfiguredDetector
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
+    ReferenceImage,
     _validate_frozen_config_image,
 )
 from divergencesplitter.frame.models import FrameContext
@@ -38,6 +39,10 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
     where ``1.0`` is a perfect match. The reference must share the frame's
     channel layout and be no larger than the frame in either dimension.
     """
+
+    @property
+    def reference_images(self) -> tuple[ReferenceImage, ...]:
+        return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = np.asarray(context.frame.image, dtype=np.float32)

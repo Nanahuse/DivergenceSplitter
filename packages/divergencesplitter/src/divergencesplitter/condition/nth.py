@@ -1,4 +1,8 @@
-from divergencesplitter.condition._base import ConditionBase, evaluate_normal
+from divergencesplitter.condition._base import (
+    ConditionBase,
+    evaluate_normal,
+    mark_skipped,
+)
 from divergencesplitter.condition.interface import Condition
 from divergencesplitter.frame.models import FrameContext
 
@@ -12,10 +16,15 @@ class Nth(ConditionBase):
         self._observed = 0
         self._completed = False
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition,)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:
         if self._completed:
+            mark_skipped(self._condition)
             return None if is_short_circuited else False
         current = evaluate_normal(self._condition, context)
         fired = False
@@ -26,7 +35,7 @@ class Nth(ConditionBase):
                 fired = True
         return None if is_short_circuited else fired
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._observed = 0
         self._completed = False
         self._condition.reset()

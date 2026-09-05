@@ -91,6 +91,9 @@ class RecordingDiagnostics:
     def scenario_logger(self, scenario_index: int) -> logging.Logger:
         return logging.getLogger(f"test-worker-scenario-{scenario_index}")
 
+    def runtime_started(self) -> None:
+        pass
+
     def preparing(self) -> None:
         pass
 
@@ -459,6 +462,10 @@ def test_connection_loss_reconnects_and_publishes_resync() -> None:
 
 
 class PassiveCondition:
+    @property
+    def children(self) -> tuple:
+        return ()
+
     def evaluate(self, context: object, *, is_short_circuited: bool = False) -> bool:
         return False
 

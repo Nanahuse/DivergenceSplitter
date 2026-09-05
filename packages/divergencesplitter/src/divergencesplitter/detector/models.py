@@ -29,6 +29,19 @@ class DetectionResult:
     score: float
 
 
+@dataclass(frozen=True)
+class ReferenceImage:
+    """A labeled, immutable reference image exposed for display.
+
+    Carries only a display label and the immutable image data. It performs no
+    image conversion or UI processing. Detectors without a reference image
+    return an empty tuple.
+    """
+
+    label: str
+    image: FrozenConfigImage
+
+
 def freeze_config_image(image: ConfigImage) -> FrozenConfigImage:
     """Validate ``image`` and freeze it into nested tuples.
 

@@ -47,6 +47,12 @@ from divergencesplitter_runtime.livesplit.worker import (
     BridgeActionRequest,
 )
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
+from divergencesplitter_runtime.observability import (
+    ConditionObservation,
+    DetectorTreeSnapshot,
+    _collect_condition_observations,
+    build_detector_tree,
+)
 
 _METRICS_WINDOW_NANOSECONDS = 1_000_000_000
 _METRICS_BUCKET_NANOSECONDS = 50_000_000
@@ -131,6 +137,11 @@ class OperationalDiagnostics:
         self._processing_rate = _TimeBucketRate()
         self._input_frames_total = 0
         self._processed_frames_total = 0
+        self._observable_lock = threading.Lock()
+        self._latest_input_frame: Frame | None = None
+        self._scenarios: tuple[Scenario, ...] = ()
+        self._condition_observations: tuple[ConditionObservation, ...] = ()
+        self._detector_tree: DetectorTreeSnapshot | None = None
 
     def set_level(self, level: int) -> None:
         self._logger.setLevel(level)
@@ -152,6 +163,16 @@ class OperationalDiagnostics:
                 self._source_fields = _describe_source(frame_source)
             except Exception:  # noqa: BLE001
                 self._source_fields = {"source_type": type(frame_source).__name__}
+        with self._observable_lock:
+            try:
+                self._scenarios = scenarios
+                self._detector_tree = build_detector_tree(scenarios)
+                self._condition_observations = _collect_condition_observations(
+                    scenarios
+                )
+            except Exception:  # noqa: BLE001
+                self._detector_tree = None
+                self._condition_observations = ()
 
     def scenario_logger(
         self,
@@ -201,6 +222,8 @@ class OperationalDiagnostics:
         with self._metrics_lock:
             self._input_rate.record(frame.captured_at)
             self._input_frames_total += 1
+        with self._observable_lock:
+            self._latest_input_frame = frame
         self._emit(
             logging.DEBUG,
             "capture.frame_received",
@@ -277,9 +300,12 @@ class OperationalDiagnostics:
 
     def frame_processing_completed(self, context: FrameContext) -> None:
         completed_at = self._time_provider.now()
+        observations = _collect_condition_observations(self._scenarios)
         with self._metrics_lock:
             self._processing_rate.record(completed_at)
             self._processed_frames_total += 1
+        with self._observable_lock:
+            self._condition_observations = observations
         fields: dict[str, object] = {
             **_frame_fields(context.frame),
             "processing_started_at_ns": context.now.nanoseconds,
@@ -294,6 +320,32 @@ class OperationalDiagnostics:
             for name, value in _detector_fields(detector, result).items():
                 fields[f"detector.{index}.{name}"] = value
         self._emit(logging.DEBUG, "processing.frame_completed", **fields)
+
+    def take_latest_input_frame(self) -> Frame | None:
+        """Return the newest captured input Frame and clear the slot.
+
+        The slot only ever holds the latest reference; reading it consumes the
+        value and has no effect on capture, processing, or metrics.
+        """
+        with self._observable_lock:
+            frame = self._latest_input_frame
+            self._latest_input_frame = None
+            return frame
+
+    def take_condition_observations(self) -> tuple[ConditionObservation, ...]:
+        """Return the latest condition values and clear the pending snapshot."""
+        with self._observable_lock:
+            observations = self._condition_observations
+            self._condition_observations = ()
+            return observations
+
+    def detector_tree(self) -> DetectorTreeSnapshot | None:
+        """Return the immutable display tree built at runtime bind time."""
+        with self._observable_lock:
+            return self._detector_tree
+
+    def runtime_started(self) -> None:
+        self._emit(logging.INFO, "runtime.started")
 
     def metrics_snapshot(self) -> RuntimeMetricsSnapshot:
         """Copy current throughput metrics without consuming aggregation state."""

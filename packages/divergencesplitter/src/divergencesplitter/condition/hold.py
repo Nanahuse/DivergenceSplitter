@@ -12,6 +12,10 @@ class Hold(ConditionBase):
         self._duration_nanoseconds = duration_nanoseconds
         self._started_at: MonotonicTime | None = None
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition,)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:
@@ -28,6 +32,6 @@ class Hold(ConditionBase):
             result = elapsed >= self._duration_nanoseconds
         return None if is_short_circuited else result
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._started_at = None
         self._condition.reset()

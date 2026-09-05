@@ -381,6 +381,9 @@ class RecordingDiagnostics:
     def scenario_logger(self, scenario_index: int) -> logging.Logger:
         return logging.getLogger(f"e2e-scenario-{scenario_index}")
 
+    def runtime_started(self) -> None:
+        pass
+
     def snapshot_failed(
         self,
         connection: LiveSplitConnection,
@@ -476,6 +479,10 @@ class BlockingDetectedCondition:
         self.entered = threading.Event()
         self.release = threading.Event()
         self.observed_brightness: list[float] = []
+
+    @property
+    def children(self) -> tuple:
+        return ()
 
     @overload
     def evaluate(

@@ -16,6 +16,7 @@ from divergencesplitter import (
     LiveSplitConnection,
     MeanBrightnessDetector,
     MonotonicTime,
+    ReferenceImage,
     Rule,
     Scenario,
     VideoFileSource,
@@ -39,6 +40,13 @@ class SecretConfig:
 
 class CustomDetector:
     config = SecretConfig(token="must-not-be-logged")
+
+    @property
+    def reference_images(self) -> tuple[ReferenceImage, ...]:
+        return ()
+
+    def detect(self, context: FrameContext) -> DetectionResult:
+        raise AssertionError("the diagnostics test must not evaluate detectors")
 
 
 class BrokenStream(StringIO):

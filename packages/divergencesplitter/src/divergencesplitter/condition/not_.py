@@ -11,6 +11,10 @@ class Not(ConditionBase):
     def __init__(self, condition: Condition) -> None:
         self._condition = condition
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return (self._condition,)
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:
@@ -19,5 +23,5 @@ class Not(ConditionBase):
             return None
         return not evaluate_normal(self._condition, context)
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         self._condition.reset()

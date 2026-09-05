@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from divergencesplitter.detector.models import ReferenceImage
+
 
 class ConfiguredDetector[ConfigT]:
     """Store an immutable configuration and compare detectors by its value."""
@@ -12,6 +14,10 @@ class ConfiguredDetector[ConfigT]:
     @property
     def config(self) -> ConfigT:
         return self._config
+
+    @property
+    def reference_images(self) -> tuple[ReferenceImage, ...]:
+        return ()
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):

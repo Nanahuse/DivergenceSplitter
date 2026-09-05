@@ -12,6 +12,10 @@ class Any(ConditionBase):
     def __init__(self, *conditions: Condition) -> None:
         self._conditions = conditions
 
+    @property
+    def children(self) -> tuple[Condition, ...]:
+        return self._conditions
+
     def _evaluate(
         self, context: FrameContext, *, is_short_circuited: bool
     ) -> bool | None:
@@ -27,5 +31,5 @@ class Any(ConditionBase):
                 result = evaluate_normal(condition, context)
         return result
 
-    def reset(self) -> None:
+    def _reset_state(self) -> None:
         reset_all(self._conditions)

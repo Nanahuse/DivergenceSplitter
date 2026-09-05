@@ -20,6 +20,10 @@ from divergencesplitter_runtime.configuration.scenario_module import (
 
 
 class PassiveCondition:
+    @property
+    def children(self) -> tuple:
+        return ()
+
     def evaluate(self, context: object, *, is_short_circuited: bool = False) -> bool:
         return False
 

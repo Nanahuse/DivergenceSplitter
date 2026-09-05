@@ -36,6 +36,9 @@ class MeanBrightnessDetectorTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(hash(first), hash(second))
 
+    def test_has_no_reference_images(self):
+        self.assertEqual(MeanBrightnessDetector().reference_images, ())
+
     def test_known_images(self):
         detector = MeanBrightnessDetector()
         dark = evaluate(make_context(DARK), detector)
@@ -67,6 +70,15 @@ class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
         )
         self.assertEqual(changed.score, -10.0)
 
+    def test_exposes_reference_image_with_a_label(self):
+        detector = MeanAbsoluteSimilarityDetector(
+            MeanAbsoluteSimilarityConfig(REFERENCE)
+        )
+        images = detector.reference_images
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].label, "reference")
+        self.assertEqual(images[0].image, REFERENCE)
+
     def test_score_decreases_monotonically_with_difference(self):
         detector = MeanAbsoluteSimilarityDetector(
             MeanAbsoluteSimilarityConfig(REFERENCE)
@@ -88,6 +100,10 @@ class CountingDetector:
     def __init__(self) -> None:
         self.evaluations = 0
 
+    @property
+    def reference_images(self) -> tuple:
+        return ()
+
     def detect(self, context: FrameContext) -> DetectionResult:
         self.evaluations += 1
         return DetectionResult(score=frame_mean(context))
@@ -102,6 +118,10 @@ class CountingDetector:
 class FailingDetector:
     def __init__(self, fail: bool) -> None:
         self.fail = fail
+
+    @property
+    def reference_images(self) -> tuple:
+        return ()
 
     def detect(self, context: FrameContext) -> DetectionResult:
         if self.fail:
