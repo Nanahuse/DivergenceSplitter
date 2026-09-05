@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 dependencies = [
     "divergencesplitter",
     "livesplit-bridge-client",
+    "windows-capture-device-list",
 ]
 
 [project.scripts]
@@ -14,6 +15,7 @@ divergencesplitter = "divergencesplitter_runtime.cli:main"
 [tool.uv.sources]
 divergencesplitter = { workspace = true }
 livesplit-bridge-client = { git = "https://github.com/Nanahuse/livesplit-bridge-client.git", rev = "f40f17c75e8355afd97a9bc6cf79f258721ffe0a" }
+windows-capture-device-list = { git = "https://github.com/Nanahuse/windows-capture-device-list.git", rev = "7ca9e0d44fb488d0d05fdf2039536cb1be70d94b" }
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13"]

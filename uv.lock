@@ -113,6 +113,7 @@ source = { editable = "packages/divergencesplitter-runtime" }
 dependencies = [
     { name = "divergencesplitter" },
     { name = "livesplit-bridge-client" },
+    { name = "windows-capture-device-list" },
 ]
 
 [package.dev-dependencies]
@@ -126,6 +127,7 @@ dev = [
 requires-dist = [
     { name = "divergencesplitter", editable = "packages/divergencesplitter" },
     { name = "livesplit-bridge-client", git = "https://github.com/Nanahuse/livesplit-bridge-client.git?rev=f40f17c75e8355afd97a9bc6cf79f258721ffe0a" },
+    { name = "windows-capture-device-list", git = "https://github.com/Nanahuse/windows-capture-device-list.git?rev=7ca9e0d44fb488d0d05fdf2039536cb1be70d94b" },
 ]
 
 [package.metadata.requires-dev]
@@ -414,3 +416,8 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/69/fa/ce6614c748f7abfc546d12983d4bad1085116b6458b8c84d9372eb713f08/ty-0.0.71-py3-none-win_amd64.whl", hash = "sha256:65f5f980551ed79f68a0f6c0f2fb71b39a8d54ed0625d2529b01f6c919db72c5", size = 12570891, upload-time = "2026-08-13T00:39:26.346Z" },
     { url = "https://files.pythonhosted.org/packages/77/7f/0fb022535c66fd96e7dd2a1f9c14e3a0e39544a4c3f35a451e8835562730/ty-0.0.71-py3-none-win_arm64.whl", hash = "sha256:6d5552078b9934d359bd5f381dbcb160f1fc5addfca59a960021adca38a73741", size = 12338716, upload-time = "2026-08-13T00:39:28.987Z" },
 ]
+
+[[package]]
+name = "windows-capture-device-list"
+version = "0.1.0"
+source = { git = "https://github.com/Nanahuse/windows-capture-device-list.git?rev=7ca9e0d44fb488d0d05fdf2039536cb1be70d94b#7ca9e0d44fb488d0d05fdf2039536cb1be70d94b" }

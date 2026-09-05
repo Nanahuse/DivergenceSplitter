@@ -3,7 +3,6 @@ import unittest
 from pathlib import Path
 
 from divergencesplitter import (
-    FrameSourceState,
     LiveSplitConnection,
     Scenario,
 )
@@ -60,13 +59,9 @@ def make_snapshot(
 
 
 class ScenarioModuleLoadingTest(unittest.TestCase):
-    def test_loads_preconstructed_exports_without_preparing_source(self) -> None:
+    def test_loads_preconstructed_scenarios(self) -> None:
         source = """
 from divergencesplitter import (
-    ErrorAction,
-    FrameNormalizer,
-    FrameSourceError,
-    FrameSourceState,
     LiveSplitConnection,
     Scenario,
 )
@@ -77,22 +72,6 @@ class Condition:
     def reset(self):
         pass
 
-class Source:
-    state = FrameSourceState.NOT_READY
-    normalizer = FrameNormalizer()
-    def prepare(self):
-        self.state = FrameSourceState.READY
-    def read(self):
-        return FrameSourceError()
-    def handle_error(self, error):
-        return ErrorAction.STOP
-    def close(self):
-        pass
-    def __enter__(self):
-        return self
-    def __exit__(self, exc_type, exc_value, traceback):
-        pass
-
 scenarios = (
     Scenario(
         connection=LiveSplitConnection('rpc', 'event'),
@@ -100,15 +79,13 @@ scenarios = (
         splits=(None,),
     ),
 )
-frame_source = Source()
 """
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text(source, encoding="utf-8")
-            scenarios, frame_source = load_scenario_module(path)
+            scenarios = load_scenario_module(path)
 
         self.assertEqual(scenarios[0].connection.rpc_endpoint, "rpc")
-        self.assertIs(frame_source.state, FrameSourceState.NOT_READY)
 
     def test_import_exception_is_reported_as_module_execution_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -140,7 +117,7 @@ frame_source = Source()
             path.write_text("value = 1", encoding="utf-8")
             with self.assertRaises(ScenarioModuleValidationError) as raised:
                 load_scenario_module(path)
-        self.assertEqual(len(raised.exception.exceptions), 2)
+        self.assertEqual(len(raised.exception.exceptions), 1)
 
     def test_export_type_errors_are_aggregated(self) -> None:
         source = """
@@ -154,7 +131,10 @@ frame_source = object()
                 load_scenario_module(path)
         self.assertEqual(len(raised.exception.exceptions), 2)
         self.assertTrue(
-            all(isinstance(error, TypeError) for error in raised.exception.exceptions)
+            any(isinstance(error, TypeError) for error in raised.exception.exceptions)
+        )
+        self.assertTrue(
+            any(isinstance(error, ValueError) for error in raised.exception.exceptions)
         )
 
     def test_missing_and_invalid_exports_are_aggregated_together(self) -> None:
@@ -165,10 +145,38 @@ frame_source = object()
                 load_scenario_module(path)
         self.assertEqual(len(raised.exception.exceptions), 2)
 
+    def test_frame_source_export_is_rejected(self) -> None:
+        source = """
+from divergencesplitter import LiveSplitConnection, Scenario
+
+class Condition:
+    def evaluate(self, context, *, is_short_circuited=False):
+        return False
+    def reset(self):
+        pass
+
+scenarios = (
+    Scenario(
+        connection=LiveSplitConnection('rpc', 'event'),
+        reset_conditions=(Condition(),),
+        splits=(None,),
+    ),
+)
+frame_source = object()
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scenario_module.py"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaises(ScenarioModuleValidationError) as raised:
+                load_scenario_module(path)
+        self.assertIn(
+            "must not export 'frame_source'",
+            str(raised.exception.exceptions[0]),
+        )
+
     def test_invalid_scenario_positions_are_reported(self) -> None:
         source = """
 scenarios = (object(), object())
-frame_source = object()
 """
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"

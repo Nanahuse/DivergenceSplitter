@@ -173,6 +173,9 @@ class OperationalDiagnostics:
     def usage_failed(self, message: str) -> None:
         self._emit(logging.ERROR, "cli.usage_failed", usage_detail=message)
 
+    def configuration_failed(self, error: BaseException) -> None:
+        self._emit_error(logging.ERROR, "cli.configuration_failed", error)
+
     def scenario_module_failed(self, error: BaseException) -> None:
         self._emit_error(logging.ERROR, "cli.scenario_module_failed", error)
 
