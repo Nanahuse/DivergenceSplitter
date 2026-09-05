@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol, TextIO
 
+from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.scenario.models import Scenario
 from divergencesplitter_runtime.application import (
@@ -42,6 +43,11 @@ from divergencesplitter_runtime.configuration.source_builder import (
     resolve_configuration_path,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
+from divergencesplitter_runtime.observability import (
+    ConditionObservation,
+    DetectorTreeSnapshot,
+)
 
 _LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
@@ -131,6 +137,14 @@ class SessionDiagnostics(ApplicationDiagnostics, Protocol):
     def runtime_failed(self, error: BaseException) -> None: ...
 
     def completed(self) -> None: ...
+
+    def take_latest_input_frame(self) -> Frame | None: ...
+
+    def take_condition_observations(self) -> tuple[ConditionObservation, ...]: ...
+
+    def detector_tree(self) -> DetectorTreeSnapshot | None: ...
+
+    def metrics_snapshot(self) -> RuntimeMetricsSnapshot: ...
 
 
 class DiagnosticsFactory(Protocol):
