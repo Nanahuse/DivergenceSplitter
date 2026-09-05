@@ -142,6 +142,7 @@ class OperationalDiagnostics:
         self._scenarios: tuple[Scenario, ...] = ()
         self._condition_observations: tuple[ConditionObservation, ...] = ()
         self._detector_tree: DetectorTreeSnapshot | None = None
+        self._runtime_started = threading.Event()
 
     def set_level(self, level: int) -> None:
         self._logger.setLevel(level)
@@ -345,7 +346,12 @@ class OperationalDiagnostics:
             return self._detector_tree
 
     def runtime_started(self) -> None:
+        self._runtime_started.set()
         self._emit(logging.INFO, "runtime.started")
+
+    def is_runtime_started(self) -> bool:
+        """Return whether the runtime has reported its startup completion."""
+        return self._runtime_started.is_set()
 
     def metrics_snapshot(self) -> RuntimeMetricsSnapshot:
         """Copy current throughput metrics without consuming aggregation state."""

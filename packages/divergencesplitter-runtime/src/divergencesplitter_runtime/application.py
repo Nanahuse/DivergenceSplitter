@@ -64,6 +64,7 @@ class ApplicationRuntime:
     ) -> None:
         validate_scenarios(scenarios)
         self._diagnostics = diagnostics
+        self._frame_source = frame_source
         self._frame_buffer = LatestFrameBuffer()
         self._scenario_runtimes = tuple(
             ScenarioRuntime(item, logger=diagnostics.scenario_logger(index))
@@ -105,6 +106,7 @@ class ApplicationRuntime:
         capture_error: list[BaseException] = []
         processing_error: list[BaseException] = []
         capture_thread: threading.Thread | None = None
+        capture_started = False
         processing_thread: threading.Thread | None = None
         try:
             self._initialize_scenarios()
@@ -128,11 +130,16 @@ class ApplicationRuntime:
             self._diagnostics.runtime_started()
             processing_thread.start()
             capture_thread.start()
+            capture_started = True
             capture_thread.join()
         finally:
             self.request_stop()
             if capture_thread is not None and capture_thread.is_alive():
                 capture_thread.join()
+            if not capture_started:
+                self._frame_source.close()
+                self._diagnostics.source_closed()
+                self._diagnostics.stopped()
             if processing_thread is not None:
                 processing_thread.join()
             for thread in worker_threads:
