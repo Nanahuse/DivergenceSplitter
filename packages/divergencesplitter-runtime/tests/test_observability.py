@@ -236,6 +236,13 @@ class TestObservabilityBoundary:
 
         assert "runtime.started" in stream.getvalue()
 
+    def test_runtime_started_is_exposed_as_thread_safe_fact(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+
+        assert diagnostics.is_runtime_started() is False
+        diagnostics.runtime_started()
+        assert diagnostics.is_runtime_started() is True
+
     def test_detector_tree_is_exposed_after_binding(self) -> None:
         diagnostics = OperationalDiagnostics(StringIO())
         scenario = make_scenario(MeanBrightnessDetector())

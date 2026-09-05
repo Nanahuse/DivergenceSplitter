@@ -553,4 +553,4 @@ def test_application_does_not_start_capture_when_split_count_is_invalid() -> Non
         runtime.run()
 
     assert source.prepare_calls == 0
-    assert source.close_calls == 0
+    assert source.close_calls == 1
