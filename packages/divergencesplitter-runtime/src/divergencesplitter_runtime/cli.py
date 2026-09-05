@@ -12,16 +12,26 @@ from divergencesplitter_runtime.application import (
     ApplicationRuntime,
     ApplicationStartupValidationError,
 )
+from divergencesplitter_runtime.configuration.json_file import (
+    ConfigurationFileError,
+    ConfigurationValidationError,
+    load_configuration,
+)
 from divergencesplitter_runtime.configuration.scenario_module import (
     ScenarioModuleExecutionError,
     ScenarioModuleValidationError,
     load_scenario_module,
 )
+from divergencesplitter_runtime.configuration.source_builder import (
+    SourceConfigurationError,
+    build_frame_source,
+    resolve_configuration_path,
+)
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 
 EXIT_COMPLETED = 0
 EXIT_USAGE_ERROR = 2
-EXIT_SCENARIO_MODULE_ERROR = 3
+EXIT_CONFIGURATION_LOAD_ERROR = 3
 EXIT_STARTUP_VALIDATION_ERROR = 4
 EXIT_RUNTIME_ERROR = 5
 EXIT_INTERRUPTED = 130
@@ -72,31 +82,49 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run one trusted scenario module and return a process exit status."""
+    """Run one JSON configuration and return a process exit status."""
 
     diagnostics = OperationalDiagnostics(sys.stderr)
     parser = _ArgumentParser(diagnostics, prog="divergencesplitter")
-    parser.add_argument(
-        "--log-level",
-        choices=tuple(_LOG_LEVELS),
-        default="INFO",
-    )
-    parser.add_argument("scenario_module", type=Path)
+    parser.add_argument("configuration", type=Path)
     try:
         arguments = parser.parse_args(argv)
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else EXIT_USAGE_ERROR
 
-    diagnostics.set_level(_LOG_LEVELS[arguments.log_level])
+    configuration_path = arguments.configuration.resolve()
     try:
-        scenarios, frame_source = load_scenario_module(arguments.scenario_module)
+        configuration = load_configuration(configuration_path)
+    except ConfigurationFileError as error:
+        diagnostics.configuration_failed(error.error)
+        return EXIT_CONFIGURATION_LOAD_ERROR
+    except ConfigurationValidationError as error:
+        diagnostics.startup_validation_failed(error)
+        return EXIT_STARTUP_VALIDATION_ERROR
+
+    diagnostics.set_level(_LOG_LEVELS[configuration.runtime.log_level])
+    scenario_path = resolve_configuration_path(
+        configuration.scenario.script,
+        base_directory=configuration_path.parent,
+    )
+    try:
+        scenarios = load_scenario_module(scenario_path)
     except KeyboardInterrupt:
         diagnostics.interrupted()
         return EXIT_INTERRUPTED
     except ScenarioModuleExecutionError as error:
         diagnostics.scenario_module_failed(error.error)
-        return EXIT_SCENARIO_MODULE_ERROR
+        return EXIT_CONFIGURATION_LOAD_ERROR
     except ScenarioModuleValidationError as error:
+        diagnostics.startup_validation_failed(error)
+        return EXIT_STARTUP_VALIDATION_ERROR
+
+    try:
+        frame_source = build_frame_source(
+            configuration.source,
+            base_directory=configuration_path.parent,
+        )
+    except (SourceConfigurationError, ValueError) as error:
         diagnostics.startup_validation_failed(error)
         return EXIT_STARTUP_VALIDATION_ERROR
 

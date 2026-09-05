@@ -4,7 +4,6 @@ from pathlib import Path
 from runpy import run_path
 from typing import TypeIs
 
-from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.scenario.models import Scenario
 
 from divergencesplitter_runtime.configuration.validation import validate_scenarios
@@ -24,8 +23,8 @@ class ScenarioModuleValidationError(ExceptionGroup):
 
 def load_scenario_module(
     path: str | Path,
-) -> tuple[tuple[Scenario, ...], FrameSource]:
-    """Execute a trusted Python module and extract its fixed exports."""
+) -> tuple[Scenario, ...]:
+    """Execute a trusted Python module and extract its scenarios."""
 
     try:
         namespace = run_path(str(path))
@@ -35,7 +34,6 @@ def load_scenario_module(
         raise ScenarioModuleExecutionError(error) from error
     errors: list[Exception] = []
     scenarios: tuple[Scenario, ...] | None = None
-    frame_source: FrameSource | None = None
 
     if "scenarios" not in namespace:
         errors.append(ValueError("scenario module must export 'scenarios'"))
@@ -46,23 +44,20 @@ def load_scenario_module(
         else:
             errors.extend(_scenario_type_errors(scenarios_value))
 
-    if "frame_source" not in namespace:
-        errors.append(ValueError("scenario module must export 'frame_source'"))
-    else:
-        frame_source_value = namespace["frame_source"]
-        if isinstance(frame_source_value, FrameSource):
-            frame_source = frame_source_value
-        else:
-            errors.append(
-                TypeError("scenario module export 'frame_source' is not a FrameSource")
+    if "frame_source" in namespace:
+        errors.append(
+            ValueError(
+                "scenario module must not export 'frame_source'; "
+                "configure the source in the JSON file"
             )
+        )
 
     if errors:
         raise ScenarioModuleValidationError(
             "scenario module exports are invalid",
             errors,
         )
-    if scenarios is None or frame_source is None:
+    if scenarios is None:
         raise RuntimeError("scenario module export validation did not produce values")
 
     try:
@@ -72,7 +67,7 @@ def load_scenario_module(
             "scenario module configuration is invalid",
             list(error.exceptions),
         ) from error
-    return scenarios, frame_source
+    return scenarios
 
 
 def _is_scenario_tuple(value: object) -> TypeIs[tuple[Scenario, ...]]:

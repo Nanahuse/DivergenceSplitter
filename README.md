@@ -1,6 +1,6 @@
 # DivergenceSplitter
 
-An automatic splitter configured with Python scenario modules.
+An automatic splitter configured with JSON and Python scenario modules.
 
 ## Installation
 
@@ -33,7 +33,8 @@ packages:
 The desktop UI will be added later as its own workspace package. It is not
 included until a UI is implemented.
 
-Scenario modules only import the authoring library. A minimal `scenario.py` is:
+Scenario modules only import the authoring library and export `scenarios`. A
+minimal `scenario.py` is:
 
 ```python
 import divergencesplitter as ds
@@ -52,13 +53,30 @@ scenarios = (
         splits=((ds.Rule(split_condition, ds.Action("split")),),),
     ),
 )
-frame_source = ds.VideoFileSource("run.mp4")
+```
+
+The JSON configuration selects the scenario and frame source independently:
+
+```json
+{
+  "version": 1,
+  "source": {
+    "type": "video",
+    "path": "./run.mp4"
+  },
+  "scenario": {
+    "script": "./scenario.py"
+  },
+  "runtime": {
+    "log_level": "INFO"
+  }
+}
 ```
 
 Run it with the runtime CLI:
 
 ```console
-uv run divergencesplitter --log-level INFO scenario.py
+uv run divergencesplitter config.json
 ```
 
 Press Ctrl+C to request cooperative shutdown. The process distinguishes normal
@@ -70,24 +88,36 @@ values from `OperationalDiagnostics.metrics_snapshot()` without parsing logs.
 Scenario modules are trusted Python code and execute with the runner's process
 permissions. Only load modules you trust.
 
-Camera sources use OpenCV's resolved device index and backend:
+Camera configuration stores the device name as the primary identifier and its
+enumeration ID to disambiguate devices with the same name:
 
-```python
-import cv2
-import divergencesplitter as ds
-
-frame_source = ds.OpenCvCameraSource(
-    device_index=0,
-    backend=cv2.CAP_ANY,
-    width=1280,
-    height=720,
-    fps=60.0,
-)
+```json
+{
+  "version": 1,
+  "source": {
+    "type": "camera",
+    "device": {
+      "name": "USB Video Device",
+      "id": 2
+    },
+    "width": 1280,
+    "height": 720,
+    "fps": 60
+  },
+  "scenario": {
+    "script": "./scenario.py"
+  },
+  "runtime": {
+    "log_level": "INFO"
+  }
+}
 ```
 
-Device display names and enumeration belong to the UI or configuration-loading
-layer. Resolve them to the OpenCV-specific `device_index` and `backend` before
-constructing the source.
+On Windows, the runtime enumerates devices with
+`windows-capture-device-list`. A unique name match is accepted even if its ID
+changed. If several devices have the same name, the saved ID must match one of
+them. Relative scenario and video paths are resolved from the configuration
+file's directory.
 
 Before using a camera/backend combination in production, manually confirm that
 it opens, continuously captures frames, releases the device on shutdown, and
