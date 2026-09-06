@@ -11,6 +11,7 @@ from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationFileError,
     ConfigurationValidationError,
     load_configuration,
+    save_configuration,
 )
 from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
@@ -228,3 +229,44 @@ def test_resolves_scenario_path_relative_to_configuration(tmp_path: Path) -> Non
         )
         == tmp_path / "scenarios" / "run.py"
     )
+
+
+def test_save_then_load_round_trips_camera_configuration(tmp_path: Path) -> None:
+    original = load_configuration(
+        _write_configuration(tmp_path, camera_configuration())
+    )
+
+    path = tmp_path / "saved.json"
+    save_configuration(path, original)
+
+    assert load_configuration(path) == original
+
+
+def test_save_preserves_readable_non_ascii_values(tmp_path: Path) -> None:
+    value = camera_configuration()
+    source = cast(dict[str, object], value["source"])
+    device = cast(dict[str, object], source["device"])
+    device["name"] = "日本語カメラ"
+    original = load_configuration(_write_configuration(tmp_path, value))
+
+    path = tmp_path / "saved.json"
+    save_configuration(path, original)
+
+    assert "日本語カメラ" in path.read_text(encoding="utf-8")
+
+
+def test_save_then_load_round_trips_video_configuration(tmp_path: Path) -> None:
+    value = camera_configuration()
+    value["source"] = {"type": "video", "path": "./run.mp4"}
+    original = load_configuration(_write_configuration(tmp_path, value))
+
+    path = tmp_path / "saved.json"
+    save_configuration(path, original)
+
+    assert load_configuration(path) == original
+
+
+def _write_configuration(tmp_path: Path, value: object) -> Path:
+    path = tmp_path / "config.json"
+    write_configuration(path, value)
+    return path

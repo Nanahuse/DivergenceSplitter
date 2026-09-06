@@ -26,6 +26,8 @@ from divergencesplitter_ui.session import (
     OperationalDiagnosticsFactory,
     SessionController,
 )
+from divergencesplitter_ui.settings import SettingsModel, WindowsCameraEnumerator
+from divergencesplitter_ui.settings_window import SettingsWindow
 
 
 class DesktopApplication:
@@ -35,10 +37,15 @@ class DesktopApplication:
         self,
         controller: SessionController,
         *,
+        initial_configuration: Path | None = None,
         presenter: ScreenPresenter | None = None,
+        settings_model: SettingsModel | None = None,
     ) -> None:
         self._controller = controller
         self._renderer = ScreenRenderer(presenter)
+        self._initial_configuration = initial_configuration
+        model = settings_model or SettingsModel(WindowsCameraEnumerator())
+        self._settings = SettingsWindow(controller, model)
 
     def run(self) -> None:
         context_created = False
@@ -46,6 +53,8 @@ class DesktopApplication:
             dpg.create_context()
             context_created = True
             self._renderer.build()
+            self._settings.build()
+            self._settings.build_main_shortcut(ScreenRenderer.SCENARIO_GROUP_TAG)
             dpg.create_viewport(
                 title="DivergenceSplitter",
                 width=1200,
@@ -54,9 +63,13 @@ class DesktopApplication:
             dpg.setup_dearpygui()
             dpg.show_viewport()
             dpg.set_primary_window(ScreenRenderer.WINDOW_TAG, True)
+            if self._initial_configuration is not None:
+                self._settings.open_configuration(self._initial_configuration)
             while dpg.is_dearpygui_running():
+                state = self._controller.state
+                self._settings.tick(state)
                 self._renderer.tick(
-                    self._controller.state,
+                    state,
                     self._observable(),
                 )
                 dpg.render_dearpygui_frame()
@@ -85,10 +98,12 @@ def build_controller(*, stream: TextIO) -> SessionController:
     )
 
 
-def run_configuration(configuration: Path) -> None:
-    """Start one session from a configuration path and run the UI loop."""
+def run_configuration(configuration: Path | None = None) -> None:
+    """Run the UI and optionally open one configuration on startup."""
 
     controller = build_controller(stream=sys.stderr)
-    controller.start(configuration)
-    application = DesktopApplication(controller)
+    application = DesktopApplication(
+        controller,
+        initial_configuration=configuration,
+    )
     application.run()

@@ -22,6 +22,7 @@ from divergencesplitter_runtime.configuration import (
     load_configuration,
     load_scenario_module,
     resolve_configuration_path,
+    save_configuration,
     validate_scenarios,
     validate_split_count,
 )
@@ -98,6 +99,7 @@ __all__ = [
     "load_configuration",
     "load_scenario_module",
     "resolve_configuration_path",
+    "save_configuration",
     "validate_scenarios",
     "validate_split_count",
 ]

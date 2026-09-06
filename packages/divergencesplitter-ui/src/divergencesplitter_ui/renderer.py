@@ -76,6 +76,7 @@ class ScreenRenderer:
     """Bind presenter decisions to Dear PyGui widgets on the main thread."""
 
     WINDOW_TAG = "divergence-splitter"
+    SCENARIO_GROUP_TAG = "divergence-splitter-scenario"
     _TREE_TAG = "divergence-splitter-tree"
     _STATE_TAG = "divergence-splitter-state"
     _FPS_TAG = "divergence-splitter-fps"
@@ -108,6 +109,7 @@ class ScreenRenderer:
                 "input: — fps | processing: — fps",
                 tag=self._FPS_TAG,
             )
+            dpg.add_group(tag=self.SCENARIO_GROUP_TAG)
             dpg.add_separator()
             dpg.add_text("Input frame")
             dpg.add_texture_registry(tag=self._TEXTURE_REGISTRY_TAG)
@@ -130,26 +132,28 @@ class ScreenRenderer:
             name = getattr(state, "name", str(state))
             dpg.set_value(self._STATE_TAG, f"State: {name}")
 
-        if diagnostics is not None and diagnostics is not self._bound_diagnostics:
-            self._bind(diagnostics)
-
-        if self._bound_diagnostics is None:
+        if diagnostics is None:
+            if self._bound_diagnostics is not None:
+                self._unbind()
             return
+
+        if diagnostics is not self._bound_diagnostics:
+            self._bind(diagnostics)
 
         if self._tree is None:
             self._build_tree_if_ready()
 
-        observations = self._bound_diagnostics.take_condition_observations()
+        observations = diagnostics.take_condition_observations()
         if has_new_observations(observations):
             self._apply_observations(observations)
 
         if self._presenter.image_due():
-            frame = self._bound_diagnostics.take_latest_input_frame()
+            frame = diagnostics.take_latest_input_frame()
             if frame is not None:
                 self._apply_image(frame)
 
         if self._presenter.fps_due():
-            snapshot = self._bound_diagnostics.metrics_snapshot()
+            snapshot = diagnostics.metrics_snapshot()
             dpg.set_value(
                 self._FPS_TAG,
                 (
@@ -165,6 +169,13 @@ class ScreenRenderer:
         dpg.set_value(self._FPS_TAG, "input: — fps | processing: — fps")
         self._tree = None
         self._build_tree_if_ready()
+
+    def _unbind(self) -> None:
+        self._bound_diagnostics = None
+        self._reset_tree()
+        self._reset_input_image()
+        dpg.set_value(self._FPS_TAG, "input: — fps | processing: — fps")
+        self._tree = None
 
     def _build_tree_if_ready(self) -> None:
         diagnostics = self._bound_diagnostics
