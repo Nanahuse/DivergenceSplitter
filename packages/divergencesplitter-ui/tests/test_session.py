@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from io import StringIO
@@ -238,6 +239,22 @@ class TestAutomaticStart:
         assert len(runtime_factory.runtimes) == 1
         assert runtime_factory.runtimes[0].ran.is_set()
         assert controller.diagnostics is diagnostics_factory.created[0]
+
+    def test_log_level_can_be_changed_on_the_current_diagnostics(self) -> None:
+        controller, runtime_factory, diagnostics_factory = make_controller(
+            runtime_factory=FakeRuntimeFactory(release_on_run=False),
+        )
+
+        controller.start(Path("config.json"))
+        try:
+            assert wait_until(lambda: controller.state is SessionState.RUNNING)
+            controller.set_log_level("DEBUG")
+
+            assert diagnostics_factory.created[0].set_level_calls[-1] == logging.DEBUG
+        finally:
+            controller.request_stop()
+            runtime_factory.runtimes[0].release()
+            controller.join()
 
     def test_start_returns_without_blocking_ui_thread(self) -> None:
         controller, _, _ = make_controller(

@@ -86,6 +86,26 @@ _TERMINAL_STATES = frozenset(
     {SessionState.COMPLETED, SessionState.FAILED, SessionState.STOPPED}
 )
 
+_ACTIVE_STATES = frozenset(
+    {
+        SessionState.LOADING,
+        SessionState.CONNECTING,
+        SessionState.RUNNING,
+        SessionState.STOPPING,
+    }
+)
+
+
+def is_active(state: SessionState) -> bool:
+    """Return whether ``state`` still owns an in-progress session.
+
+    Active states disable source and scenario edits so a session never changes
+    its input or scenario mid-flight; terminal and idle states allow a new
+    configuration to be confirmed.
+    """
+
+    return state in _ACTIVE_STATES
+
 
 @dataclass(frozen=True)
 class SessionResult:
@@ -303,6 +323,13 @@ class SessionController:
             return True
         thread.join(timeout)
         return not thread.is_alive()
+
+    def set_log_level(self, level: str) -> None:
+        """Apply a validated configuration log level to this session."""
+
+        diagnostics = self.diagnostics
+        if diagnostics is not None:
+            diagnostics.set_level(_LOG_LEVELS[level])
 
     def _run(self, path: Path) -> None:
         diagnostics: SessionDiagnostics | None = None

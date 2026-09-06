@@ -1,0 +1,46 @@
+name: UI distribution
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          python-version: "3.14"
+      - name: Sync locked environment
+        run: uv sync --locked --all-packages --group build
+      - name: Build single-file Windows executable
+        run: >-
+          uv run pyinstaller
+          --onefile
+          --windowed
+          --clean
+          --name DivergenceSplitter
+          --collect-all dearpygui
+          --collect-all windows_capture_device_list
+          --distpath dist/ui
+          --workpath build/ui-pyinstaller
+          --specpath build/ui-pyinstaller
+          tools/ui_entry.py
+      - name: Verify executable exists
+        shell: pwsh
+        run: |
+          $exe = Get-Item "dist/ui/DivergenceSplitter.exe"
+          if ($exe.Length -eq 0) {
+            throw "Built executable is empty"
+          }
+          Write-Output "Built $($exe.FullName) ($($exe.Length) bytes)"
+      - name: Upload Windows executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DivergenceSplitter-windows-x64
+          path: dist/ui/DivergenceSplitter.exe
+          if-no-files-found: error

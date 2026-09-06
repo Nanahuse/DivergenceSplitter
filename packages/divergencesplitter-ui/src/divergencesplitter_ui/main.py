@@ -1,8 +1,8 @@
 """Command-line entry point for the Windows-only desktop UI.
 
-The configuration path is accepted as the single positional argument so the UI
-can start before 9.3c's settings screen exists. No explicit start button is
-added; starting a session is driven by the boundary argument.
+An optional configuration path preserves command-line startup while the
+settings screen can open a configuration when no path is supplied. No explicit
+start button is added; opening or saving a valid configuration starts a session.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="divergencesplitter-ui",
         description="Windows desktop UI for DivergenceSplitter",
     )
-    parser.add_argument("configuration", type=Path)
+    parser.add_argument("configuration", type=Path, nargs="?")
     return parser
 
 

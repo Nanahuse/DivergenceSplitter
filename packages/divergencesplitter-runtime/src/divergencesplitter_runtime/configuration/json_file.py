@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, assert_never
 
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
@@ -50,6 +50,51 @@ def load_configuration(path: str | Path) -> ApplicationConfiguration:
         return ApplicationConfiguration(version, source, scenario, runtime)
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationValidationError(str(error)) from error
+
+
+def save_configuration(
+    path: str | Path,
+    configuration: ApplicationConfiguration,
+) -> None:
+    """Write one versioned configuration as canonical JSON.
+
+    The emitted document round-trips through :func:`load_configuration` to the
+    same typed values. Camera device name/id, width, height, fps, video path,
+    scenario script, and log level keep their configured meaning, and the
+    ``source`` common field stays ``type``-only.
+    """
+
+    Path(path).write_text(_dump(configuration), encoding="utf-8")
+
+
+def _dump(configuration: ApplicationConfiguration) -> str:
+    return json.dumps(_as_dict(configuration), indent=2, ensure_ascii=False) + "\n"
+
+
+def _as_dict(configuration: ApplicationConfiguration) -> dict[str, object]:
+    return {
+        "version": configuration.version,
+        "source": _source_dict(configuration.source),
+        "scenario": {"script": configuration.scenario.script},
+        "runtime": {"log_level": configuration.runtime.log_level},
+    }
+
+
+def _source_dict(source: SourceConfiguration) -> dict[str, object]:
+    if isinstance(source, CameraSourceConfiguration):
+        return {
+            "type": "camera",
+            "device": {
+                "name": source.device.name,
+                "id": source.device.id,
+            },
+            "width": source.width,
+            "height": source.height,
+            "fps": source.fps,
+        }
+    if isinstance(source, VideoSourceConfiguration):
+        return {"type": "video", "path": source.path}
+    assert_never(source)
 
 
 def _source(value: object) -> SourceConfiguration:

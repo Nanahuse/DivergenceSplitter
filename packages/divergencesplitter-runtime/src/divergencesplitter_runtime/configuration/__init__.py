@@ -1,4 +1,7 @@
-from divergencesplitter_runtime.configuration.json_file import load_configuration
+from divergencesplitter_runtime.configuration.json_file import (
+    load_configuration,
+    save_configuration,
+)
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
     CameraDeviceConfiguration,
@@ -32,6 +35,7 @@ __all__ = [
     "load_configuration",
     "load_scenario_module",
     "resolve_configuration_path",
+    "save_configuration",
     "validate_scenarios",
     "validate_split_count",
 ]
