@@ -2,12 +2,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+from divergencesplitter import LiveSplitConnection
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
     CameraDeviceConfiguration,
     CameraSourceConfiguration,
+    InstanceConfiguration,
     RuntimeConfiguration,
-    ScenarioConfiguration,
     VideoSourceConfiguration,
 )
 from divergencesplitter_ui.session import SessionState, is_active
@@ -43,7 +44,12 @@ def camera_configuration() -> ApplicationConfiguration:
             height=720,
             fps=60.0,
         ),
-        scenario=ScenarioConfiguration("scenario.py"),
+        instances=(
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"),
+                "scenario.py",
+            ),
+        ),
         runtime=RuntimeConfiguration("INFO"),
     )
 
@@ -64,7 +70,7 @@ class TestSettingsModel:
 
         configuration = model.configuration()
         assert configuration is not None
-        assert configuration.scenario.script == "next.py"
+        assert configuration.instances[0].scenario == "next.py"
         assert configuration.runtime.log_level == "DEBUG"
         assert configuration.source == CameraSourceConfiguration(
             CameraDeviceConfiguration("USB Camera", 7),
@@ -77,7 +83,12 @@ class TestSettingsModel:
         configuration = ApplicationConfiguration(
             version=1,
             source=VideoSourceConfiguration("run.mp4"),
-            scenario=ScenarioConfiguration("scenario.py"),
+            instances=(
+                InstanceConfiguration(
+                    LiveSplitConnection("rpc", "event"),
+                    "scenario.py",
+                ),
+            ),
             runtime=RuntimeConfiguration("INFO"),
         )
         model = SettingsModel(FakeCameraEnumerator())

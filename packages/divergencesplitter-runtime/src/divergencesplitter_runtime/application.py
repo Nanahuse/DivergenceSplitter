@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Protocol
 
 from divergencesplitter.frame.source import FrameSource
-from divergencesplitter.scenario.models import Scenario
 
 from divergencesplitter_runtime.capture import (
     CaptureDiagnostics,
@@ -14,9 +13,10 @@ from divergencesplitter_runtime.capture import (
     LatestFrameBuffer,
 )
 from divergencesplitter_runtime.configuration.validation import (
-    validate_scenarios,
+    validate_instances,
     validate_split_count,
 )
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.worker import (
     BridgeWorker,
     BridgeWorkerDiagnostics,
@@ -57,21 +57,25 @@ class ApplicationRuntime:
 
     def __init__(
         self,
-        scenarios: tuple[Scenario, ...],
+        instances: tuple[ScenarioInstance, ...],
         frame_source: FrameSource,
         *,
         diagnostics: ApplicationDiagnostics,
     ) -> None:
-        validate_scenarios(scenarios)
+        validate_instances(
+            tuple((instance.connection, instance.scenario) for instance in instances)
+        )
         self._diagnostics = diagnostics
         self._frame_source = frame_source
         self._frame_buffer = LatestFrameBuffer()
+        scenarios = tuple(instance.scenario for instance in instances)
         self._scenario_runtimes = tuple(
-            ScenarioRuntime(item, logger=diagnostics.scenario_logger(index))
-            for index, item in enumerate(scenarios)
+            ScenarioRuntime(scenario, logger=diagnostics.scenario_logger(index))
+            for index, scenario in enumerate(scenarios)
         )
         self._workers = tuple(
-            BridgeWorker(item.connection, diagnostics=diagnostics) for item in scenarios
+            BridgeWorker(instance.connection, diagnostics=diagnostics)
+            for instance in instances
         )
         self._capture = CaptureStateMachine(
             frame_source,

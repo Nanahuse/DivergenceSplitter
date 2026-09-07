@@ -7,6 +7,7 @@ from divergencesplitter import (
     MeanBrightnessDetector,
     Scenario,
 )
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     build_detector_tree,
@@ -35,11 +36,13 @@ class FakeClock:
         return self.now
 
 
-def make_scenario(*reset_conditions, splits=()) -> Scenario:
-    return Scenario(
+def make_scenario(*reset_conditions, splits=()) -> ScenarioInstance:
+    return ScenarioInstance(
         connection=LiveSplitConnection("rpc", "event"),
-        reset_conditions=reset_conditions,
-        splits=splits,
+        scenario=Scenario(
+            reset_conditions=reset_conditions,
+            splits=splits,
+        ),
     )
 
 

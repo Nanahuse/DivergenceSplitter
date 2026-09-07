@@ -17,8 +17,9 @@ from divergencesplitter import (
     ObservableCondition,
     ReferenceImage,
     Rule,
-    Scenario,
 )
+
+from divergencesplitter_runtime.instances import ScenarioInstance
 
 
 @dataclass(frozen=True)
@@ -91,21 +92,26 @@ class ConditionObservation:
     max_score: float | None
 
 
-def build_detector_tree(scenarios: tuple[Scenario, ...]) -> DetectorTreeSnapshot:
-    """Build an immutable display tree from pre-constructed scenarios."""
+def build_detector_tree(
+    instances: tuple[ScenarioInstance, ...],
+) -> DetectorTreeSnapshot:
+    """Build an immutable display tree from pre-constructed instances."""
 
     return DetectorTreeSnapshot(
         scenarios=tuple(
-            _scenario_node(scenario_index, scenario)
-            for scenario_index, scenario in enumerate(scenarios)
+            _scenario_node(index, instance) for index, instance in enumerate(instances)
         )
     )
 
 
-def _scenario_node(scenario_index: int, scenario: Scenario) -> ScenarioNode:
+def _scenario_node(
+    scenario_index: int,
+    instance: ScenarioInstance,
+) -> ScenarioNode:
+    scenario = instance.scenario
     return ScenarioNode(
         scenario_index=scenario_index,
-        connection=scenario.connection,
+        connection=instance.connection,
         reset_conditions=tuple(
             _condition_node(item) for item in scenario.reset_conditions
         ),
@@ -155,9 +161,9 @@ def _condition_node(condition: Condition) -> ConditionNode:
 
 
 def _collect_condition_observations(
-    scenarios: tuple[Scenario, ...],
+    instances: tuple[ScenarioInstance, ...],
 ) -> tuple[ConditionObservation, ...]:
-    """Read the latest evaluation outcome of every condition in ``scenarios``.
+    """Read the latest evaluation outcome of every condition in ``instances``.
 
     Each condition instance is reported once even when it is reused in several
     positions, preserving the shared-state meaning of a reused instance. Values
@@ -192,7 +198,8 @@ def _collect_condition_observations(
         for child in condition.children:
             visit(child)
 
-    for scenario in scenarios:
+    for instance in instances:
+        scenario = instance.scenario
         for condition in scenario.reset_conditions:
             visit(condition)
         for rules in scenario.splits:

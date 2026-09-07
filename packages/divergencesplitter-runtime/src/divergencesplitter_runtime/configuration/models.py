@@ -3,6 +3,8 @@
 import math
 from dataclasses import dataclass
 
+from divergencesplitter.livesplit.models import LiveSplitConnection
+
 
 @dataclass(frozen=True)
 class CameraDeviceConfiguration:
@@ -45,12 +47,13 @@ type SourceConfiguration = CameraSourceConfiguration | VideoSourceConfiguration
 
 
 @dataclass(frozen=True)
-class ScenarioConfiguration:
-    script: str
+class InstanceConfiguration:
+    connection: LiveSplitConnection
+    scenario: str
 
     def __post_init__(self) -> None:
-        if not self.script:
-            raise ValueError("scenario script must not be empty")
+        if not self.scenario:
+            raise ValueError("scenario path must not be empty")
 
 
 @dataclass(frozen=True)
@@ -66,7 +69,7 @@ class RuntimeConfiguration:
 class ApplicationConfiguration:
     version: int
     source: SourceConfiguration
-    scenario: ScenarioConfiguration
+    instances: tuple[InstanceConfiguration, ...]
     runtime: RuntimeConfiguration
 
     def __post_init__(self) -> None:

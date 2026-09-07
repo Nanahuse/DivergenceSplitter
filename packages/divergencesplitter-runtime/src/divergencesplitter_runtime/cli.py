@@ -17,10 +17,14 @@ from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationValidationError,
     load_configuration,
 )
+from divergencesplitter_runtime.configuration.models import ApplicationConfiguration
+from divergencesplitter_runtime.configuration.scenario_loader import (
+    ScenarioLoaderError,
+    load_scenario,
+)
 from divergencesplitter_runtime.configuration.scenario_module import (
     ScenarioModuleExecutionError,
     ScenarioModuleValidationError,
-    load_scenario_module,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
@@ -28,6 +32,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
     resolve_configuration_path,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.instances import ScenarioInstance
 
 EXIT_COMPLETED = 0
 EXIT_USAGE_ERROR = 2
@@ -81,6 +86,24 @@ class _ArgumentParser(argparse.ArgumentParser):
         raise SystemExit(EXIT_USAGE_ERROR)
 
 
+def _load_instances(
+    configuration: ApplicationConfiguration,
+    base_directory: Path,
+) -> tuple[ScenarioInstance, ...]:
+    return tuple(
+        ScenarioInstance(
+            connection=instance.connection,
+            scenario=load_scenario(
+                resolve_configuration_path(
+                    instance.scenario,
+                    base_directory=base_directory,
+                )
+            ),
+        )
+        for instance in configuration.instances
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one JSON configuration and return a process exit status."""
 
@@ -103,12 +126,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_STARTUP_VALIDATION_ERROR
 
     diagnostics.set_level(_LOG_LEVELS[configuration.runtime.log_level])
-    scenario_path = resolve_configuration_path(
-        configuration.scenario.script,
-        base_directory=configuration_path.parent,
-    )
     try:
-        scenarios = load_scenario_module(scenario_path)
+        instances = _load_instances(configuration, configuration_path.parent)
     except KeyboardInterrupt:
         diagnostics.interrupted()
         return EXIT_INTERRUPTED
@@ -116,6 +135,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         diagnostics.scenario_module_failed(error.error)
         return EXIT_CONFIGURATION_LOAD_ERROR
     except ScenarioModuleValidationError as error:
+        diagnostics.startup_validation_failed(error)
+        return EXIT_STARTUP_VALIDATION_ERROR
+    except ScenarioLoaderError as error:
+        diagnostics.scenario_module_failed(error.error)
+        return EXIT_CONFIGURATION_LOAD_ERROR
+    except ValueError as error:
         diagnostics.startup_validation_failed(error)
         return EXIT_STARTUP_VALIDATION_ERROR
 
@@ -128,10 +153,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         diagnostics.startup_validation_failed(error)
         return EXIT_STARTUP_VALIDATION_ERROR
 
-    diagnostics.bind_runtime(scenarios, frame_source)
+    diagnostics.bind_runtime(instances, frame_source)
     try:
         runtime = ApplicationRuntime(
-            scenarios,
+            instances,
             frame_source,
             diagnostics=diagnostics,
         )

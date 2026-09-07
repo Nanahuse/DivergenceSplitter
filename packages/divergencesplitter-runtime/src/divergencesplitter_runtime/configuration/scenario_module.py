@@ -2,11 +2,10 @@
 
 from pathlib import Path
 from runpy import run_path
-from typing import TypeIs
 
 from divergencesplitter.scenario.models import Scenario
 
-from divergencesplitter_runtime.configuration.validation import validate_scenarios
+from divergencesplitter_runtime.configuration.validation import validate_scenario
 
 
 class ScenarioModuleExecutionError(Exception):
@@ -21,10 +20,16 @@ class ScenarioModuleValidationError(ExceptionGroup):
     """Scenario module exports or static constraints are invalid."""
 
 
-def load_scenario_module(
-    path: str | Path,
-) -> tuple[Scenario, ...]:
-    """Execute a trusted Python module and extract its scenarios."""
+class ScenarioLoaderError(Exception):
+    """A scenario could not be loaded from its file."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        super().__init__(str(error))
+
+
+def load_scenario_module(path: str | Path) -> Scenario:
+    """Execute a trusted Python module and extract its scenario."""
 
     try:
         namespace = run_path(str(path))
@@ -33,16 +38,21 @@ def load_scenario_module(
     except BaseException as error:
         raise ScenarioModuleExecutionError(error) from error
     errors: list[Exception] = []
-    scenarios: tuple[Scenario, ...] | None = None
+    scenario: Scenario | None = None
 
-    if "scenarios" not in namespace:
-        errors.append(ValueError("scenario module must export 'scenarios'"))
+    if "scenario" not in namespace:
+        errors.append(ValueError("scenario module must export 'scenario'"))
     else:
-        scenarios_value = namespace["scenarios"]
-        if _is_scenario_tuple(scenarios_value):
-            scenarios = scenarios_value
+        scenario_value = namespace["scenario"]
+        if isinstance(scenario_value, Scenario):
+            scenario = scenario_value
         else:
-            errors.extend(_scenario_type_errors(scenarios_value))
+            errors.append(
+                TypeError(
+                    "scenario module export 'scenario' is not a Scenario, "
+                    f"got {type(scenario_value).__name__}"
+                )
+            )
 
     if "frame_source" in namespace:
         errors.append(
@@ -52,35 +62,27 @@ def load_scenario_module(
             )
         )
 
+    if "connection" in namespace:
+        errors.append(
+            ValueError(
+                "scenario module must not export 'connection'; "
+                "configure the connection in the JSON file"
+            )
+        )
+
     if errors:
         raise ScenarioModuleValidationError(
             "scenario module exports are invalid",
             errors,
         )
-    if scenarios is None:
-        raise RuntimeError("scenario module export validation did not produce values")
+    if scenario is None:
+        raise RuntimeError("scenario module export validation did not produce a value")
 
     try:
-        validate_scenarios(scenarios)
+        validate_scenario(scenario)
     except ExceptionGroup as error:
         raise ScenarioModuleValidationError(
             "scenario module configuration is invalid",
             list(error.exceptions),
         ) from error
-    return scenarios
-
-
-def _is_scenario_tuple(value: object) -> TypeIs[tuple[Scenario, ...]]:
-    return isinstance(value, tuple) and all(
-        isinstance(scenario, Scenario) for scenario in value
-    )
-
-
-def _scenario_type_errors(value: object) -> list[Exception]:
-    if not isinstance(value, tuple):
-        return [TypeError("scenario module export 'scenarios' is not a tuple")]
-    return [
-        TypeError(f"scenario module export 'scenarios[{index}]' is not a Scenario")
-        for index, scenario in enumerate(value)
-        if not isinstance(scenario, Scenario)
-    ]
+    return scenario

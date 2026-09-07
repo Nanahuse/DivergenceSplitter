@@ -20,6 +20,7 @@ from divergencesplitter import (
 )
 from divergencesplitter_runtime.capture import PublishResult
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.observability import build_detector_tree
 
 
@@ -30,9 +31,15 @@ def make_frame(captured_at: int = 100) -> Frame:
     )
 
 
+def make_instance(scenario: Scenario) -> ScenarioInstance:
+    return ScenarioInstance(
+        connection=LiveSplitConnection("rpc", "event"),
+        scenario=scenario,
+    )
+
+
 def make_scenario(detector) -> Scenario:
     return Scenario(
-        connection=LiveSplitConnection("rpc", "event"),
         reset_conditions=(Detected(detector, 100.0),),
         splits=((Rule(Detected(detector, 200.0), Action("split")),),),
     )
@@ -43,7 +50,6 @@ class TestDetectorTree:
         detector = MeanBrightnessDetector()
         reset_detector = MeanBrightnessDetector()
         scenario = Scenario(
-            connection=LiveSplitConnection("rpc", "event"),
             reset_conditions=(Detected(reset_detector, 200.0),),
             splits=(
                 (
@@ -59,13 +65,14 @@ class TestDetectorTree:
                 None,
             ),
         )
+        instance = make_instance(scenario)
 
-        tree = build_detector_tree((scenario,))
+        tree = build_detector_tree((instance,))
 
         assert len(tree.scenarios) == 1
         scenario_node = tree.scenarios[0]
         assert scenario_node.scenario_index == 0
-        assert scenario_node.connection == scenario.connection
+        assert scenario_node.connection == instance.connection
 
         assert len(scenario_node.reset_conditions) == 1
         reset_condition = scenario_node.reset_conditions[0]
@@ -109,7 +116,7 @@ class TestDetectorTree:
     ) -> None:
         shared = MeanBrightnessDetector()
 
-        tree = build_detector_tree((make_scenario(shared),))
+        tree = build_detector_tree((make_instance(make_scenario(shared)),))
         scenario_node = tree.scenarios[0]
 
         reset_node = scenario_node.reset_conditions[0].detector
@@ -125,7 +132,9 @@ class TestDetectorTree:
             MeanAbsoluteSimilarityConfig(reference)
         )
 
-        node = build_detector_tree((make_scenario(detector),)).scenarios[0]
+        node = build_detector_tree((make_instance(make_scenario(detector)),)).scenarios[
+            0
+        ]
         reset_detector = node.reset_conditions[0].detector
         assert reset_detector is not None
         images = reset_detector.reference_images
@@ -171,7 +180,7 @@ class TestConditionObservations:
         split_rules = scenario.splits[0]
         assert split_rules is not None
 
-        diagnostics.bind_runtime((scenario,), make_frame_source())
+        diagnostics.bind_runtime((make_instance(scenario),), make_frame_source())
         observations = diagnostics.take_condition_observations()
 
         assert {item.condition for item in observations} == {
@@ -188,12 +197,11 @@ class TestConditionObservations:
         detector = MeanBrightnessDetector()
         shared = Detected(detector, 100.0)
         scenario = Scenario(
-            connection=LiveSplitConnection("rpc", "event"),
             reset_conditions=(shared, shared),
             splits=(),
         )
 
-        diagnostics.bind_runtime((scenario,), make_frame_source())
+        diagnostics.bind_runtime((make_instance(scenario),), make_frame_source())
         observations = diagnostics.take_condition_observations()
 
         assert len(observations) == 1
@@ -207,13 +215,12 @@ class TestConditionObservations:
         skipped.evaluate(make_context())
         condition = All(Detected(detector, 1.0), skipped)
         scenario = Scenario(
-            connection=LiveSplitConnection("rpc", "event"),
             reset_conditions=(),
             splits=((Rule(condition, Action("split")),),),
         )
         context = make_context()
 
-        diagnostics.bind_runtime((scenario,), make_frame_source())
+        diagnostics.bind_runtime((make_instance(scenario),), make_frame_source())
         diagnostics.take_condition_observations()
         assert condition.evaluate(context) is False
         diagnostics.frame_processing_completed(context)
@@ -246,10 +253,10 @@ class TestObservabilityBoundary:
 
     def test_detector_tree_is_exposed_after_binding(self) -> None:
         diagnostics = OperationalDiagnostics(StringIO())
-        scenario = make_scenario(MeanBrightnessDetector())
+        instance = make_instance(make_scenario(MeanBrightnessDetector()))
 
         assert diagnostics.detector_tree() is None
-        diagnostics.bind_runtime((scenario,), make_frame_source())
+        diagnostics.bind_runtime((instance,), make_frame_source())
         tree = diagnostics.detector_tree()
         assert tree is not None
         assert len(tree.scenarios) == 1

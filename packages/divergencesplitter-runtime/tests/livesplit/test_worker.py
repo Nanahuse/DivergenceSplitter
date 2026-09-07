@@ -28,6 +28,7 @@ from divergencesplitter_runtime import (
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
+    ScenarioInstance,
     TimerPhase,
 )
 from divergencesplitter_runtime.application import ApplicationStartupValidationError
@@ -506,11 +507,13 @@ class StoppingSource:
         self.close()
 
 
-def scenario(*, split_slots: int = 1) -> Scenario:
-    return Scenario(
+def scenario(*, split_slots: int = 1) -> ScenarioInstance:
+    return ScenarioInstance(
         connection=LiveSplitConnection("rpc", "event"),
-        reset_conditions=(PassiveCondition(),),
-        splits=(None,) * split_slots,
+        scenario=Scenario(
+            reset_conditions=(PassiveCondition(),),
+            splits=(None,) * split_slots,
+        ),
     )
 
 

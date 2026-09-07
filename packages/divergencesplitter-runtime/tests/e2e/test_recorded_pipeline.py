@@ -25,7 +25,7 @@ from divergencesplitter import (
     Then,
     VideoFileSource,
 )
-from divergencesplitter_runtime import ApplicationRuntime, TimerPhase
+from divergencesplitter_runtime import ApplicationRuntime, ScenarioInstance, TimerPhase
 
 from .support import (
     BlockingDetectedCondition,
@@ -129,7 +129,6 @@ def test_recording_is_normalized_before_scenario_evaluation(tmp_path: Path) -> N
     write_image_recording(video, image, frame_count=12, fps=20)
     connection = LiveSplitConnection("normalized-rpc", "normalized-event")
     scenario = Scenario(
-        connection=connection,
         reset_conditions=(impossible_reset_condition(),),
         splits=(
             (Rule(Detected(MeanBrightnessDetector(), THRESHOLD), Action("split")),),
@@ -139,7 +138,7 @@ def test_recording_is_normalized_before_scenario_evaluation(tmp_path: Path) -> N
     diagnostics = RecordingDiagnostics()
     ScriptedBridgeAdapter.scripts = {connection: script}
     runtime = ApplicationRuntime(
-        (scenario,),
+        (ScenarioInstance(connection, scenario),),
         VideoFileSource(
             str(video),
             clip_region=ClipRegion(x=0, y=0, width=4, height=16),
@@ -170,7 +169,6 @@ def test_normalization_failure_stops_the_recording_pipeline(tmp_path: Path) -> N
     write_recording(video, ((BRIGHT, 12),), fps=20)
     connection = LiveSplitConnection("failure-rpc", "failure-event")
     scenario = Scenario(
-        connection=connection,
         reset_conditions=(impossible_reset_condition(),),
         splits=(
             (Rule(Detected(MeanBrightnessDetector(), THRESHOLD), Action("split")),),
@@ -180,7 +178,7 @@ def test_normalization_failure_stops_the_recording_pipeline(tmp_path: Path) -> N
     diagnostics = RecordingDiagnostics()
     ScriptedBridgeAdapter.scripts = {connection: script}
     runtime = ApplicationRuntime(
-        (scenario,),
+        (ScenarioInstance(connection, scenario),),
         VideoFileSource(
             str(video),
             clip_region=ClipRegion(x=0, y=0, width=17, height=17),
@@ -238,7 +236,6 @@ def test_recording_reaches_finish_and_refires_after_external_undo(
     second_split = RisingEdge(Detected(detector, THRESHOLD))
     connection = LiveSplitConnection("e2e-rpc", "e2e-event")
     scenario = Scenario(
-        connection=connection,
         reset_conditions=(impossible_reset_condition(),),
         splits=(
             (Rule(first_split, Action("split")),),
@@ -250,7 +247,7 @@ def test_recording_reaches_finish_and_refires_after_external_undo(
     diagnostics = RecordingDiagnostics()
     ScriptedBridgeAdapter.scripts = {connection: script}
     runtime = ApplicationRuntime(
-        (scenario,),
+        (ScenarioInstance(connection, scenario),),
         VideoFileSource(str(video)),
         diagnostics=diagnostics,
     )
@@ -293,7 +290,6 @@ def test_bridge_resynchronization_stops_evaluation_until_complete(
     write_recording(video, ((DARK, 20), (BRIGHT, 30)), fps=20)
     connection = LiveSplitConnection("gap-rpc", "gap-event")
     scenario = Scenario(
-        connection=connection,
         reset_conditions=(impossible_reset_condition(),),
         splits=(
             (
@@ -309,7 +305,7 @@ def test_bridge_resynchronization_stops_evaluation_until_complete(
     diagnostics = RecordingDiagnostics()
     ScriptedBridgeAdapter.scripts = {connection: script}
     runtime = ApplicationRuntime(
-        (scenario,),
+        (ScenarioInstance(connection, scenario),),
         VideoFileSource(str(video)),
         diagnostics=diagnostics,
     )
@@ -349,7 +345,6 @@ def test_slow_processing_overwrites_buffer_and_returns_to_latest_frame(
     blocking = BlockingDetectedCondition(THRESHOLD)
     connection = LiveSplitConnection("drop-rpc", "drop-event")
     scenario = Scenario(
-        connection=connection,
         reset_conditions=(impossible_reset_condition(),),
         splits=((Rule(blocking, Action("split")),),),
     )
@@ -357,7 +352,7 @@ def test_slow_processing_overwrites_buffer_and_returns_to_latest_frame(
     diagnostics = RecordingDiagnostics()
     ScriptedBridgeAdapter.scripts = {connection: script}
     runtime = ApplicationRuntime(
-        (scenario,),
+        (ScenarioInstance(connection, scenario),),
         VideoFileSource(str(video)),
         diagnostics=diagnostics,
     )
@@ -394,7 +389,6 @@ def test_missing_bridge_transition_allows_refire_only_after_scenario_timeout(
     )
     connection = LiveSplitConnection("timeout-rpc", "timeout-event")
     scenario = Scenario(
-        connection=connection,
         reset_conditions=(impossible_reset_condition(),),
         splits=(
             (
@@ -409,7 +403,7 @@ def test_missing_bridge_transition_allows_refire_only_after_scenario_timeout(
     diagnostics = RecordingDiagnostics()
     ScriptedBridgeAdapter.scripts = {connection: script}
     runtime = ApplicationRuntime(
-        (scenario,),
+        (ScenarioInstance(connection, scenario),),
         VideoFileSource(str(video)),
         diagnostics=diagnostics,
     )
@@ -437,7 +431,6 @@ def test_explicit_stop_releases_video_and_all_runtime_threads(tmp_path: Path) ->
     write_recording(video, ((DARK, 120),), fps=30)
     connection = LiveSplitConnection("stop-rpc", "stop-event")
     scenario = Scenario(
-        connection=connection,
         reset_conditions=(impossible_reset_condition(),),
         splits=(None,),
     )
@@ -445,7 +438,7 @@ def test_explicit_stop_releases_video_and_all_runtime_threads(tmp_path: Path) ->
     diagnostics = RecordingDiagnostics()
     ScriptedBridgeAdapter.scripts = {connection: script}
     runtime = ApplicationRuntime(
-        (scenario,),
+        (ScenarioInstance(connection, scenario),),
         VideoFileSource(str(video)),
         diagnostics=diagnostics,
     )

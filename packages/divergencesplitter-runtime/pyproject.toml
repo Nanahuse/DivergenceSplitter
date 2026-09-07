@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 dependencies = [
     "divergencesplitter",
     "livesplit-bridge-client",
+    "pyyaml>=6.0",
     "windows-capture-device-list; sys_platform == 'win32'",
 ]
 

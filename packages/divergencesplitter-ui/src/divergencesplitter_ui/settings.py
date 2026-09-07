@@ -24,8 +24,8 @@ from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
     CameraDeviceConfiguration,
     CameraSourceConfiguration,
+    InstanceConfiguration,
     RuntimeConfiguration,
-    ScenarioConfiguration,
     SourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
@@ -83,6 +83,7 @@ class SettingsDraft:
 
     configuration_path: Path
     scenario_script: str
+    instances: tuple[InstanceConfiguration, ...]
     source: SourceConfiguration
     log_level: str
 
@@ -101,9 +102,13 @@ def draft_from_configuration(
 ) -> SettingsDraft:
     """Project one loaded configuration into the shared editable draft."""
 
+    first_script = (
+        configuration.instances[0].scenario if configuration.instances else ""
+    )
     return SettingsDraft(
         configuration_path=path,
-        scenario_script=configuration.scenario.script,
+        scenario_script=first_script,
+        instances=configuration.instances,
         source=configuration.source,
         log_level=configuration.runtime.log_level,
     )
@@ -112,10 +117,17 @@ def draft_from_configuration(
 def configuration_from_draft(draft: SettingsDraft) -> ApplicationConfiguration:
     """Build a validated configuration from current draft values."""
 
+    instances = tuple(
+        InstanceConfiguration(
+            connection=instance.connection,
+            scenario=draft.scenario_script if index == 0 else instance.scenario,
+        )
+        for index, instance in enumerate(draft.instances)
+    )
     return ApplicationConfiguration(
         version=1,
         source=draft.source,
-        scenario=ScenarioConfiguration(draft.scenario_script),
+        instances=instances,
         runtime=RuntimeConfiguration(draft.log_level),
     )
 

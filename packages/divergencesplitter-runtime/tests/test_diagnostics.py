@@ -24,6 +24,7 @@ from divergencesplitter import (
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter_runtime.capture import PublishResult
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitSnapshot,
     LiveSplitUpdate,
@@ -114,8 +115,11 @@ def test_runtime_context_identifies_scenario_without_exposing_credentials() -> N
         "tcp://rpc-user:rpc-secret@localhost:16835",
         "tcp://event-user:event-secret@localhost:16836",
     )
-    scenario = Scenario(connection=connection, reset_conditions=(), splits=())
-    diagnostics.bind_runtime((scenario,), VideoFileSource("recording.mp4"))
+    scenario = Scenario(reset_conditions=(), splits=())
+    diagnostics.bind_runtime(
+        (ScenarioInstance(connection, scenario),),
+        VideoFileSource("recording.mp4"),
+    )
 
     diagnostics.worker_started(connection)
 
@@ -173,8 +177,11 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
         Rule(Detected(detector, 300.0), Action("split")),
         Rule(Detected(detector, 400.0), Action("split")),
     )
-    scenario = Scenario(connection=connection, reset_conditions=(), splits=(rules,))
-    diagnostics.bind_runtime((scenario,), VideoFileSource("recording.mp4"))
+    scenario = Scenario(reset_conditions=(), splits=(rules,))
+    diagnostics.bind_runtime(
+        (ScenarioInstance(connection, scenario),),
+        VideoFileSource("recording.mp4"),
+    )
     runtime = ScenarioRuntime(scenario, logger=diagnostics.scenario_logger(0))
     runtime.apply_livesplit_update(
         LiveSplitUpdate(

@@ -32,10 +32,13 @@ from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
     SourceConfiguration,
 )
+from divergencesplitter_runtime.configuration.scenario_loader import (
+    ScenarioLoaderError,
+    load_scenario,
+)
 from divergencesplitter_runtime.configuration.scenario_module import (
     ScenarioModuleExecutionError,
     ScenarioModuleValidationError,
-    load_scenario_module,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
@@ -43,6 +46,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
     resolve_configuration_path,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
@@ -125,7 +129,7 @@ class ConfigurationLoader(Protocol):
 
 
 class ScenarioLoader(Protocol):
-    def load(self, path: Path) -> tuple[Scenario, ...]: ...
+    def load(self, path: Path) -> Scenario: ...
 
 
 class SourceBuilder(Protocol):
@@ -142,7 +146,7 @@ class SessionDiagnostics(ApplicationDiagnostics, Protocol):
 
     def bind_runtime(
         self,
-        scenarios: tuple[Scenario, ...],
+        instances: tuple[ScenarioInstance, ...],
         frame_source: FrameSource,
     ) -> None: ...
 
@@ -180,7 +184,7 @@ class Runtime(Protocol):
 class RuntimeFactory(Protocol):
     def create(
         self,
-        scenarios: tuple[Scenario, ...],
+        instances: tuple[ScenarioInstance, ...],
         frame_source: FrameSource,
         *,
         diagnostics: ApplicationDiagnostics,
@@ -193,8 +197,8 @@ class DefaultConfigurationLoader:
 
 
 class DefaultScenarioLoader:
-    def load(self, path: Path) -> tuple[Scenario, ...]:
-        return load_scenario_module(path)
+    def load(self, path: Path) -> Scenario:
+        return load_scenario(path)
 
 
 class DefaultSourceBuilder:
@@ -218,12 +222,12 @@ class OperationalDiagnosticsFactory:
 class ApplicationRuntimeFactory:
     def create(
         self,
-        scenarios: tuple[Scenario, ...],
+        instances: tuple[ScenarioInstance, ...],
         frame_source: FrameSource,
         *,
         diagnostics: ApplicationDiagnostics,
     ) -> Runtime:
-        return ApplicationRuntime(scenarios, frame_source, diagnostics=diagnostics)
+        return ApplicationRuntime(instances, frame_source, diagnostics=diagnostics)
 
 
 class SessionController:
@@ -351,6 +355,24 @@ class SessionController:
                 diagnostics.runtime_failed(error)
             self._fail(SessionFailureKind.RUNTIME, error)
 
+    def _load_instances(
+        self,
+        configuration: ApplicationConfiguration,
+        scenario_loader: ScenarioLoader,
+        base_directory: Path,
+    ) -> tuple[ScenarioInstance, ...]:
+        instances: list[ScenarioInstance] = []
+        for instance in configuration.instances:
+            scenario_path = resolve_configuration_path(
+                instance.scenario,
+                base_directory=base_directory,
+            )
+            scenario = scenario_loader.load(scenario_path)
+            instances.append(
+                ScenarioInstance(connection=instance.connection, scenario=scenario)
+            )
+        return tuple(instances)
+
     def _run_session(self, path: Path, diagnostics: SessionDiagnostics) -> None:
         try:
             configuration = self._configuration_loader.load(path)
@@ -371,12 +393,12 @@ class SessionController:
             return
 
         diagnostics.set_level(_LOG_LEVELS[configuration.runtime.log_level])
-        scenario_path = resolve_configuration_path(
-            configuration.scenario.script,
-            base_directory=path.parent,
-        )
         try:
-            scenarios = self._scenario_loader.load(scenario_path)
+            instances = self._load_instances(
+                configuration,
+                self._scenario_loader,
+                path.parent,
+            )
         except ScenarioModuleExecutionError as error:
             diagnostics.scenario_module_failed(error.error)
             self._fail(SessionFailureKind.SCENARIO_EXECUTION, error)
@@ -384,6 +406,10 @@ class SessionController:
         except ScenarioModuleValidationError as error:
             diagnostics.startup_validation_failed(error)
             self._fail(SessionFailureKind.SCENARIO_VALIDATION, error)
+            return
+        except ScenarioLoaderError as error:
+            diagnostics.scenario_module_failed(error.error)
+            self._fail(SessionFailureKind.SCENARIO_EXECUTION, error)
             return
         except BaseException as error:  # noqa: BLE001
             diagnostics.scenario_module_failed(error)
@@ -412,10 +438,10 @@ class SessionController:
             self._finish(SessionState.STOPPED)
             return
 
-        diagnostics.bind_runtime(scenarios, frame_source)
+        diagnostics.bind_runtime(instances, frame_source)
         try:
             runtime = self._runtime_factory.create(
-                scenarios,
+                instances,
                 frame_source,
                 diagnostics=diagnostics,
             )

@@ -8,9 +8,11 @@ from divergencesplitter import (
 )
 from divergencesplitter_runtime import (
     LiveSplitSnapshot,
+    ScenarioInstance,
     TimerPhase,
     load_scenario_module,
-    validate_scenarios,
+    validate_instances,
+    validate_scenario,
     validate_split_count,
 )
 from divergencesplitter_runtime.configuration.scenario_module import (
@@ -32,18 +34,28 @@ class PassiveCondition:
 
 
 def make_scenario(
-    rpc_endpoint: str = "rpc",
-    event_endpoint: str = "event",
     *,
     reset_conditions: tuple[PassiveCondition, ...] | None = None,
     slots: int = 0,
 ) -> Scenario:
     return Scenario(
-        connection=LiveSplitConnection(rpc_endpoint, event_endpoint),
         reset_conditions=(PassiveCondition(),)
         if reset_conditions is None
         else reset_conditions,
         splits=(None,) * slots,
+    )
+
+
+def make_instance(
+    rpc_endpoint: str = "rpc",
+    event_endpoint: str = "event",
+    *,
+    reset_conditions: tuple[PassiveCondition, ...] | None = None,
+    slots: int = 0,
+) -> ScenarioInstance:
+    return ScenarioInstance(
+        connection=LiveSplitConnection(rpc_endpoint, event_endpoint),
+        scenario=make_scenario(reset_conditions=reset_conditions, slots=slots),
     )
 
 
@@ -63,12 +75,9 @@ def make_snapshot(
 
 
 class ScenarioModuleLoadingTest(unittest.TestCase):
-    def test_loads_preconstructed_scenarios(self) -> None:
+    def test_loads_a_single_preconstructed_scenario(self) -> None:
         source = """
-from divergencesplitter import (
-    LiveSplitConnection,
-    Scenario,
-)
+from divergencesplitter import Scenario
 
 class Condition:
     def evaluate(self, context, *, is_short_circuited=False):
@@ -76,20 +85,17 @@ class Condition:
     def reset(self):
         pass
 
-scenarios = (
-    Scenario(
-        connection=LiveSplitConnection('rpc', 'event'),
-        reset_conditions=(Condition(),),
-        splits=(None,),
-    ),
+scenario = Scenario(
+    reset_conditions=(Condition(),),
+    splits=(None,),
 )
 """
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text(source, encoding="utf-8")
-            scenarios = load_scenario_module(path)
+            scenario = load_scenario_module(path)
 
-        self.assertEqual(scenarios[0].connection.rpc_endpoint, "rpc")
+        self.assertEqual(len(scenario.splits), 1)
 
     def test_import_exception_is_reported_as_module_execution_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -125,7 +131,7 @@ scenarios = (
 
     def test_export_type_errors_are_aggregated(self) -> None:
         source = """
-scenarios = []
+scenario = object()
 frame_source = object()
 """
         with tempfile.TemporaryDirectory() as directory:
@@ -141,17 +147,9 @@ frame_source = object()
             any(isinstance(error, ValueError) for error in raised.exception.exceptions)
         )
 
-    def test_missing_and_invalid_exports_are_aggregated_together(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "scenario_module.py"
-            path.write_text("frame_source = object()", encoding="utf-8")
-            with self.assertRaises(ScenarioModuleValidationError) as raised:
-                load_scenario_module(path)
-        self.assertEqual(len(raised.exception.exceptions), 2)
-
     def test_frame_source_export_is_rejected(self) -> None:
         source = """
-from divergencesplitter import LiveSplitConnection, Scenario
+from divergencesplitter import Scenario
 
 class Condition:
     def evaluate(self, context, *, is_short_circuited=False):
@@ -159,12 +157,9 @@ class Condition:
     def reset(self):
         pass
 
-scenarios = (
-    Scenario(
-        connection=LiveSplitConnection('rpc', 'event'),
-        reset_conditions=(Condition(),),
-        splits=(None,),
-    ),
+scenario = Scenario(
+    reset_conditions=(Condition(),),
+    splits=(None,),
 )
 frame_source = object()
 """
@@ -178,28 +173,52 @@ frame_source = object()
             str(raised.exception.exceptions[0]),
         )
 
-    def test_invalid_scenario_positions_are_reported(self) -> None:
+    def test_connection_export_is_rejected(self) -> None:
         source = """
-scenarios = (object(), object())
+from divergencesplitter import Scenario
+
+class Condition:
+    def evaluate(self, context, *, is_short_circuited=False):
+        return False
+    def reset(self):
+        pass
+
+scenario = Scenario(
+    reset_conditions=(Condition(),),
+    splits=(None,),
+)
+connection = object()
 """
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "scenario_module.py"
             path.write_text(source, encoding="utf-8")
             with self.assertRaises(ScenarioModuleValidationError) as raised:
                 load_scenario_module(path)
-        messages = tuple(str(error) for error in raised.exception.exceptions)
-        self.assertTrue(any("scenarios[0]" in message for message in messages))
-        self.assertTrue(any("scenarios[1]" in message for message in messages))
+        self.assertIn(
+            "must not export 'connection'",
+            str(raised.exception.exceptions[0]),
+        )
 
 
 class ConfigurationValidationTest(unittest.TestCase):
+    def test_scenario_requires_reset_conditions(self) -> None:
+        with self.assertRaises(ExceptionGroup) as raised:
+            validate_scenario(make_scenario(reset_conditions=()))
+        messages = tuple(str(error) for error in raised.exception.exceptions)
+        self.assertEqual(len(messages), 1)
+        self.assertTrue(any("no reset conditions" in message for message in messages))
+
     def test_independent_static_errors_are_aggregated(self) -> None:
-        scenarios = (
-            make_scenario("", "", reset_conditions=()),
-            make_scenario("", ""),
+        instances = (
+            make_instance("", "", reset_conditions=()),
+            make_instance("", ""),
         )
         with self.assertRaises(ExceptionGroup) as raised:
-            validate_scenarios(scenarios)
+            validate_instances(
+                tuple(
+                    (instance.connection, instance.scenario) for instance in instances
+                )
+            )
         messages = tuple(str(error) for error in raised.exception.exceptions)
         self.assertEqual(len(messages), 7)
         self.assertTrue(any("no reset conditions" in message for message in messages))
@@ -208,12 +227,18 @@ class ConfigurationValidationTest(unittest.TestCase):
 
     def test_connection_is_unique_when_either_endpoint_differs(self) -> None:
         with self.assertRaises(ExceptionGroup):
-            validate_scenarios(
-                (make_scenario("rpc", "one"), make_scenario("rpc", "two"))
+            validate_instances(
+                (
+                    (make_instance("rpc", "one").connection, make_scenario()),
+                    (make_instance("rpc", "two").connection, make_scenario()),
+                )
             )
         with self.assertRaises(ExceptionGroup):
-            validate_scenarios(
-                (make_scenario("one", "event"), make_scenario("two", "event"))
+            validate_instances(
+                (
+                    (make_instance("one", "event").connection, make_scenario()),
+                    (make_instance("two", "event").connection, make_scenario()),
+                )
             )
 
     def test_split_slots_allow_split_count_plus_one(self) -> None:

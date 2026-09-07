@@ -31,13 +31,13 @@ from divergencesplitter import (
     MonotonicTime,
     OpenCvCameraSource,
     PhaseCorrelationConfig,
-    Scenario,
     TemplateMatchConfig,
     TimeProvider,
     VideoFileSource,
 )
 
 from divergencesplitter_runtime.capture import PublishResult
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
     LiveSplitSnapshot,
@@ -139,7 +139,7 @@ class OperationalDiagnostics:
         self._processed_frames_total = 0
         self._observable_lock = threading.Lock()
         self._latest_input_frame: Frame | None = None
-        self._scenarios: tuple[Scenario, ...] = ()
+        self._instances: tuple[ScenarioInstance, ...] = ()
         self._condition_observations: tuple[ConditionObservation, ...] = ()
         self._detector_tree: DetectorTreeSnapshot | None = None
         self._runtime_started = threading.Event()
@@ -149,14 +149,14 @@ class OperationalDiagnostics:
 
     def bind_runtime(
         self,
-        scenarios: tuple[Scenario, ...],
+        instances: tuple[ScenarioInstance, ...],
         frame_source: FrameSource,
     ) -> None:
         with self._context_lock:
             try:
                 self._connections = {
-                    scenario.connection: index
-                    for index, scenario in enumerate(scenarios)
+                    instance.connection: index
+                    for index, instance in enumerate(instances)
                 }
             except Exception:  # noqa: BLE001
                 self._connections = {}
@@ -166,10 +166,10 @@ class OperationalDiagnostics:
                 self._source_fields = {"source_type": type(frame_source).__name__}
         with self._observable_lock:
             try:
-                self._scenarios = scenarios
-                self._detector_tree = build_detector_tree(scenarios)
+                self._instances = instances
+                self._detector_tree = build_detector_tree(instances)
                 self._condition_observations = _collect_condition_observations(
-                    scenarios
+                    instances
                 )
             except Exception:  # noqa: BLE001
                 self._detector_tree = None
@@ -301,7 +301,7 @@ class OperationalDiagnostics:
 
     def frame_processing_completed(self, context: FrameContext) -> None:
         completed_at = self._time_provider.now()
-        observations = _collect_condition_observations(self._scenarios)
+        observations = _collect_condition_observations(self._instances)
         with self._metrics_lock:
             self._processing_rate.record(completed_at)
             self._processed_frames_total += 1
