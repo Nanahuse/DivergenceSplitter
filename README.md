@@ -40,7 +40,7 @@ leaves). Custom `ImageDetector` implementations must expose a read-only
 empty tuple when there are none). These properties feed the desktop UI display
 only; they never perform evaluation, reset, or state changes.
 
-Scenario modules only import the authoring library and export `scenarios`. A
+Scenario modules only import the authoring library and export `scenario`. A
 minimal `scenario.py` is:
 
 ```python
@@ -50,19 +50,15 @@ brightness = ds.MeanBrightnessDetector()
 split_condition = ds.Detected(brightness, minimum_score=200.0)
 reset_condition = ds.Not(ds.Detected(brightness, minimum_score=10.0))
 
-scenarios = (
-    ds.Scenario(
-        connection=ds.LiveSplitConnection(
-            "tcp://127.0.0.1:54000",
-            "tcp://127.0.0.1:54001",
-        ),
-        reset_conditions=(reset_condition,),
-        splits=((ds.Rule(split_condition, ds.Action("split")),),),
-    ),
+scenario = ds.Scenario(
+    reset_conditions=(reset_condition,),
+    splits=((ds.Rule(split_condition, ds.Action("split")),),),
 )
 ```
 
-The JSON configuration selects the scenario and frame source independently:
+Scenarios do not carry a LiveSplit connection; the JSON configuration pairs
+each scenario with a connection destination. The JSON configuration selects the
+frame source and one or more connection/scenario instances independently:
 
 ```json
 {
@@ -71,14 +67,48 @@ The JSON configuration selects the scenario and frame source independently:
     "type": "video",
     "path": "./run.mp4"
   },
-  "scenario": {
-    "script": "./scenario.py"
-  },
+  "instances": [
+    {
+      "connection": {
+        "rpc_endpoint": "tcp://127.0.0.1:54000",
+        "event_endpoint": "tcp://127.0.0.1:54001"
+      },
+      "scenario": "./scenario.py"
+    }
+  ],
   "runtime": {
     "log_level": "INFO"
   }
 }
 ```
+
+A scenario may also be written as YAML (`scenario.yaml`). The loader is chosen
+from the file extension: `.py` for Python, `.yaml`/`.yml` for YAML. A YAML
+scenario defines `reset_conditions` and `splits` using `type` discriminators:
+
+```yaml
+reset_conditions:
+  - type: detected
+    minimum_score: 0.8
+    detector:
+      type: template_match
+      reference: ./images/title.png
+
+splits:
+  - rules:
+      - condition:
+          type: detected
+          minimum_score: 0.9
+          detector:
+            type: template_match
+            reference: ./images/title.png
+        action: split
+```
+
+Only `detected` and `then` conditions and the `template_match` detector are
+currently mapped for YAML; other condition and detector types raise a clear
+"not yet supported" error. YAML anchors/aliases and `duration`/`within` time
+expressions (`500ms`, `3s`) are supported.
 
 Run it with the runtime CLI:
 
@@ -111,9 +141,15 @@ enumeration ID to disambiguate devices with the same name:
     "height": 720,
     "fps": 60
   },
-  "scenario": {
-    "script": "./scenario.py"
-  },
+  "instances": [
+    {
+      "connection": {
+        "rpc_endpoint": "tcp://127.0.0.1:54000",
+        "event_endpoint": "tcp://127.0.0.1:54001"
+      },
+      "scenario": "./scenario.py"
+    }
+  ],
   "runtime": {
     "log_level": "INFO"
   }

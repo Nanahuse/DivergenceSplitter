@@ -37,7 +37,15 @@ def camera_configuration() -> dict[str, object]:
             "height": 720,
             "fps": 60,
         },
-        "scenario": {"script": "./scenario.py"},
+        "instances": [
+            {
+                "connection": {
+                    "rpc_endpoint": "tcp://127.0.0.1:54000",
+                    "event_endpoint": "tcp://127.0.0.1:54001",
+                },
+                "scenario": "./scenario.py",
+            }
+        ],
         "runtime": {"log_level": "INFO"},
     }
 
@@ -59,8 +67,43 @@ def test_loads_camera_configuration(tmp_path: Path) -> None:
         720,
         60.0,
     )
-    assert configuration.scenario.script == "./scenario.py"
+    assert len(configuration.instances) == 1
+    assert configuration.instances[0].scenario == "./scenario.py"
+    assert configuration.instances[0].connection.rpc_endpoint == "tcp://127.0.0.1:54000"
+    assert (
+        configuration.instances[0].connection.event_endpoint == "tcp://127.0.0.1:54001"
+    )
     assert configuration.runtime.log_level == "INFO"
+
+
+def test_loads_multiple_instances(tmp_path: Path) -> None:
+    value = camera_configuration()
+    value["instances"] = [
+        {
+            "connection": {
+                "rpc_endpoint": "tcp://127.0.0.1:54000",
+                "event_endpoint": "tcp://127.0.0.1:54001",
+            },
+            "scenario": "./main.yaml",
+        },
+        {
+            "connection": {
+                "rpc_endpoint": "tcp://127.0.0.1:54100",
+                "event_endpoint": "tcp://127.0.0.1:54101",
+            },
+            "scenario": "./sub.py",
+        },
+    ]
+    path = tmp_path / "config.json"
+    write_configuration(path, value)
+
+    configuration = load_configuration(path)
+
+    assert [instance.scenario for instance in configuration.instances] == [
+        "./main.yaml",
+        "./sub.py",
+    ]
+    assert configuration.instances[1].connection.rpc_endpoint == "tcp://127.0.0.1:54100"
 
 
 def test_loads_video_configuration(tmp_path: Path) -> None:
@@ -104,6 +147,9 @@ def test_rejects_non_standard_or_ambiguous_json(
         "unknown source",
         "unknown camera field",
         "boolean width",
+        "missing instances",
+        "unknown instance field",
+        "unknown connection field",
     ],
 )
 def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
@@ -121,6 +167,15 @@ def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
         source["path"] = "unexpected.mp4"
     elif mutation == "boolean width":
         source["width"] = True
+    elif mutation == "missing instances":
+        value.pop("instances")
+    elif mutation == "unknown instance field":
+        instance = cast(list[dict[str, object]], value["instances"])[0]
+        instance["unknown"] = 1
+    elif mutation == "unknown connection field":
+        instance = cast(list[dict[str, object]], value["instances"])[0]
+        connection = cast(dict[str, object], instance["connection"])
+        connection["unknown"] = 1
     path = tmp_path / "config.json"
     write_configuration(path, value)
 

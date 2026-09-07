@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from divergencesplitter.livesplit.models import LiveSplitConnection
-
 if TYPE_CHECKING:
     from divergencesplitter.condition.interface import Condition
     from divergencesplitter.rule.rule import Rule
@@ -14,8 +12,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Scenario:
-    """A pre-constructed scenario and its LiveSplit destination."""
+    """A pre-constructed scenario: what to judge and which actions to fire."""
 
-    connection: LiveSplitConnection
     reset_conditions: tuple[Condition, ...]
     splits: tuple[tuple[Rule, ...] | None, ...]

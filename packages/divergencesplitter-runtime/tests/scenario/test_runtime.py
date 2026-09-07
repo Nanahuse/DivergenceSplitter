@@ -7,7 +7,6 @@ from divergencesplitter import (
     Action,
     Frame,
     FrameContext,
-    LiveSplitConnection,
     MonotonicTime,
     Rule,
     Scenario,
@@ -85,7 +84,6 @@ def make_scenario(
     reset_conditions: tuple[RecordingCondition, ...] | None = None,
 ) -> Scenario:
     return Scenario(
-        connection=LiveSplitConnection("rpc", "event"),
         reset_conditions=reset_conditions or (RecordingCondition(False),),
         splits=splits,
     )

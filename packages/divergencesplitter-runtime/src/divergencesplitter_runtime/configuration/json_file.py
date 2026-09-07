@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 from typing import NoReturn, assert_never
 
+from divergencesplitter.livesplit.models import LiveSplitConnection
+
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
     CameraDeviceConfiguration,
     CameraSourceConfiguration,
+    InstanceConfiguration,
     RuntimeConfiguration,
-    ScenarioConfiguration,
     SourceConfiguration,
     VideoSourceConfiguration,
 )
@@ -42,12 +44,12 @@ def load_configuration(path: str | Path) -> ApplicationConfiguration:
 
     try:
         root = _object(value, "configuration")
-        _keys(root, required={"version", "source", "scenario", "runtime"})
+        _keys(root, required={"version", "source", "instances", "runtime"})
         version = _integer(root["version"], "version")
         source = _source(root["source"])
-        scenario = _scenario(root["scenario"])
+        instances = _instances(root["instances"])
         runtime = _runtime(root["runtime"])
-        return ApplicationConfiguration(version, source, scenario, runtime)
+        return ApplicationConfiguration(version, source, instances, runtime)
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationValidationError(str(error)) from error
 
@@ -60,8 +62,8 @@ def save_configuration(
 
     The emitted document round-trips through :func:`load_configuration` to the
     same typed values. Camera device name/id, width, height, fps, video path,
-    scenario script, and log level keep their configured meaning, and the
-    ``source`` common field stays ``type``-only.
+    instance connection endpoints and scenario paths, and log level keep their
+    configured meaning, and the ``source`` common field stays ``type``-only.
     """
 
     Path(path).write_text(_dump(configuration), encoding="utf-8")
@@ -75,8 +77,18 @@ def _as_dict(configuration: ApplicationConfiguration) -> dict[str, object]:
     return {
         "version": configuration.version,
         "source": _source_dict(configuration.source),
-        "scenario": {"script": configuration.scenario.script},
+        "instances": [_instance_dict(instance) for instance in configuration.instances],
         "runtime": {"log_level": configuration.runtime.log_level},
+    }
+
+
+def _instance_dict(instance: InstanceConfiguration) -> dict[str, object]:
+    return {
+        "connection": {
+            "rpc_endpoint": instance.connection.rpc_endpoint,
+            "event_endpoint": instance.connection.event_endpoint,
+        },
+        "scenario": instance.scenario,
     }
 
 
@@ -123,10 +135,27 @@ def _source(value: object) -> SourceConfiguration:
     raise ValueError(f"unsupported source type: {source_type!r}")
 
 
-def _scenario(value: object) -> ScenarioConfiguration:
-    scenario = _object(value, "scenario")
-    _keys(scenario, required={"script"})
-    return ScenarioConfiguration(_string(scenario["script"], "scenario.script"))
+def _instances(value: object) -> tuple[InstanceConfiguration, ...]:
+    instances = _array(value, "instances")
+    return tuple(_instance(item, index) for index, item in enumerate(instances))
+
+
+def _instance(value: object, index: int) -> InstanceConfiguration:
+    prefix = f"instances[{index}]"
+    instance = _object(value, prefix)
+    _keys(instance, required={"connection", "scenario"})
+    connection = _connection(instance["connection"], f"{prefix}.connection")
+    scenario = _string(instance["scenario"], f"{prefix}.scenario")
+    return InstanceConfiguration(connection, scenario)
+
+
+def _connection(value: object, path: str) -> LiveSplitConnection:
+    connection = _object(value, path)
+    _keys(connection, required={"rpc_endpoint", "event_endpoint"})
+    return LiveSplitConnection(
+        _string(connection["rpc_endpoint"], f"{path}.rpc_endpoint"),
+        _string(connection["event_endpoint"], f"{path}.event_endpoint"),
+    )
 
 
 def _runtime(value: object) -> RuntimeConfiguration:
@@ -151,6 +180,12 @@ def _reject_constant(value: str) -> NoReturn:
 def _object(value: object, path: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise TypeError(f"{path} must be an object")
+    return value
+
+
+def _array(value: object, path: str) -> list[object]:
+    if not isinstance(value, list):
+        raise TypeError(f"{path} must be an array")
     return value
 
 

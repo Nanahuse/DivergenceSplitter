@@ -7,7 +7,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
-from divergencesplitter import VideoFileSource
+from divergencesplitter import LiveSplitConnection, Scenario, VideoFileSource
 from divergencesplitter_runtime.application import ApplicationStartupValidationError
 from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationFileError,
@@ -15,8 +15,8 @@ from divergencesplitter_runtime.configuration.json_file import (
 )
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
+    InstanceConfiguration,
     RuntimeConfiguration,
-    ScenarioConfiguration,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.scenario_module import (
@@ -40,7 +40,12 @@ def make_configuration() -> ApplicationConfiguration:
     return ApplicationConfiguration(
         version=1,
         source=VideoSourceConfiguration("recording.mp4"),
-        scenario=ScenarioConfiguration("./scenario.py"),
+        instances=(
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"),
+                "./scenario.py",
+            ),
+        ),
         runtime=RuntimeConfiguration("INFO"),
     )
 
@@ -82,18 +87,21 @@ class FakeScenarioLoader:
     def __init__(
         self,
         *,
-        scenarios: tuple = (),
+        scenario: Scenario | None = None,
         error: BaseException | None = None,
     ) -> None:
-        self._scenarios = scenarios
+        self._scenario = scenario or Scenario(
+            reset_conditions=(),
+            splits=(),
+        )
         self._error = error
         self.loaded_paths: list[Path] = []
 
-    def load(self, path: Path):
+    def load(self, path: Path) -> Scenario:
         self.loaded_paths.append(path)
         if self._error is not None:
             raise self._error
-        return self._scenarios
+        return self._scenario
 
 
 class FakeSourceBuilder:
@@ -119,8 +127,8 @@ class FakeDiagnostics(OperationalDiagnostics):
     def set_level(self, level: int) -> None:
         self.set_level_calls.append(level)
 
-    def bind_runtime(self, scenarios, frame_source) -> None:
-        self.bind_runtime_calls.append((scenarios, frame_source))
+    def bind_runtime(self, instances, frame_source) -> None:
+        self.bind_runtime_calls.append((instances, frame_source))
 
     def runtime_started(self) -> None:
         self.runtime_started_calls += 1
@@ -182,7 +190,7 @@ class FakeRuntimeFactory:
         self.runtime_error: BaseException | None = None
         self.call_runtime_started = True
 
-    def create(self, scenarios, frame_source, *, diagnostics) -> FakeRuntime:
+    def create(self, instances, frame_source, *, diagnostics) -> FakeRuntime:
         if self.create_error is not None:
             raise self.create_error
         runtime = FakeRuntime(

@@ -5,6 +5,7 @@ from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
+from divergencesplitter import LiveSplitConnection, Scenario
 from divergencesplitter_runtime.application import (
     ApplicationDiagnostics,
     ApplicationStartupValidationError,
@@ -24,9 +25,12 @@ from divergencesplitter_runtime.configuration.json_file import (
 )
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
+    InstanceConfiguration,
     RuntimeConfiguration,
-    ScenarioConfiguration,
     VideoSourceConfiguration,
+)
+from divergencesplitter_runtime.configuration.scenario_loader import (
+    ScenarioLoaderError,
 )
 from divergencesplitter_runtime.configuration.scenario_module import (
     ScenarioModuleExecutionError,
@@ -36,7 +40,22 @@ from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
+
+
+def make_configuration() -> ApplicationConfiguration:
+    return ApplicationConfiguration(
+        1,
+        VideoSourceConfiguration("run.mp4"),
+        (
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"),
+                "./scenario.py",
+            ),
+        ),
+        RuntimeConfiguration("INFO"),
+    )
 
 
 class FakeRuntime:
@@ -46,16 +65,16 @@ class FakeRuntime:
 
     def __init__(
         self,
-        scenarios: object,
+        instances: tuple[ScenarioInstance, ...],
         frame_source: object,
         *,
         diagnostics: ApplicationDiagnostics,
     ) -> None:
-        self.scenarios = scenarios
+        self.loaded_instances = instances
         self.frame_source = frame_source
         self.diagnostics = diagnostics
         self.stop_requests = 0
-        self.instances.append(self)
+        FakeRuntime.instances.append(self)
 
     def run(self) -> None:
         if self.diagnostic_error is not None:
@@ -103,15 +122,10 @@ def reset_fake_runtime() -> None:
 
 def run_with_fake_runtime(
     outcome: BaseException | None = None,
-) -> tuple[int, str, FakeRuntime, tuple[object, ...], object]:
-    scenarios = (object(),)
+) -> tuple[int, str, FakeRuntime, tuple[ScenarioInstance, ...], object]:
+    scenario = Scenario(reset_conditions=(), splits=())
     frame_source = object()
-    configuration = ApplicationConfiguration(
-        1,
-        VideoSourceConfiguration("run.mp4"),
-        ScenarioConfiguration("scenario.py"),
-        RuntimeConfiguration("INFO"),
-    )
+    configuration = make_configuration()
     stderr = StringIO()
     FakeRuntime.outcome = outcome
     with (
@@ -120,8 +134,8 @@ def run_with_fake_runtime(
             return_value=configuration,
         ),
         patch(
-            "divergencesplitter_runtime.cli.load_scenario_module",
-            return_value=scenarios,
+            "divergencesplitter_runtime.cli.load_scenario",
+            return_value=scenario,
         ),
         patch(
             "divergencesplitter_runtime.cli.build_frame_source",
@@ -132,16 +146,18 @@ def run_with_fake_runtime(
         patch("sys.stderr", stderr),
     ):
         result = main(["config.json"])
-    return result, stderr.getvalue(), FakeRuntime.instances[0], scenarios, frame_source
+    instances = FakeRuntime.instances[0].loaded_instances
+    return result, stderr.getvalue(), FakeRuntime.instances[0], instances, frame_source
 
 
 def test_runs_loaded_instances_and_returns_completed() -> None:
-    result, stderr, runtime, scenarios, frame_source = run_with_fake_runtime()
+    result, stderr, runtime, instances, frame_source = run_with_fake_runtime()
 
     assert result == EXIT_COMPLETED
     assert "cli.completed" in stderr
     assert len(stderr.splitlines()) == 1
-    assert runtime.scenarios is scenarios
+    assert len(instances) == 1
+    assert instances[0].connection == LiveSplitConnection("rpc", "event")
     assert runtime.frame_source is frame_source
     assert FakeStatusReporter.instances[0].events == ["started", "stopped"]
 
@@ -199,12 +215,7 @@ def test_invalid_configuration_returns_startup_validation_error() -> None:
 
 def test_source_resolution_error_prevents_runtime_construction() -> None:
     stderr = StringIO()
-    configuration = ApplicationConfiguration(
-        1,
-        VideoSourceConfiguration("run.mp4"),
-        ScenarioConfiguration("scenario.py"),
-        RuntimeConfiguration("INFO"),
-    )
+    configuration = make_configuration()
 
     with (
         patch(
@@ -212,8 +223,8 @@ def test_source_resolution_error_prevents_runtime_construction() -> None:
             return_value=configuration,
         ),
         patch(
-            "divergencesplitter_runtime.cli.load_scenario_module",
-            return_value=(object(),),
+            "divergencesplitter_runtime.cli.load_scenario",
+            return_value=Scenario(reset_conditions=(), splits=()),
         ),
         patch(
             "divergencesplitter_runtime.cli.build_frame_source",
@@ -233,7 +244,7 @@ def test_missing_module_returns_scenario_module_error(tmp_path: Path) -> None:
     configuration = ApplicationConfiguration(
         1,
         VideoSourceConfiguration("run.mp4"),
-        ScenarioConfiguration("missing.py"),
+        (InstanceConfiguration(LiveSplitConnection("rpc", "event"), "./missing.py"),),
         RuntimeConfiguration("INFO"),
     )
 
@@ -258,15 +269,10 @@ def test_module_system_exit_is_reported_as_module_error() -> None:
     with (
         patch(
             "divergencesplitter_runtime.cli.load_configuration",
-            return_value=ApplicationConfiguration(
-                1,
-                VideoSourceConfiguration("run.mp4"),
-                ScenarioConfiguration("scenario.py"),
-                RuntimeConfiguration("INFO"),
-            ),
+            return_value=make_configuration(),
         ),
         patch(
-            "divergencesplitter_runtime.cli.load_scenario_module",
+            "divergencesplitter_runtime.cli.load_scenario",
             side_effect=error,
         ),
         patch("sys.stderr", stderr),
@@ -289,15 +295,10 @@ def test_module_validation_error_is_reported_with_each_cause() -> None:
     with (
         patch(
             "divergencesplitter_runtime.cli.load_configuration",
-            return_value=ApplicationConfiguration(
-                1,
-                VideoSourceConfiguration("run.mp4"),
-                ScenarioConfiguration("scenario.py"),
-                RuntimeConfiguration("INFO"),
-            ),
+            return_value=make_configuration(),
         ),
         patch(
-            "divergencesplitter_runtime.cli.load_scenario_module",
+            "divergencesplitter_runtime.cli.load_scenario",
             side_effect=error,
         ),
         patch("sys.stderr", stderr),
@@ -312,6 +313,29 @@ def test_module_validation_error_is_reported_with_each_cause() -> None:
     assert 'exception.1.type="TypeError"' in output
     assert 'exception.1.message="second"' in output
     assert len(output.splitlines()) == 1
+    assert FakeRuntime.instances == []
+
+
+def test_scenario_loader_error_is_reported_as_module_error() -> None:
+    stderr = StringIO()
+    error = ScenarioLoaderError(ValueError("unsupported scenario format"))
+
+    with (
+        patch(
+            "divergencesplitter_runtime.cli.load_configuration",
+            return_value=make_configuration(),
+        ),
+        patch(
+            "divergencesplitter_runtime.cli.load_scenario",
+            side_effect=error,
+        ),
+        patch("sys.stderr", stderr),
+    ):
+        result = main(["config.json"])
+
+    assert result == EXIT_CONFIGURATION_LOAD_ERROR
+    assert "cli.scenario_module_failed" in stderr.getvalue()
+    assert "unsupported scenario format" in stderr.getvalue()
     assert FakeRuntime.instances == []
 
 
@@ -353,15 +377,10 @@ def test_keyboard_interrupt_during_module_load_returns_130() -> None:
     with (
         patch(
             "divergencesplitter_runtime.cli.load_configuration",
-            return_value=ApplicationConfiguration(
-                1,
-                VideoSourceConfiguration("run.mp4"),
-                ScenarioConfiguration("scenario.py"),
-                RuntimeConfiguration("INFO"),
-            ),
+            return_value=make_configuration(),
         ),
         patch(
-            "divergencesplitter_runtime.cli.load_scenario_module",
+            "divergencesplitter_runtime.cli.load_scenario",
             side_effect=KeyboardInterrupt(),
         ),
         patch("sys.stderr", stderr),
@@ -386,16 +405,11 @@ def test_stderr_failure_does_not_replace_runtime_exit_status() -> None:
     with (
         patch(
             "divergencesplitter_runtime.cli.load_configuration",
-            return_value=ApplicationConfiguration(
-                1,
-                VideoSourceConfiguration("run.mp4"),
-                ScenarioConfiguration("scenario.py"),
-                RuntimeConfiguration("INFO"),
-            ),
+            return_value=make_configuration(),
         ),
         patch(
-            "divergencesplitter_runtime.cli.load_scenario_module",
-            return_value=(object(),),
+            "divergencesplitter_runtime.cli.load_scenario",
+            return_value=Scenario(reset_conditions=(), splits=()),
         ),
         patch(
             "divergencesplitter_runtime.cli.build_frame_source",
