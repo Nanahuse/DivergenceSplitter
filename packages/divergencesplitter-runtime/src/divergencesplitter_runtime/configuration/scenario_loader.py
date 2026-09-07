@@ -20,23 +20,21 @@ from divergencesplitter_runtime.configuration.scenario_yaml import (
     load_scenario_yaml,
 )
 
-_PYTHON_SUFFIXES = (".py",)
-_YAML_SUFFIXES = (".yaml", ".yml")
-
 
 def load_scenario(path: str | Path) -> Scenario:
     """Load one Scenario from a Python or YAML scenario file."""
 
     resolved = Path(path)
-    suffix = resolved.suffix.lower()
-    if suffix in _PYTHON_SUFFIXES:
-        return load_scenario_module(resolved)
-    if suffix in _YAML_SUFFIXES:
-        try:
-            return load_scenario_yaml(resolved)
-        except ScenarioYamlError as error:
-            raise ScenarioLoaderError(error) from error
-    raise ValueError(f"unsupported scenario format: {resolved.suffix!r}")
+    match resolved.suffix.lower():
+        case ".py":
+            return load_scenario_module(resolved)
+        case ".yaml" | ".yml":
+            try:
+                return load_scenario_yaml(resolved)
+            except ScenarioYamlError as error:
+                raise ScenarioLoaderError(error) from error
+        case _:
+            raise ValueError(f"unsupported scenario format: {resolved.suffix!r}")
 
 
 __all__ = [

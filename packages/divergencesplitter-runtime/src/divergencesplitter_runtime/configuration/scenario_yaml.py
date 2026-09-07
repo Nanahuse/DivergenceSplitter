@@ -138,25 +138,29 @@ def _condition_value(value: object, field: str, path: Path) -> Condition:
     if "type" not in condition:
         raise ValueError(f"{field}.type is missing")
     condition_type = _string(condition["type"], f"{field}.type")
-    if condition_type == "detected":
-        _keys(condition, required={"type", "minimum_score", "detector"})
-        minimum_score = _number(condition["minimum_score"], f"{field}.minimum_score")
-        detector = _detector(condition["detector"], f"{field}.detector", path)
-        return Detected(detector, minimum_score)
-    if condition_type == "then":
-        _keys(condition, required={"type", "within", "conditions"})
-        within_nanoseconds = _duration(condition["within"], f"{field}.within")
-        children = _condition_list(
-            condition["conditions"],
-            f"{field}.conditions",
-            path,
-        )
-        return Then(*children, within_nanoseconds=within_nanoseconds)
-    if condition_type in _UNSUPPORTED_CONDITION_TYPES:
-        raise ValueError(
-            f"condition type {condition_type!r} is not yet supported in YAML"
-        )
-    raise ValueError(f"unsupported condition type: {condition_type!r}")
+    match condition_type:
+        case "detected":
+            _keys(condition, required={"type", "minimum_score", "detector"})
+            minimum_score = _number(
+                condition["minimum_score"], f"{field}.minimum_score"
+            )
+            detector = _detector(condition["detector"], f"{field}.detector", path)
+            return Detected(detector, minimum_score)
+        case "then":
+            _keys(condition, required={"type", "within", "conditions"})
+            within_nanoseconds = _duration(condition["within"], f"{field}.within")
+            children = _condition_list(
+                condition["conditions"],
+                f"{field}.conditions",
+                path,
+            )
+            return Then(*children, within_nanoseconds=within_nanoseconds)
+        case _ if condition_type in _UNSUPPORTED_CONDITION_TYPES:
+            raise ValueError(
+                f"condition type {condition_type!r} is not yet supported in YAML"
+            )
+        case _:
+            raise ValueError(f"unsupported condition type: {condition_type!r}")
 
 
 def _detector(
@@ -168,15 +172,21 @@ def _detector(
     if "type" not in detector:
         raise ValueError(f"{field}.type is missing")
     detector_type = _string(detector["type"], f"{field}.type")
-    if detector_type == "template_match":
-        _keys(detector, required={"type", "reference"})
-        reference = _reference_image(detector["reference"], f"{field}.reference", path)
-        return TemplateMatchDetector(TemplateMatchConfig(reference))
-    if detector_type in _UNSUPPORTED_DETECTOR_TYPES:
-        raise ValueError(
-            f"detector type {detector_type!r} is not yet supported in YAML"
-        )
-    raise ValueError(f"unsupported detector type: {detector_type!r}")
+    match detector_type:
+        case "template_match":
+            _keys(detector, required={"type", "reference"})
+            reference = _reference_image(
+                detector["reference"],
+                f"{field}.reference",
+                path,
+            )
+            return TemplateMatchDetector(TemplateMatchConfig(reference))
+        case _ if detector_type in _UNSUPPORTED_DETECTOR_TYPES:
+            raise ValueError(
+                f"detector type {detector_type!r} is not yet supported in YAML"
+            )
+        case _:
+            raise ValueError(f"unsupported detector type: {detector_type!r}")
 
 
 def _reference_image(
