@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import TextIO
 
 from divergencesplitter_ui._dpg import dpg
-from divergencesplitter_ui.about_window import AboutWindow
+from divergencesplitter_ui.about_window import AboutPage
 from divergencesplitter_ui.error_window import ErrorWindow
-from divergencesplitter_ui.license_window import LicenseWindow
+from divergencesplitter_ui.license_window import LicensePage
 from divergencesplitter_ui.presentation import (
     ObservableDiagnostics,
     ScreenPresenter,
@@ -30,7 +30,7 @@ from divergencesplitter_ui.session import (
     SessionController,
 )
 from divergencesplitter_ui.settings import SettingsModel, WindowsCameraEnumerator
-from divergencesplitter_ui.settings_window import SettingsWindow
+from divergencesplitter_ui.settings_window import ConfigurationPage
 
 
 class DesktopApplication:
@@ -45,12 +45,14 @@ class DesktopApplication:
         settings_model: SettingsModel | None = None,
     ) -> None:
         self._controller = controller
-        self._renderer = ScreenRenderer(presenter)
+        self._renderer = ScreenRenderer(
+            presenter, stop_callback=controller.request_stop
+        )
         self._initial_configuration = initial_configuration
         model = settings_model or SettingsModel(WindowsCameraEnumerator())
-        self._settings = SettingsWindow(controller, model)
-        self._licenses = LicenseWindow()
-        self._about = AboutWindow(self._licenses)
+        self._settings = ConfigurationPage(controller, model)
+        self._licenses = LicensePage()
+        self._about = AboutPage(self._licenses)
         self._errors = ErrorWindow()
 
     def run(self) -> None:
@@ -59,11 +61,9 @@ class DesktopApplication:
             dpg.create_context()
             context_created = True
             self._renderer.build()
-            self._settings.build()
-            self._settings.build_main_shortcut(ScreenRenderer.SCENARIO_GROUP_TAG)
-            self._about.build()
-            self._about.build_main_shortcut(ScreenRenderer.SCENARIO_GROUP_TAG)
-            self._licenses.build()
+            self._settings.build(ScreenRenderer.CONFIGURATION_PAGE_TAG)
+            self._about.build(ScreenRenderer.ABOUT_PAGE_TAG)
+            self._licenses.build(ScreenRenderer.WINDOW_TAG)
             self._errors.build()
             dpg.create_viewport(
                 title="DivergenceSplitter",

@@ -22,6 +22,7 @@ from divergencesplitter_runtime.observability import (
 )
 
 from divergencesplitter_ui._dpg import dpg
+from divergencesplitter_ui.frame_preview import fit_preview
 from divergencesplitter_ui.image import (
     TextureEvent,
     flatten,
@@ -82,9 +83,16 @@ class ScreenRenderer:
     _FPS_TAG = "divergence-splitter-fps"
     _IMAGE_GROUP_TAG = "divergence-splitter-image-group"
     _TEXTURE_REGISTRY_TAG = "divergence-splitter-textures"
+    MONITOR_PAGE_TAG = "divergence-splitter-monitor-page"
+    CONFIGURATION_PAGE_TAG = "divergence-splitter-configuration-page"
+    ABOUT_PAGE_TAG = "divergence-splitter-about-page"
+    LICENSE_PAGE_TAG = "divergence-splitter-licenses-page"
 
-    def __init__(self, presenter: ScreenPresenter | None = None) -> None:
+    def __init__(
+        self, presenter: ScreenPresenter | None = None, *, stop_callback=None
+    ) -> None:
         self._presenter = presenter or ScreenPresenter()
+        self._stop_callback = stop_callback
         self._bound_diagnostics: ObservableDiagnostics | None = None
         self._tree: DetectorTreeSnapshot | None = None
         self._rows: list[_ConditionRow] = []
@@ -104,22 +112,62 @@ class ScreenRenderer:
             width=1100,
             height=800,
         ):
-            dpg.add_text("State: —", tag=self._STATE_TAG)
-            dpg.add_text(
-                "input: — fps | processing: — fps",
-                tag=self._FPS_TAG,
-            )
-            dpg.add_group(tag=self.SCENARIO_GROUP_TAG)
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Monitor",
+                    callback=self._show_page,
+                    user_data=self.MONITOR_PAGE_TAG,
+                )
+                dpg.add_button(
+                    label="Configuration",
+                    callback=self._show_page,
+                    user_data=self.CONFIGURATION_PAGE_TAG,
+                )
+                dpg.add_button(
+                    label="About",
+                    callback=self._show_page,
+                    user_data=self.ABOUT_PAGE_TAG,
+                )
             dpg.add_separator()
-            dpg.add_text("Input frame")
-            dpg.add_texture_registry(tag=self._TEXTURE_REGISTRY_TAG)
-            dpg.add_group(tag=self._IMAGE_GROUP_TAG)
-            dpg.add_separator()
-            dpg.add_tree_node(
-                tag=self._TREE_TAG,
-                label="Scenario tree",
-                default_open=True,
-            )
+            with dpg.group(tag=self.MONITOR_PAGE_TAG):
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="Start", callback=self._start)
+                    dpg.add_button(label="Stop", callback=self._stop)
+                    dpg.add_text("State: —", tag=self._STATE_TAG)
+                    dpg.add_text("input: — fps | processing: — fps", tag=self._FPS_TAG)
+                with dpg.group(horizontal=True):
+                    with dpg.child_window(width=-320, height=-1, border=True):
+                        dpg.add_text("Input Preview")
+                        dpg.add_texture_registry(tag=self._TEXTURE_REGISTRY_TAG)
+                        dpg.add_group(tag=self._IMAGE_GROUP_TAG)
+                    with dpg.child_window(width=300, height=-1, border=True):
+                        dpg.add_text("Scenario / Diagnostics")
+                        dpg.add_group(tag=self.SCENARIO_GROUP_TAG)
+                        dpg.add_separator()
+                        dpg.add_tree_node(
+                            tag=self._TREE_TAG,
+                            label="Scenario tree",
+                            default_open=True,
+                        )
+            dpg.add_group(tag=self.CONFIGURATION_PAGE_TAG, show=False)
+            dpg.add_group(tag=self.ABOUT_PAGE_TAG, show=False)
+
+    def _start(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.configure_item(self.CONFIGURATION_PAGE_TAG, show=True)
+        dpg.configure_item(self.MONITOR_PAGE_TAG, show=False)
+
+    def _stop(self, sender=None, app_data=None, user_data=None) -> None:
+        if self._stop_callback is not None:
+            self._stop_callback()
+
+    def _show_page(self, sender, app_data, user_data) -> None:
+        for tag in (
+            self.MONITOR_PAGE_TAG,
+            self.CONFIGURATION_PAGE_TAG,
+            self.ABOUT_PAGE_TAG,
+            self.LICENSE_PAGE_TAG,
+        ):
+            dpg.configure_item(tag, show=tag == user_data)
 
     def tick(
         self,
@@ -151,6 +199,11 @@ class ScreenRenderer:
             frame = diagnostics.take_latest_input_frame()
             if frame is not None:
                 self._apply_image(frame)
+        if self._input_signature is not None:
+            self._fit_input_image(
+                self._input_signature.width,
+                self._input_signature.height,
+            )
 
         if self._presenter.fps_due():
             snapshot = diagnostics.metrics_snapshot()
@@ -360,7 +413,20 @@ class ScreenRenderer:
             self._input_texture_tag,
             parent=self._IMAGE_GROUP_TAG,
         )
+        self._fit_input_image(signature.width, signature.height)
         self._input_signature = signature
+
+    def _fit_input_image(self, width: int, height: int) -> None:
+        if self._input_image_tag is None:
+            return
+        available_width, available_height = dpg.get_item_rect_size(
+            self._IMAGE_GROUP_TAG
+        )
+        size = fit_preview(width, height, available_width, available_height)
+        if size.width and size.height:
+            dpg.configure_item(
+                self._input_image_tag, width=size.width, height=size.height
+            )
 
     def _reset_input_image(self) -> None:
         if self._input_image_tag is not None:

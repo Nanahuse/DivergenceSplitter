@@ -33,6 +33,7 @@ class ErrorWindow:
             width=460,
             height=200,
             show=False,
+            modal=True,
         ):
             dpg.add_text("Category:")
             self._category_tag = dpg.add_text("")
