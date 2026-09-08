@@ -110,14 +110,6 @@ class ConfigurationPage:
                 )
 
             dpg.add_separator()
-            dpg.add_text("Instances")
-            self._instances_group_tag = dpg.add_group()
-            self._add_instance_tag = dpg.add_button(
-                label="Add instance",
-                callback=self._on_add_instance,
-            )
-
-            dpg.add_separator()
             dpg.add_text("Camera")
             self._camera_tag = dpg.add_combo(
                 items=[],
@@ -141,6 +133,14 @@ class ConfigurationPage:
             self._preview_status_tag = dpg.add_text("")
 
             dpg.add_separator()
+            dpg.add_text("Instances")
+            self._instances_group_tag = dpg.add_group()
+            self._add_instance_tag = dpg.add_button(
+                label="Add instance",
+                callback=self._on_add_instance,
+            )
+
+            dpg.add_separator()
             self._log_level_tag = dpg.add_combo(
                 label="Log level",
                 items=list(LOG_LEVELS),
@@ -154,6 +154,8 @@ class ConfigurationPage:
                 callback=self._on_save,
             )
             self._status_tag = dpg.add_text("", color=(255, 200, 120))
+
+        self._refresh_cameras(None, None)
 
     def open_configuration(self, path: Path) -> None:
         """Load and start one configuration, reporting errors in the screen."""
@@ -198,9 +200,7 @@ class ConfigurationPage:
         permission = edit_permission(active=is_active(state))
         draft = self._model.draft
         instances_enabled = permission.instances and draft is not None
-        source_enabled = (
-            permission.source and draft is not None and camera_source(draft) is not None
-        )
+        source_enabled = permission.source and draft is not None
         dpg.configure_item(self._config_path_tag, enabled=permission.instances)
         dpg.configure_item(self._config_browse_tag, enabled=permission.instances)
         dpg.configure_item(self._open_button_tag, enabled=permission.instances)
@@ -236,10 +236,9 @@ class ConfigurationPage:
         camera = camera_source(draft)
         if camera is None:
             self._camera_preview.stop()
-            self._camera_by_label = {}
-            dpg.configure_item(self._camera_tag, items=[], default_value="")
             dpg.set_value(self._source_note_tag, "source type is not camera")
             dpg.configure_item(self._mode_tag, items=[], default_value="")
+            self._refresh_cameras(None, None)
             return True
         dpg.set_value(self._source_note_tag, "")
         return self._refresh_cameras(camera.device, camera.mode)
@@ -302,7 +301,7 @@ class ConfigurationPage:
 
     def _refresh_cameras(
         self,
-        configured: CameraDeviceConfiguration,
+        configured: CameraDeviceConfiguration | None,
         configured_mode: CameraModeConfiguration | None,
     ) -> bool:
         self._camera_by_label = {}
@@ -320,10 +319,15 @@ class ConfigurationPage:
             )
             self._camera_by_label[label] = device
             labels.append(label)
-        selected_device = select_configured_camera(configured, devices)
+        selected_device = (
+            select_configured_camera(configured, devices)
+            if configured is not None
+            else None
+        )
         if selected_device is None:
             selected = ""
-            self._set_status("configured camera is unavailable; select it again")
+            if configured is not None:
+                self._set_status("configured camera is unavailable; select it again")
             dpg.configure_item(self._mode_tag, items=[], default_value="")
             resolved = False
         else:
@@ -335,7 +339,9 @@ class ConfigurationPage:
             )
             resolved = True
             self._model.set_camera_device(
-                configured.backend, selected_device.name, selected_device.index
+                _camera_backend(selected_device.backend),
+                selected_device.name,
+                selected_device.index,
             )
             resolved = (
                 self._refresh_modes(selected_device, configured_mode) and resolved
