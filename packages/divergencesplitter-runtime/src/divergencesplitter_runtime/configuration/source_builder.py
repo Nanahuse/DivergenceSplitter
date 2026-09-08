@@ -148,8 +148,6 @@ def resolve_camera_mode(
     raise SourceConfigurationError(
         "configured camera mode is unavailable: "
         f"{device_context}"
-    raise SourceConfigurationError(
-        "configured camera mode is unavailable: "
         f"{configured.width}x{configured.height}@{configured.fps} "
         f"{configured.subtype_guid!r}"
     )
