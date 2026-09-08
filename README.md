@@ -143,10 +143,7 @@ enumeration ID to disambiguate devices with the same name:
       "height": 720,
       "fps": 60.0,
       "subtype_guid": "47504A4D-0000-0010-8000-00AA00389B71"
-    },
-    "width": 1280,
-    "height": 720,
-    "fps": 60
+    }
   },
   "instances": [
     {
