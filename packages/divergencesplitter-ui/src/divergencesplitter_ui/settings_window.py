@@ -1,4 +1,4 @@
-"""Dear PyGui settings screen for editing one configuration.
+"""Dear PyGui Configuration page for editing one configuration.
 
 This module imports Dear PyGui and owns every settings widget. It edits the
 single ``SettingsModel`` draft shared with the main screen and delegates load,
@@ -46,6 +46,11 @@ from divergencesplitter_ui.settings import (
     save_decision,
     select_configured_camera,
 )
+from divergencesplitter_ui.windows_file_dialog import (
+    CONFIGURATION_FILTERS,
+    SCENARIO_FILTERS,
+    select_open_file,
+)
 
 _CAMERA_LABEL_TEMPLATE = "[{backend}] {name} (index {index})"
 
@@ -61,10 +66,10 @@ class _InstanceRow:
     remove_tag: int | str
 
 
-class SettingsWindow:
-    """Own the settings widgets and drive open/save/start through the draft."""
+class ConfigurationPage:
+    """Own the Configuration page and drive open/save/start through the draft."""
 
-    WINDOW_TAG = "divergence-splitter-settings"
+    PAGE_TAG = "divergence-splitter-configuration-page"
 
     def __init__(self, controller: SessionController, model: SettingsModel) -> None:
         self._controller = controller
@@ -72,24 +77,12 @@ class SettingsWindow:
         self._camera_by_label: dict[str, CameraDevice] = {}
         self._mode_by_label: dict[str, CameraMode] = {}
         self._instance_rows: dict[int, _InstanceRow] = {}
-        self._pending_instance_index: int | None = None
 
-    def build_main_shortcut(self, parent: int | str) -> None:
-        """Add the main-screen shortcut into the settings screen."""
-
-        dpg.add_button(
+    def build(self, parent: int | str | None = None) -> None:
+        with dpg.group(
+            tag=self.PAGE_TAG,
             parent=parent,
-            label="Settings...",
-            callback=self._on_show_settings,
-        )
-
-    def build(self) -> None:
-        with dpg.window(
-            tag=self.WINDOW_TAG,
-            label="Settings",
-            width=520,
-            height=600,
-            show=True,
+            show=False,
         ):
             dpg.add_text("Configuration file")
             self._config_path_tag = dpg.add_input_text(
@@ -145,30 +138,6 @@ class SettingsWindow:
                 callback=self._on_save,
             )
             self._status_tag = dpg.add_text("", color=(255, 200, 120))
-
-        self._config_dialog_tag = dpg.add_file_dialog(
-            label="Select configuration file",
-            width=640,
-            height=420,
-            show=False,
-            modal=True,
-            callback=self._on_config_dialog,
-            directory_selector=False,
-            default_filename="config.json",
-        )
-        self._scenario_dialog_tag = dpg.add_file_dialog(
-            label="Select scenario script",
-            width=640,
-            height=420,
-            show=False,
-            modal=True,
-            callback=self._on_scenario_dialog,
-            directory_selector=False,
-        )
-        dpg.add_file_extension(".py", parent=self._scenario_dialog_tag)
-        dpg.add_file_extension(".yaml", parent=self._scenario_dialog_tag)
-        dpg.add_file_extension(".yml", parent=self._scenario_dialog_tag)
-        dpg.add_file_extension(".*", parent=self._scenario_dialog_tag)
 
     def open_configuration(self, path: Path) -> None:
         """Load and start one configuration, reporting errors in the screen."""
@@ -370,41 +339,32 @@ class SettingsWindow:
     def _on_browse_config(self) -> None:
         if is_active(self._controller.state):
             return
-        dpg.show_item(self._config_dialog_tag)
-
-    def _on_show_settings(self) -> None:
-        dpg.show_item(self.WINDOW_TAG)
+        path = select_open_file(
+            title="Select configuration file",
+            filters=CONFIGURATION_FILTERS,
+            initial_path=Path(str(dpg.get_value(self._config_path_tag)))
+            if dpg.get_value(self._config_path_tag)
+            else None,
+        )
+        if path is not None:
+            self.open_configuration(path)
 
     def _on_browse_instance_scenario(self, sender, app_data, user_data) -> None:
         if is_active(self._controller.state):
             return
-        self._pending_instance_index = user_data
-        dpg.show_item(self._scenario_dialog_tag)
-
-    def _on_config_dialog(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
-            return
-        path = _dialog_path(app_data)
+        index = int(user_data)
+        path = select_open_file(
+            title="Select scenario file",
+            filters=SCENARIO_FILTERS,
+        )
         if path is None:
             return
-        dpg.set_value(self._config_path_tag, path)
-        self.open_configuration(Path(path))
-
-    def _on_scenario_dialog(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
-            return
-        index = self._pending_instance_index
-        self._pending_instance_index = None
-        if index is None:
-            return
-        path = _dialog_path(app_data)
-        if path is None:
-            return
-        if self._model.set_instance_scenario(index, path) is None:
+        path_text = str(path)
+        if self._model.set_instance_scenario(index, path_text) is None:
             return
         row = self._instance_rows.get(index)
         if row is not None:
-            dpg.set_value(row.scenario_tag, path)
+            dpg.set_value(row.scenario_tag, path_text)
 
     def _on_instance_rpc_changed(self, sender, app_data, user_data) -> None:
         if is_active(self._controller.state):
@@ -496,15 +456,6 @@ class SettingsWindow:
 
     def _set_status(self, message: str) -> None:
         dpg.set_value(self._status_tag, message)
-
-
-def _dialog_path(app_data) -> str | None:
-    if not app_data:
-        return None
-    value = app_data.get("file_path_name")
-    if not value:
-        return None
-    return str(value)
 
 
 def _configuration_error_message(

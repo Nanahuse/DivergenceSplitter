@@ -11,12 +11,12 @@ from divergencesplitter_ui._dpg import dpg
 from divergencesplitter_ui.licenses import bundled_inventory, license_sections
 
 
-class LicenseWindow:
+class LicensePage:
     """Own the license widgets over the inventory bundled with the UI."""
 
-    WINDOW_TAG = "divergence-splitter-licenses"
+    PAGE_TAG = "divergence-splitter-licenses-page"
 
-    def build(self) -> None:
+    def build(self, parent: int | str | None = None) -> None:
         """Create the static list once, before the render loop.
 
         A malformed bundled inventory raises here, failing startup explicitly
@@ -24,11 +24,9 @@ class LicenseWindow:
         """
 
         sections = license_sections(bundled_inventory())
-        with dpg.window(
-            tag=self.WINDOW_TAG,
-            label="Licenses",
-            width=440,
-            height=520,
+        with dpg.group(
+            tag=self.PAGE_TAG,
+            parent=parent,
             show=False,
         ):
             dpg.add_text("Select a component to read its license text")

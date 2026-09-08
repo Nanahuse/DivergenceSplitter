@@ -9,26 +9,24 @@ from __future__ import annotations
 
 from divergencesplitter_ui._dpg import dpg
 from divergencesplitter_ui.about import about_info
-from divergencesplitter_ui.license_window import LicenseWindow
+from divergencesplitter_ui.license_window import LicensePage
 
 
-class AboutWindow:
-    """Own the About widgets and the navigation out to Licenses."""
+class AboutPage:
+    """Own the About page and the navigation out to Licenses."""
 
-    WINDOW_TAG = "divergence-splitter-about"
+    PAGE_TAG = "divergence-splitter-about-page"
 
-    def __init__(self, license_window: LicenseWindow) -> None:
+    def __init__(self, license_window: LicensePage) -> None:
         self._license_window = license_window
 
-    def build(self) -> None:
+    def build(self, parent: int | str | None = None) -> None:
         """Create the static widgets once, before the render loop."""
 
         info = about_info()
-        with dpg.window(
-            tag=self.WINDOW_TAG,
-            label="About DivergenceSplitter",
-            width=360,
-            height=180,
+        with dpg.group(
+            tag=self.PAGE_TAG,
+            parent=parent,
             show=False,
         ):
             dpg.add_text(info.application_name)
@@ -36,17 +34,6 @@ class AboutWindow:
             dpg.add_separator()
             dpg.add_button(label="Licenses...", callback=self._show_licenses)
 
-    def build_main_shortcut(self, parent: int | str) -> None:
-        """Add the main-screen shortcut that opens this window."""
-
-        dpg.add_button(
-            parent=parent,
-            label="About...",
-            callback=self._show,
-        )
-
-    def _show(self) -> None:
-        dpg.show_item(self.WINDOW_TAG)
-
     def _show_licenses(self) -> None:
-        dpg.show_item(self._license_window.WINDOW_TAG)
+        dpg.hide_item(self.PAGE_TAG)
+        dpg.show_item(self._license_window.PAGE_TAG)
