@@ -216,7 +216,7 @@ def configuration_from_draft(draft: SettingsDraft) -> ApplicationConfiguration:
         for instance in draft.instances
     )
     return ApplicationConfiguration(
-        version=2,
+        version=1,
         source=_configuration_source(draft.source),
         instances=instances,
         runtime=RuntimeConfiguration(draft.log_level),

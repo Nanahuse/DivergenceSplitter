@@ -38,7 +38,7 @@ from divergencesplitter_ui.session import (
 
 def make_configuration() -> ApplicationConfiguration:
     return ApplicationConfiguration(
-        version=2,
+        version=1,
         source=VideoSourceConfiguration("recording.mp4"),
         instances=(
             InstanceConfiguration(

@@ -90,5 +90,5 @@ class ApplicationConfiguration:
     runtime: RuntimeConfiguration
 
     def __post_init__(self) -> None:
-        if self.version != 2:
+        if self.version != 1:
             raise ValueError(f"unsupported configuration version: {self.version!r}")

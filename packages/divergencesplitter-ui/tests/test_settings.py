@@ -67,7 +67,7 @@ def camera_configuration(
     *instances: InstanceConfiguration,
 ) -> ApplicationConfiguration:
     return ApplicationConfiguration(
-        version=2,
+        version=1,
         source=CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
             CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
@@ -81,7 +81,7 @@ def video_configuration(
     *instances: InstanceConfiguration,
 ) -> ApplicationConfiguration:
     return ApplicationConfiguration(
-        version=2,
+        version=1,
         source=VideoSourceConfiguration("run.mp4"),
         instances=tuple(instances),
         runtime=RuntimeConfiguration("DEBUG"),
@@ -193,7 +193,7 @@ class TestConfigurationProjection:
         rebuilt = configuration_from_draft(draft)
 
         assert rebuilt == ApplicationConfiguration(
-            version=2,
+            version=1,
             source=VideoSourceConfiguration("run.mp4"),
             instances=(
                 InstanceConfiguration(

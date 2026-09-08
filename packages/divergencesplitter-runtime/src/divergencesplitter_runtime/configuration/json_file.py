@@ -48,12 +48,8 @@ def load_configuration(path: str | Path) -> ApplicationConfiguration:
         root = _object(value, "configuration")
         _keys(root, required={"version", "source", "instances", "runtime"})
         version = _integer(root["version"], "version")
-        if version != 2:
-            raise ValueError(
-                "unsupported configuration version: "
-                f"{version!r}; camera configuration must be recreated using a "
-                "listed capture mode"
-            )
+        if version != 1:
+            raise ValueError(f"unsupported configuration version: {version!r}")
         source = _source(root["source"])
         instances = _instances(root["instances"])
         runtime = _runtime(root["runtime"])
