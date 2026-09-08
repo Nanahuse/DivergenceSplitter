@@ -197,6 +197,7 @@ dependencies = [
 
 [package.dev-dependencies]
 build = [
+    { name = "packaging" },
     { name = "pyinstaller" },
 ]
 dev = [
@@ -212,7 +213,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-build = [{ name = "pyinstaller", specifier = ">=6.16,<7" }]
+build = [
+    { name = "packaging", specifier = ">=26.0" },
+    { name = "pyinstaller", specifier = ">=6.16,<7" },
+]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff" },
