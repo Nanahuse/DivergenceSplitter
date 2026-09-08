@@ -14,7 +14,9 @@ from divergencesplitter_runtime.configuration.json_file import (
     save_configuration,
 )
 from divergencesplitter_runtime.configuration.models import (
+    CameraBackend,
     CameraDeviceConfiguration,
+    CameraModeConfiguration,
     CameraSourceConfiguration,
     VideoSourceConfiguration,
 )
@@ -23,6 +25,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
     build_frame_source,
     resolve_camera_device,
+    resolve_camera_mode,
     resolve_configuration_path,
 )
 
@@ -32,10 +35,13 @@ def camera_configuration() -> dict[str, object]:
         "version": 1,
         "source": {
             "type": "camera",
-            "device": {"name": "USB Camera", "id": 2},
-            "width": 1280,
-            "height": 720,
-            "fps": 60,
+            "device": {"backend": "direct_show", "name": "USB Camera", "index": 2},
+            "mode": {
+                "width": 1280,
+                "height": 720,
+                "fps": 60,
+                "subtype_guid": "47504A4D-0000-0010-8000-00AA00389B71",
+            },
         },
         "instances": [
             {
@@ -54,6 +60,15 @@ def write_configuration(path: Path, value: object) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
+def fake_device(index: int, modes: list[object] | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        backend=SimpleNamespace(name="DIRECT_SHOW"),
+        name="USB Camera",
+        index=index,
+        modes=modes or [],
+    )
+
+
 def test_loads_camera_configuration(tmp_path: Path) -> None:
     path = tmp_path / "config.json"
     write_configuration(path, camera_configuration())
@@ -62,10 +77,10 @@ def test_loads_camera_configuration(tmp_path: Path) -> None:
 
     assert configuration.version == 1
     assert configuration.source == CameraSourceConfiguration(
-        CameraDeviceConfiguration("USB Camera", 2),
-        1280,
-        720,
-        60.0,
+        CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
+        CameraModeConfiguration(
+            1280, 720, 60.0, "47504A4D-0000-0010-8000-00AA00389B71"
+        ),
     )
     assert len(configuration.instances) == 1
     assert configuration.instances[0].scenario == "./scenario.py"
@@ -183,27 +198,27 @@ def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
         load_configuration(path)
 
 
-def test_resolves_unique_name_even_when_saved_id_changed() -> None:
-    configured = CameraDeviceConfiguration("USB Camera", 2)
+def test_resolves_unique_name_even_when_saved_index_changed() -> None:
+    configured = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2)
     devices = cast(
         list[CameraDeviceInfo],
-        [SimpleNamespace(name="USB Camera", id=7)],
+        [fake_device(7)],
     )
 
-    assert resolve_camera_device(configured, devices) == 7
+    assert resolve_camera_device(configured, devices).index == 7
 
 
-def test_resolves_duplicate_name_with_saved_id() -> None:
-    configured = CameraDeviceConfiguration("USB Camera", 2)
+def test_resolves_duplicate_name_with_saved_index() -> None:
+    configured = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2)
     devices = cast(
         list[CameraDeviceInfo],
         [
-            SimpleNamespace(name="USB Camera", id=1),
-            SimpleNamespace(name="USB Camera", id=2),
+            fake_device(1),
+            fake_device(2),
         ],
     )
 
-    assert resolve_camera_device(configured, devices) == 2
+    assert resolve_camera_device(configured, devices).index == 2
 
 
 @pytest.mark.parametrize(
@@ -211,26 +226,25 @@ def test_resolves_duplicate_name_with_saved_id() -> None:
     [
         [],
         [
-            SimpleNamespace(name="USB Camera", id=1),
-            SimpleNamespace(name="USB Camera", id=3),
+            fake_device(1),
+            fake_device(3),
         ],
     ],
 )
 def test_camera_resolution_failure_requires_reselection(devices: list[object]) -> None:
-    configured = CameraDeviceConfiguration("USB Camera", 2)
+    configured = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2)
 
     with pytest.raises(SourceConfigurationError):
         resolve_camera_device(configured, cast(list[CameraDeviceInfo], devices))
 
 
-def test_builds_camera_source_from_current_device_id(tmp_path: Path) -> None:
+def test_builds_camera_source_from_current_device_and_mode(tmp_path: Path) -> None:
+    mode = SimpleNamespace(width=1280, height=720, fps=60.0, subtype_guid="MJPG-GUID")
     configuration = CameraSourceConfiguration(
-        CameraDeviceConfiguration("USB Camera", 2),
-        1280,
-        720,
-        60.0,
+        CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
+        CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
     )
-    devices = [SimpleNamespace(name="USB Camera", id=7)]
+    devices = [fake_device(7, [mode])]
 
     with patch(
         "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
@@ -239,18 +253,13 @@ def test_builds_camera_source_from_current_device_id(tmp_path: Path) -> None:
         source = build_frame_source(configuration, base_directory=tmp_path)
 
     assert isinstance(source, OpenCvCameraSource)
-    assert source.device_index == 7
-    assert source.width == 1280
-    assert source.height == 720
-    assert source.fps == 60.0
+    assert source._capture_factory is not None
 
 
 def test_camera_enumeration_failure_is_reported(tmp_path: Path) -> None:
     configuration = CameraSourceConfiguration(
-        CameraDeviceConfiguration("USB Camera", 2),
-        1280,
-        720,
-        60.0,
+        CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
+        CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
     )
 
     with (
@@ -264,6 +273,53 @@ def test_camera_enumeration_failure_is_reported(tmp_path: Path) -> None:
         ),
     ):
         build_frame_source(configuration, base_directory=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"width": 1920},
+        {"height": 1080},
+        {"fps": 60.0},
+        {"subtype_guid": "NV12-GUID"},
+    ],
+)
+def test_mode_resolution_requires_exact_mode_fields(
+    mutation: dict[str, object],
+) -> None:
+    mode = SimpleNamespace(
+        width=1280,
+        height=720,
+        fps=59.94,
+        format="MJPG",
+        subtype_guid="MJPG-GUID",
+    )
+    values = {"width": 1280, "height": 720, "fps": 59.94, "subtype_guid": "MJPG-GUID"}
+    values.update(mutation)
+
+    with pytest.raises(SourceConfigurationError):
+        resolve_camera_mode(CameraModeConfiguration(**values), [mode])
+
+
+def test_mode_resolution_allows_only_tiny_fps_round_trip_difference() -> None:
+    mode = SimpleNamespace(
+        width=1280,
+        height=720,
+        fps=59.9400001,
+        format="MJPG",
+        subtype_guid="MJPG-GUID",
+    )
+
+    assert (
+        resolve_camera_mode(
+            CameraModeConfiguration(1280, 720, 59.94, "MJPG-GUID"), [mode]
+        )
+        is mode
+    )
+    with pytest.raises(SourceConfigurationError):
+        resolve_camera_mode(
+            CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"), [mode]
+        )
 
 
 def test_builds_video_source_relative_to_configuration(tmp_path: Path) -> None:

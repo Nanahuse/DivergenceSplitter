@@ -8,7 +8,9 @@ from divergencesplitter.livesplit.models import LiveSplitConnection
 
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
+    CameraBackend,
     CameraDeviceConfiguration,
+    CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
     RuntimeConfiguration,
@@ -61,7 +63,7 @@ def save_configuration(
     """Write one versioned configuration as canonical JSON.
 
     The emitted document round-trips through :func:`load_configuration` to the
-    same typed values. Camera device name/id, width, height, fps, video path,
+    same typed values. Camera device and mode values, video path,
     instance connection endpoints and scenario paths, and log level keep their
     configured meaning, and the ``source`` common field stays ``type``-only.
     """
@@ -97,12 +99,16 @@ def _source_dict(source: SourceConfiguration) -> dict[str, object]:
         return {
             "type": "camera",
             "device": {
+                "backend": source.device.backend.value,
                 "name": source.device.name,
-                "id": source.device.id,
+                "index": source.device.index,
             },
-            "width": source.width,
-            "height": source.height,
-            "fps": source.fps,
+            "mode": {
+                "width": source.mode.width,
+                "height": source.mode.height,
+                "fps": source.mode.fps,
+                "subtype_guid": source.mode.subtype_guid,
+            },
         }
     if isinstance(source, VideoSourceConfiguration):
         return {"type": "video", "path": source.path}
@@ -115,20 +121,24 @@ def _source(value: object) -> SourceConfiguration:
     if source_type == "camera":
         _keys(
             source,
-            required={"type", "device", "width", "height", "fps"},
+            required={"type", "device", "mode"},
         )
         device_value = _object(source["device"], "source.device")
-        _keys(device_value, required={"name", "id"})
+        _keys(device_value, required={"backend", "name", "index"})
         device = CameraDeviceConfiguration(
+            _enum(device_value["backend"], CameraBackend, "source.device.backend"),
             _string(device_value["name"], "source.device.name"),
-            _integer(device_value["id"], "source.device.id"),
+            _integer(device_value["index"], "source.device.index"),
         )
-        return CameraSourceConfiguration(
-            device,
-            _integer(source["width"], "source.width"),
-            _integer(source["height"], "source.height"),
-            _number(source["fps"], "source.fps"),
+        mode_value = _object(source["mode"], "source.mode")
+        _keys(mode_value, required={"width", "height", "fps", "subtype_guid"})
+        mode = CameraModeConfiguration(
+            _integer(mode_value["width"], "source.mode.width"),
+            _integer(mode_value["height"], "source.mode.height"),
+            _number(mode_value["fps"], "source.mode.fps"),
+            _string(mode_value["subtype_guid"], "source.mode.subtype_guid"),
         )
+        return CameraSourceConfiguration(device, mode)
     if source_type == "video":
         _keys(source, required={"type", "path"})
         return VideoSourceConfiguration(_string(source["path"], "source.path"))
@@ -214,3 +224,12 @@ def _number(value: object, path: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"{path} must be a number")
     return float(value)
+
+
+def _enum(value: object, enum_type: type[CameraBackend], path: str) -> CameraBackend:
+    if not isinstance(value, str):
+        raise TypeError(f"{path} must be a string")
+    try:
+        return enum_type(value)
+    except ValueError as error:
+        raise ValueError(f"unsupported {path}: {value!r}") from error

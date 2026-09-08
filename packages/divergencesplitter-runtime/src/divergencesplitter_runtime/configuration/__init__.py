@@ -4,7 +4,9 @@ from divergencesplitter_runtime.configuration.json_file import (
 )
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
+    CameraBackend,
     CameraDeviceConfiguration,
+    CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
     RuntimeConfiguration,
@@ -36,7 +38,9 @@ from divergencesplitter_runtime.configuration.validation import (
 
 __all__ = [
     "ApplicationConfiguration",
+    "CameraBackend",
     "CameraDeviceConfiguration",
+    "CameraModeConfiguration",
     "CameraSourceConfiguration",
     "InstanceConfiguration",
     "RuntimeConfiguration",

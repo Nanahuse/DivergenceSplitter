@@ -12,7 +12,9 @@ from divergencesplitter_runtime.capture import (
 )
 from divergencesplitter_runtime.configuration import (
     ApplicationConfiguration,
+    CameraBackend,
     CameraDeviceConfiguration,
+    CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
     RuntimeConfiguration,
@@ -69,7 +71,9 @@ __all__ = [
     "BridgeActionRequest",
     "BridgeWorker",
     "BridgeWorkerDiagnostics",
+    "CameraBackend",
     "CameraDeviceConfiguration",
+    "CameraModeConfiguration",
     "CameraSourceConfiguration",
     "CaptureDiagnostics",
     "CaptureStateMachine",

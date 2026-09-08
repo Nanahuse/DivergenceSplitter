@@ -20,9 +20,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
+from divergencesplitter.livesplit.models import LiveSplitConnection
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
+    CameraBackend,
     CameraDeviceConfiguration,
+    CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
     RuntimeConfiguration,
@@ -36,6 +39,23 @@ from divergencesplitter_runtime.configuration.source_builder import (
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
 
+class CameraMode(Protocol):
+    @property
+    def width(self) -> int: ...
+
+    @property
+    def height(self) -> int: ...
+
+    @property
+    def fps(self) -> float: ...
+
+    @property
+    def format(self) -> str | None: ...
+
+    @property
+    def subtype_guid(self) -> str: ...
+
+
 class CameraDevice(Protocol):
     """A camera device as reported by the platform-specific enumerator."""
 
@@ -43,11 +63,17 @@ class CameraDevice(Protocol):
     def name(self) -> str: ...
 
     @property
-    def id(self) -> int: ...
+    def backend(self) -> object: ...
+
+    @property
+    def index(self) -> int: ...
+
+    @property
+    def modes(self) -> Sequence[CameraMode]: ...
 
 
 class CameraEnumerator(Protocol):
-    """Enumerate connected camera devices as name/id pairs."""
+    """Enumerate connected camera devices and their modes."""
 
     def list_devices(self) -> Sequence[CameraDevice]: ...
 
@@ -67,14 +93,30 @@ def select_configured_camera(
     """Select a current device with the shared name/id resolution rules."""
 
     try:
-        selected_id = resolve_camera_device(configured, devices)
+        selected = resolve_camera_device(configured, devices)
     except SourceConfigurationError:
         return None
-    return next(
-        device
-        for device in devices
-        if device.name == configured.name and device.id == selected_id
-    )
+    return next(device for device in devices if device is selected)
+
+
+@dataclass(frozen=True)
+class CameraSourceDraft:
+    device: CameraDeviceConfiguration
+    mode: CameraModeConfiguration | None
+
+
+@dataclass(frozen=True)
+class InstanceDraft:
+    """Editable transfer values for one instance of a settings projection.
+
+    Unlike the persisted ``InstanceConfiguration``, the empty strings that a
+    newly added instance starts with are valid here; they are only rejected when
+    the whole draft is saved.
+    """
+
+    rpc_endpoint: str
+    event_endpoint: str
+    scenario: str
 
 
 @dataclass(frozen=True)
@@ -82,16 +124,17 @@ class SettingsDraft:
     """Transfer values for one editable configuration projection."""
 
     configuration_path: Path
-    scenario_script: str
-    instances: tuple[InstanceConfiguration, ...]
-    source: SourceConfiguration
+    instances: tuple[InstanceDraft, ...]
+    source: SourceConfiguration | CameraSourceDraft
     log_level: str
 
 
-def camera_source(draft: SettingsDraft) -> CameraSourceConfiguration | None:
+def camera_source(draft: SettingsDraft) -> CameraSourceDraft | None:
     """Return the camera source carried by a draft, if any."""
 
-    if isinstance(draft.source, CameraSourceConfiguration):
+    if isinstance(draft.source, (CameraSourceConfiguration, CameraSourceDraft)):
+        if isinstance(draft.source, CameraSourceConfiguration):
+            return CameraSourceDraft(draft.source.device, draft.source.mode)
         return draft.source
     return None
 
@@ -102,31 +145,79 @@ def draft_from_configuration(
 ) -> SettingsDraft:
     """Project one loaded configuration into the shared editable draft."""
 
-    first_script = (
-        configuration.instances[0].scenario if configuration.instances else ""
+    instances = tuple(
+        InstanceDraft(
+            rpc_endpoint=instance.connection.rpc_endpoint,
+            event_endpoint=instance.connection.event_endpoint,
+            scenario=instance.scenario,
+        )
+        for instance in configuration.instances
     )
     return SettingsDraft(
         configuration_path=path,
-        scenario_script=first_script,
-        instances=configuration.instances,
+        instances=instances,
         source=configuration.source,
         log_level=configuration.runtime.log_level,
     )
 
 
+def validate_instances_draft(instances: tuple[InstanceDraft, ...]) -> None:
+    """Reject empty or duplicated instance values before saving.
+
+    Whitespace-only values count as empty without normalizing the stored value.
+    Endpoint duplicates are reported with the comparing instance index.
+    """
+
+    errors: list[str] = []
+    if not instances:
+        errors.append("at least one instance is required")
+    rpc_owners: dict[str, int] = {}
+    event_owners: dict[str, int] = {}
+    for index, instance in enumerate(instances):
+        number = index + 1
+        if not instance.scenario.strip():
+            errors.append(f"Instance {number} has an empty scenario")
+        rpc = instance.rpc_endpoint
+        if not rpc.strip():
+            errors.append(f"Instance {number} has an empty RPC endpoint")
+        elif rpc in rpc_owners:
+            errors.append(
+                f"Instance {number} uses the same RPC endpoint as "
+                f"Instance {rpc_owners[rpc] + 1}."
+            )
+        else:
+            rpc_owners[rpc] = index
+        event = instance.event_endpoint
+        if not event.strip():
+            errors.append(f"Instance {number} has an empty event endpoint")
+        elif event in event_owners:
+            errors.append(
+                f"Instance {number} uses the same event endpoint as "
+                f"Instance {event_owners[event] + 1}."
+            )
+        else:
+            event_owners[event] = index
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
 def configuration_from_draft(draft: SettingsDraft) -> ApplicationConfiguration:
     """Build a validated configuration from current draft values."""
 
+    validate_instances_draft(draft.instances)
     instances = tuple(
         InstanceConfiguration(
-            connection=instance.connection,
-            scenario=draft.scenario_script if index == 0 else instance.scenario,
+            connection=LiveSplitConnection(
+                instance.rpc_endpoint,
+                instance.event_endpoint,
+            ),
+            scenario=instance.scenario,
         )
-        for index, instance in enumerate(draft.instances)
+        for instance in draft.instances
     )
     return ApplicationConfiguration(
         version=1,
-        source=draft.source,
+        source=_configuration_source(draft.source),
         instances=instances,
         runtime=RuntimeConfiguration(draft.log_level),
     )
@@ -137,21 +228,22 @@ class EditPermission:
     """Which draft fields may be edited for a given session phase."""
 
     source: bool
-    scenario: bool
+    instances: bool
     log_level: bool
 
 
 def edit_permission(*, active: bool) -> EditPermission:
     """Resolve editability from whether a session is currently in progress.
 
-    Source and scenario are disabled while active so an in-flight session never
-    changes its input or scenario. Log level stays editable and is reflected to
-    the active diagnostics on confirmation.
+    Source and every instance are disabled while active so an in-flight session
+    never changes its input or its scenarios and LiveSplit connections. Log
+    level stays editable and is reflected to the active diagnostics on
+    confirmation.
     """
 
     return EditPermission(
         source=not active,
-        scenario=not active,
+        instances=not active,
         log_level=True,
     )
 
@@ -176,26 +268,14 @@ def save_decision(*, active: bool) -> SaveDecision:
     return SaveDecision(start=True, reflect_log_level=False)
 
 
-@dataclass(frozen=True)
-class CameraDimensions:
-    """Parsed camera-specific numeric values from the settings screen."""
-
-    width: int
-    height: int
-    fps: float
-
-
-def parse_camera_dimensions(
-    width: str,
-    height: str,
-    fps: str,
-) -> CameraDimensions:
-    """Parse camera widget text into typed values, rejecting invalid input."""
-
-    width_value = int(width)
-    height_value = int(height)
-    fps_value = float(fps)
-    return CameraDimensions(width_value, height_value, fps_value)
+def _configuration_source(
+    source: SourceConfiguration | CameraSourceDraft,
+) -> SourceConfiguration:
+    if isinstance(source, CameraSourceDraft):
+        if source.mode is None:
+            raise ValueError("a camera capture mode must be selected")
+        return CameraSourceConfiguration(source.device, source.mode)
+    return source
 
 
 class SettingsModel:
@@ -227,10 +307,63 @@ class SettingsModel:
     def list_cameras(self) -> Sequence[CameraDevice]:
         return self._camera_enumerator.list_devices()
 
-    def set_scenario_script(self, script: str) -> SettingsDraft | None:
+    def _replace_instance(
+        self,
+        index: int,
+        **changes: object,
+    ) -> SettingsDraft | None:
         if self._draft is None:
             return None
-        self._draft = replace(self._draft, scenario_script=script)
+        instances = self._draft.instances
+        if index < 0 or index >= len(instances):
+            return self._draft
+        instance = instances[index]
+        self._draft = replace(
+            self._draft,
+            instances=(
+                instances[:index]
+                + (replace(instance, **changes),)
+                + instances[index + 1 :]
+            ),
+        )
+        return self._draft
+
+    def set_instance_scenario(self, index: int, scenario: str) -> SettingsDraft | None:
+        return self._replace_instance(index, scenario=scenario)
+
+    def set_instance_rpc_endpoint(
+        self,
+        index: int,
+        endpoint: str,
+    ) -> SettingsDraft | None:
+        return self._replace_instance(index, rpc_endpoint=endpoint)
+
+    def set_instance_event_endpoint(
+        self,
+        index: int,
+        endpoint: str,
+    ) -> SettingsDraft | None:
+        return self._replace_instance(index, event_endpoint=endpoint)
+
+    def add_instance(self) -> SettingsDraft | None:
+        if self._draft is None:
+            return None
+        self._draft = replace(
+            self._draft,
+            instances=self._draft.instances + (InstanceDraft("", "", ""),),
+        )
+        return self._draft
+
+    def remove_instance(self, index: int) -> SettingsDraft | None:
+        if self._draft is None:
+            return None
+        instances = self._draft.instances
+        if index < 0 or index >= len(instances):
+            return self._draft
+        self._draft = replace(
+            self._draft,
+            instances=instances[:index] + instances[index + 1 :],
+        )
         return self._draft
 
     def set_log_level(self, level: str) -> SettingsDraft | None:
@@ -239,28 +372,8 @@ class SettingsModel:
         self._draft = replace(self._draft, log_level=level)
         return self._draft
 
-    def set_camera_device(self, name: str, id: int) -> SettingsDraft | None:
-        if self._draft is None:
-            return None
-        camera = camera_source(self._draft)
-        if camera is None:
-            return self._draft
-        self._draft = replace(
-            self._draft,
-            source=CameraSourceConfiguration(
-                CameraDeviceConfiguration(name, id),
-                camera.width,
-                camera.height,
-                camera.fps,
-            ),
-        )
-        return self._draft
-
-    def set_camera_dimensions(
-        self,
-        width: int,
-        height: int,
-        fps: float,
+    def set_camera_device(
+        self, backend: CameraBackend, name: str, index: int
     ) -> SettingsDraft | None:
         if self._draft is None:
             return None
@@ -269,12 +382,21 @@ class SettingsModel:
             return self._draft
         self._draft = replace(
             self._draft,
-            source=CameraSourceConfiguration(
-                camera.device,
-                width,
-                height,
-                fps,
+            source=CameraSourceDraft(
+                CameraDeviceConfiguration(backend, name, index), None
             ),
+        )
+        return self._draft
+
+    def set_camera_mode(self, mode: CameraModeConfiguration) -> SettingsDraft | None:
+        if self._draft is None:
+            return None
+        camera = camera_source(self._draft)
+        if camera is None:
+            return self._draft
+        self._draft = replace(
+            self._draft,
+            source=CameraSourceDraft(camera.device, mode),
         )
         return self._draft
 

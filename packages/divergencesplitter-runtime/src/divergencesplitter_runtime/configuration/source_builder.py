@@ -1,9 +1,10 @@
 """Build frame sources from parsed configuration values."""
 
 import importlib
+import math
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Protocol, assert_never
+from typing import Any, Protocol, assert_never, cast
 
 from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.source import FrameSource
@@ -11,6 +12,7 @@ from divergencesplitter.frame.video_file import VideoFileSource
 
 from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
+    CameraModeConfiguration,
     CameraSourceConfiguration,
     SourceConfiguration,
     VideoSourceConfiguration,
@@ -21,6 +23,23 @@ class SourceConfigurationError(Exception):
     """A configured frame source cannot be resolved or constructed."""
 
 
+class CaptureModeInfo(Protocol):
+    @property
+    def width(self) -> int: ...
+
+    @property
+    def height(self) -> int: ...
+
+    @property
+    def fps(self) -> float: ...
+
+    @property
+    def format(self) -> str | None: ...
+
+    @property
+    def subtype_guid(self) -> str: ...
+
+
 class CameraDeviceInfo(Protocol):
     """A camera device as reported by the platform-specific enumerator."""
 
@@ -28,7 +47,13 @@ class CameraDeviceInfo(Protocol):
     def name(self) -> str: ...
 
     @property
-    def id(self) -> int: ...
+    def index(self) -> int: ...
+
+    @property
+    def backend(self) -> object: ...
+
+    @property
+    def modes(self) -> Sequence[CaptureModeInfo]: ...
 
 
 def build_frame_source(
@@ -45,12 +70,11 @@ def build_frame_source(
             raise SourceConfigurationError(
                 "failed to enumerate camera devices"
             ) from error
-        device_id = resolve_camera_device(configuration.device, devices)
+        device = resolve_camera_device(configuration.device, devices)
+        mode = resolve_camera_mode(configuration.mode, device.modes)
+        module = importlib.import_module("windows_capture_device_list")
         return OpenCvCameraSource(
-            device_index=device_id,
-            width=configuration.width,
-            height=configuration.height,
-            fps=configuration.fps,
+            capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
         )
     if isinstance(configuration, VideoSourceConfiguration):
         path = _resolve_path(configuration.path, base_directory)
@@ -68,23 +92,62 @@ def _list_camera_devices() -> Sequence[CameraDeviceInfo]:
 def resolve_camera_device(
     configured: CameraDeviceConfiguration,
     devices: Sequence[CameraDeviceInfo],
-) -> int:
-    """Resolve a saved name and disambiguating id to the current device id."""
+) -> CameraDeviceInfo:
+    """Resolve backend/name and use index only to disambiguate duplicate names."""
 
-    matches = [device for device in devices if device.name == configured.name]
+    matches = [
+        device
+        for device in devices
+        if _backend_value(device.backend) == configured.backend.value
+        and device.name == configured.name
+    ]
     if not matches:
         raise SourceConfigurationError(
             f"camera device is not connected: {configured.name!r}"
         )
     if len(matches) == 1:
-        return matches[0].id
+        return matches[0]
     for device in matches:
-        if device.id == configured.id:
-            return device.id
+        if device.index == configured.index:
+            return device
     raise SourceConfigurationError(
         "multiple camera devices have the configured name and none has "
-        f"the configured id: name={configured.name!r}, id={configured.id!r}"
+        f"the configured index: name={configured.name!r}, index={configured.index!r}"
     )
+
+
+def resolve_camera_mode(
+    configured: CameraModeConfiguration,
+    modes: Sequence[CaptureModeInfo],
+) -> CaptureModeInfo:
+    """Resolve only the exact enumerated mode, allowing tiny FPS roundoff."""
+
+    for mode in modes:
+        if (
+            mode.width == configured.width
+            and mode.height == configured.height
+            and mode.subtype_guid == configured.subtype_guid
+            and math.isclose(
+                mode.fps,
+                configured.fps,
+                rel_tol=1e-6,
+                abs_tol=1e-6,
+            )
+        ):
+            return mode
+    raise SourceConfigurationError(
+        "configured camera mode is unavailable: "
+        f"{configured.width}x{configured.height}@{configured.fps} "
+        f"{configured.subtype_guid!r}"
+    )
+
+
+def _backend_value(backend: object) -> str:
+    value = getattr(backend, "value", None)
+    if isinstance(value, str):
+        return value
+    name = getattr(backend, "name", "")
+    return str(name).lower()
 
 
 def resolve_configuration_path(path: str, *, base_directory: Path) -> Path:

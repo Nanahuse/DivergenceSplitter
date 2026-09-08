@@ -134,8 +134,15 @@ enumeration ID to disambiguate devices with the same name:
   "source": {
     "type": "camera",
     "device": {
+      "backend": "media_foundation",
       "name": "USB Video Device",
-      "id": 2
+      "index": 0
+    },
+    "mode": {
+      "width": 1280,
+      "height": 720,
+      "fps": 60.0,
+      "subtype_guid": "47504A4D-0000-0010-8000-00AA00389B71"
     },
     "width": 1280,
     "height": 720,
@@ -156,11 +163,15 @@ enumeration ID to disambiguate devices with the same name:
 }
 ```
 
-On Windows, the runtime enumerates devices with
-`windows-capture-device-list`. A unique name match is accepted even if its ID
-changed. If several devices have the same name, the saved ID must match one of
-them. Relative scenario and video paths are resolved from the configuration
-file's directory.
+On Windows, the runtime enumerates camera devices and capture modes with
+`windows-capture-device-list` v0.2.0. DirectShow and Media Foundation are
+shown as separate choices, so the same physical camera may appear twice. The
+backend is part of the device identity; there is no backend fallback. A unique
+name match is accepted even if its index changed. If several devices have the
+same name within one backend, the saved index must match one of them. Capture
+modes must be present in the current enumeration and are never substituted.
+Relative scenario and video paths are resolved from the configuration file's
+directory. The configuration version remains `1`.
 
 Before using a camera/backend combination in production, manually confirm that
 it opens, continuously captures frames, releases the device on shutdown, and

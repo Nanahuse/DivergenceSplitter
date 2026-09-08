@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import cv2
 import numpy as np
@@ -123,6 +123,34 @@ class TestValidation:
 
 
 class TestPrepare:
+    def test_capture_factory_is_used_without_reinterpreting_properties(self):
+        captures = [FakeVideoCapture(), FakeVideoCapture()]
+        source = OpenCvCameraSource(
+            device_index=99,
+            backend=777,
+            width=640,
+            height=480,
+            fps=30.0,
+            capture_factory=cast(Any, lambda: captures.pop(0)),
+        )
+
+        assert source.prepare() is None
+        assert captures[0].set_calls == []
+
+    def test_capture_factory_is_called_again_after_read_failure(self):
+        first = FakeVideoCapture()
+        first.read_results = [(False, None)]
+        second = FakeVideoCapture()
+        second.read_results = [(True, make_image())]
+        source = OpenCvCameraSource(
+            capture_factory=cast(Any, iter((first, second)).__next__),
+        )
+
+        assert source.prepare() is None
+        assert not isinstance(source.read(), Frame)
+        assert source.prepare() is None
+        assert isinstance(source.read(), Frame)
+
     def test_initial_state_is_not_ready(self):
         source = OpenCvCameraSource()
         assert source.state is FrameSourceState.NOT_READY
