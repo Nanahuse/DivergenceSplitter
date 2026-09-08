@@ -3,6 +3,7 @@ name = "divergencesplitter-ui"
 version = "0.1.0"
 description = "Windows desktop UI for DivergenceSplitter"
 requires-python = ">=3.14"
+license = "GPL-3.0-only"
 classifiers = [
     "Operating System :: Microsoft :: Windows",
 ]

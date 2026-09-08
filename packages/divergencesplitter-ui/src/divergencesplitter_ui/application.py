@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import TextIO
 
 from divergencesplitter_ui._dpg import dpg
+from divergencesplitter_ui.about_window import AboutWindow
+from divergencesplitter_ui.error_window import ErrorWindow
+from divergencesplitter_ui.license_window import LicenseWindow
 from divergencesplitter_ui.presentation import (
     ObservableDiagnostics,
     ScreenPresenter,
@@ -46,6 +49,9 @@ class DesktopApplication:
         self._initial_configuration = initial_configuration
         model = settings_model or SettingsModel(WindowsCameraEnumerator())
         self._settings = SettingsWindow(controller, model)
+        self._licenses = LicenseWindow()
+        self._about = AboutWindow(self._licenses)
+        self._errors = ErrorWindow()
 
     def run(self) -> None:
         context_created = False
@@ -55,6 +61,10 @@ class DesktopApplication:
             self._renderer.build()
             self._settings.build()
             self._settings.build_main_shortcut(ScreenRenderer.SCENARIO_GROUP_TAG)
+            self._about.build()
+            self._about.build_main_shortcut(ScreenRenderer.SCENARIO_GROUP_TAG)
+            self._licenses.build()
+            self._errors.build()
             dpg.create_viewport(
                 title="DivergenceSplitter",
                 width=1200,
@@ -67,7 +77,9 @@ class DesktopApplication:
                 self._settings.open_configuration(self._initial_configuration)
             while dpg.is_dearpygui_running():
                 state = self._controller.state
+                result = self._controller.result
                 self._settings.tick(state)
+                self._errors.tick(result)
                 self._renderer.tick(
                     state,
                     self._observable(),

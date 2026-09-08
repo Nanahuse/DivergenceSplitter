@@ -17,6 +17,8 @@ jobs:
           python-version: "3.14"
       - name: Sync locked environment
         run: uv sync --locked --all-packages --group build
+      - name: Check license inventory
+        run: uv run python tools/generate_ui_license_inventory.py --check
       - name: Build single-file Windows executable
         run: >-
           uv run pyinstaller
@@ -26,6 +28,8 @@ jobs:
           --name DivergenceSplitter
           --collect-all dearpygui
           --collect-all windows_capture_device_list
+          --collect-data divergencesplitter_ui
+          --copy-metadata divergencesplitter-ui
           --distpath dist/ui
           --workpath build/ui-pyinstaller
           --specpath build/ui-pyinstaller

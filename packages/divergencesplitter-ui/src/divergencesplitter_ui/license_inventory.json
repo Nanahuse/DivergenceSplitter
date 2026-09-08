@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "name": "dearpygui",
+      "version": "2.3.1",
+      "license": "MIT"
+    },
+    {
+      "name": "divergencesplitter",
+      "version": "0.1.0",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "name": "divergencesplitter-runtime",
+      "version": "0.1.0",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "name": "divergencesplitter-ui",
+      "version": "0.1.0",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "name": "livesplit-bridge-client",
+      "version": "0.1.0",
+      "license": "MIT"
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.2",
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0"
+    },
+    {
+      "name": "opencv-python",
+      "version": "5.0.0.93",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "protobuf",
+      "version": "6.33.6",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "license": "MIT"
+    },
+    {
+      "name": "pyzmq",
+      "version": "27.2.0",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "name": "windows-capture-device-list",
+      "version": "0.1.0",
+      "license": "MIT"
+    }
+  ]
+}
