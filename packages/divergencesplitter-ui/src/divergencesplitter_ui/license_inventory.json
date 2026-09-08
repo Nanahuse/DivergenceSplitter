@@ -7,21 +7,6 @@
       "license": "MIT"
     },
     {
-      "name": "divergencesplitter",
-      "version": "0.1.0",
-      "license": "GPL-3.0-only"
-    },
-    {
-      "name": "divergencesplitter-runtime",
-      "version": "0.1.0",
-      "license": "GPL-3.0-only"
-    },
-    {
-      "name": "divergencesplitter-ui",
-      "version": "0.1.0",
-      "license": "GPL-3.0-only"
-    },
-    {
       "name": "livesplit-bridge-client",
       "version": "0.1.0",
       "license": "MIT"

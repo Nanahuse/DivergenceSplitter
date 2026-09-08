@@ -11,6 +11,9 @@ Generation is deterministic: packages are emitted sorted by their normalized
 name, and every run over the same environment produces identical JSON. The
 ``--check`` mode rebuilds the expected inventory and fails on any
 name/version/license difference, including both missing and extra packages.
+The license screen covers third-party components only, so the own
+DivergenceSplitter distributions are excluded from the emitted inventory via
+an explicit, documented set.
 """
 
 from __future__ import annotations
@@ -42,6 +45,12 @@ INVENTORY_PATH = (
 )
 ROOT_DISTRIBUTION = "divergencesplitter-ui"
 SCHEMA_VERSION = 1
+
+EXCLUDED_DISTRIBUTIONS: dict[str, str] = {
+    "divergencesplitter": "own package, not a third-party license",
+    "divergencesplitter-runtime": "own package, not a third-party license",
+    "divergencesplitter-ui": "own package, not a third-party license",
+}
 
 
 class Override(NamedTuple):
@@ -182,8 +191,16 @@ def resolve_license(dist: metadata.Distribution) -> str:
 def build_inventory(
     closure: dict[str, metadata.Distribution],
 ) -> InventoryDocument:
+    """Emit one inventory entry per non-excluded package.
+
+    The own DivergenceSplitter distributions are excluded because their
+    licenses are not part of the third-party license screen.
+    """
+
     packages: list[PackageEntry] = []
     for key in sorted(closure):
+        if key in EXCLUDED_DISTRIBUTIONS:
+            continue
         dist = closure[key]
         packages.append(
             {

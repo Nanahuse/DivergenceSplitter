@@ -164,12 +164,7 @@ class TestBuildInventory:
         names = [entry["name"] for entry in inventory["packages"]]
 
         assert names == sorted(names, key=canonicalize_name)
-        assert names == [
-            "divergencesplitter-runtime",
-            "divergencesplitter-ui",
-            "numpy",
-            "opencv-python",
-        ]
+        assert names == ["numpy", "opencv-python"]
 
     def test_name_version_license_are_extracted(self) -> None:
         dists = [
@@ -183,17 +178,35 @@ class TestBuildInventory:
             "schema_version": 1,
             "packages": [
                 {
-                    "name": "divergencesplitter-ui",
-                    "version": "0.1.0",
-                    "license": "GPL-3.0-only",
-                },
-                {
                     "name": "numpy",
                     "version": "2.5.2",
                     "license": "BSD-3-Clause",
                 },
             ],
         }
+
+    def test_own_packages_are_not_licensed_or_displayed(self) -> None:
+        dists = [
+            ui_distribution(requires=["divergencesplitter-runtime", "numpy"]),
+            FakeDistribution(
+                "divergencesplitter-runtime",
+                "0.1.0",
+                requires=["divergencesplitter"],
+                license_expression="GPL-3.0-only",
+            ),
+            FakeDistribution(
+                "divergencesplitter",
+                "0.1.0",
+                license_expression="GPL-3.0-only",
+            ),
+            FakeDistribution("numpy", "2.5.2", license_expression="BSD-3-Clause"),
+        ]
+
+        inventory = invgen.build_inventory(invgen.release_closure(installed(*dists)))
+
+        names = [entry["name"] for entry in inventory["packages"]]
+
+        assert names == ["numpy"]
 
 
 class TestResolveLicense:
@@ -258,9 +271,9 @@ class TestCheckInventory:
             "schema_version": 1,
             "packages": [
                 {
-                    "name": "divergencesplitter-ui",
-                    "version": "0.1.0",
-                    "license": "GPL-3.0-only",
+                    "name": "dearpygui",
+                    "version": "2.3.1",
+                    "license": "MIT",
                 },
                 {
                     "name": "numpy",
@@ -290,7 +303,7 @@ class TestCheckInventory:
     def test_extra_package_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()
         stored["packages"].append(
-            {"name": "dearpygui", "version": "2.3.1", "license": "MIT"}
+            {"name": "pyzmq", "version": "27.2.0", "license": "BSD-3-Clause"}
         )
         self.write_stored(tmp_path, stored)
 
