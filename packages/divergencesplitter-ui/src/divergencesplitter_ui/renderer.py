@@ -149,6 +149,8 @@ class ScreenRenderer:
                     dpg.add_tree_node(
                         tag=self._TREE_TAG, label="Scenario tree", default_open=True
                     )
+            dpg.add_group(tag=self.CONFIGURATION_PAGE_TAG, show=False)
+            dpg.add_group(tag=self.ABOUT_PAGE_TAG, show=False)
 
     def _stop(self, sender=None, app_data=None, user_data=None) -> None:
         if self._stop_callback is not None:

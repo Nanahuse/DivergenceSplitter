@@ -24,11 +24,7 @@ class AboutPage:
         """Create the static widgets once, before the render loop."""
 
         info = about_info()
-        with dpg.group(
-            tag=self.PAGE_TAG,
-            parent=parent,
-            show=False,
-        ):
+        with dpg.group(parent=parent):
             dpg.add_text(info.application_name)
             dpg.add_text(f"Version: {info.version}")
             dpg.add_separator()

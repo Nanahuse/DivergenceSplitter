@@ -79,11 +79,7 @@ class ConfigurationPage:
         self._instance_rows: dict[int, _InstanceRow] = {}
 
     def build(self, parent: int | str | None = None) -> None:
-        with dpg.group(
-            tag=self.PAGE_TAG,
-            parent=parent,
-            show=False,
-        ):
+        with dpg.group(parent=parent):
             dpg.add_text("Configuration file")
             self._config_path_tag = dpg.add_input_text(
                 default_value="",
