@@ -6,76 +6,112 @@ from typing import Any
 
 import pytest
 from divergencesplitter_ui.licenses import (
+    ApplicationLicense,
     LicenseEntry,
     LicenseInventory,
     LicenseInventoryError,
-    license_lines,
+    LicenseSection,
+    license_sections,
     load_inventory,
 )
 
 
-def document(packages: list[dict[str, Any]]) -> dict[str, Any]:
-    return {"schema_version": 1, "packages": packages}
+def document(
+    packages: list[dict[str, Any]],
+    *,
+    application: dict[str, Any] | None = None,
+    schema_version: int = 2,
+) -> dict[str, Any]:
+    return {
+        "schema_version": schema_version,
+        "application": application
+        or {
+            "name": "DivergenceSplitter",
+            "license": "GPL-3.0-only",
+            "license_text": "GPL text",
+        },
+        "packages": packages,
+    }
 
 
-def load(packages: list[dict[str, Any]]) -> LicenseInventory:
-    return load_inventory(StringIO(json.dumps(document(packages))))
+def package(**fields: Any) -> dict[str, Any]:
+    defaults = {
+        "name": "numpy",
+        "version": "2.5.2",
+        "license": "BSD-3-Clause",
+        "license_text": "full BSD text",
+    }
+    defaults.update(fields)
+    return defaults
+
+
+def package_without(field: str) -> dict[str, Any]:
+    data = package()
+    del data[field]
+    return data
+
+
+def load(
+    packages: list[dict[str, Any]],
+    *,
+    application: dict[str, Any] | None = None,
+    schema_version: int = 2,
+) -> LicenseInventory:
+    return load_inventory(
+        StringIO(
+            json.dumps(
+                document(
+                    packages, schema_version=schema_version, application=application
+                )
+            )
+        )
+    )
 
 
 class TestLoadInventory:
-    def test_decodes_entries_with_name_version_license(self) -> None:
+    def test_decodes_application_and_entries(self) -> None:
         inventory = load(
-            [
-                {
-                    "name": "divergencesplitter-ui",
-                    "version": "0.1.0",
-                    "license": "GPL-3.0-only",
-                },
-                {"name": "numpy", "version": "2.5.2", "license": "BSD-3-Clause"},
-            ]
+            [package(), package(name="pyyaml", license="MIT")],
         )
 
         assert inventory == LicenseInventory(
-            schema_version=1,
+            schema_version=2,
+            application=ApplicationLicense(
+                "DivergenceSplitter",
+                "GPL-3.0-only",
+                "GPL text",
+            ),
             packages=(
-                LicenseEntry("divergencesplitter-ui", "0.1.0", "GPL-3.0-only"),
-                LicenseEntry("numpy", "2.5.2", "BSD-3-Clause"),
+                LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "full BSD text"),
+                LicenseEntry("pyyaml", "2.5.2", "MIT", "full BSD text"),
             ),
         )
 
     def test_preserves_document_order(self) -> None:
-        inventory = load(
-            [
-                {"name": "b", "version": "1", "license": "MIT"},
-                {"name": "a", "version": "2", "license": "MIT"},
-            ]
-        )
+        inventory = load([package(name="b"), package(name="a")])
 
         assert [entry.name for entry in inventory.packages] == ["b", "a"]
 
     @pytest.mark.parametrize(
-        "package",
-        [
-            {"version": "1", "license": "MIT"},
-            {"name": "x", "license": "MIT"},
-            {"name": "x", "version": "1"},
-        ],
+        "removed",
+        ["name", "version", "license", "license_text"],
     )
-    def test_missing_required_field_raises(self, package: dict[str, Any]) -> None:
+    def test_missing_required_field_raises(self, removed: str) -> None:
         with pytest.raises(LicenseInventoryError):
-            load([package])
+            load([package_without(removed)])
 
     @pytest.mark.parametrize(
-        "package",
+        "package_fields",
         [
-            {"name": "", "version": "1", "license": "MIT"},
-            {"name": "x", "version": "", "license": "MIT"},
-            {"name": "x", "version": "1", "license": ""},
+            {"name": ""},
+            {"version": ""},
+            {"license": ""},
+            {"license_text": ""},
         ],
     )
-    def test_empty_required_field_raises(self, package: dict[str, Any]) -> None:
+    def test_empty_required_field_raises(self, package_fields: dict[str, Any]) -> None:
         with pytest.raises(LicenseInventoryError):
-            load([package])
+            load([package(**package_fields)])
 
     def test_invalid_json_raises(self) -> None:
         with pytest.raises(LicenseInventoryError):
@@ -87,46 +123,67 @@ class TestLoadInventory:
 
     def test_unsupported_schema_version_raises(self) -> None:
         with pytest.raises(LicenseInventoryError):
-            load_inventory(StringIO(json.dumps({"schema_version": 2, "packages": []})))
+            load_inventory(StringIO(json.dumps(document([], schema_version=1))))
 
     def test_missing_packages_list_raises(self) -> None:
+        bad = document([])
+        bad["packages"] = "x"
         with pytest.raises(LicenseInventoryError):
-            load_inventory(StringIO(json.dumps({"schema_version": 1})))
+            load_inventory(StringIO(json.dumps(bad)))
 
     def test_duplicate_package_raises(self) -> None:
         with pytest.raises(LicenseInventoryError):
+            load([package(), package()])
+
+    def test_missing_application_section_raises(self) -> None:
+        with pytest.raises(LicenseInventoryError):
+            load_inventory(
+                StringIO(
+                    json.dumps(
+                        {
+                            "schema_version": 2,
+                            "packages": [],
+                        }
+                    )
+                )
+            )
+
+    def test_empty_application_field_raises(self) -> None:
+        with pytest.raises(LicenseInventoryError):
             load(
-                [
-                    {"name": "x", "version": "1", "license": "MIT"},
-                    {"name": "x", "version": "1", "license": "MIT"},
-                ]
+                [],
+                application={
+                    "name": "DivergenceSplitter",
+                    "license": "GPL-3.0-only",
+                    "license_text": "",
+                },
             )
 
 
-class TestLicenseLines:
-    def test_formats_name_version_license_with_separator(self) -> None:
-        inventory = LicenseInventory(
-            schema_version=1,
-            packages=(LicenseEntry("a", "1.0", "MIT"),),
+class TestLicenseSections:
+    def make_inventory(self) -> LicenseInventory:
+        return LicenseInventory(
+            schema_version=2,
+            application=ApplicationLicense(
+                "DivergenceSplitter",
+                "GPL-3.0-only",
+                "the GPL text",
+            ),
+            packages=(LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "the BSD text"),),
         )
 
-        assert license_lines(inventory) == ("a", "1.0", "MIT", "")
+    def test_application_section_comes_first(self) -> None:
+        sections = license_sections(self.make_inventory())
 
-    def test_every_package_contributes_a_separator(self) -> None:
-        inventory = load(
-            [
-                {"name": "a", "version": "1", "license": "MIT"},
-                {"name": "b", "version": "2", "license": "GPL-3.0-only"},
-            ]
+        assert sections[0] == LicenseSection(
+            title="DivergenceSplitter — GPL-3.0-only",
+            text="the GPL text",
         )
 
-        assert license_lines(inventory) == (
-            "a",
-            "1",
-            "MIT",
-            "",
-            "b",
-            "2",
-            "GPL-3.0-only",
-            "",
+    def test_every_package_is_a_section(self) -> None:
+        sections = license_sections(self.make_inventory())
+
+        assert sections[1] == LicenseSection(
+            title="numpy 2.5.2 — BSD-3-Clause",
+            text="the BSD text",
         )

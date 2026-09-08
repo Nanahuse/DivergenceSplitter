@@ -7,13 +7,21 @@ target, and resolves each requirement to a distribution installed in the
 current environment. It never queries a network and never lists every
 installed package.
 
+For each inventoried component the generator also bundles the full license
+text files shipped by the installed distribution, so the license screen can
+reproduce the actual license texts (not just SPDX identifiers) that are
+redistributed inside the executable. The application's own GPL-3.0 text from
+the repository ``LICENSE`` is included as the ``application`` section, which
+is required when conveying a GPL-3.0 program.
+
 Generation is deterministic: packages are emitted sorted by their normalized
-name, and every run over the same environment produces identical JSON. The
-``--check`` mode rebuilds the expected inventory and fails on any
-name/version/license difference, including both missing and extra packages.
-The license screen covers third-party components only, so the own
-DivergenceSplitter distributions are excluded from the emitted inventory via
-an explicit, documented set.
+name, license files are sorted by their normalized sub-path, and every run
+over the same environment produces identical JSON. The ``--check`` mode
+rebuilds the expected inventory and fails on any name/version/license/text
+difference, including both missing and extra packages. The license screen
+covers third-party components only, so the own DivergenceSplitter
+distributions are excluded from the emitted inventory via an explicit,
+documented set.
 """
 
 from __future__ import annotations
@@ -24,7 +32,7 @@ import platform
 import sys
 from collections.abc import Mapping
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import NamedTuple, TypedDict
 
 from packaging.licenses import (
@@ -44,7 +52,11 @@ INVENTORY_PATH = (
     / "license_inventory.json"
 )
 ROOT_DISTRIBUTION = "divergencesplitter-ui"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+APPLICATION_NAME = "DivergenceSplitter"
+APPLICATION_LICENSE = "GPL-3.0-only"
+APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
+LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
 EXCLUDED_DISTRIBUTIONS: dict[str, str] = {
     "divergencesplitter": "own package, not a third-party license",
@@ -62,10 +74,18 @@ class PackageEntry(TypedDict):
     name: str
     version: str
     license: str
+    license_text: str
+
+
+class ApplicationEntry(TypedDict):
+    name: str
+    license: str
+    license_text: str
 
 
 class InventoryDocument(TypedDict):
     schema_version: int
+    application: ApplicationEntry
     packages: list[PackageEntry]
 
 
@@ -188,6 +208,98 @@ def resolve_license(dist: metadata.Distribution) -> str:
         ) from None
 
 
+def _dist_info_subpath(file_path: object) -> str | None:
+    """Return a distribution file path relative to its ``.dist-info`` dir."""
+
+    parts = PurePosixPath(str(file_path).replace("\\", "/")).parts
+    for index, segment in enumerate(parts):
+        if segment.endswith(".dist-info"):
+            return "/".join(parts[index + 1 :])
+    return None
+
+
+def _declared_license_files(
+    dist: metadata.Distribution,
+) -> list[tuple[str, str]]:
+    """Read the license files named by ``License-File`` metadata.
+
+    PEP 639 paths may be relative to the ``.dist-info/licenses`` directory or
+    to the ``.dist-info`` directory itself, so both are tried. A declared file
+    that cannot be read is a metadata inconsistency and fails loudly.
+    """
+
+    resolved: list[tuple[str, str]] = []
+    for declared_path in dist.metadata.get_all("License-File") or ():
+        read_path: str | None = None
+        content: str | None = None
+        for candidate in (f"licenses/{declared_path}", declared_path):
+            text = dist.read_text(candidate)
+            if text is not None:
+                read_path, content = candidate, text
+                break
+        if read_path is None or content is None:
+            raise RuntimeError(
+                f"declared license file {declared_path!r} for "
+                f"{dist.metadata['Name']!r} cannot be read"
+            )
+        resolved.append((read_path, content))
+    return resolved
+
+
+def _scanned_license_files(
+    dist: metadata.Distribution,
+) -> list[tuple[str, str]]:
+    """Discover license files under the distribution's ``.dist-info`` dir.
+
+    This catches components whose metadata omits ``License-File`` while the
+    installed wheel still ships license texts, including nested sub-licenses.
+    """
+
+    scanned: dict[str, str] = {}
+    for file_path in dist.files or ():
+        subpath = _dist_info_subpath(file_path)
+        if subpath is None:
+            continue
+        if not PurePosixPath(subpath).name.lower().startswith(LICENSE_NAME_STARTS):
+            continue
+        text = dist.read_text(subpath)
+        if text is not None:
+            scanned[subpath] = text
+    return sorted(scanned.items())
+
+
+def license_text(dist: metadata.Distribution) -> str:
+    """Collect every license text shipped by the installed distribution."""
+
+    entries: dict[str, str] = {}
+    for read_path, content in _declared_license_files(dist):
+        entries[read_path] = content
+    for read_path, content in _scanned_license_files(dist):
+        entries[read_path] = content
+    if not entries:
+        raise RuntimeError(
+            f"cannot collect any license text for {dist.metadata['Name']!r}"
+        )
+    blocks = [
+        f"=== {read_path} ===\n{entries[read_path]}" for read_path in sorted(entries)
+    ]
+    return "\n\n".join(blocks)
+
+
+def application_entry() -> ApplicationEntry:
+    """Return the application's own license section from the repo ``LICENSE``.
+
+    The GPL-3.0 text must accompany the conveyed program, so it is bundled
+    alongside the third-party inventory.
+    """
+
+    return {
+        "name": APPLICATION_NAME,
+        "license": APPLICATION_LICENSE,
+        "license_text": APPLICATION_LICENSE_PATH.read_text(encoding="utf-8"),
+    }
+
+
 def build_inventory(
     closure: dict[str, metadata.Distribution],
 ) -> InventoryDocument:
@@ -207,14 +319,19 @@ def build_inventory(
                 "name": dist.metadata["Name"],
                 "version": dist.metadata["Version"],
                 "license": resolve_license(dist),
+                "license_text": license_text(dist),
             }
         )
-    return {"schema_version": SCHEMA_VERSION, "packages": packages}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "application": application_entry(),
+        "packages": packages,
+    }
 
 
 def write_inventory(inventory: InventoryDocument) -> None:
     INVENTORY_PATH.write_text(
-        json.dumps(inventory, indent=2) + "\n",
+        json.dumps(inventory, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 
@@ -226,9 +343,19 @@ def check_inventory(inventory: InventoryDocument) -> bool:
     stored = json.loads(INVENTORY_PATH.read_text(encoding="utf-8"))
     if stored == inventory:
         return True
-    expected = {entry["name"]: entry for entry in inventory["packages"]}
-    actual = {entry["name"]: entry for entry in stored["packages"]}
     mismatched = False
+    if stored.get("schema_version") != inventory["schema_version"]:
+        print(
+            f"schema_version: expected {inventory['schema_version']!r}, "
+            f"stored {stored.get('schema_version')!r}"
+        )
+        mismatched = True
+    if stored.get("application") != inventory["application"]:
+        print("application license section differs from the release closure")
+        mismatched = True
+
+    expected = {entry["name"]: entry for entry in inventory["packages"]}
+    actual = {entry["name"]: entry for entry in stored.get("packages", [])}
     for name in sorted(expected.keys() - actual.keys()):
         print(f"missing from inventory: {name}")
         mismatched = True
@@ -236,7 +363,7 @@ def check_inventory(inventory: InventoryDocument) -> bool:
         print(f"extra in inventory: {name}")
         mismatched = True
     for name in sorted(expected.keys() & actual.keys()):
-        for field in ("version", "license"):
+        for field in ("version", "license", "license_text"):
             expected_value = expected[name][field]
             actual_value = actual[name][field]
             if expected_value != actual_value:

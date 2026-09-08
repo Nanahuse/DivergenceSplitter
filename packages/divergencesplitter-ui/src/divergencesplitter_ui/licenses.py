@@ -1,10 +1,12 @@
 """Pure loading and presentation of the bundled license inventory.
 
 The inventory is a static data file generated at release time from the
-Windows dependency closure of ``divergencesplitter-ui``. The screen never
-queries the network and never enumerates the installed environment; it reads
-exactly this file through ``importlib.resources``, which resolves identically
-from a source checkout and from a PyInstaller bundle.
+Windows dependency closure of ``divergencesplitter-ui``. It bundles both the
+license identifiers and the full license texts redistributed inside the
+executable, plus the application's own GPL-3.0 text. The screen never queries
+the network and never enumerates the installed environment; it reads exactly
+this file through ``importlib.resources``, which resolves identically from a
+source checkout and from a PyInstaller bundle.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import json
 from dataclasses import dataclass
 from typing import IO
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 INVENTORY_RESOURCE = "license_inventory.json"
 
 
@@ -34,6 +36,16 @@ class LicenseEntry:
     name: str
     version: str
     license: str
+    license_text: str
+
+
+@dataclass(frozen=True)
+class ApplicationLicense:
+    """The license conveyed with the application itself."""
+
+    name: str
+    license: str
+    license_text: str
 
 
 @dataclass(frozen=True)
@@ -41,13 +53,43 @@ class LicenseInventory:
     """The machine-readable license inventory bundled with the UI."""
 
     schema_version: int
+    application: ApplicationLicense
     packages: tuple[LicenseEntry, ...]
+
+
+@dataclass(frozen=True)
+class LicenseSection:
+    """One expandable license block shown by the license screen."""
+
+    title: str
+    text: str
+
+
+def _entry(
+    index: int,
+    package: object,
+    fields: tuple[str, ...],
+) -> tuple[str, ...]:
+    if not isinstance(package, dict):
+        raise LicenseInventoryError(
+            f"license inventory package {index} is not an object"
+        )
+    values: dict[str, str] = {}
+    for field in fields:
+        value = package.get(field)
+        if not isinstance(value, str) or not value:
+            raise LicenseInventoryError(
+                f"license inventory package {index} has an empty {field!r}"
+            )
+        values[field] = value
+    return tuple(values[field] for field in fields)
 
 
 def load_inventory(source: IO[str]) -> LicenseInventory:
     """Decode one inventory JSON document and validate its schema.
 
-    Entries are required to carry a package name, version, and license. The
+    Every package must carry a name, version, license, and the full license
+    text; the application section must carry its conveyed license text. The
     generator writes the file already sorted by normalized name; this loader
     preserves that order and only rejects structural mistakes.
     """
@@ -65,6 +107,16 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
         raise LicenseInventoryError(
             f"unsupported license inventory schema {schema_version!r}"
         )
+
+    application_data = document.get("application")
+    if not isinstance(application_data, dict):
+        raise LicenseInventoryError(
+            "license inventory must include an application section"
+        )
+    application = ApplicationLicense(
+        *_entry(0, application_data, ("name", "license", "license_text"))
+    )
+
     packages = document.get("packages")
     if not isinstance(packages, list):
         raise LicenseInventoryError("license inventory must list packages")
@@ -72,47 +124,41 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
     entries: list[LicenseEntry] = []
     seen: set[str] = set()
     for index, package in enumerate(packages):
-        if not isinstance(package, dict):
+        name, version, license, license_text = _entry(
+            index,
+            package,
+            ("name", "version", "license", "license_text"),
+        )
+        if name in seen:
             raise LicenseInventoryError(
-                f"license inventory package {index} is not an object"
+                f"license inventory lists package {name!r} twice"
             )
-        try:
-            entry = LicenseEntry(
-                name=package["name"],
-                version=package["version"],
-                license=package["license"],
-            )
-        except KeyError as error:
-            raise LicenseInventoryError(
-                f"license inventory package {index} is missing {error.args[0]!r}"
-            ) from error
-        if not entry.name or not entry.version or not entry.license:
-            raise LicenseInventoryError(
-                f"license inventory package {index} has an empty required field"
-            )
-        if entry.name in seen:
-            raise LicenseInventoryError(
-                f"license inventory lists package {entry.name!r} twice"
-            )
-        seen.add(entry.name)
-        entries.append(entry)
-    return LicenseInventory(schema_version, tuple(entries))
+        seen.add(name)
+        entries.append(LicenseEntry(name, version, license, license_text))
+    return LicenseInventory(schema_version, application, tuple(entries))
 
 
-def license_lines(inventory: LicenseInventory) -> tuple[str, ...]:
-    """Format every package into display lines, one per displayed row.
+def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
+    """Group the inventory into one expandable section per component.
 
-    Each package contributes its name, version, license, and a blank
-    separator so the list stays legible without a table component.
+    The application's own license comes first, followed by every third-party
+    package in the bundled order.
     """
 
-    lines: list[str] = []
+    sections = [
+        LicenseSection(
+            title=f"{inventory.application.name} — {inventory.application.license}",
+            text=inventory.application.license_text,
+        )
+    ]
     for entry in inventory.packages:
-        lines.append(entry.name)
-        lines.append(entry.version)
-        lines.append(entry.license)
-        lines.append("")
-    return tuple(lines)
+        sections.append(
+            LicenseSection(
+                title=f"{entry.name} {entry.version} — {entry.license}",
+                text=entry.license_text,
+            )
+        )
+    return tuple(sections)
 
 
 def bundled_inventory() -> LicenseInventory:

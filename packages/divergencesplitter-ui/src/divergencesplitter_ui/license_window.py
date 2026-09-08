@@ -2,13 +2,13 @@
 
 Nothing here resolves distributions, reads the installed environment, or
 contacts the network. The package data file generated at release time is the
-only source for every name, version, and license shown.
+only source for every name, version, license, and license text shown.
 """
 
 from __future__ import annotations
 
 from divergencesplitter_ui._dpg import dpg
-from divergencesplitter_ui.licenses import bundled_inventory, license_lines
+from divergencesplitter_ui.licenses import bundled_inventory, license_sections
 
 
 class LicenseWindow:
@@ -23,15 +23,16 @@ class LicenseWindow:
         instead of showing an incomplete license list.
         """
 
-        lines = license_lines(bundled_inventory())
+        sections = license_sections(bundled_inventory())
         with dpg.window(
             tag=self.WINDOW_TAG,
             label="Licenses",
-            width=420,
-            height=480,
+            width=440,
+            height=520,
             show=False,
         ):
-            dpg.add_text("Name / Version / License")
+            dpg.add_text("Select a component to read its license text")
             dpg.add_separator()
-            for line in lines:
-                dpg.add_text(line)
+            for section in sections:
+                with dpg.collapsing_header(label=section.title):
+                    dpg.add_text(section.text, wrap=400)
