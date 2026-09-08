@@ -114,12 +114,6 @@ class ScreenRenderer:
         ):
             with dpg.group(horizontal=True):
                 dpg.add_button(
-                    label="Start",
-                    callback=self._show_page,
-                    user_data=self.CONFIGURATION_PAGE_TAG,
-                )
-                dpg.add_button(label="Stop", callback=self._stop)
-                dpg.add_button(
                     label="Monitor",
                     callback=self._show_page,
                     user_data=self.MONITOR_PAGE_TAG,
@@ -135,22 +129,32 @@ class ScreenRenderer:
                     user_data=self.ABOUT_PAGE_TAG,
                 )
             dpg.add_separator()
-            with dpg.group(tag=self.MONITOR_PAGE_TAG), dpg.group(horizontal=True):
-                with dpg.child_window(width=-320, height=-1, border=True):
-                    dpg.add_text("Input Preview")
-                    dpg.add_texture_registry(tag=self._TEXTURE_REGISTRY_TAG)
-                    dpg.add_group(tag=self._IMAGE_GROUP_TAG)
-                with dpg.child_window(width=300, height=-1, border=True):
-                    dpg.add_text("Scenario / Diagnostics")
+            with dpg.group(tag=self.MONITOR_PAGE_TAG):
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="Start", callback=self._start)
+                    dpg.add_button(label="Stop", callback=self._stop)
                     dpg.add_text("State: —", tag=self._STATE_TAG)
                     dpg.add_text("input: — fps | processing: — fps", tag=self._FPS_TAG)
-                    dpg.add_group(tag=self.SCENARIO_GROUP_TAG)
-                    dpg.add_separator()
-                    dpg.add_tree_node(
-                        tag=self._TREE_TAG, label="Scenario tree", default_open=True
-                    )
+                with dpg.group(horizontal=True):
+                    with dpg.child_window(width=-320, height=-1, border=True):
+                        dpg.add_text("Input Preview")
+                        dpg.add_texture_registry(tag=self._TEXTURE_REGISTRY_TAG)
+                        dpg.add_group(tag=self._IMAGE_GROUP_TAG)
+                    with dpg.child_window(width=300, height=-1, border=True):
+                        dpg.add_text("Scenario / Diagnostics")
+                        dpg.add_group(tag=self.SCENARIO_GROUP_TAG)
+                        dpg.add_separator()
+                        dpg.add_tree_node(
+                            tag=self._TREE_TAG,
+                            label="Scenario tree",
+                            default_open=True,
+                        )
             dpg.add_group(tag=self.CONFIGURATION_PAGE_TAG, show=False)
             dpg.add_group(tag=self.ABOUT_PAGE_TAG, show=False)
+
+    def _start(self, sender=None, app_data=None, user_data=None) -> None:
+        dpg.configure_item(self.CONFIGURATION_PAGE_TAG, show=True)
+        dpg.configure_item(self.MONITOR_PAGE_TAG, show=False)
 
     def _stop(self, sender=None, app_data=None, user_data=None) -> None:
         if self._stop_callback is not None:
