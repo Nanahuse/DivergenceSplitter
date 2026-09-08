@@ -32,7 +32,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
 
 def camera_configuration() -> dict[str, object]:
     return {
-        "version": 1,
+        "version": 2,
         "source": {
             "type": "camera",
             "device": {"backend": "direct_show", "name": "USB Camera", "index": 2},
@@ -75,7 +75,7 @@ def test_loads_camera_configuration(tmp_path: Path) -> None:
 
     configuration = load_configuration(path)
 
-    assert configuration.version == 1
+    assert configuration.version == 2
     assert configuration.source == CameraSourceConfiguration(
         CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
         CameraModeConfiguration(
@@ -135,11 +135,11 @@ def test_loads_video_configuration(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "content",
     [
-        '{"version": 1,}',
+        '{"version": 2,}',
         '{"version": NaN}',
         '{"version": Infinity}',
-        '{"version": 1, "version": 1}',
-        '{/* comment */ "version": 1}',
+        '{"version": 2, "version": 2}',
+        '{/* comment */ "version": 2}',
     ],
 )
 def test_rejects_non_standard_or_ambiguous_json(
@@ -175,7 +175,7 @@ def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
     elif mutation == "unknown root":
         value["unknown"] = 1
     elif mutation == "unknown version":
-        value["version"] = 2
+        value["version"] = 1
     elif mutation == "unknown source":
         value["source"] = {"type": "ndi"}
     elif mutation == "unknown camera field":

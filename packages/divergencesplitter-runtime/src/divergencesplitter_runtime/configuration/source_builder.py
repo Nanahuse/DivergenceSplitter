@@ -71,7 +71,7 @@ def build_frame_source(
                 "failed to enumerate camera devices"
             ) from error
         device = resolve_camera_device(configuration.device, devices)
-        mode = resolve_camera_mode(configuration.mode, device.modes)
+        mode = resolve_camera_mode(configuration.mode, device.modes, device=device)
         module = importlib.import_module("windows_capture_device_list")
         return OpenCvCameraSource(
             capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
@@ -103,7 +103,9 @@ def resolve_camera_device(
     ]
     if not matches:
         raise SourceConfigurationError(
-            f"camera device is not connected: {configured.name!r}"
+            "camera device is not connected: "
+            f"backend={configured.backend.value!r}, name={configured.name!r}, "
+            f"index={configured.index!r}"
         )
     if len(matches) == 1:
         return matches[0]
@@ -119,6 +121,8 @@ def resolve_camera_device(
 def resolve_camera_mode(
     configured: CameraModeConfiguration,
     modes: Sequence[CaptureModeInfo],
+    *,
+    device: CameraDeviceInfo | None = None,
 ) -> CaptureModeInfo:
     """Resolve only the exact enumerated mode, allowing tiny FPS roundoff."""
 
@@ -135,8 +139,14 @@ def resolve_camera_mode(
             )
         ):
             return mode
+    device_context = ""
+    if device is not None:
+        device_context = (
+            f"backend={_backend_value(device.backend)!r}, device={device.name!r}, "
+        )
     raise SourceConfigurationError(
         "configured camera mode is unavailable: "
+        f"{device_context}"
         f"{configured.width}x{configured.height}@{configured.fps} "
         f"{configured.subtype_guid!r}"
     )

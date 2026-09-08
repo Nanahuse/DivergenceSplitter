@@ -46,7 +46,7 @@ from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 
 def make_configuration() -> ApplicationConfiguration:
     return ApplicationConfiguration(
-        1,
+        2,
         VideoSourceConfiguration("run.mp4"),
         (
             InstanceConfiguration(
@@ -242,7 +242,7 @@ def test_source_resolution_error_prevents_runtime_construction() -> None:
 def test_missing_module_returns_scenario_module_error(tmp_path: Path) -> None:
     stderr = StringIO()
     configuration = ApplicationConfiguration(
-        1,
+        2,
         VideoSourceConfiguration("run.mp4"),
         (InstanceConfiguration(LiveSplitConnection("rpc", "event"), "./missing.py"),),
         RuntimeConfiguration("INFO"),

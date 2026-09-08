@@ -62,7 +62,7 @@ frame source and one or more connection/scenario instances independently:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "video",
     "path": "./run.mp4"
@@ -130,7 +130,7 @@ enumeration ID to disambiguate devices with the same name:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "camera",
     "device": {
@@ -143,10 +143,7 @@ enumeration ID to disambiguate devices with the same name:
       "height": 720,
       "fps": 60.0,
       "subtype_guid": "47504A4D-0000-0010-8000-00AA00389B71"
-    },
-    "width": 1280,
-    "height": 720,
-    "fps": 60
+    }
   },
   "instances": [
     {
@@ -171,7 +168,8 @@ name match is accepted even if its index changed. If several devices have the
 same name within one backend, the saved index must match one of them. Capture
 modes must be present in the current enumeration and are never substituted.
 Relative scenario and video paths are resolved from the configuration file's
-directory. The configuration version remains `1`.
+directory. Version 1 configurations are unsupported and must be recreated
+using a listed capture mode.
 
 Before using a camera/backend combination in production, manually confirm that
 it opens, continuously captures frames, releases the device on shutdown, and

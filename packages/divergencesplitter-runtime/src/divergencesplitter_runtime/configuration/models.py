@@ -19,9 +19,11 @@ class CameraDeviceConfiguration:
     index: int
 
     def __post_init__(self) -> None:
+        if not isinstance(self.backend, CameraBackend):
+            raise TypeError(f"unsupported camera backend: {self.backend!r}")
         if not self.name:
             raise ValueError("camera device name must not be empty")
-        if self.index < 0:
+        if type(self.index) is not int or self.index < 0:
             raise ValueError("camera device index must be non-negative")
 
 
@@ -33,9 +35,9 @@ class CameraModeConfiguration:
     subtype_guid: str
 
     def __post_init__(self) -> None:
-        if self.width <= 0:
+        if type(self.width) is not int or self.width <= 0:
             raise ValueError("camera width must be positive")
-        if self.height <= 0:
+        if type(self.height) is not int or self.height <= 0:
             raise ValueError("camera height must be positive")
         if not math.isfinite(self.fps) or self.fps <= 0:
             raise ValueError("camera fps must be finite and positive")
@@ -88,5 +90,5 @@ class ApplicationConfiguration:
     runtime: RuntimeConfiguration
 
     def __post_init__(self) -> None:
-        if self.version != 1:
+        if self.version != 2:
             raise ValueError(f"unsupported configuration version: {self.version!r}")
