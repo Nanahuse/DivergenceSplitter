@@ -72,6 +72,7 @@ def build_frame_source(
             ) from error
         device = resolve_camera_device(configuration.device, devices)
         mode = resolve_camera_mode(configuration.mode, device.modes, device=device)
+        mode = resolve_camera_mode(configuration.mode, device.modes, device=device)
         module = importlib.import_module("windows_capture_device_list")
         return OpenCvCameraSource(
             capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
@@ -147,6 +148,8 @@ def resolve_camera_mode(
     raise SourceConfigurationError(
         "configured camera mode is unavailable: "
         f"{device_context}"
+    raise SourceConfigurationError(
+        "configured camera mode is unavailable: "
         f"{configured.width}x{configured.height}@{configured.fps} "
         f"{configured.subtype_guid!r}"
     )
