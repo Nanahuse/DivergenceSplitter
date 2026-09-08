@@ -63,6 +63,7 @@ from divergencesplitter_ui.windows_file_dialog import (
 )
 
 _CAMERA_LABEL_TEMPLATE = "[{backend}] {name} (index {index})"
+_DEFAULT_CONFIGURATION_PATH = Path("config.json")
 
 
 @dataclass(frozen=True)
@@ -311,6 +312,27 @@ class ConfigurationPage:
             self._set_status(f"could not enumerate cameras: {error}")
             dpg.configure_item(self._camera_tag, items=[], default_value="")
             return False
+        if configured is None and self._model.draft is None and devices:
+            first = devices[0]
+            configured = CameraDeviceConfiguration(
+                _camera_backend(first.backend), first.name, first.index
+            )
+            configured_mode = (
+                CameraModeConfiguration(
+                    first.modes[0].width,
+                    first.modes[0].height,
+                    first.modes[0].fps,
+                    first.modes[0].subtype_guid,
+                )
+                if first.modes
+                else None
+            )
+            self._model.create_default_camera_configuration(
+                _DEFAULT_CONFIGURATION_PATH,
+                configured,
+                configured_mode,
+            )
+            dpg.set_value(self._config_path_tag, str(_DEFAULT_CONFIGURATION_PATH))
         labels = []
         for device in devices:
             backend = _backend_value(device.backend)
