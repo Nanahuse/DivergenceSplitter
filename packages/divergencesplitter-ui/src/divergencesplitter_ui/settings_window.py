@@ -8,6 +8,7 @@ save, and start to the existing runtime configuration loader, saver, and the
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from divergencesplitter_runtime.configuration.json_file import (
@@ -16,7 +17,15 @@ from divergencesplitter_runtime.configuration.json_file import (
     load_configuration,
     save_configuration,
 )
-from divergencesplitter_runtime.configuration.models import CameraDeviceConfiguration
+from divergencesplitter_runtime.configuration.models import (
+    CameraBackend,
+    CameraDeviceConfiguration,
+    CameraModeConfiguration,
+)
+from divergencesplitter_runtime.configuration.source_builder import (
+    SourceConfigurationError,
+    resolve_camera_mode,
+)
 
 from divergencesplitter_ui._dpg import dpg
 from divergencesplitter_ui.session import (
@@ -27,16 +36,29 @@ from divergencesplitter_ui.session import (
 )
 from divergencesplitter_ui.settings import (
     LOG_LEVELS,
+    CameraDevice,
+    CameraMode,
+    InstanceDraft,
     SettingsDraft,
     SettingsModel,
     camera_source,
     edit_permission,
-    parse_camera_dimensions,
     save_decision,
     select_configured_camera,
 )
 
-_CAMERA_LABEL_TEMPLATE = "{name} (id {id})"
+_CAMERA_LABEL_TEMPLATE = "[{backend}] {name} (index {index})"
+
+
+@dataclass(frozen=True)
+class _InstanceRow:
+    """Widget handles for one instance editor."""
+
+    rpc_tag: int | str
+    event_tag: int | str
+    scenario_tag: int | str
+    browse_tag: int | str
+    remove_tag: int | str
 
 
 class SettingsWindow:
@@ -47,29 +69,18 @@ class SettingsWindow:
     def __init__(self, controller: SessionController, model: SettingsModel) -> None:
         self._controller = controller
         self._model = model
-        self._main_scenario_tag: int | str | None = None
-        self._main_scenario_browse_tag: int | str | None = None
-        self._camera_by_label: dict[str, tuple[str, int]] = {}
+        self._camera_by_label: dict[str, CameraDevice] = {}
+        self._mode_by_label: dict[str, CameraMode] = {}
+        self._instance_rows: dict[int, _InstanceRow] = {}
+        self._pending_instance_index: int | None = None
 
     def build_main_shortcut(self, parent: int | str) -> None:
-        """Add the main-screen shortcut backed by the shared scenario draft."""
+        """Add the main-screen shortcut into the settings screen."""
 
         dpg.add_button(
             parent=parent,
             label="Settings...",
             callback=self._on_show_settings,
-        )
-        dpg.add_text("Scenario script", parent=parent)
-        self._main_scenario_tag = dpg.add_input_text(
-            parent=parent,
-            default_value="",
-            width=-1,
-            callback=self._on_scenario_changed,
-        )
-        self._main_scenario_browse_tag = dpg.add_button(
-            parent=parent,
-            label="Browse scenario...",
-            callback=self._on_browse_scenario,
         )
 
     def build(self) -> None:
@@ -96,17 +107,12 @@ class SettingsWindow:
                 )
 
             dpg.add_separator()
-            dpg.add_text("Scenario script")
-            self._scenario_tag = dpg.add_input_text(
-                default_value="",
-                width=-1,
-                callback=self._on_scenario_changed,
+            dpg.add_text("Instances")
+            self._instances_group_tag = dpg.add_group()
+            self._add_instance_tag = dpg.add_button(
+                label="Add instance",
+                callback=self._on_add_instance,
             )
-            with dpg.group(horizontal=True):
-                self._scenario_browse_tag = dpg.add_button(
-                    label="Browse...",
-                    callback=self._on_browse_scenario,
-                )
 
             dpg.add_separator()
             dpg.add_text("Camera")
@@ -117,21 +123,12 @@ class SettingsWindow:
                 callback=self._on_camera_selected,
             )
             self._source_note_tag = dpg.add_text("")
-            self._width_tag = dpg.add_input_int(
-                label="Width",
-                default_value=0,
-                callback=self._on_dimensions_changed,
-            )
-            self._height_tag = dpg.add_input_int(
-                label="Height",
-                default_value=0,
-                callback=self._on_dimensions_changed,
-            )
-            self._fps_tag = dpg.add_input_float(
-                label="FPS",
-                default_value=0.0,
-                format="%.2f",
-                callback=self._on_dimensions_changed,
+            self._mode_tag = dpg.add_combo(
+                label="Capture mode",
+                items=[],
+                default_value="",
+                width=-1,
+                callback=self._on_mode_selected,
             )
 
             dpg.add_separator()
@@ -168,6 +165,10 @@ class SettingsWindow:
             callback=self._on_scenario_dialog,
             directory_selector=False,
         )
+        dpg.add_file_extension(".py", parent=self._scenario_dialog_tag)
+        dpg.add_file_extension(".yaml", parent=self._scenario_dialog_tag)
+        dpg.add_file_extension(".yml", parent=self._scenario_dialog_tag)
+        dpg.add_file_extension(".*", parent=self._scenario_dialog_tag)
 
     def open_configuration(self, path: Path) -> None:
         """Load and start one configuration, reporting errors in the screen."""
@@ -195,32 +196,33 @@ class SettingsWindow:
     def tick(self, state: SessionState) -> None:
         permission = edit_permission(active=is_active(state))
         draft = self._model.draft
-        scenario_enabled = permission.scenario and draft is not None
+        instances_enabled = permission.instances and draft is not None
         source_enabled = (
             permission.source and draft is not None and camera_source(draft) is not None
         )
-        dpg.configure_item(self._config_path_tag, enabled=permission.scenario)
-        dpg.configure_item(self._config_browse_tag, enabled=permission.scenario)
-        dpg.configure_item(self._open_button_tag, enabled=permission.scenario)
-        dpg.configure_item(self._scenario_tag, enabled=scenario_enabled)
-        dpg.configure_item(self._scenario_browse_tag, enabled=scenario_enabled)
-        if self._main_scenario_tag is not None:
-            dpg.configure_item(self._main_scenario_tag, enabled=scenario_enabled)
-        if self._main_scenario_browse_tag is not None:
-            dpg.configure_item(
-                self._main_scenario_browse_tag,
-                enabled=scenario_enabled,
-            )
+        dpg.configure_item(self._config_path_tag, enabled=permission.instances)
+        dpg.configure_item(self._config_browse_tag, enabled=permission.instances)
+        dpg.configure_item(self._open_button_tag, enabled=permission.instances)
+        dpg.configure_item(self._add_instance_tag, enabled=instances_enabled)
+        for index, row in self._instance_rows.items():
+            editable = instances_enabled and index < len(draft.instances)
+            dpg.configure_item(row.rpc_tag, enabled=editable)
+            dpg.configure_item(row.event_tag, enabled=editable)
+            dpg.configure_item(row.scenario_tag, enabled=editable)
+            dpg.configure_item(row.browse_tag, enabled=editable)
+            dpg.configure_item(row.remove_tag, enabled=editable)
         dpg.configure_item(self._camera_tag, enabled=source_enabled)
-        dpg.configure_item(self._width_tag, enabled=source_enabled)
-        dpg.configure_item(self._height_tag, enabled=source_enabled)
-        dpg.configure_item(self._fps_tag, enabled=source_enabled)
+        dpg.configure_item(self._mode_tag, enabled=source_enabled)
         dpg.configure_item(self._log_level_tag, enabled=draft is not None)
         dpg.configure_item(self._save_button_tag, enabled=draft is not None)
         if draft is not None:
-            self._sync_input(self._scenario_tag, draft.scenario_script)
-            if self._main_scenario_tag is not None:
-                self._sync_input(self._main_scenario_tag, draft.scenario_script)
+            for index, row in self._instance_rows.items():
+                if index >= len(draft.instances):
+                    continue
+                instance = draft.instances[index]
+                self._sync_input(row.rpc_tag, instance.rpc_endpoint)
+                self._sync_input(row.event_tag, instance.event_endpoint)
+                self._sync_input(row.scenario_tag, instance.scenario)
 
     def _sync_input(self, tag: int | str, value: str) -> None:
         if dpg.get_value(tag) != value:
@@ -228,24 +230,79 @@ class SettingsWindow:
 
     def _populate(self, draft: SettingsDraft) -> bool:
         dpg.set_value(self._config_path_tag, str(draft.configuration_path))
-        dpg.set_value(self._scenario_tag, draft.scenario_script)
+        self._rebuild_instance_editors(draft)
         dpg.set_value(self._log_level_tag, draft.log_level)
         camera = camera_source(draft)
         if camera is None:
             self._camera_by_label = {}
             dpg.configure_item(self._camera_tag, items=[], default_value="")
             dpg.set_value(self._source_note_tag, "source type is not camera")
-            dpg.set_value(self._width_tag, 0)
-            dpg.set_value(self._height_tag, 0)
-            dpg.set_value(self._fps_tag, 0.0)
+            dpg.configure_item(self._mode_tag, items=[], default_value="")
             return True
         dpg.set_value(self._source_note_tag, "")
-        dpg.set_value(self._width_tag, camera.width)
-        dpg.set_value(self._height_tag, camera.height)
-        dpg.set_value(self._fps_tag, camera.fps)
-        return self._refresh_cameras(camera.device.name, camera.device.id)
+        return self._refresh_cameras(camera.device, camera.mode)
 
-    def _refresh_cameras(self, name: str, id: int) -> bool:
+    def _rebuild_instance_editors(self, draft: SettingsDraft) -> None:
+        dpg.delete_item(self._instances_group_tag, children_only=True)
+        self._instance_rows = {}
+        for index, instance in enumerate(draft.instances):
+            self._instance_rows[index] = self._build_instance_editor(index, instance)
+
+    def _build_instance_editor(
+        self, index: int, instance: InstanceDraft
+    ) -> _InstanceRow:
+        parent = self._instances_group_tag
+        number = index + 1
+        dpg.add_text(f"Instance {number}", parent=parent)
+        dpg.add_text("RPC endpoint", parent=parent)
+        rpc_tag = dpg.add_input_text(
+            parent=parent,
+            default_value=instance.rpc_endpoint,
+            width=-1,
+            callback=self._on_instance_rpc_changed,
+            user_data=index,
+        )
+        dpg.add_text("Event endpoint", parent=parent)
+        event_tag = dpg.add_input_text(
+            parent=parent,
+            default_value=instance.event_endpoint,
+            width=-1,
+            callback=self._on_instance_event_changed,
+            user_data=index,
+        )
+        dpg.add_text("Scenario", parent=parent)
+        with dpg.group(horizontal=True, parent=parent):
+            scenario_tag = dpg.add_input_text(
+                default_value=instance.scenario,
+                width=-1,
+                callback=self._on_instance_scenario_changed,
+                user_data=index,
+            )
+            browse_tag = dpg.add_button(
+                label="Browse...",
+                callback=self._on_browse_instance_scenario,
+                user_data=index,
+            )
+        remove_tag = dpg.add_button(
+            parent=parent,
+            label="Remove",
+            callback=self._on_remove_instance,
+            user_data=index,
+        )
+        dpg.add_separator(parent=parent)
+        return _InstanceRow(
+            rpc_tag=rpc_tag,
+            event_tag=event_tag,
+            scenario_tag=scenario_tag,
+            browse_tag=browse_tag,
+            remove_tag=remove_tag,
+        )
+
+    def _refresh_cameras(
+        self,
+        configured: CameraDeviceConfiguration,
+        configured_mode: CameraModeConfiguration | None,
+    ) -> bool:
         self._camera_by_label = {}
         try:
             devices = tuple(self._model.list_cameras())
@@ -255,24 +312,60 @@ class SettingsWindow:
             return False
         labels = []
         for device in devices:
-            label = _CAMERA_LABEL_TEMPLATE.format(name=device.name, id=device.id)
-            self._camera_by_label[label] = (device.name, device.id)
+            backend = _backend_value(device.backend)
+            label = _CAMERA_LABEL_TEMPLATE.format(
+                backend=_backend_display(backend), name=device.name, index=device.index
+            )
+            self._camera_by_label[label] = device
             labels.append(label)
-        configured = CameraDeviceConfiguration(name, id)
         selected_device = select_configured_camera(configured, devices)
         if selected_device is None:
             selected = ""
             self._set_status("configured camera is unavailable; select it again")
+            dpg.configure_item(self._mode_tag, items=[], default_value="")
             resolved = False
         else:
+            assert selected_device is not None
             selected = _CAMERA_LABEL_TEMPLATE.format(
+                backend=_backend_display(_backend_value(selected_device.backend)),
                 name=selected_device.name,
-                id=selected_device.id,
+                index=selected_device.index,
             )
-            self._model.set_camera_device(selected_device.name, selected_device.id)
             resolved = True
+            self._model.set_camera_device(
+                configured.backend, selected_device.name, selected_device.index
+            )
+            resolved = (
+                self._refresh_modes(selected_device, configured_mode) and resolved
+            )
         dpg.configure_item(self._camera_tag, items=labels, default_value=selected)
         return resolved
+
+    def _refresh_modes(
+        self, device: CameraDevice, configured_mode: CameraModeConfiguration | None
+    ) -> bool:
+        self._mode_by_label = {}
+        labels = []
+        for mode in device.modes:
+            label = _mode_label(mode)
+            self._mode_by_label[label] = mode
+            labels.append(label)
+        selected = ""
+        if configured_mode is not None:
+            try:
+                mode = resolve_camera_mode(configured_mode, device.modes)
+            except SourceConfigurationError:
+                self._set_status(
+                    "configured capture mode is unavailable; select it again"
+                )
+                dpg.configure_item(self._mode_tag, items=labels, default_value="")
+                return False
+            selected = _mode_label(mode)
+        dpg.configure_item(self._mode_tag, items=labels, default_value=selected)
+        if selected:
+            assert configured_mode is not None
+            self._model.set_camera_mode(configured_mode)
+        return True
 
     def _on_browse_config(self) -> None:
         if is_active(self._controller.state):
@@ -282,9 +375,10 @@ class SettingsWindow:
     def _on_show_settings(self) -> None:
         dpg.show_item(self.WINDOW_TAG)
 
-    def _on_browse_scenario(self) -> None:
+    def _on_browse_instance_scenario(self, sender, app_data, user_data) -> None:
         if is_active(self._controller.state):
             return
+        self._pending_instance_index = user_data
         dpg.show_item(self._scenario_dialog_tag)
 
     def _on_config_dialog(self, sender, app_data, user_data) -> None:
@@ -299,16 +393,47 @@ class SettingsWindow:
     def _on_scenario_dialog(self, sender, app_data, user_data) -> None:
         if is_active(self._controller.state):
             return
+        index = self._pending_instance_index
+        self._pending_instance_index = None
+        if index is None:
+            return
         path = _dialog_path(app_data)
         if path is None:
             return
-        self._model.set_scenario_script(path)
-        dpg.set_value(self._scenario_tag, path)
+        if self._model.set_instance_scenario(index, path) is None:
+            return
+        row = self._instance_rows.get(index)
+        if row is not None:
+            dpg.set_value(row.scenario_tag, path)
 
-    def _on_scenario_changed(self, sender, app_data, user_data) -> None:
+    def _on_instance_rpc_changed(self, sender, app_data, user_data) -> None:
         if is_active(self._controller.state):
             return
-        self._model.set_scenario_script(app_data)
+        self._model.set_instance_rpc_endpoint(user_data, app_data)
+
+    def _on_instance_event_changed(self, sender, app_data, user_data) -> None:
+        if is_active(self._controller.state):
+            return
+        self._model.set_instance_event_endpoint(user_data, app_data)
+
+    def _on_instance_scenario_changed(self, sender, app_data, user_data) -> None:
+        if is_active(self._controller.state):
+            return
+        self._model.set_instance_scenario(user_data, app_data)
+
+    def _on_add_instance(self) -> None:
+        if is_active(self._controller.state):
+            return
+        draft = self._model.add_instance()
+        if draft is not None:
+            self._rebuild_instance_editors(draft)
+
+    def _on_remove_instance(self, sender, app_data, user_data) -> None:
+        if is_active(self._controller.state):
+            return
+        draft = self._model.remove_instance(user_data)
+        if draft is not None:
+            self._rebuild_instance_editors(draft)
 
     def _on_camera_selected(self, sender, app_data, user_data) -> None:
         if is_active(self._controller.state):
@@ -316,37 +441,22 @@ class SettingsWindow:
         device = self._camera_by_label.get(app_data)
         if device is None:
             return
-        name, id = device
-        self._model.set_camera_device(name, id)
+        self._model.set_camera_device(
+            _camera_backend(device.backend), device.name, device.index
+        )
+        self._refresh_modes(device, None)
 
-    def _on_dimensions_changed(self, sender, app_data, user_data) -> None:
+    def _on_mode_selected(self, sender, app_data, user_data) -> None:
         if is_active(self._controller.state):
             return
-        self._apply_dimensions()
-
-    def _apply_dimensions(self) -> bool:
-        draft = self._model.draft
-        if draft is None or camera_source(draft) is None:
-            return True
-        try:
-            dimensions = parse_camera_dimensions(
-                str(dpg.get_value(self._width_tag)),
-                str(dpg.get_value(self._height_tag)),
-                str(dpg.get_value(self._fps_tag)),
+        mode = self._mode_by_label.get(app_data)
+        if mode is None:
+            return
+        self._model.set_camera_mode(
+            CameraModeConfiguration(
+                mode.width, mode.height, mode.fps, mode.subtype_guid
             )
-        except ValueError, TypeError:
-            self._set_status("camera width, height, and fps must be numbers")
-            return False
-        try:
-            self._model.set_camera_dimensions(
-                dimensions.width,
-                dimensions.height,
-                dimensions.fps,
-            )
-        except ValueError as error:
-            self._set_status(str(error))
-            return False
-        return True
+        )
 
     def _on_log_level_changed(self, sender, app_data, user_data) -> None:
         self._model.set_log_level(app_data)
@@ -364,8 +474,6 @@ class SettingsWindow:
             self._set_status("open a configuration file first")
             return
         active = is_active(self._controller.state)
-        if not active and not self._apply_dimensions():
-            return
         try:
             configuration = self._model.configuration()
         except ValueError as error:
@@ -405,3 +513,26 @@ def _configuration_error_message(
     if isinstance(error, ConfigurationFileError):
         return f"could not read configuration: {error.error}"
     return f"invalid configuration: {error}"
+
+
+def _backend_value(backend: object) -> str:
+    value = getattr(backend, "value", None)
+    if isinstance(value, str):
+        return value
+    return str(getattr(backend, "name", "")).lower()
+
+
+def _camera_backend(backend: object) -> CameraBackend:
+    return CameraBackend(_backend_value(backend))
+
+
+def _backend_display(backend: str) -> str:
+    return {
+        "direct_show": "DirectShow",
+        "media_foundation": "Media Foundation",
+    }.get(backend, backend)
+
+
+def _mode_label(mode: CameraMode) -> str:
+    format_value = getattr(mode, "format", None) or getattr(mode, "subtype_guid", "")
+    return f"{mode.width} × {mode.height} @ {mode.fps:g} fps — {format_value}"

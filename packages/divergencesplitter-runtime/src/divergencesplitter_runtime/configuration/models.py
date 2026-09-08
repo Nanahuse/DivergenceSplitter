@@ -2,28 +2,35 @@
 
 import math
 from dataclasses import dataclass
+from enum import StrEnum
 
 from divergencesplitter.livesplit.models import LiveSplitConnection
 
 
+class CameraBackend(StrEnum):
+    DIRECT_SHOW = "direct_show"
+    MEDIA_FOUNDATION = "media_foundation"
+
+
 @dataclass(frozen=True)
 class CameraDeviceConfiguration:
+    backend: CameraBackend
     name: str
-    id: int
+    index: int
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("camera device name must not be empty")
-        if self.id < 0:
-            raise ValueError("camera device id must be non-negative")
+        if self.index < 0:
+            raise ValueError("camera device index must be non-negative")
 
 
 @dataclass(frozen=True)
-class CameraSourceConfiguration:
-    device: CameraDeviceConfiguration
+class CameraModeConfiguration:
     width: int
     height: int
     fps: float
+    subtype_guid: str
 
     def __post_init__(self) -> None:
         if self.width <= 0:
@@ -32,6 +39,14 @@ class CameraSourceConfiguration:
             raise ValueError("camera height must be positive")
         if not math.isfinite(self.fps) or self.fps <= 0:
             raise ValueError("camera fps must be finite and positive")
+        if not self.subtype_guid:
+            raise ValueError("camera subtype GUID must not be empty")
+
+
+@dataclass(frozen=True)
+class CameraSourceConfiguration:
+    device: CameraDeviceConfiguration
+    mode: CameraModeConfiguration
 
 
 @dataclass(frozen=True)

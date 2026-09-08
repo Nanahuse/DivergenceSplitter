@@ -7,6 +7,7 @@ the selected backend.
 """
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
@@ -63,6 +64,7 @@ class OpenCvCameraSource:
         clip_region: ClipRegion | None = None,
         output_size: OutputSize | None = None,
         time_provider: TimeProvider | None = None,
+        capture_factory: Callable[[], cv2.VideoCapture | None] | None = None,
     ) -> None:
         if device_index < 0:
             raise ValueError(f"device_index must be non-negative: {device_index}")
@@ -83,6 +85,7 @@ class OpenCvCameraSource:
         self._time_provider = (
             time_provider if time_provider is not None else TimeProvider()
         )
+        self._capture_factory = capture_factory
         self._capture: cv2.VideoCapture | None = None
         self._state = FrameSourceState.NOT_READY
 
@@ -117,7 +120,14 @@ class OpenCvCameraSource:
     def prepare(self) -> FrameSourceError | None:
         if self._state is FrameSourceState.READY:
             return None
-        capture = cv2.VideoCapture(self._device_index, self._backend)
+        if self._capture_factory is not None:
+            capture = self._capture_factory()
+        else:
+            capture = cv2.VideoCapture(self._device_index, self._backend)
+        if capture is None:
+            self._capture = None
+            self._state = FrameSourceState.NOT_READY
+            return OpenCvCameraOpenError("cannot open camera capture")
         if not capture.isOpened():
             capture.release()
             self._capture = None
@@ -127,18 +137,19 @@ class OpenCvCameraSource:
                 f"{self._device_index!r} with backend {self._backend!r}"
             )
         self._capture = capture
-        for prop, value in (
-            (cv2.CAP_PROP_FRAME_WIDTH, self._width),
-            (cv2.CAP_PROP_FRAME_HEIGHT, self._height),
-            (cv2.CAP_PROP_FPS, self._fps),
-        ):
-            if value is not None and not capture.set(prop, value):
-                capture.release()
-                self._capture = None
-                self._state = FrameSourceState.NOT_READY
-                return OpenCvCameraConfigurationError(
-                    f"cannot configure camera property {prop} to {value!r}"
-                )
+        if self._capture_factory is None:
+            for prop, value in (
+                (cv2.CAP_PROP_FRAME_WIDTH, self._width),
+                (cv2.CAP_PROP_FRAME_HEIGHT, self._height),
+                (cv2.CAP_PROP_FPS, self._fps),
+            ):
+                if value is not None and not capture.set(prop, value):
+                    capture.release()
+                    self._capture = None
+                    self._state = FrameSourceState.NOT_READY
+                    return OpenCvCameraConfigurationError(
+                        f"cannot configure camera property {prop} to {value!r}"
+                    )
         self._state = FrameSourceState.READY
         return None
 
