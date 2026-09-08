@@ -246,9 +246,15 @@ def test_builds_camera_source_from_current_device_and_mode(tmp_path: Path) -> No
     )
     devices = [fake_device(7, [mode])]
 
-    with patch(
-        "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
-        return_value=devices,
+    with (
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
+            return_value=devices,
+        ),
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder.importlib.import_module",
+            return_value=SimpleNamespace(open_video_capture=lambda resolved_mode: None),
+        ),
     ):
         source = build_frame_source(configuration, base_directory=tmp_path)
 
