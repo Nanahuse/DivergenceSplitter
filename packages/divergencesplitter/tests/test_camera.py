@@ -38,6 +38,11 @@ class FakeVideoCapture:
         self.opened = True
         self.released = False
         self.set_calls: list[tuple[int, object]] = []
+        self.properties = {
+            cv2.CAP_PROP_FRAME_WIDTH: 640.0,
+            cv2.CAP_PROP_FRAME_HEIGHT: 480.0,
+            cv2.CAP_PROP_FPS: 30.0,
+        }
         self.read_results: list[tuple[bool, np.ndarray | None]] = []
         self.read_calls = 0
         FakeVideoCapture.instances.append(self)
@@ -52,6 +57,9 @@ class FakeVideoCapture:
     def set(self, prop: int, value: object) -> bool:
         self.set_calls.append((prop, value))
         return True
+
+    def get(self, prop: int) -> float:
+        return self.properties[prop]
 
     def read(self) -> tuple[bool, np.ndarray | None]:
         self.read_calls += 1

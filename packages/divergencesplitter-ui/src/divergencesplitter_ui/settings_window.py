@@ -126,12 +126,17 @@ class ConfigurationPage:
                 width=-1,
                 callback=self._on_mode_selected,
             )
+            self._request_60_fps_tag = dpg.add_checkbox(
+                label="Request 60 FPS",
+                callback=self._on_request_60_fps_changed,
+            )
             dpg.add_text("Camera preview")
             dpg.add_texture_registry(tag="divergence-splitter-camera-preview-textures")
             self._preview_group_tag = dpg.add_group(
                 tag="divergence-splitter-camera-preview"
             )
             self._preview_status_tag = dpg.add_text("")
+            self._opened_camera_tag = dpg.add_text("Opened camera: —")
 
             dpg.add_separator()
             dpg.add_text("Instances")
@@ -198,6 +203,15 @@ class ConfigurationPage:
                     self._preview_status_tag,
                     f"camera preview: {self._camera_preview.error}",
                 )
+        settings = self._camera_preview.capture_settings
+        if settings is None:
+            dpg.set_value(self._opened_camera_tag, "Opened camera: —")
+        else:
+            dpg.set_value(
+                self._opened_camera_tag,
+                f"Opened camera: {settings.width}×{settings.height} @ "
+                f"{settings.fps:.2f} FPS",
+            )
         permission = edit_permission(active=is_active(state))
         draft = self._model.draft
         instances_enabled = permission.instances and draft is not None
@@ -215,6 +229,7 @@ class ConfigurationPage:
             dpg.configure_item(row.remove_tag, enabled=editable)
         dpg.configure_item(self._camera_tag, enabled=source_enabled)
         dpg.configure_item(self._mode_tag, enabled=source_enabled)
+        dpg.configure_item(self._request_60_fps_tag, enabled=source_enabled)
         dpg.configure_item(self._log_level_tag, enabled=draft is not None)
         dpg.configure_item(self._save_button_tag, enabled=draft is not None)
         if draft is not None:
@@ -242,6 +257,7 @@ class ConfigurationPage:
             self._refresh_cameras(None, None)
             return True
         dpg.set_value(self._source_note_tag, "")
+        dpg.set_value(self._request_60_fps_tag, camera.request_60_fps)
         return self._refresh_cameras(camera.device, camera.mode)
 
     def _rebuild_instance_editors(self, draft: SettingsDraft) -> None:
@@ -410,6 +426,7 @@ class ConfigurationPage:
         if draft is None:
             return
         dpg.set_value(self._preview_status_tag, "opening camera preview...")
+        camera = camera_source(draft)
         configuration = CameraSourceConfiguration(
             CameraDeviceConfiguration(
                 _camera_backend(selected_device.backend),
@@ -422,6 +439,7 @@ class ConfigurationPage:
                 mode.fps,
                 mode.subtype_guid,
             ),
+            camera.request_60_fps if camera is not None else False,
         )
         try:
             self._camera_preview.start(configuration, draft.configuration_path.parent)
@@ -536,6 +554,18 @@ class ConfigurationPage:
             )
         )
         self._start_camera_preview(selected_device=self._selected_camera(), mode=mode)
+
+    def _on_request_60_fps_changed(self, sender, app_data, user_data) -> None:
+        if is_active(self._controller.state):
+            return
+        draft = self._model.set_request_60_fps(bool(app_data))
+        if draft is None:
+            return
+        camera = camera_source(draft)
+        if camera is None or camera.mode is None:
+            self._camera_preview.stop()
+            return
+        self._refresh_modes(self._selected_camera(), camera.mode)
 
     def _selected_camera(self) -> CameraDevice:
         device = self._camera_by_label.get(str(dpg.get_value(self._camera_tag)))
