@@ -342,15 +342,15 @@ class ConfigurationPage:
         )
         dpg.add_text("Scenario", parent=parent)
         with dpg.group(horizontal=True, parent=parent):
+            browse_tag = dpg.add_button(
+                label="Browse...",
+                callback=self._on_browse_instance_scenario,
+                user_data=index,
+            )
             scenario_tag = dpg.add_input_text(
                 default_value=instance.scenario,
                 width=-1,
                 callback=self._on_instance_scenario_changed,
-                user_data=index,
-            )
-            browse_tag = dpg.add_button(
-                label="Browse...",
-                callback=self._on_browse_instance_scenario,
                 user_data=index,
             )
         remove_tag = dpg.add_button(
