@@ -42,6 +42,7 @@ def test_camera_preview_opens_without_scenario(monkeypatch, tmp_path) -> None:
     configuration = CameraSourceConfiguration(
         CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "Camera", 0),
         CameraModeConfiguration(1280, 720, 30.0, "mode"),
+        False,
     )
 
     preview.start(configuration, tmp_path)

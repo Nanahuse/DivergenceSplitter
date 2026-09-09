@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from divergencesplitter.frame.camera import CameraCaptureSettings, OpenCvCameraSource
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.source import FrameSourceError
 from divergencesplitter_runtime.configuration.models import (
@@ -35,6 +36,13 @@ class CameraPreview:
     def error(self) -> str | None:
         with self._lock:
             return self._error
+
+    @property
+    def capture_settings(self) -> CameraCaptureSettings | None:
+        with self._lock:
+            if not isinstance(self._source, OpenCvCameraSource):
+                return None
+            return self._source.capture_settings
 
     def start(
         self, configuration: CameraSourceConfiguration, base_directory: Path

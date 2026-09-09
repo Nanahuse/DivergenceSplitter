@@ -42,6 +42,7 @@ def camera_configuration() -> dict[str, object]:
                 "fps": 60,
                 "subtype_guid": "47504A4D-0000-0010-8000-00AA00389B71",
             },
+            "request_60_fps": False,
         },
         "instances": [
             {
@@ -81,6 +82,7 @@ def test_loads_camera_configuration(tmp_path: Path) -> None:
         CameraModeConfiguration(
             1280, 720, 60.0, "47504A4D-0000-0010-8000-00AA00389B71"
         ),
+        False,
     )
     assert len(configuration.instances) == 1
     assert configuration.instances[0].scenario == "./scenario.py"
@@ -243,6 +245,7 @@ def test_builds_camera_source_from_current_device_and_mode(tmp_path: Path) -> No
     configuration = CameraSourceConfiguration(
         CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
         CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
+        False,
     )
     devices = [fake_device(7, [mode])]
 
@@ -266,6 +269,7 @@ def test_camera_enumeration_failure_is_reported(tmp_path: Path) -> None:
     configuration = CameraSourceConfiguration(
         CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
         CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
+        False,
     )
 
     with (

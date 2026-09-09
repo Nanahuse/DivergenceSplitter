@@ -51,6 +51,15 @@ class OpenCvCameraReadBeforeReadyError(OpenCvCameraError):
     """``read`` was attempted while the source is not READY."""
 
 
+@dataclass(frozen=True)
+class CameraCaptureSettings:
+    """Capture settings reported by OpenCV after opening a camera."""
+
+    width: int
+    height: int
+    fps: float
+
+
 class OpenCvCameraSource:
     """Reads raw frames from an OpenCV-backed camera device."""
 
@@ -65,6 +74,7 @@ class OpenCvCameraSource:
         output_size: OutputSize | None = None,
         time_provider: TimeProvider | None = None,
         capture_factory: Callable[[], cv2.VideoCapture | None] | None = None,
+        request_60_fps: bool = False,
     ) -> None:
         if device_index < 0:
             raise ValueError(f"device_index must be non-negative: {device_index}")
@@ -86,7 +96,9 @@ class OpenCvCameraSource:
             time_provider if time_provider is not None else TimeProvider()
         )
         self._capture_factory = capture_factory
+        self._request_60_fps = request_60_fps
         self._capture: cv2.VideoCapture | None = None
+        self._capture_settings: CameraCaptureSettings | None = None
         self._state = FrameSourceState.NOT_READY
 
     @property
@@ -114,6 +126,10 @@ class OpenCvCameraSource:
         return self._fps
 
     @property
+    def capture_settings(self) -> CameraCaptureSettings | None:
+        return self._capture_settings
+
+    @property
     def normalizer(self) -> FrameNormalizer:
         return self._normalizer
 
@@ -126,11 +142,13 @@ class OpenCvCameraSource:
             capture = cv2.VideoCapture(self._device_index, self._backend)
         if capture is None:
             self._capture = None
+            self._capture_settings = None
             self._state = FrameSourceState.NOT_READY
             return OpenCvCameraOpenError("cannot open camera capture")
         if not capture.isOpened():
             capture.release()
             self._capture = None
+            self._capture_settings = None
             self._state = FrameSourceState.NOT_READY
             return OpenCvCameraOpenError(
                 "cannot open camera device "
@@ -146,10 +164,18 @@ class OpenCvCameraSource:
                 if value is not None and not capture.set(prop, value):
                     capture.release()
                     self._capture = None
+                    self._capture_settings = None
                     self._state = FrameSourceState.NOT_READY
                     return OpenCvCameraConfigurationError(
                         f"cannot configure camera property {prop} to {value!r}"
                     )
+        if self._request_60_fps:
+            capture.set(cv2.CAP_PROP_FPS, 60.0)
+        self._capture_settings = CameraCaptureSettings(
+            width=int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            height=int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            fps=capture.get(cv2.CAP_PROP_FPS),
+        )
         self._state = FrameSourceState.READY
         return None
 
@@ -160,6 +186,7 @@ class OpenCvCameraSource:
         if not retval or image is None:
             self._capture.release()
             self._capture = None
+            self._capture_settings = None
             self._state = FrameSourceState.NOT_READY
             return OpenCvCameraReadError("failed to read a frame from the camera")
         return Frame(image=image, captured_at=self._time_provider.now())
@@ -173,6 +200,7 @@ class OpenCvCameraSource:
         if self._capture is not None:
             self._capture.release()
             self._capture = None
+            self._capture_settings = None
         self._state = FrameSourceState.NOT_READY
 
     def __enter__(self) -> Self:

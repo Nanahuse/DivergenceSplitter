@@ -111,6 +111,7 @@ def _source_dict(source: SourceConfiguration) -> dict[str, object]:
                 "fps": source.mode.fps,
                 "subtype_guid": source.mode.subtype_guid,
             },
+            "request_60_fps": source.request_60_fps,
         }
     if isinstance(source, VideoSourceConfiguration):
         return {"type": "video", "path": source.path}
@@ -123,7 +124,7 @@ def _source(value: object) -> SourceConfiguration:
     if source_type == "camera":
         _keys(
             source,
-            required={"type", "device", "mode"},
+            required={"type", "device", "mode", "request_60_fps"},
         )
         device_value = _object(source["device"], "source.device")
         _keys(device_value, required={"backend", "name", "index"})
@@ -140,7 +141,11 @@ def _source(value: object) -> SourceConfiguration:
             _number(mode_value["fps"], "source.mode.fps"),
             _string(mode_value["subtype_guid"], "source.mode.subtype_guid"),
         )
-        return CameraSourceConfiguration(device, mode)
+        return CameraSourceConfiguration(
+            device,
+            mode,
+            _boolean(source["request_60_fps"], "source.request_60_fps"),
+        )
     if source_type == "video":
         _keys(source, required={"type", "path"})
         return VideoSourceConfiguration(_string(source["path"], "source.path"))
@@ -219,6 +224,12 @@ def _string(value: object, path: str) -> str:
 def _integer(value: object, path: str) -> int:
     if type(value) is not int:
         raise TypeError(f"{path} must be an integer")
+    return value
+
+
+def _boolean(value: object, path: str) -> bool:
+    if type(value) is not bool:
+        raise TypeError(f"{path} must be a boolean")
     return value
 
 
