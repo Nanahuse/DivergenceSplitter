@@ -153,7 +153,6 @@ class ConfigurationPage:
             dpg.add_text("Camera preview", parent=self._camera_settings_group)
             dpg.add_texture_registry(
                 tag="divergence-splitter-camera-preview-textures",
-                parent=self._camera_settings_group,
             )
             self._preview_group_tag = dpg.add_group(
                 tag="divergence-splitter-camera-preview",
