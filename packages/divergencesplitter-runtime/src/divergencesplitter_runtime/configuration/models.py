@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from divergencesplitter.frame.normalizer import ClipRegion, OutputSize
+from divergencesplitter.frame.normalizer import CropMargins, OutputSize
 from divergencesplitter.livesplit.models import LiveSplitConnection
 
 
@@ -48,19 +48,17 @@ class CameraModeConfiguration:
 
 @dataclass(frozen=True)
 class CropConfiguration:
-    x: int
-    y: int
-    width: int
-    height: int
+    left: int
+    right: int
+    top: int
+    bottom: int
 
     def __post_init__(self) -> None:
-        if self.x < 0 or self.y < 0:
-            raise ValueError("crop coordinates must be non-negative")
-        if self.width <= 0 or self.height <= 0:
-            raise ValueError("crop dimensions must be positive")
+        if min(self.left, self.right, self.top, self.bottom) < 0:
+            raise ValueError("crop margins must be non-negative")
 
-    def to_clip_region(self) -> ClipRegion:
-        return ClipRegion(self.x, self.y, self.width, self.height)
+    def to_crop_margins(self) -> CropMargins:
+        return CropMargins(self.left, self.right, self.top, self.bottom)
 
 
 @dataclass(frozen=True)

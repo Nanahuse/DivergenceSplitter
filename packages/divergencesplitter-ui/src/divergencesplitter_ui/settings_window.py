@@ -189,27 +189,27 @@ class ConfigurationPage:
                 callback=self._on_crop_enabled_changed,
                 parent=self._frame_processing_group,
             )
-            self._crop_x_tag = dpg.add_input_int(
-                label="X",
+            self._crop_left_tag = dpg.add_input_int(
+                label="Left",
                 default_value=0,
                 callback=self._on_crop_changed,
                 parent=self._frame_processing_group,
             )
-            self._crop_y_tag = dpg.add_input_int(
-                label="Y",
+            self._crop_right_tag = dpg.add_input_int(
+                label="Right",
                 default_value=0,
                 callback=self._on_crop_changed,
                 parent=self._frame_processing_group,
             )
-            self._crop_width_tag = dpg.add_input_int(
-                label="Width",
-                default_value=1,
+            self._crop_top_tag = dpg.add_input_int(
+                label="Top",
+                default_value=0,
                 callback=self._on_crop_changed,
                 parent=self._frame_processing_group,
             )
-            self._crop_height_tag = dpg.add_input_int(
-                label="Height",
-                default_value=1,
+            self._crop_bottom_tag = dpg.add_input_int(
+                label="Bottom",
+                default_value=0,
                 callback=self._on_crop_changed,
                 parent=self._frame_processing_group,
             )
@@ -332,10 +332,10 @@ class ConfigurationPage:
         dpg.configure_item(self._crop_enabled_tag, enabled=source_enabled)
         dpg.configure_item(self._resize_enabled_tag, enabled=source_enabled)
         for tag in (
-            self._crop_x_tag,
-            self._crop_y_tag,
-            self._crop_width_tag,
-            self._crop_height_tag,
+            self._crop_left_tag,
+            self._crop_right_tag,
+            self._crop_top_tag,
+            self._crop_bottom_tag,
         ):
             dpg.configure_item(tag, enabled=source_enabled and crop is not None)
         for tag in (self._resize_width_tag, self._resize_height_tag):
@@ -344,10 +344,10 @@ class ConfigurationPage:
             dpg.set_value(self._crop_enabled_tag, crop is not None)
             dpg.set_value(self._resize_enabled_tag, resize is not None)
             if crop is not None:
-                dpg.set_value(self._crop_x_tag, crop.x)
-                dpg.set_value(self._crop_y_tag, crop.y)
-                dpg.set_value(self._crop_width_tag, crop.width)
-                dpg.set_value(self._crop_height_tag, crop.height)
+                dpg.set_value(self._crop_left_tag, crop.left)
+                dpg.set_value(self._crop_right_tag, crop.right)
+                dpg.set_value(self._crop_top_tag, crop.top)
+                dpg.set_value(self._crop_bottom_tag, crop.bottom)
             if resize is not None:
                 dpg.set_value(self._resize_width_tag, resize.width)
                 dpg.set_value(self._resize_height_tag, resize.height)
@@ -383,10 +383,10 @@ class ConfigurationPage:
         crop = transform.crop
         resize = transform.resize
         dpg.set_value(self._crop_enabled_tag, crop is not None)
-        dpg.set_value(self._crop_x_tag, crop.x if crop is not None else 0)
-        dpg.set_value(self._crop_y_tag, crop.y if crop is not None else 0)
-        dpg.set_value(self._crop_width_tag, crop.width if crop is not None else 1)
-        dpg.set_value(self._crop_height_tag, crop.height if crop is not None else 1)
+        dpg.set_value(self._crop_left_tag, crop.left if crop is not None else 0)
+        dpg.set_value(self._crop_right_tag, crop.right if crop is not None else 0)
+        dpg.set_value(self._crop_top_tag, crop.top if crop is not None else 0)
+        dpg.set_value(self._crop_bottom_tag, crop.bottom if crop is not None else 0)
         dpg.set_value(self._resize_enabled_tag, resize is not None)
         dpg.set_value(
             self._resize_width_tag, resize.width if resize is not None else 640
@@ -567,10 +567,10 @@ class ConfigurationPage:
                     None
                     if transform.crop is None
                     else CropConfiguration(
-                        transform.crop.x,
-                        transform.crop.y,
-                        transform.crop.width,
-                        transform.crop.height,
+                        transform.crop.left,
+                        transform.crop.right,
+                        transform.crop.top,
+                        transform.crop.bottom,
                     ),
                     None
                     if transform.resize is None
@@ -698,10 +698,10 @@ class ConfigurationPage:
             return
         if app_data:
             self._model.set_crop_values(
-                int(dpg.get_value(self._crop_x_tag)),
-                int(dpg.get_value(self._crop_y_tag)),
-                int(dpg.get_value(self._crop_width_tag)),
-                int(dpg.get_value(self._crop_height_tag)),
+                int(dpg.get_value(self._crop_left_tag)),
+                int(dpg.get_value(self._crop_right_tag)),
+                int(dpg.get_value(self._crop_top_tag)),
+                int(dpg.get_value(self._crop_bottom_tag)),
             )
         else:
             self._model.set_crop(None)
@@ -715,10 +715,10 @@ class ConfigurationPage:
             and self._model.draft.source.transform.crop is not None
         ):
             self._model.set_crop_values(
-                int(dpg.get_value(self._crop_x_tag)),
-                int(dpg.get_value(self._crop_y_tag)),
-                int(dpg.get_value(self._crop_width_tag)),
-                int(dpg.get_value(self._crop_height_tag)),
+                int(dpg.get_value(self._crop_left_tag)),
+                int(dpg.get_value(self._crop_right_tag)),
+                int(dpg.get_value(self._crop_top_tag)),
+                int(dpg.get_value(self._crop_bottom_tag)),
             )
             self._restart_camera_preview()
 

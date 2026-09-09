@@ -77,14 +77,14 @@ def build_frame_source(
         return OpenCvCameraSource(
             capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
             request_60_fps=configuration.request_60_fps,
-            clip_region=_clip_region(configuration.transform),
+            crop_margins=_crop_margins(configuration.transform),
             output_size=_output_size(configuration.transform),
         )
     if isinstance(configuration, VideoSourceConfiguration):
         path = _resolve_path(configuration.path, base_directory)
         return VideoFileSource(
             str(path),
-            clip_region=_clip_region(configuration.transform),
+            crop_margins=_crop_margins(configuration.transform),
             output_size=_output_size(configuration.transform),
         )
     assert_never(configuration)
@@ -168,8 +168,8 @@ def _backend_value(backend: object) -> str:
     return str(name).lower()
 
 
-def _clip_region(transform: SourceTransformConfiguration):
-    return transform.crop.to_clip_region() if transform.crop is not None else None
+def _crop_margins(transform: SourceTransformConfiguration):
+    return transform.crop.to_crop_margins() if transform.crop is not None else None
 
 
 def _output_size(transform: SourceTransformConfiguration):

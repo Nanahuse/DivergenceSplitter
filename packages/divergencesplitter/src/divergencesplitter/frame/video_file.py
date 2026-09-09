@@ -16,6 +16,7 @@ from divergencesplitter.clock import TimeProvider
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
+    CropMargins,
     FrameNormalizer,
     OutputSize,
 )
@@ -58,11 +59,14 @@ class VideoFileSource:
         self,
         path: str,
         clip_region: ClipRegion | None = None,
+        crop_margins: CropMargins | None = None,
         output_size: OutputSize | None = None,
         time_provider: TimeProvider | None = None,
     ) -> None:
         self._normalizer = FrameNormalizer(
-            clip_region=clip_region, output_size=output_size
+            clip_region=clip_region,
+            crop_margins=crop_margins,
+            output_size=output_size,
         )
         self._path = path
         self._time_provider = (

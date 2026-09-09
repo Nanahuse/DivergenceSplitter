@@ -36,6 +36,7 @@ from divergencesplitter.detector import (
 from divergencesplitter.detector.models import DetectionResult, ReferenceImage
 from divergencesplitter.frame import (
     ClipRegion,
+    CropMargins,
     ErrorAction,
     Frame,
     FrameClipError,
@@ -64,6 +65,7 @@ __all__ = [
     "ColorRangeDetector",
     "Condition",
     "ConditionStatus",
+    "CropMargins",
     "Detected",
     "DetectionResult",
     "DifferenceHashSimilarityConfig",

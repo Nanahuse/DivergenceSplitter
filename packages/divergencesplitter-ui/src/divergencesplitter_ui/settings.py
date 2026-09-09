@@ -102,10 +102,10 @@ class EditableVideoSourceConfiguration:
 
 @dataclass
 class EditableCropConfiguration:
-    x: int
-    y: int
-    width: int
-    height: int
+    left: int
+    right: int
+    top: int
+    bottom: int
 
 
 @dataclass
@@ -193,10 +193,10 @@ def _editable_transform(
         None
         if transform.crop is None
         else EditableCropConfiguration(
-            transform.crop.x,
-            transform.crop.y,
-            transform.crop.width,
-            transform.crop.height,
+            transform.crop.left,
+            transform.crop.right,
+            transform.crop.top,
+            transform.crop.bottom,
         ),
         None
         if transform.resize is None
@@ -214,10 +214,10 @@ def _configuration_transform(
             None
             if transform.crop is None
             else CropConfiguration(
-                transform.crop.x,
-                transform.crop.y,
-                transform.crop.width,
-                transform.crop.height,
+                transform.crop.left,
+                transform.crop.right,
+                transform.crop.top,
+                transform.crop.bottom,
             )
         )
         resize = (
@@ -422,9 +422,9 @@ class SettingsModel:
         return self._editable
 
     def set_crop_values(
-        self, x: int, y: int, width: int, height: int
+        self, left: int, right: int, top: int, bottom: int
     ) -> EditableApplicationConfiguration | None:
-        return self.set_crop(EditableCropConfiguration(x, y, width, height))
+        return self.set_crop(EditableCropConfiguration(left, right, top, bottom))
 
     def set_resize_values(
         self, width: int, height: int

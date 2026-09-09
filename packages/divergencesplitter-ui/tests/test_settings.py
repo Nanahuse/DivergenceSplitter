@@ -216,12 +216,12 @@ class TestSettingsModel:
 
     def test_source_transform_is_shared_across_source_types_and_dirty(self) -> None:
         model = make_model()
-        model.set_crop_values(10, 20, 640, 480)
+        model.set_crop_values(10, 20, 30, 40)
         model.set_resize_values(320, 240)
 
         assert model.draft is not None
         assert model.draft.source.transform.crop == EditableCropConfiguration(
-            10, 20, 640, 480
+            10, 20, 30, 40
         )
         assert model.draft.source.transform.resize == EditableResizeConfiguration(
             320, 240

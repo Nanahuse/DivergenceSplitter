@@ -784,6 +784,7 @@ def _describe_source(source: FrameSource) -> dict[str, object]:
         )
     normalizer = source.normalizer
     clip = normalizer.clip_region
+    margins = normalizer.crop_margins
     output = normalizer.output_size
     if clip is not None:
         fields.update(
@@ -791,6 +792,13 @@ def _describe_source(source: FrameSource) -> dict[str, object]:
             clip_y=clip.y,
             clip_width=clip.width,
             clip_height=clip.height,
+        )
+    if margins is not None:
+        fields.update(
+            crop_left=margins.left,
+            crop_right=margins.right,
+            crop_top=margins.top,
+            crop_bottom=margins.bottom,
         )
     if output is not None:
         fields.update(output_width=output.width, output_height=output.height)

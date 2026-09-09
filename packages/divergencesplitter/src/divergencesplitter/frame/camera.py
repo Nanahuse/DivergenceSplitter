@@ -18,6 +18,7 @@ from divergencesplitter.clock import TimeProvider
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
+    CropMargins,
     FrameNormalizer,
     OutputSize,
 )
@@ -71,6 +72,7 @@ class OpenCvCameraSource:
         height: int | None = None,
         fps: float | None = None,
         clip_region: ClipRegion | None = None,
+        crop_margins: CropMargins | None = None,
         output_size: OutputSize | None = None,
         time_provider: TimeProvider | None = None,
         capture_factory: Callable[[], cv2.VideoCapture | None] | None = None,
@@ -85,7 +87,9 @@ class OpenCvCameraSource:
         if fps is not None and (not math.isfinite(fps) or fps <= 0):
             raise ValueError(f"fps must be finite and positive: {fps}")
         self._normalizer = FrameNormalizer(
-            clip_region=clip_region, output_size=output_size
+            clip_region=clip_region,
+            crop_margins=crop_margins,
+            output_size=output_size,
         )
         self._device_index = device_index
         self._backend = backend

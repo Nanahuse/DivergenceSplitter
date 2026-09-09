@@ -228,10 +228,10 @@ def _transform_dict(transform: SourceTransformConfiguration) -> dict[str, object
         "crop": None
         if transform.crop is None
         else {
-            "x": transform.crop.x,
-            "y": transform.crop.y,
-            "width": transform.crop.width,
-            "height": transform.crop.height,
+            "left": transform.crop.left,
+            "right": transform.crop.right,
+            "top": transform.crop.top,
+            "bottom": transform.crop.bottom,
         },
         "resize": None
         if transform.resize is None
@@ -246,12 +246,12 @@ def _transform(value: object, path: str) -> SourceTransformConfiguration:
     crop = None
     if crop_value is not None:
         crop_object = _object(crop_value, f"{path}.crop")
-        _keys(crop_object, required={"x", "y", "width", "height"})
+        _keys(crop_object, required={"left", "right", "top", "bottom"})
         crop = CropConfiguration(
-            _integer(crop_object["x"], f"{path}.crop.x"),
-            _integer(crop_object["y"], f"{path}.crop.y"),
-            _integer(crop_object["width"], f"{path}.crop.width"),
-            _integer(crop_object["height"], f"{path}.crop.height"),
+            _integer(crop_object["left"], f"{path}.crop.left"),
+            _integer(crop_object["right"], f"{path}.crop.right"),
+            _integer(crop_object["top"], f"{path}.crop.top"),
+            _integer(crop_object["bottom"], f"{path}.crop.bottom"),
         )
     resize_value = transform["resize"]
     resize = None
