@@ -53,17 +53,16 @@ from divergencesplitter_ui.settings import (
     SettingsModel,
     camera_source,
     edit_permission,
-    save_decision,
     select_configured_camera,
 )
 from divergencesplitter_ui.windows_file_dialog import (
     CONFIGURATION_FILTERS,
     SCENARIO_FILTERS,
     select_open_file,
+    select_save_file,
 )
 
 _CAMERA_LABEL_TEMPLATE = "[{backend}] {name} (index {index})"
-_DEFAULT_CONFIGURATION_PATH = Path("config.json")
 
 
 @dataclass(frozen=True)
@@ -92,6 +91,7 @@ class ConfigurationPage:
         self._preview_texture_tag: int | str | None = None
         self._preview_image_tag: int | str | None = None
         self._preview_signature = None
+        self._pending_reload_path: Path | None = None
 
     def build(self, parent: int | str | None = None) -> None:
         with dpg.group(parent=parent):
@@ -99,15 +99,20 @@ class ConfigurationPage:
             self._config_path_tag = dpg.add_input_text(
                 default_value="",
                 width=-1,
+                readonly=True,
             )
             with dpg.group(horizontal=True):
-                self._config_browse_tag = dpg.add_button(
-                    label="Browse...",
-                    callback=self._on_browse_config,
+                self._new_button_tag = dpg.add_button(
+                    label="New...", callback=self._on_new
                 )
                 self._open_button_tag = dpg.add_button(
-                    label="Open",
-                    callback=self._on_open,
+                    label="Open...", callback=self._on_open
+                )
+                self._save_button_tag = dpg.add_button(
+                    label="Save", callback=self._on_save
+                )
+                self._save_as_button_tag = dpg.add_button(
+                    label="Save As...", callback=self._on_save_as
                 )
 
             dpg.add_separator()
@@ -155,10 +160,6 @@ class ConfigurationPage:
             )
 
             dpg.add_separator()
-            self._save_button_tag = dpg.add_button(
-                label="Save",
-                callback=self._on_save,
-            )
             self._status_tag = dpg.add_text("", color=(255, 200, 120))
 
         self._refresh_cameras(None, None)
@@ -166,22 +167,14 @@ class ConfigurationPage:
     def open_configuration(self, path: Path) -> None:
         """Load and start one configuration, reporting errors in the screen."""
 
-        if is_active(self._controller.state):
-            self._set_status("stop the current session before opening a configuration")
-            return
         try:
             configuration = load_configuration(path)
         except (ConfigurationFileError, ConfigurationValidationError) as error:
             self._set_status(_configuration_error_message(error))
             return
         draft = self._model.open_configuration(configuration, path)
-        if self._populate(draft):
-            if draft.instances:
-                self._start(path)
-            else:
-                self._set_status(
-                    "camera preview is available; add a scenario instance to start"
-                )
+        self._populate(draft)
+        self._reload(path)
 
     def _start(self, path: Path) -> None:
         try:
@@ -192,6 +185,11 @@ class ConfigurationPage:
         self._set_status(f"started {path.name}")
 
     def tick(self, state: SessionState) -> None:
+        if self._pending_reload_path is not None and not is_active(state):
+            path = self._pending_reload_path
+            self._pending_reload_path = None
+            self._start(path)
+            state = self._controller.state
         if is_active(state):
             self._camera_preview.stop()
         else:
@@ -212,13 +210,23 @@ class ConfigurationPage:
                 f"Opened camera: {settings.width}×{settings.height} @ "
                 f"{settings.fps:.2f} FPS",
             )
-        permission = edit_permission(active=is_active(state))
+        permission = edit_permission(state)
         draft = self._model.draft
         instances_enabled = permission.instances and draft is not None
         source_enabled = permission.source and draft is not None
-        dpg.configure_item(self._config_path_tag, enabled=permission.instances)
-        dpg.configure_item(self._config_browse_tag, enabled=permission.instances)
+        if draft is not None:
+            path_text = str(draft.configuration_path)
+            if self._model.is_dirty:
+                path_text += " *"
+            self._sync_input(self._config_path_tag, path_text)
+        dpg.configure_item(self._config_path_tag, enabled=False)
+        dpg.configure_item(self._new_button_tag, enabled=permission.instances)
         dpg.configure_item(self._open_button_tag, enabled=permission.instances)
+        dpg.configure_item(
+            self._save_button_tag,
+            enabled=draft is not None and permission.instances,
+        )
+        dpg.configure_item(self._save_as_button_tag, enabled=permission.instances)
         dpg.configure_item(self._add_instance_tag, enabled=instances_enabled)
         for index, row in self._instance_rows.items():
             editable = instances_enabled and index < len(draft.instances)
@@ -230,8 +238,10 @@ class ConfigurationPage:
         dpg.configure_item(self._camera_tag, enabled=source_enabled)
         dpg.configure_item(self._mode_tag, enabled=source_enabled)
         dpg.configure_item(self._request_60_fps_tag, enabled=source_enabled)
-        dpg.configure_item(self._log_level_tag, enabled=draft is not None)
-        dpg.configure_item(self._save_button_tag, enabled=draft is not None)
+        dpg.configure_item(
+            self._log_level_tag,
+            enabled=draft is not None and permission.log_level,
+        )
         if draft is not None:
             for index, row in self._instance_rows.items():
                 if index >= len(draft.instances):
@@ -246,7 +256,10 @@ class ConfigurationPage:
             dpg.set_value(tag, value)
 
     def _populate(self, draft: SettingsDraft) -> bool:
-        dpg.set_value(self._config_path_tag, str(draft.configuration_path))
+        path_text = str(draft.configuration_path)
+        if self._model.is_dirty:
+            path_text += " *"
+        dpg.set_value(self._config_path_tag, path_text)
         self._rebuild_instance_editors(draft)
         dpg.set_value(self._log_level_tag, draft.log_level)
         camera = camera_source(draft)
@@ -328,27 +341,6 @@ class ConfigurationPage:
             self._set_status(f"could not enumerate cameras: {error}")
             dpg.configure_item(self._camera_tag, items=[], default_value="")
             return False
-        if configured is None and self._model.draft is None and devices:
-            first = devices[0]
-            configured = CameraDeviceConfiguration(
-                _camera_backend(first.backend), first.name, first.index
-            )
-            configured_mode = (
-                CameraModeConfiguration(
-                    first.modes[0].width,
-                    first.modes[0].height,
-                    first.modes[0].fps,
-                    first.modes[0].subtype_guid,
-                )
-                if first.modes
-                else None
-            )
-            self._model.create_default_camera_configuration(
-                _DEFAULT_CONFIGURATION_PATH,
-                configured,
-                configured_mode,
-            )
-            dpg.set_value(self._config_path_tag, str(_DEFAULT_CONFIGURATION_PATH))
         labels = []
         for device in devices:
             backend = _backend_value(device.backend)
@@ -425,6 +417,9 @@ class ConfigurationPage:
         draft = self._model.draft
         if draft is None:
             return
+        if is_active(self._controller.state):
+            self._camera_preview.stop()
+            return
         dpg.set_value(self._preview_status_tag, "opening camera preview...")
         camera = camera_source(draft)
         configuration = CameraSourceConfiguration(
@@ -472,21 +467,8 @@ class ConfigurationPage:
         )
         self._preview_signature = signature
 
-    def _on_browse_config(self) -> None:
-        if is_active(self._controller.state):
-            return
-        path = select_open_file(
-            title="Select configuration file",
-            filters=CONFIGURATION_FILTERS,
-            initial_path=Path(str(dpg.get_value(self._config_path_tag)))
-            if dpg.get_value(self._config_path_tag)
-            else None,
-        )
-        if path is not None:
-            self.open_configuration(path)
-
     def _on_browse_instance_scenario(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).instances:
             return
         index = int(user_data)
         path = select_open_file(
@@ -503,36 +485,36 @@ class ConfigurationPage:
             dpg.set_value(row.scenario_tag, path_text)
 
     def _on_instance_rpc_changed(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).instances:
             return
         self._model.set_instance_rpc_endpoint(user_data, app_data)
 
     def _on_instance_event_changed(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).instances:
             return
         self._model.set_instance_event_endpoint(user_data, app_data)
 
     def _on_instance_scenario_changed(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).instances:
             return
         self._model.set_instance_scenario(user_data, app_data)
 
     def _on_add_instance(self) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).instances:
             return
         draft = self._model.add_instance()
         if draft is not None:
             self._rebuild_instance_editors(draft)
 
     def _on_remove_instance(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).instances:
             return
         draft = self._model.remove_instance(user_data)
         if draft is not None:
             self._rebuild_instance_editors(draft)
 
     def _on_camera_selected(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).source:
             return
         device = self._camera_by_label.get(app_data)
         if device is None:
@@ -543,7 +525,7 @@ class ConfigurationPage:
         self._refresh_modes(device, None)
 
     def _on_mode_selected(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).source:
             return
         mode = self._mode_by_label.get(app_data)
         if mode is None:
@@ -556,7 +538,7 @@ class ConfigurationPage:
         self._start_camera_preview(selected_device=self._selected_camera(), mode=mode)
 
     def _on_request_60_fps_changed(self, sender, app_data, user_data) -> None:
-        if is_active(self._controller.state):
+        if not edit_permission(self._controller.state).source:
             return
         draft = self._model.set_request_60_fps(bool(app_data))
         if draft is None:
@@ -583,18 +565,58 @@ class ConfigurationPage:
         self._preview_signature = None
 
     def _on_open(self) -> None:
-        path_text = str(dpg.get_value(self._config_path_tag)).strip()
-        if not path_text:
-            self._set_status("enter a configuration file path")
+        if not edit_permission(self._controller.state).instances:
             return
-        self.open_configuration(Path(path_text))
+        if not self._confirm_discard():
+            return
+        path = select_open_file(
+            title="Open configuration", filters=CONFIGURATION_FILTERS
+        )
+        if path is not None:
+            self.open_configuration(path)
+
+    def _on_new(self) -> None:
+        if not edit_permission(self._controller.state).instances:
+            return
+        if not self._confirm_discard():
+            return
+        path = select_save_file(
+            title="New configuration",
+            filters=CONFIGURATION_FILTERS,
+        )
+        if path is None:
+            return
+        try:
+            devices = tuple(self._model.list_cameras())
+        except Exception as error:  # noqa: BLE001
+            self._set_status(f"could not enumerate cameras: {error}")
+            return
+        if not devices:
+            self._set_status("no camera is available")
+            return
+        device = devices[0]
+        mode = device.modes[0] if device.modes else None
+        draft = self._model.create_default_camera_configuration(
+            path,
+            CameraDeviceConfiguration(
+                _camera_backend(device.backend), device.name, device.index
+            ),
+            CameraModeConfiguration(
+                mode.width, mode.height, mode.fps, mode.subtype_guid
+            )
+            if mode is not None
+            else None,
+        )
+        self._populate(draft)
+        self._set_status("new configuration; save to apply it")
 
     def _on_save(self) -> None:
+        if not edit_permission(self._controller.state).instances:
+            return
         draft = self._model.draft
         if draft is None:
             self._set_status("open a configuration file first")
             return
-        active = is_active(self._controller.state)
         try:
             configuration = self._model.configuration()
         except ValueError as error:
@@ -607,13 +629,51 @@ class ConfigurationPage:
         except OSError as error:
             self._set_status(f"could not save: {error}")
             return
-        decision = save_decision(active=active)
-        if decision.reflect_log_level and self._controller.diagnostics is not None:
-            self._controller.set_log_level(configuration.runtime.log_level)
-        if decision.start:
-            self._start(draft.configuration_path)
-        else:
-            self._set_status("saved")
+        self._model.mark_saved()
+        self._reload(draft.configuration_path)
+
+    def _on_save_as(self) -> None:
+        draft = self._model.draft
+        if draft is None or not edit_permission(self._controller.state).instances:
+            return
+        path = select_save_file(
+            title="Save configuration as",
+            filters=CONFIGURATION_FILTERS,
+            initial_path=draft.configuration_path,
+        )
+        if path is None:
+            return
+        try:
+            configuration = self._model.configuration()
+        except ValueError as error:
+            self._set_status(str(error))
+            return
+        if configuration is None:
+            return
+        try:
+            save_configuration(path, configuration)
+        except OSError as error:
+            self._set_status(f"could not save: {error}")
+            return
+        saved = self._model.mark_saved(path)
+        assert saved is not None
+        self._populate(saved)
+        self._reload(path)
+
+    def _reload(self, path: Path) -> None:
+        if is_active(self._controller.state):
+            self._pending_reload_path = path
+            self._controller.request_stop()
+            self._set_status("Reloading configuration...")
+            return
+        self._start(path)
+
+    def _confirm_discard(self) -> bool:
+        if not self._model.is_dirty:
+            return True
+        from divergencesplitter_ui.windows_file_dialog import confirm_discard
+
+        return confirm_discard()
 
     def _set_status(self, message: str) -> None:
         dpg.set_value(self._status_tag, message)

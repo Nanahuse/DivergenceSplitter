@@ -22,13 +22,11 @@ from divergencesplitter_ui.session import SessionState, is_active
 from divergencesplitter_ui.settings import (
     CameraDevice,
     InstanceDraft,
-    SaveDecision,
     SettingsModel,
     camera_source,
     configuration_from_draft,
     draft_from_configuration,
     edit_permission,
-    save_decision,
     select_configured_camera,
     validate_instances_draft,
 )
@@ -111,6 +109,30 @@ def make_model(
 
 
 class TestSettingsModel:
+    def test_dirty_state_tracks_open_new_edit_and_save(self) -> None:
+        model = make_model()
+        assert not model.is_dirty
+
+        model.set_log_level("DEBUG")
+        assert model.is_dirty
+        model.set_log_level("INFO")
+        assert model.is_dirty
+
+        model.mark_saved()
+        assert not model.is_dirty
+        model.set_log_level("INFO")
+        assert not model.is_dirty
+
+    def test_new_default_configuration_is_dirty(self) -> None:
+        model = SettingsModel(FakeCameraEnumerator())
+        draft = model.create_default_camera_configuration(
+            Path("new.json"),
+            CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 7),
+        )
+
+        assert draft.configuration_path == Path("new.json")
+        assert model.is_dirty
+
     def test_default_camera_configuration_has_no_scenario_instances(self) -> None:
         model = SettingsModel(FakeCameraEnumerator())
         device = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 7)
@@ -522,29 +544,26 @@ class TestCameraSelection:
 
 
 class TestSettingsDecisions:
-    def test_active_session_disables_source_and_instances(self) -> None:
-        permission = edit_permission(active=True)
-
-        assert not permission.source
-        assert not permission.instances
-        assert permission.log_level
-
-    def test_idle_session_allows_all_edits(self) -> None:
-        permission = edit_permission(active=False)
+    def test_running_session_keeps_draft_editable(self) -> None:
+        permission = edit_permission(SessionState.RUNNING)
 
         assert permission.source
         assert permission.instances
         assert permission.log_level
 
-    def test_save_starts_only_without_active_session(self) -> None:
-        assert save_decision(active=False) == SaveDecision(
-            start=True,
-            reflect_log_level=False,
-        )
-        assert save_decision(active=True) == SaveDecision(
-            start=False,
-            reflect_log_level=True,
-        )
+    def test_idle_session_allows_all_edits(self) -> None:
+        permission = edit_permission(SessionState.IDLE)
+
+        assert permission.source
+        assert permission.instances
+        assert permission.log_level
+
+    def test_transition_session_disables_all_configuration_edits(self) -> None:
+        permission = edit_permission(SessionState.STOPPING)
+
+        assert not permission.source
+        assert not permission.instances
+        assert not permission.log_level
 
     def test_session_activity_matches_in_progress_states(self) -> None:
         for state in (
