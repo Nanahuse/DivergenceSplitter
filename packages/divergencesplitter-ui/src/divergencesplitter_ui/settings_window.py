@@ -46,11 +46,14 @@ from divergencesplitter_ui.session import (
 )
 from divergencesplitter_ui.settings import (
     LOG_LEVELS,
+    SOURCE_TYPE_BY_LABEL,
+    SOURCE_TYPE_LABELS,
     CameraDevice,
     CameraMode,
+    EditableApplicationConfiguration,
     InstanceDraft,
-    SettingsDraft,
     SettingsModel,
+    SourceType,
     camera_source,
     edit_permission,
     select_configured_camera,
@@ -58,6 +61,7 @@ from divergencesplitter_ui.settings import (
 from divergencesplitter_ui.windows_file_dialog import (
     CONFIGURATION_FILTERS,
     SCENARIO_FILTERS,
+    VIDEO_FILTERS,
     select_open_file,
     select_save_file,
 )
@@ -116,32 +120,64 @@ class ConfigurationPage:
                 )
 
             dpg.add_separator()
-            dpg.add_text("Camera")
+            dpg.add_text("Input source")
+            self._source_type_tag = dpg.add_combo(
+                label="Source type",
+                items=list(SOURCE_TYPE_LABELS.values()),
+                default_value=SOURCE_TYPE_LABELS[SourceType.CAMERA],
+                callback=self._on_source_type_changed,
+            )
+            self._camera_settings_group = dpg.add_group()
+            dpg.add_text("Camera", parent=self._camera_settings_group)
             self._camera_tag = dpg.add_combo(
                 items=[],
                 default_value="",
                 width=-1,
                 callback=self._on_camera_selected,
+                parent=self._camera_settings_group,
             )
-            self._source_note_tag = dpg.add_text("")
+            self._source_note_tag = dpg.add_text("", parent=self._camera_settings_group)
             self._mode_tag = dpg.add_combo(
                 label="Capture mode",
                 items=[],
                 default_value="",
                 width=-1,
                 callback=self._on_mode_selected,
+                parent=self._camera_settings_group,
             )
             self._request_60_fps_tag = dpg.add_checkbox(
                 label="Request 60 FPS",
                 callback=self._on_request_60_fps_changed,
+                parent=self._camera_settings_group,
             )
-            dpg.add_text("Camera preview")
-            dpg.add_texture_registry(tag="divergence-splitter-camera-preview-textures")
+            dpg.add_text("Camera preview", parent=self._camera_settings_group)
+            dpg.add_texture_registry(
+                tag="divergence-splitter-camera-preview-textures",
+                parent=self._camera_settings_group,
+            )
             self._preview_group_tag = dpg.add_group(
-                tag="divergence-splitter-camera-preview"
+                tag="divergence-splitter-camera-preview",
+                parent=self._camera_settings_group,
             )
-            self._preview_status_tag = dpg.add_text("")
-            self._opened_camera_tag = dpg.add_text("Opened camera: —")
+            self._preview_status_tag = dpg.add_text(
+                "", parent=self._camera_settings_group
+            )
+            self._opened_camera_tag = dpg.add_text(
+                "Opened camera: —", parent=self._camera_settings_group
+            )
+            self._video_settings_group = dpg.add_group()
+            self._video_path_tag = dpg.add_input_text(
+                label="Video file",
+                width=-1,
+                callback=self._on_video_path_changed,
+                parent=self._video_settings_group,
+            )
+            dpg.add_button(
+                label="Browse...",
+                callback=self._on_browse_video,
+                parent=self._video_settings_group,
+            )
+            dpg.configure_item(self._video_settings_group, show=False)
 
             dpg.add_separator()
             dpg.add_text("Instances")
@@ -255,25 +291,29 @@ class ConfigurationPage:
         if dpg.get_value(tag) != value:
             dpg.set_value(tag, value)
 
-    def _populate(self, draft: SettingsDraft) -> bool:
+    def _populate(self, draft: EditableApplicationConfiguration) -> bool:
         path_text = str(draft.configuration_path)
         if self._model.is_dirty:
             path_text += " *"
         dpg.set_value(self._config_path_tag, path_text)
         self._rebuild_instance_editors(draft)
         dpg.set_value(self._log_level_tag, draft.log_level)
+        dpg.set_value(
+            self._source_type_tag, SOURCE_TYPE_LABELS[draft.source.selected_type]
+        )
+        dpg.set_value(self._video_path_tag, draft.source.video.path)
+        self._show_source_settings(draft.source.selected_type)
         camera = camera_source(draft)
         if camera is None:
             self._camera_preview.stop()
-            dpg.set_value(self._source_note_tag, "source type is not camera")
-            dpg.configure_item(self._mode_tag, items=[], default_value="")
-            self._refresh_cameras(None, None)
             return True
         dpg.set_value(self._source_note_tag, "")
         dpg.set_value(self._request_60_fps_tag, camera.request_60_fps)
         return self._refresh_cameras(camera.device, camera.mode)
 
-    def _rebuild_instance_editors(self, draft: SettingsDraft) -> None:
+    def _rebuild_instance_editors(
+        self, draft: EditableApplicationConfiguration
+    ) -> None:
         dpg.delete_item(self._instances_group_tag, children_only=True)
         self._instance_rows = {}
         for index, instance in enumerate(draft.instances):
@@ -368,11 +408,6 @@ class ConfigurationPage:
                 index=selected_device.index,
             )
             resolved = True
-            self._model.set_camera_device(
-                _camera_backend(selected_device.backend),
-                selected_device.name,
-                selected_device.index,
-            )
             resolved = (
                 self._refresh_modes(selected_device, configured_mode) and resolved
             )
@@ -402,7 +437,6 @@ class ConfigurationPage:
         dpg.configure_item(self._mode_tag, items=labels, default_value=selected)
         if selected:
             assert configured_mode is not None
-            self._model.set_camera_mode(configured_mode)
             self._start_camera_preview(
                 selected_device=device,
                 mode=mode,
@@ -524,6 +558,36 @@ class ConfigurationPage:
         )
         self._refresh_modes(device, None)
 
+    def _show_source_settings(self, source_type: SourceType) -> None:
+        camera = source_type is SourceType.CAMERA
+        dpg.configure_item(self._camera_settings_group, show=camera)
+        dpg.configure_item(self._video_settings_group, show=not camera)
+        if not camera:
+            self._camera_preview.stop()
+
+    def _on_source_type_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        source_type = SOURCE_TYPE_BY_LABEL.get(app_data)
+        if (
+            source_type is not None
+            and self._model.set_source_type(source_type) is not None
+        ):
+            self._show_source_settings(source_type)
+
+    def _on_video_path_changed(self, sender, app_data, user_data) -> None:
+        if edit_permission(self._controller.state).source:
+            self._model.set_video_path(app_data)
+
+    def _on_browse_video(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        path = select_open_file(title="Select video file", filters=VIDEO_FILTERS)
+        if path is not None:
+            value = str(path)
+            dpg.set_value(self._video_path_tag, value)
+            self._model.set_video_path(value)
+
     def _on_mode_selected(self, sender, app_data, user_data) -> None:
         if not edit_permission(self._controller.state).source:
             return
@@ -586,27 +650,24 @@ class ConfigurationPage:
         )
         if path is None:
             return
+        draft = self._model.create_default_configuration(path)
         try:
             devices = tuple(self._model.list_cameras())
-        except Exception as error:  # noqa: BLE001
-            self._set_status(f"could not enumerate cameras: {error}")
-            return
-        if not devices:
-            self._set_status("no camera is available")
-            return
-        device = devices[0]
-        mode = device.modes[0] if device.modes else None
-        draft = self._model.create_default_camera_configuration(
-            path,
-            CameraDeviceConfiguration(
+        except Exception:  # noqa: BLE001
+            devices = ()
+        if devices:
+            device = devices[0]
+            mode = device.modes[0] if device.modes else None
+            draft.source.camera.device = CameraDeviceConfiguration(
                 _camera_backend(device.backend), device.name, device.index
-            ),
-            CameraModeConfiguration(
-                mode.width, mode.height, mode.fps, mode.subtype_guid
             )
-            if mode is not None
-            else None,
-        )
+            draft.source.camera.mode = (
+                CameraModeConfiguration(
+                    mode.width, mode.height, mode.fps, mode.subtype_guid
+                )
+                if mode is not None
+                else None
+            )
         self._populate(draft)
         self._set_status("new configuration; save to apply it")
 

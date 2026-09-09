@@ -29,6 +29,12 @@ SCENARIO_FILTERS = (
     FileDialogFilter("YAML scenario", ("*.yaml", "*.yml")),
     FileDialogFilter("All files", ("*.*",)),
 )
+VIDEO_FILTERS = (
+    FileDialogFilter(
+        "Video files", ("*.mp4", "*.mkv", "*.avi", "*.mov", "*.webm", "*.m4v")
+    ),
+    FileDialogFilter("All files", ("*.*",)),
+)
 
 
 def filter_string(filters: Sequence[FileDialogFilter]) -> str:
