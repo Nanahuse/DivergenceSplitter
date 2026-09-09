@@ -34,6 +34,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
 
 from divergencesplitter_ui._dpg import dpg
 from divergencesplitter_ui.camera_preview import CameraPreview
+from divergencesplitter_ui.frame_preview import fit_preview
 from divergencesplitter_ui.image import (
     TextureEvent,
     flatten,
@@ -601,11 +602,12 @@ class ConfigurationPage:
             cast("list[float]", flatten(rgba)),
             parent="divergence-splitter-camera-preview-textures",
         )
+        display_size = fit_preview(signature.width, signature.height, 480, 270)
         self._preview_image_tag = dpg.add_image(
             self._preview_texture_tag,
             parent=self._preview_group_tag,
-            width=480,
-            height=270,
+            width=display_size.width,
+            height=display_size.height,
         )
         self._preview_signature = signature
 
