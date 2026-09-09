@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationFileError,
@@ -21,6 +22,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraBackend,
     CameraDeviceConfiguration,
     CameraModeConfiguration,
+    CameraSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
@@ -28,6 +30,14 @@ from divergencesplitter_runtime.configuration.source_builder import (
 )
 
 from divergencesplitter_ui._dpg import dpg
+from divergencesplitter_ui.camera_preview import CameraPreview
+from divergencesplitter_ui.image import (
+    TextureEvent,
+    flatten,
+    plan_texture,
+    source_signature,
+    to_rgba_float32,
+)
 from divergencesplitter_ui.session import (
     SessionAlreadyActiveError,
     SessionController,
@@ -53,6 +63,7 @@ from divergencesplitter_ui.windows_file_dialog import (
 )
 
 _CAMERA_LABEL_TEMPLATE = "[{backend}] {name} (index {index})"
+_DEFAULT_CONFIGURATION_PATH = Path("config.json")
 
 
 @dataclass(frozen=True)
@@ -77,6 +88,10 @@ class ConfigurationPage:
         self._camera_by_label: dict[str, CameraDevice] = {}
         self._mode_by_label: dict[str, CameraMode] = {}
         self._instance_rows: dict[int, _InstanceRow] = {}
+        self._camera_preview = CameraPreview()
+        self._preview_texture_tag: int | str | None = None
+        self._preview_image_tag: int | str | None = None
+        self._preview_signature = None
 
     def build(self, parent: int | str | None = None) -> None:
         with dpg.group(parent=parent):
@@ -96,14 +111,6 @@ class ConfigurationPage:
                 )
 
             dpg.add_separator()
-            dpg.add_text("Instances")
-            self._instances_group_tag = dpg.add_group()
-            self._add_instance_tag = dpg.add_button(
-                label="Add instance",
-                callback=self._on_add_instance,
-            )
-
-            dpg.add_separator()
             dpg.add_text("Camera")
             self._camera_tag = dpg.add_combo(
                 items=[],
@@ -118,6 +125,20 @@ class ConfigurationPage:
                 default_value="",
                 width=-1,
                 callback=self._on_mode_selected,
+            )
+            dpg.add_text("Camera preview")
+            dpg.add_texture_registry(tag="divergence-splitter-camera-preview-textures")
+            self._preview_group_tag = dpg.add_group(
+                tag="divergence-splitter-camera-preview"
+            )
+            self._preview_status_tag = dpg.add_text("")
+
+            dpg.add_separator()
+            dpg.add_text("Instances")
+            self._instances_group_tag = dpg.add_group()
+            self._add_instance_tag = dpg.add_button(
+                label="Add instance",
+                callback=self._on_add_instance,
             )
 
             dpg.add_separator()
@@ -135,6 +156,8 @@ class ConfigurationPage:
             )
             self._status_tag = dpg.add_text("", color=(255, 200, 120))
 
+        self._refresh_cameras(None, None)
+
     def open_configuration(self, path: Path) -> None:
         """Load and start one configuration, reporting errors in the screen."""
 
@@ -148,7 +171,12 @@ class ConfigurationPage:
             return
         draft = self._model.open_configuration(configuration, path)
         if self._populate(draft):
-            self._start(path)
+            if draft.instances:
+                self._start(path)
+            else:
+                self._set_status(
+                    "camera preview is available; add a scenario instance to start"
+                )
 
     def _start(self, path: Path) -> None:
         try:
@@ -159,12 +187,21 @@ class ConfigurationPage:
         self._set_status(f"started {path.name}")
 
     def tick(self, state: SessionState) -> None:
+        if is_active(state):
+            self._camera_preview.stop()
+        else:
+            frame = self._camera_preview.take_latest()
+            if frame is not None:
+                self._apply_preview_frame(frame)
+            if self._camera_preview.error is not None:
+                dpg.set_value(
+                    self._preview_status_tag,
+                    f"camera preview: {self._camera_preview.error}",
+                )
         permission = edit_permission(active=is_active(state))
         draft = self._model.draft
         instances_enabled = permission.instances and draft is not None
-        source_enabled = (
-            permission.source and draft is not None and camera_source(draft) is not None
-        )
+        source_enabled = permission.source and draft is not None
         dpg.configure_item(self._config_path_tag, enabled=permission.instances)
         dpg.configure_item(self._config_browse_tag, enabled=permission.instances)
         dpg.configure_item(self._open_button_tag, enabled=permission.instances)
@@ -199,10 +236,10 @@ class ConfigurationPage:
         dpg.set_value(self._log_level_tag, draft.log_level)
         camera = camera_source(draft)
         if camera is None:
-            self._camera_by_label = {}
-            dpg.configure_item(self._camera_tag, items=[], default_value="")
+            self._camera_preview.stop()
             dpg.set_value(self._source_note_tag, "source type is not camera")
             dpg.configure_item(self._mode_tag, items=[], default_value="")
+            self._refresh_cameras(None, None)
             return True
         dpg.set_value(self._source_note_tag, "")
         return self._refresh_cameras(camera.device, camera.mode)
@@ -265,7 +302,7 @@ class ConfigurationPage:
 
     def _refresh_cameras(
         self,
-        configured: CameraDeviceConfiguration,
+        configured: CameraDeviceConfiguration | None,
         configured_mode: CameraModeConfiguration | None,
     ) -> bool:
         self._camera_by_label = {}
@@ -275,6 +312,27 @@ class ConfigurationPage:
             self._set_status(f"could not enumerate cameras: {error}")
             dpg.configure_item(self._camera_tag, items=[], default_value="")
             return False
+        if configured is None and self._model.draft is None and devices:
+            first = devices[0]
+            configured = CameraDeviceConfiguration(
+                _camera_backend(first.backend), first.name, first.index
+            )
+            configured_mode = (
+                CameraModeConfiguration(
+                    first.modes[0].width,
+                    first.modes[0].height,
+                    first.modes[0].fps,
+                    first.modes[0].subtype_guid,
+                )
+                if first.modes
+                else None
+            )
+            self._model.create_default_camera_configuration(
+                _DEFAULT_CONFIGURATION_PATH,
+                configured,
+                configured_mode,
+            )
+            dpg.set_value(self._config_path_tag, str(_DEFAULT_CONFIGURATION_PATH))
         labels = []
         for device in devices:
             backend = _backend_value(device.backend)
@@ -283,10 +341,15 @@ class ConfigurationPage:
             )
             self._camera_by_label[label] = device
             labels.append(label)
-        selected_device = select_configured_camera(configured, devices)
+        selected_device = (
+            select_configured_camera(configured, devices)
+            if configured is not None
+            else None
+        )
         if selected_device is None:
             selected = ""
-            self._set_status("configured camera is unavailable; select it again")
+            if configured is not None:
+                self._set_status("configured camera is unavailable; select it again")
             dpg.configure_item(self._mode_tag, items=[], default_value="")
             resolved = False
         else:
@@ -298,7 +361,9 @@ class ConfigurationPage:
             )
             resolved = True
             self._model.set_camera_device(
-                configured.backend, selected_device.name, selected_device.index
+                _camera_backend(selected_device.backend),
+                selected_device.name,
+                selected_device.index,
             )
             resolved = (
                 self._refresh_modes(selected_device, configured_mode) and resolved
@@ -330,7 +395,64 @@ class ConfigurationPage:
         if selected:
             assert configured_mode is not None
             self._model.set_camera_mode(configured_mode)
+            self._start_camera_preview(
+                selected_device=device,
+                mode=mode,
+            )
+        else:
+            self._camera_preview.stop()
         return True
+
+    def _start_camera_preview(
+        self, *, selected_device: CameraDevice, mode: CameraMode
+    ) -> None:
+        draft = self._model.draft
+        if draft is None:
+            return
+        dpg.set_value(self._preview_status_tag, "opening camera preview...")
+        configuration = CameraSourceConfiguration(
+            CameraDeviceConfiguration(
+                _camera_backend(selected_device.backend),
+                selected_device.name,
+                selected_device.index,
+            ),
+            CameraModeConfiguration(
+                mode.width,
+                mode.height,
+                mode.fps,
+                mode.subtype_guid,
+            ),
+        )
+        try:
+            self._camera_preview.start(configuration, draft.configuration_path.parent)
+            dpg.set_value(self._preview_status_tag, "")
+        except Exception as error:  # noqa: BLE001
+            dpg.set_value(self._preview_status_tag, f"camera preview: {error}")
+
+    def _apply_preview_frame(self, frame) -> None:
+        rgba = to_rgba_float32(frame.image)
+        signature = source_signature(frame.image)
+        event = plan_texture(self._preview_signature, signature)
+        if event is TextureEvent.UPDATE and self._preview_texture_tag is not None:
+            dpg.set_value(self._preview_texture_tag, flatten(rgba))
+            return
+        if self._preview_image_tag is not None:
+            dpg.delete_item(self._preview_image_tag)
+        if self._preview_texture_tag is not None:
+            dpg.delete_item(self._preview_texture_tag)
+        self._preview_texture_tag = dpg.add_dynamic_texture(
+            signature.width,
+            signature.height,
+            cast("list[float]", flatten(rgba)),
+            parent="divergence-splitter-camera-preview-textures",
+        )
+        self._preview_image_tag = dpg.add_image(
+            self._preview_texture_tag,
+            parent=self._preview_group_tag,
+            width=480,
+            height=270,
+        )
+        self._preview_signature = signature
 
     def _on_browse_config(self) -> None:
         if is_active(self._controller.state):
@@ -413,9 +535,22 @@ class ConfigurationPage:
                 mode.width, mode.height, mode.fps, mode.subtype_guid
             )
         )
+        self._start_camera_preview(selected_device=self._selected_camera(), mode=mode)
+
+    def _selected_camera(self) -> CameraDevice:
+        device = self._camera_by_label.get(str(dpg.get_value(self._camera_tag)))
+        if device is None:
+            raise ValueError("select a camera before selecting a capture mode")
+        return device
 
     def _on_log_level_changed(self, sender, app_data, user_data) -> None:
         self._model.set_log_level(app_data)
+
+    def close(self) -> None:
+        self._camera_preview.stop()
+        self._preview_image_tag = None
+        self._preview_texture_tag = None
+        self._preview_signature = None
 
     def _on_open(self) -> None:
         path_text = str(dpg.get_value(self._config_path_tag)).strip()

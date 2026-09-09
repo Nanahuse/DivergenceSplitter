@@ -92,6 +92,7 @@ class DesktopApplication:
         return self._controller.diagnostics
 
     def stop(self, *, destroy_context: bool = True) -> None:
+        self._settings.close()
         self._controller.request_stop()
         self._controller.join()
         if destroy_context:

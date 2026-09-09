@@ -304,6 +304,22 @@ class SettingsModel:
         self._draft = draft
         return draft
 
+    def create_default_camera_configuration(
+        self,
+        path: Path,
+        device: CameraDeviceConfiguration,
+        mode: CameraModeConfiguration | None = None,
+    ) -> SettingsDraft:
+        """Create an unsaved camera draft without requiring a scenario."""
+
+        self._draft = SettingsDraft(
+            configuration_path=path,
+            instances=(),
+            source=CameraSourceDraft(device, mode),
+            log_level="INFO",
+        )
+        return self._draft
+
     def list_cameras(self) -> Sequence[CameraDevice]:
         return self._camera_enumerator.list_devices()
 
