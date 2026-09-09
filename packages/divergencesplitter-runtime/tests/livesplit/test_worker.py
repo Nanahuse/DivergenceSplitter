@@ -511,7 +511,9 @@ def scenario(*, split_slots: int = 1) -> ScenarioInstance:
     return ScenarioInstance(
         connection=LiveSplitConnection("rpc", "event"),
         scenario=Scenario(
-            reset_conditions=(PassiveCondition(),),
+            start_condition=PassiveCondition(),
+            reset_condition=PassiveCondition(),
+            incomplete_condition=None,
             splits=(None,) * split_slots,
         ),
     )

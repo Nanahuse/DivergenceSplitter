@@ -192,6 +192,7 @@ class MappingTest(unittest.TestCase):
     def test_snapshot_maps_supported_phases(self) -> None:
         cases = (
             (common_pb2.NOT_RUNNING, -1, 0, TimerPhase.NOT_RUNNING),
+            (common_pb2.STARTING, 0, 2, TimerPhase.STARTING),
             (common_pb2.RUNNING, 0, 2, TimerPhase.RUNNING),
             (common_pb2.PAUSED, 0, 2, TimerPhase.PAUSED),
             (common_pb2.ENDED, 2, 2, TimerPhase.ENDED),
@@ -211,7 +212,7 @@ class MappingTest(unittest.TestCase):
                 self.assertEqual(actual.event_sequence, 3)
 
     def test_snapshot_rejects_unsupported_phases(self) -> None:
-        for phase in (common_pb2.TIMER_PHASE_UNSPECIFIED, common_pb2.STARTING):
+        for phase in (common_pb2.TIMER_PHASE_UNSPECIFIED,):
             with (
                 self.subTest(phase=phase),
                 self.assertRaisesRegex(ValueError, "unsupported timer phase"),
@@ -444,11 +445,20 @@ class ActionExecutionTest(unittest.TestCase):
         )
 
     def assert_no_operation(self, client: BridgeClient) -> None:
-        for operation in ("split", "skip", "undo", "reset", "pause", "resume"):
+        for operation in (
+            "start",
+            "split",
+            "skip",
+            "undo",
+            "reset",
+            "pause",
+            "resume",
+        ):
             getattr(client, operation).assert_not_called()
 
     def test_maps_each_action_to_one_client_operation(self) -> None:
         cases = (
+            ("start", common_pb2.NOT_RUNNING, -1, 2),
             ("split", common_pb2.RUNNING, 0, 2),
             ("skip", common_pb2.RUNNING, 0, 2),
             ("undo", common_pb2.PAUSED, 1, 2),

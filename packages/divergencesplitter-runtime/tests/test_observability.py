@@ -40,7 +40,9 @@ def make_instance(scenario: Scenario) -> ScenarioInstance:
 
 def make_scenario(detector) -> Scenario:
     return Scenario(
-        reset_conditions=(Detected(detector, 100.0),),
+        start_condition=Detected(detector, 100.0),
+        reset_condition=Detected(detector, 100.0),
+        incomplete_condition=None,
         splits=((Rule(Detected(detector, 200.0), Action("split")),),),
     )
 
@@ -50,7 +52,9 @@ class TestDetectorTree:
         detector = MeanBrightnessDetector()
         reset_detector = MeanBrightnessDetector()
         scenario = Scenario(
-            reset_conditions=(Detected(reset_detector, 200.0),),
+            start_condition=Detected(reset_detector, 200.0),
+            reset_condition=Detected(reset_detector, 200.0),
+            incomplete_condition=None,
             splits=(
                 (
                     Rule(
@@ -74,8 +78,7 @@ class TestDetectorTree:
         assert scenario_node.scenario_index == 0
         assert scenario_node.connection == instance.connection
 
-        assert len(scenario_node.reset_conditions) == 1
-        reset_condition = scenario_node.reset_conditions[0]
+        reset_condition = scenario_node.reset_condition
         assert reset_condition.condition_type == "Detected"
         assert reset_condition.detector is not None
         assert reset_condition.detector.minimum_score == 200.0
@@ -119,7 +122,7 @@ class TestDetectorTree:
         tree = build_detector_tree((make_instance(make_scenario(shared)),))
         scenario_node = tree.scenarios[0]
 
-        reset_node = scenario_node.reset_conditions[0].detector
+        reset_node = scenario_node.reset_condition.detector
         split_node = scenario_node.splits[0].rules[0].condition.detector
         assert reset_node is not None
         assert split_node is not None
@@ -135,7 +138,7 @@ class TestDetectorTree:
         node = build_detector_tree((make_instance(make_scenario(detector)),)).scenarios[
             0
         ]
-        reset_detector = node.reset_conditions[0].detector
+        reset_detector = node.reset_condition.detector
         assert reset_detector is not None
         images = reset_detector.reference_images
         assert len(images) == 1
@@ -184,7 +187,8 @@ class TestConditionObservations:
         observations = diagnostics.take_condition_observations()
 
         assert {item.condition for item in observations} == {
-            scenario.reset_conditions[0],
+            scenario.start_condition,
+            scenario.reset_condition,
             split_rules[0].condition,
         }
         for item in observations:
@@ -197,7 +201,9 @@ class TestConditionObservations:
         detector = MeanBrightnessDetector()
         shared = Detected(detector, 100.0)
         scenario = Scenario(
-            reset_conditions=(shared, shared),
+            start_condition=shared,
+            reset_condition=shared,
+            incomplete_condition=None,
             splits=(),
         )
 
@@ -215,7 +221,9 @@ class TestConditionObservations:
         skipped.evaluate(make_context())
         condition = All(Detected(detector, 1.0), skipped)
         scenario = Scenario(
-            reset_conditions=(),
+            start_condition=condition,
+            reset_condition=condition,
+            incomplete_condition=None,
             splits=((Rule(condition, Action("split")),),),
         )
         context = make_context()

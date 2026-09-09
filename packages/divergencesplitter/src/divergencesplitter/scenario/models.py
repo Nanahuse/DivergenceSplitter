@@ -14,5 +14,7 @@ if TYPE_CHECKING:
 class Scenario:
     """A pre-constructed scenario: what to judge and which actions to fire."""
 
-    reset_conditions: tuple[Condition, ...]
+    start_condition: Condition
+    reset_condition: Condition
+    incomplete_condition: Condition | None
     splits: tuple[tuple[Rule, ...] | None, ...]

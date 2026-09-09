@@ -37,9 +37,12 @@ class ScenarioRuntime:
     ) -> None:
         self._scenario = scenario
         self._logger = logger or logging.getLogger(__name__)
-        self._reset_rules = tuple(
-            Rule(condition=condition, action=Action(operation="reset"))
-            for condition in scenario.reset_conditions
+        self._start_rules = (Rule(scenario.start_condition, Action("start")),)
+        self._reset_rules = (Rule(scenario.reset_condition, Action("reset")),)
+        self._incomplete_rules = (
+            ()
+            if scenario.incomplete_condition is None
+            else (Rule(scenario.incomplete_condition, Action("undo")),)
         )
         self._snapshot: LiveSplitSnapshot | None = None
         self._awaiting_resync = False
@@ -118,12 +121,7 @@ class ScenarioRuntime:
         self._configuration_valid = self._validate_split_count(snapshot)
         if update.kind is LiveSplitUpdateKind.TRANSITION:
             self._apply_transition_resets(current, snapshot)
-            if (
-                self._pending_action is None
-                or snapshot.phase is TimerPhase.NOT_RUNNING
-                or self._pending_action.operation != "reset"
-            ):
-                self._clear_pending_action()
+            self._clear_pending_action()
             self._log(
                 logging.INFO,
                 "scenario_runtime.transition",
@@ -150,24 +148,21 @@ class ScenarioRuntime:
         snapshot = self._snapshot
         if snapshot is None or self._awaiting_resync or not self._configuration_valid:
             return None
-        if snapshot.phase is TimerPhase.NOT_RUNNING:
-            return None
-        if (
-            self._pending_action is not None
-            and self._pending_action.operation == "reset"
-        ):
-            return None
 
-        reset_action = self._evaluate_rules(
-            self._reset_rules,
-            context,
-            snapshot,
-            group="reset",
-            split_index=None,
-        )
-        if reset_action is not None:
-            self._start_action(reset_action, context)
-            return reset_action
+        if self._pending_action is not None and self._pending_action.operation in {
+            "split",
+            "skip",
+        }:
+            reset_action = self._evaluate_rules(
+                self._reset_rules,
+                context,
+                snapshot,
+                group="reset",
+                split_index=None,
+            )
+            if reset_action is not None:
+                self._start_action(reset_action, context)
+                return reset_action
 
         if self._pending_action is not None:
             if self._action_started_at is None:
@@ -175,7 +170,7 @@ class ScenarioRuntime:
             elapsed = context.now.nanoseconds - self._action_started_at
             if elapsed < SPLIT_TRANSITION_TIMEOUT_NANOSECONDS:
                 return None
-            self._reset_destination(snapshot)
+            self._reset_pending_action(snapshot)
             action_started_at = self._action_started_at
             self._clear_pending_action()
             self._log(
@@ -190,6 +185,33 @@ class ScenarioRuntime:
                 observed_at_ns=context.now.nanoseconds,
             )
             return None
+
+        if snapshot.phase is TimerPhase.NOT_RUNNING:
+            rules, group = self._start_rules, "start"
+        elif snapshot.phase is TimerPhase.STARTING:
+            return None
+        elif snapshot.phase is TimerPhase.ENDED:
+            rules, group = self._incomplete_rules, "incomplete"
+        else:
+            reset_action = self._evaluate_rules(
+                self._reset_rules,
+                context,
+                snapshot,
+                group="reset",
+                split_index=None,
+            )
+            if reset_action is not None:
+                self._start_action(reset_action, context)
+                return reset_action
+            rules, group = (), "main"
+
+        if group != "main":
+            action = self._evaluate_rules(
+                rules, context, snapshot, group=group, split_index=None
+            )
+            if action is not None:
+                self._start_action(action, context)
+            return action
 
         split_index = self._evaluation_index(snapshot)
         if split_index is None or split_index >= len(self._scenario.splits):
@@ -207,6 +229,21 @@ class ScenarioRuntime:
         if action is not None:
             self._start_action(action, context)
         return action
+
+    def _reset_pending_action(self, snapshot: LiveSplitSnapshot) -> None:
+        action = self._pending_action
+        if action is None:
+            return
+        if action.operation == "start":
+            self._reset_rule_group(self._start_rules, "start", None)
+        elif action.operation == "undo":
+            self._reset_rule_group(self._incomplete_rules, "incomplete", None)
+        elif action.operation == "reset":
+            self._reset_rule_group(self._reset_rules, "reset", None)
+        else:
+            split_index = self._evaluation_index(snapshot)
+            if split_index is not None:
+                self._reset_split_group(split_index)
 
     def _evaluate_rules(
         self,
@@ -302,12 +339,12 @@ class ScenarioRuntime:
     def _validate_split_count(self, snapshot: LiveSplitSnapshot) -> bool:
         if snapshot.phase is TimerPhase.NOT_RUNNING and snapshot.split_count == 0:
             return True
-        if len(self._scenario.splits) > snapshot.split_count + 1:
+        if len(self._scenario.splits) > snapshot.split_count:
             self._log(
                 logging.ERROR,
                 "scenario_runtime.split_count_mismatch",
                 configured_split_slots=len(self._scenario.splits),
-                maximum_split_slots=snapshot.split_count + 1,
+                maximum_split_slots=snapshot.split_count,
             )
             return False
         return True
@@ -316,8 +353,6 @@ class ScenarioRuntime:
     def _evaluation_index(snapshot: LiveSplitSnapshot) -> int | None:
         if snapshot.phase in (TimerPhase.RUNNING, TimerPhase.PAUSED):
             return snapshot.split_index
-        if snapshot.phase is TimerPhase.ENDED:
-            return snapshot.split_count
         return None
 
     def _apply_transition_resets(
@@ -331,24 +366,36 @@ class ScenarioRuntime:
         ):
             self._reset_all_rules()
             return
+        if current.phase is TimerPhase.ENDED and snapshot.phase in (
+            TimerPhase.RUNNING,
+            TimerPhase.PAUSED,
+        ):
+            self._reset_rule_group(self._incomplete_rules, "incomplete", None)
+            self._reset_rule_group(self._reset_rules, "reset", None)
+        elif snapshot.phase is TimerPhase.ENDED:
+            self._reset_rule_group(self._incomplete_rules, "incomplete", None)
+            return
         destination = self._evaluation_index(snapshot)
         if destination is not None and (
             destination != self._evaluation_index(current)
             or snapshot.phase is current.phase
         ):
-            self._reset_group(destination)
+            self._reset_split_group(destination)
 
-    def _reset_destination(self, snapshot: LiveSplitSnapshot) -> None:
-        split_index = self._evaluation_index(snapshot)
-        if split_index is not None:
-            self._reset_group(split_index)
-
-    def _reset_group(self, split_index: int) -> None:
+    def _reset_split_group(self, split_index: int) -> None:
         if split_index >= len(self._scenario.splits):
             return
         rules = self._scenario.splits[split_index]
         if rules is None:
             return
+        self._reset_rule_group(rules, "main", split_index)
+
+    def _reset_rule_group(
+        self,
+        rules: tuple[Rule, ...],
+        group: str,
+        split_index: int | None,
+    ) -> None:
         for rule_index, rule in enumerate(rules):
             try:
                 rule.reset()
@@ -359,7 +406,7 @@ class ScenarioRuntime:
                         error,
                         rule,
                         snapshot,
-                        "main",
+                        group,
                         split_index,
                         rule_index,
                     )
@@ -370,24 +417,11 @@ class ScenarioRuntime:
         )
 
     def _reset_all_rules(self) -> None:
-        snapshot = self._snapshot
-        for rule_index, rule in enumerate(self._reset_rules):
-            try:
-                rule.reset()
-            except Exception as error:  # noqa: BLE001
-                if snapshot is not None:
-                    self._log_rule_exception(
-                        error, rule, snapshot, "reset", None, rule_index
-                    )
-        if self._reset_rules:
-            self._log(
-                logging.DEBUG,
-                "scenario_runtime.rules_reset",
-                rule_group="reset",
-                reset_split_index=None,
-            )
+        self._reset_rule_group(self._start_rules, "start", None)
+        self._reset_rule_group(self._reset_rules, "reset", None)
+        self._reset_rule_group(self._incomplete_rules, "incomplete", None)
         for split_index in range(len(self._scenario.splits)):
-            self._reset_group(split_index)
+            self._reset_split_group(split_index)
 
     def _log_rule_exception(
         self,

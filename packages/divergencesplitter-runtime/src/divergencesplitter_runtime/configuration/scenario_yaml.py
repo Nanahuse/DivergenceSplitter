@@ -89,14 +89,20 @@ def load_scenario_yaml(path: str | Path) -> Scenario:
 
 def _scenario(value: object, path: Path) -> Scenario:
     root = _mapping(value, "scenario")
-    _keys(root, required={"reset_conditions", "splits"})
-    reset_conditions = _condition_list(
-        root["reset_conditions"],
-        "reset_conditions",
-        path,
+    _keys(
+        root,
+        required={"start_condition", "reset_condition", "splits"},
+        optional={"incomplete_condition"},
+    )
+    start_condition = _condition_value(root["start_condition"], "start_condition", path)
+    reset_condition = _condition_value(root["reset_condition"], "reset_condition", path)
+    incomplete_condition = (
+        _condition_value(root["incomplete_condition"], "incomplete_condition", path)
+        if "incomplete_condition" in root
+        else None
     )
     splits = _splits(root["splits"], path)
-    return Scenario(reset_conditions, splits)
+    return Scenario(start_condition, reset_condition, incomplete_condition, splits)
 
 
 def _splits(
@@ -251,9 +257,14 @@ def _number(value: object, field: str) -> float:
     return float(value)
 
 
-def _keys(value: dict[str, Any], *, required: set[str]) -> None:
+def _keys(
+    value: dict[str, Any],
+    *,
+    required: set[str],
+    optional: set[str] | frozenset[str] = frozenset(),
+) -> None:
     missing = required - value.keys()
-    unknown = value.keys() - required
+    unknown = value.keys() - required - optional
     if missing:
         raise ValueError(f"missing scenario fields: {sorted(missing)!r}")
     if unknown:

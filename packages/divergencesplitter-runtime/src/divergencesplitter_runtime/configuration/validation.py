@@ -10,8 +10,6 @@ def validate_scenario(scenario: Scenario) -> None:
     """Validate one scenario independently of its LiveSplit destination."""
 
     errors: list[Exception] = []
-    if not scenario.reset_conditions:
-        errors.append(ValueError("scenario has no reset conditions"))
     if errors:
         raise ExceptionGroup("scenario configuration is invalid", errors)
 
@@ -30,8 +28,6 @@ def validate_instances(
             errors.append(ValueError(f"instances[{index}].rpc_endpoint is empty"))
         if not connection.event_endpoint:
             errors.append(ValueError(f"instances[{index}].event_endpoint is empty"))
-        if not scenario.reset_conditions:
-            errors.append(ValueError(f"instances[{index}] has no reset conditions"))
 
         previous = rpc_owners.get(connection.rpc_endpoint)
         if previous is not None:
@@ -62,7 +58,5 @@ def validate_split_count(scenario: Scenario, snapshot: LiveSplitSnapshot) -> Non
 
     if snapshot.phase is TimerPhase.NOT_RUNNING and snapshot.split_count == 0:
         return
-    if len(scenario.splits) > snapshot.split_count + 1:
-        raise ValueError(
-            "scenario has more split slots than the LiveSplit split count plus one"
-        )
+    if len(scenario.splits) > snapshot.split_count:
+        raise ValueError("scenario has more split slots than the LiveSplit split count")

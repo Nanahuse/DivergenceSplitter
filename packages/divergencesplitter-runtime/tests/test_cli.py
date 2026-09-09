@@ -5,7 +5,12 @@ from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
-from divergencesplitter import LiveSplitConnection, Scenario
+from divergencesplitter import (
+    Detected,
+    LiveSplitConnection,
+    MeanBrightnessDetector,
+    Scenario,
+)
 from divergencesplitter_runtime.application import (
     ApplicationDiagnostics,
     ApplicationStartupValidationError,
@@ -23,6 +28,13 @@ from divergencesplitter_runtime.cli import (
 from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationValidationError,
 )
+
+
+def empty_scenario() -> Scenario:
+    condition = Detected(MeanBrightnessDetector(), -1.0)
+    return Scenario(condition, condition, None, ())
+
+
 from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
     InstanceConfiguration,
@@ -123,7 +135,7 @@ def reset_fake_runtime() -> None:
 def run_with_fake_runtime(
     outcome: BaseException | None = None,
 ) -> tuple[int, str, FakeRuntime, tuple[ScenarioInstance, ...], object]:
-    scenario = Scenario(reset_conditions=(), splits=())
+    scenario = empty_scenario()
     frame_source = object()
     configuration = make_configuration()
     stderr = StringIO()
@@ -224,7 +236,7 @@ def test_source_resolution_error_prevents_runtime_construction() -> None:
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
-            return_value=Scenario(reset_conditions=(), splits=()),
+            return_value=empty_scenario(),
         ),
         patch(
             "divergencesplitter_runtime.cli.build_frame_source",
@@ -409,7 +421,7 @@ def test_stderr_failure_does_not_replace_runtime_exit_status() -> None:
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
-            return_value=Scenario(reset_conditions=(), splits=()),
+            return_value=empty_scenario(),
         ),
         patch(
             "divergencesplitter_runtime.cli.build_frame_source",

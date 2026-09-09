@@ -7,7 +7,13 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
-from divergencesplitter import LiveSplitConnection, Scenario, VideoFileSource
+from divergencesplitter import (
+    Detected,
+    LiveSplitConnection,
+    MeanBrightnessDetector,
+    Scenario,
+    VideoFileSource,
+)
 from divergencesplitter_runtime.application import ApplicationStartupValidationError
 from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationFileError,
@@ -91,7 +97,9 @@ class FakeScenarioLoader:
         error: BaseException | None = None,
     ) -> None:
         self._scenario = scenario or Scenario(
-            reset_conditions=(),
+            start_condition=Detected(MeanBrightnessDetector(), -1.0),
+            reset_condition=Detected(MeanBrightnessDetector(), -1.0),
+            incomplete_condition=None,
             splits=(),
         )
         self._error = error

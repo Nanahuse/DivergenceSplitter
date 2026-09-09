@@ -6,6 +6,7 @@ from enum import Enum, auto
 
 class TimerPhase(Enum):
     NOT_RUNNING = auto()
+    STARTING = auto()
     RUNNING = auto()
     PAUSED = auto()
     ENDED = auto()
@@ -31,6 +32,9 @@ class LiveSplitSnapshot:
         if self.phase is TimerPhase.NOT_RUNNING:
             if self.split_index != -1:
                 raise ValueError("NOT_RUNNING requires split_index == -1")
+        elif self.phase is TimerPhase.STARTING:
+            if self.split_count == 0 or not 0 <= self.split_index < self.split_count:
+                raise ValueError("STARTING requires 0 <= split_index < split_count")
         elif self.phase in (TimerPhase.RUNNING, TimerPhase.PAUSED):
             if not 0 <= self.split_index < self.split_count:
                 raise ValueError(

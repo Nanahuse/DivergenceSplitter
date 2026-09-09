@@ -39,12 +39,19 @@ def test_loads_detected_template_match_scenario(tmp_path: Path) -> None:
     path = write_scenario(
         tmp_path,
         """
-reset_conditions:
-  - type: detected
-    minimum_score: 0.8
-    detector:
-      type: template_match
-      reference: ./images/title.png
+start_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: template_match
+    reference: ./images/title.png
+
+reset_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: template_match
+    reference: ./images/title.png
 
 splits:
   - rules:
@@ -60,8 +67,7 @@ splits:
 
     scenario = load_scenario_yaml(path)
 
-    assert len(scenario.reset_conditions) == 1
-    reset = scenario.reset_conditions[0]
+    reset = scenario.reset_condition
     assert isinstance(reset, Detected)
     assert reset.minimum_score == 0.8
     rules = scenario.splits[0]
@@ -71,17 +77,91 @@ splits:
     assert isinstance(rules[0].condition.detector, TemplateMatchDetector)
 
 
+def test_incomplete_condition_is_optional_and_loaded_when_present(
+    tmp_path: Path,
+) -> None:
+    write_reference_image(tmp_path, "title.png")
+    path = write_scenario(
+        tmp_path,
+        """
+start_condition:
+  type: detected
+  minimum_score: 0.8
+  detector: {type: template_match, reference: ./title.png}
+reset_condition:
+  type: detected
+  minimum_score: 0.8
+  detector: {type: template_match, reference: ./title.png}
+incomplete_condition:
+  type: detected
+  minimum_score: 0.8
+  detector: {type: template_match, reference: ./title.png}
+splits: []
+""",
+    )
+
+    scenario = load_scenario_yaml(path)
+
+    assert isinstance(scenario.incomplete_condition, Detected)
+
+
+def test_incomplete_condition_can_be_omitted_but_not_null(tmp_path: Path) -> None:
+    write_reference_image(tmp_path, "title.png")
+    base = """
+start_condition:
+  type: detected
+  minimum_score: 0.8
+  detector: {type: template_match, reference: ./title.png}
+reset_condition:
+  type: detected
+  minimum_score: 0.8
+  detector: {type: template_match, reference: ./title.png}
+splits: []
+"""
+    omitted = load_scenario_yaml(write_scenario(tmp_path, base))
+    assert omitted.incomplete_condition is None
+
+    with pytest.raises(ScenarioYamlValidationError):
+        load_scenario_yaml(
+            write_scenario(
+                tmp_path,
+                base.replace("splits: []", "incomplete_condition: null\nsplits: []"),
+                "null.yaml",
+            )
+        )
+
+
+def test_old_reset_conditions_schema_is_rejected(tmp_path: Path) -> None:
+    path = write_scenario(
+        tmp_path,
+        """
+reset_conditions: []
+splits: []
+""",
+    )
+
+    with pytest.raises(ScenarioYamlValidationError):
+        load_scenario_yaml(path)
+
+
 def test_loads_then_condition_with_time_and_nested_conditions(tmp_path: Path) -> None:
     write_reference_image(tmp_path, "title.png")
     path = write_scenario(
         tmp_path,
         """
-reset_conditions:
-  - type: detected
-    minimum_score: 0.5
-    detector:
-      type: template_match
-      reference: ./title.png
+start_condition:
+  type: detected
+  minimum_score: 0.5
+  detector:
+    type: template_match
+    reference: ./title.png
+
+reset_condition:
+  type: detected
+  minimum_score: 0.5
+  detector:
+    type: template_match
+    reference: ./title.png
 
 splits:
   - rules:
@@ -135,12 +215,17 @@ def test_anchor_and_alias_are_resolved_natively(tmp_path: Path) -> None:
     path = write_scenario(
         tmp_path,
         """
-reset_conditions:
-  - type: detected
-    minimum_score: 0.8
-    detector: &title
-      type: template_match
-      reference: ./title.png
+start_condition:
+  type: detected
+  minimum_score: 0.8
+  detector: &title
+    type: template_match
+    reference: ./title.png
+
+reset_condition:
+  type: detected
+  minimum_score: 0.8
+  detector: *title
 
 splits:
   - rules:
@@ -156,7 +241,7 @@ splits:
 
     rules = scenario.splits[0]
     assert rules is not None
-    reset_condition = scenario.reset_conditions[0]
+    reset_condition = scenario.reset_condition
     assert isinstance(reset_condition, Detected)
     assert isinstance(rules[0].condition, Detected)
     reset_detector = reset_condition.detector
@@ -169,9 +254,12 @@ def test_unsupported_condition_type_is_rejected_clearly(tmp_path: Path) -> None:
     path = write_scenario(
         tmp_path,
         """
-reset_conditions:
-  - type: elapsed
-    duration: 2s
+start_condition:
+  type: elapsed
+  duration: 2s
+reset_condition:
+  type: elapsed
+  duration: 2s
 splits: []
 """,
     )
@@ -184,11 +272,16 @@ def test_unsupported_detector_type_is_rejected_clearly(tmp_path: Path) -> None:
     path = write_scenario(
         tmp_path,
         """
-reset_conditions:
-  - type: detected
-    minimum_score: 0.8
-    detector:
-      type: mean_brightness
+start_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: mean_brightness
+reset_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: mean_brightness
 splits: []
 """,
     )
@@ -203,8 +296,10 @@ def test_unknown_condition_type_is_rejected(tmp_path: Path) -> None:
     path = write_scenario(
         tmp_path,
         """
-reset_conditions:
-  - type: mystery
+start_condition:
+  type: mystery
+reset_condition:
+  type: mystery
 splits: []
 """,
     )
@@ -217,10 +312,14 @@ def test_invalid_duration_is_rejected(tmp_path: Path) -> None:
     path = write_scenario(
         tmp_path,
         """
-reset_conditions:
-  - type: then
-    within: 3hours
-    conditions: []
+start_condition:
+  type: then
+  within: 3hours
+  conditions: []
+reset_condition:
+  type: then
+  within: 3hours
+  conditions: []
 splits: []
 """,
     )
