@@ -131,6 +131,7 @@ class CameraPreview:
                     self._set_error(frame)
                     continue
                 with self._lock:
+                    self._error = None
                     self._latest = frame
         finally:
             source.close()

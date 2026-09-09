@@ -160,6 +160,8 @@ class ConfigurationPage:
             )
             self._preview_group_tag = dpg.add_group(
                 tag="divergence-splitter-camera-preview",
+                width=480,
+                height=270,
                 parent=self._camera_settings_group,
             )
             self._preview_status_tag = dpg.add_text(
@@ -284,6 +286,7 @@ class ConfigurationPage:
         else:
             frame = self._camera_preview.take_latest()
             if frame is not None:
+                dpg.set_value(self._preview_status_tag, "")
                 self._apply_preview_frame(frame)
             if self._camera_preview.error is not None:
                 dpg.set_value(
