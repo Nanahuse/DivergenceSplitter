@@ -4,14 +4,14 @@
 
 - Repository: `https://github.com/Nanahuse/DivergenceSplitter`
 - Branch: `feature/technical-mvp-review`
-- HEAD: `d5322b487104433c2d6b633540232ecd36882363`
+- HEAD: `22e82c689ec5d90ef4961459c12ef4256b645d5b`
 - Python: `3.14.6`
 - uv: `0.11.32`
 - OS: `Microsoft Windows 11 Pro` (`Windows-11-10.0.26200-SP0`)
 - Review date: `2026-09-09`
 
 The reviewed HEAD is the latest `origin/main` and contains the merged UI
-reconstruction change.
+reconstruction and independent camera preview changes from PR #44.
 
 ## MVP-G1 Result
 
@@ -44,7 +44,9 @@ Result: `PARTIAL`
 Video and OpenCV camera sources implement prepare/read/close, context-manager
 cleanup, and error actions. Runtime camera construction resolves an exact
 enumerated mode and calls `windows_capture_device_list.open_video_capture`.
-Real hardware behavior is not verified because MVP-G1 evidence is missing.
+The Configuration page now enumerates cameras and can run an independent
+camera preview without scenario instances. Real hardware behavior is not
+verified because MVP-G1 evidence is missing.
 
 ### C. Frame Pipeline
 
@@ -109,8 +111,10 @@ Result: `PARTIAL`
 
 The main UI, page navigation, Monitor preview/diagnostics, Configuration page,
 native Windows file picker adapter, About, Licenses, and modal Error dialog
-are implemented. The packaged executable remained alive for a five-second
-smoke test. Native picker selection, real camera enumeration, and full
+are implemented. Configuration now shows camera enumeration before
+Instances/Scenario and creates an unsaved default camera configuration when no
+configuration file is selected. The packaged executable remained alive for a
+five-second smoke test. Native picker selection, real camera capture, and full
 Start/Stop behavior were not manually validated with a real device.
 
 ### K. Error Handling
@@ -128,8 +132,9 @@ Result: `PARTIAL`
 The latest `main` UI distribution workflow succeeded, and a local one-file
 PyInstaller build succeeded with Dear PyGui, OpenCV, and
 `windows_capture_device_list` collection. The resulting executable was
-started successfully for a five-second smoke test. Camera enumeration and
-camera operation inside the packaged executable remain unverified.
+started successfully for a five-second smoke test. The UI now has an
+independent camera preview and default camera configuration path, but camera
+operation inside the packaged executable remains unverified.
 
 ### M. CI / Test
 
@@ -140,10 +145,10 @@ Local verification succeeded:
 - `uv run ruff format --check .`: passed
 - `uv run ruff check .`: passed
 - `uv run ty check --error-on-warning .`: passed
-- `uv run pytest -q`: `534 passed, 56 subtests passed`
+- `uv run pytest -q`: `536 passed, 56 subtests passed`
 - `uv run pytest packages/divergencesplitter/tests -q`: `200 passed, 15 subtests passed`
 - `uv run pytest packages/divergencesplitter-runtime/tests -q`: `178 passed, 41 subtests passed`
-- `uv run pytest packages/divergencesplitter-ui/tests -q`: `130 passed`
+- `uv run pytest packages/divergencesplitter-ui/tests -q`: `132 passed`
 - `uv run python tools/generate_ui_license_inventory.py --check`: passed
 
 The latest `origin/main` CI, Core distribution, and UI distribution workflows
@@ -198,8 +203,10 @@ None found in the code and automated verification.
 - The reproducible processing benchmark is below both the recorded baseline
   and initial SLO at 640x360 and 1280x720. The detector bottleneck should be
   investigated in a separate performance task.
-- Packaged executable camera enumeration, camera capture, disconnect/reconnect,
-  and packaged Start/Stop behavior are not verified.
+- Packaged executable camera capture, disconnect/reconnect, and packaged
+  Start/Stop behavior are not verified. Camera enumeration is implemented and
+  was observed from the development environment, but not recorded as a full
+  packaged validation.
 
 ### P2
 
