@@ -110,6 +110,19 @@ def make_model(
 
 
 class TestSettingsModel:
+    def test_default_camera_configuration_has_no_scenario_instances(self) -> None:
+        model = SettingsModel(FakeCameraEnumerator())
+        device = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 7)
+        mode = CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID")
+
+        draft = model.create_default_camera_configuration(
+            Path("config.json"), device, mode
+        )
+
+        assert draft.configuration_path == Path("config.json")
+        assert draft.instances == ()
+        assert camera_source(draft) is not None
+
     def test_edits_one_shared_camera_draft(self) -> None:
         model = SettingsModel(FakeCameraEnumerator())
         path = Path("config.json")
