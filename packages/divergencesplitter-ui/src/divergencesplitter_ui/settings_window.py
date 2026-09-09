@@ -60,9 +60,9 @@ from divergencesplitter_ui.settings import (
 )
 from divergencesplitter_ui.windows_file_dialog import (
     CONFIGURATION_FILTERS,
-    SCENARIO_FILTERS,
     VIDEO_FILTERS,
     select_open_file,
+    select_open_script_file,
     select_save_file,
 )
 
@@ -504,10 +504,7 @@ class ConfigurationPage:
         if not edit_permission(self._controller.state).instances:
             return
         index = int(user_data)
-        path = select_open_file(
-            title="Select scenario file",
-            filters=SCENARIO_FILTERS,
-        )
+        path = select_open_script_file()
         if path is None:
             return
         path_text = str(path)

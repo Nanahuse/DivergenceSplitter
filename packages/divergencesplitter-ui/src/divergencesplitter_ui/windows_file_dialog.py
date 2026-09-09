@@ -122,6 +122,16 @@ def select_open_file(
     return normalize_selected_path(buffer.value)
 
 
+def select_open_script_file(*, initial_path: Path | None = None) -> Path | None:
+    """Select a scenario script with the native Windows Explorer dialog."""
+
+    return select_open_file(
+        title="Select script file",
+        filters=SCENARIO_FILTERS,
+        initial_path=initial_path,
+    )
+
+
 def select_save_file(
     *,
     title: str,
