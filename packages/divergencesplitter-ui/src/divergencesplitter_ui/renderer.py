@@ -76,6 +76,10 @@ class _ReferenceRow:
 class ScreenRenderer:
     """Bind presenter decisions to Dear PyGui widgets on the main thread."""
 
+    _PREVIEW_WIDTH = 480
+    _PREVIEW_HEIGHT = 270
+    _PREVIEW_PANEL_WIDTH = 500
+
     WINDOW_TAG = "divergence-splitter"
     SCENARIO_GROUP_TAG = "divergence-splitter-scenario"
     _TREE_TAG = "divergence-splitter-tree"
@@ -136,11 +140,17 @@ class ScreenRenderer:
                     dpg.add_text("State: —", tag=self._STATE_TAG)
                     dpg.add_text("input: — fps | processing: — fps", tag=self._FPS_TAG)
                 with dpg.group(horizontal=True):
-                    with dpg.child_window(width=-320, height=-1, border=True):
+                    with dpg.child_window(
+                        width=self._PREVIEW_PANEL_WIDTH, height=-1, border=True
+                    ):
                         dpg.add_text("Input Preview")
                         dpg.add_texture_registry(tag=self._TEXTURE_REGISTRY_TAG)
-                        dpg.add_group(tag=self._IMAGE_GROUP_TAG)
-                    with dpg.child_window(width=300, height=-1, border=True):
+                        dpg.add_group(
+                            tag=self._IMAGE_GROUP_TAG,
+                            width=self._PREVIEW_WIDTH,
+                            height=self._PREVIEW_HEIGHT,
+                        )
+                    with dpg.child_window(width=-1, height=-1, border=True):
                         dpg.add_text("Scenario / Diagnostics")
                         dpg.add_group(tag=self.SCENARIO_GROUP_TAG)
                         dpg.add_separator()
