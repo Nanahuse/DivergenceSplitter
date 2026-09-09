@@ -12,9 +12,12 @@ from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
+    CropConfiguration,
     InstanceConfiguration,
+    ResizeConfiguration,
     RuntimeConfiguration,
     SourceConfiguration,
+    SourceTransformConfiguration,
     VideoSourceConfiguration,
 )
 
@@ -112,9 +115,14 @@ def _source_dict(source: SourceConfiguration) -> dict[str, object]:
                 "subtype_guid": source.mode.subtype_guid,
             },
             "request_60_fps": source.request_60_fps,
+            "transform": _transform_dict(source.transform),
         }
     if isinstance(source, VideoSourceConfiguration):
-        return {"type": "video", "path": source.path}
+        return {
+            "type": "video",
+            "path": source.path,
+            "transform": _transform_dict(source.transform),
+        }
     assert_never(source)
 
 
@@ -125,6 +133,7 @@ def _source(value: object) -> SourceConfiguration:
         _keys(
             source,
             required={"type", "device", "mode", "request_60_fps"},
+            optional={"transform"},
         )
         device_value = _object(source["device"], "source.device")
         _keys(device_value, required={"backend", "name", "index"})
@@ -145,10 +154,18 @@ def _source(value: object) -> SourceConfiguration:
             device,
             mode,
             _boolean(source["request_60_fps"], "source.request_60_fps"),
+            _transform(source["transform"], "source.transform")
+            if "transform" in source
+            else SourceTransformConfiguration(),
         )
     if source_type == "video":
-        _keys(source, required={"type", "path"})
-        return VideoSourceConfiguration(_string(source["path"], "source.path"))
+        _keys(source, required={"type", "path"}, optional={"transform"})
+        return VideoSourceConfiguration(
+            _string(source["path"], "source.path"),
+            _transform(source["transform"], "source.transform")
+            if "transform" in source
+            else SourceTransformConfiguration(),
+        )
     raise ValueError(f"unsupported source type: {source_type!r}")
 
 
@@ -206,9 +223,56 @@ def _array(value: object, path: str) -> list[object]:
     return value
 
 
-def _keys(value: dict[str, object], *, required: set[str]) -> None:
+def _transform_dict(transform: SourceTransformConfiguration) -> dict[str, object]:
+    return {
+        "crop": None
+        if transform.crop is None
+        else {
+            "x": transform.crop.x,
+            "y": transform.crop.y,
+            "width": transform.crop.width,
+            "height": transform.crop.height,
+        },
+        "resize": None
+        if transform.resize is None
+        else {"width": transform.resize.width, "height": transform.resize.height},
+    }
+
+
+def _transform(value: object, path: str) -> SourceTransformConfiguration:
+    transform = _object(value, path)
+    _keys(transform, required={"crop", "resize"})
+    crop_value = transform["crop"]
+    crop = None
+    if crop_value is not None:
+        crop_object = _object(crop_value, f"{path}.crop")
+        _keys(crop_object, required={"x", "y", "width", "height"})
+        crop = CropConfiguration(
+            _integer(crop_object["x"], f"{path}.crop.x"),
+            _integer(crop_object["y"], f"{path}.crop.y"),
+            _integer(crop_object["width"], f"{path}.crop.width"),
+            _integer(crop_object["height"], f"{path}.crop.height"),
+        )
+    resize_value = transform["resize"]
+    resize = None
+    if resize_value is not None:
+        resize_object = _object(resize_value, f"{path}.resize")
+        _keys(resize_object, required={"width", "height"})
+        resize = ResizeConfiguration(
+            _integer(resize_object["width"], f"{path}.resize.width"),
+            _integer(resize_object["height"], f"{path}.resize.height"),
+        )
+    return SourceTransformConfiguration(crop, resize)
+
+
+def _keys(
+    value: dict[str, object],
+    *,
+    required: set[str],
+    optional: set[str] | frozenset[str] = frozenset(),
+) -> None:
     missing = required - value.keys()
-    unknown = value.keys() - required
+    unknown = value.keys() - required - optional
     if missing:
         raise ValueError(f"missing configuration fields: {sorted(missing)!r}")
     if unknown:

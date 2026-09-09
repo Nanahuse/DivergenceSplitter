@@ -23,6 +23,9 @@ from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
+    CropConfiguration,
+    ResizeConfiguration,
+    SourceTransformConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
@@ -179,6 +182,56 @@ class ConfigurationPage:
             dpg.configure_item(self._video_settings_group, show=False)
 
             dpg.add_separator()
+            self._frame_processing_group = dpg.add_group()
+            dpg.add_text("Frame processing", parent=self._frame_processing_group)
+            self._crop_enabled_tag = dpg.add_checkbox(
+                label="Crop",
+                callback=self._on_crop_enabled_changed,
+                parent=self._frame_processing_group,
+            )
+            self._crop_x_tag = dpg.add_input_int(
+                label="X",
+                default_value=0,
+                callback=self._on_crop_changed,
+                parent=self._frame_processing_group,
+            )
+            self._crop_y_tag = dpg.add_input_int(
+                label="Y",
+                default_value=0,
+                callback=self._on_crop_changed,
+                parent=self._frame_processing_group,
+            )
+            self._crop_width_tag = dpg.add_input_int(
+                label="Width",
+                default_value=1,
+                callback=self._on_crop_changed,
+                parent=self._frame_processing_group,
+            )
+            self._crop_height_tag = dpg.add_input_int(
+                label="Height",
+                default_value=1,
+                callback=self._on_crop_changed,
+                parent=self._frame_processing_group,
+            )
+            self._resize_enabled_tag = dpg.add_checkbox(
+                label="Resize",
+                callback=self._on_resize_enabled_changed,
+                parent=self._frame_processing_group,
+            )
+            self._resize_width_tag = dpg.add_input_int(
+                label="Width",
+                default_value=640,
+                callback=self._on_resize_changed,
+                parent=self._frame_processing_group,
+            )
+            self._resize_height_tag = dpg.add_input_int(
+                label="Height",
+                default_value=360,
+                callback=self._on_resize_changed,
+                parent=self._frame_processing_group,
+            )
+
+            dpg.add_separator()
             dpg.add_text("Instances")
             self._instances_group_tag = dpg.add_group()
             self._add_instance_tag = dpg.add_button(
@@ -273,6 +326,31 @@ class ConfigurationPage:
         dpg.configure_item(self._camera_tag, enabled=source_enabled)
         dpg.configure_item(self._mode_tag, enabled=source_enabled)
         dpg.configure_item(self._request_60_fps_tag, enabled=source_enabled)
+        transform = draft.source.transform if draft is not None else None
+        crop = transform.crop if transform is not None else None
+        resize = transform.resize if transform is not None else None
+        dpg.configure_item(self._crop_enabled_tag, enabled=source_enabled)
+        dpg.configure_item(self._resize_enabled_tag, enabled=source_enabled)
+        for tag in (
+            self._crop_x_tag,
+            self._crop_y_tag,
+            self._crop_width_tag,
+            self._crop_height_tag,
+        ):
+            dpg.configure_item(tag, enabled=source_enabled and crop is not None)
+        for tag in (self._resize_width_tag, self._resize_height_tag):
+            dpg.configure_item(tag, enabled=source_enabled and resize is not None)
+        if transform is not None:
+            dpg.set_value(self._crop_enabled_tag, crop is not None)
+            dpg.set_value(self._resize_enabled_tag, resize is not None)
+            if crop is not None:
+                dpg.set_value(self._crop_x_tag, crop.x)
+                dpg.set_value(self._crop_y_tag, crop.y)
+                dpg.set_value(self._crop_width_tag, crop.width)
+                dpg.set_value(self._crop_height_tag, crop.height)
+            if resize is not None:
+                dpg.set_value(self._resize_width_tag, resize.width)
+                dpg.set_value(self._resize_height_tag, resize.height)
         dpg.configure_item(
             self._log_level_tag,
             enabled=draft is not None and permission.log_level,
@@ -301,6 +379,21 @@ class ConfigurationPage:
             self._source_type_tag, SOURCE_TYPE_LABELS[draft.source.selected_type]
         )
         dpg.set_value(self._video_path_tag, draft.source.video.path)
+        transform = draft.source.transform
+        crop = transform.crop
+        resize = transform.resize
+        dpg.set_value(self._crop_enabled_tag, crop is not None)
+        dpg.set_value(self._crop_x_tag, crop.x if crop is not None else 0)
+        dpg.set_value(self._crop_y_tag, crop.y if crop is not None else 0)
+        dpg.set_value(self._crop_width_tag, crop.width if crop is not None else 1)
+        dpg.set_value(self._crop_height_tag, crop.height if crop is not None else 1)
+        dpg.set_value(self._resize_enabled_tag, resize is not None)
+        dpg.set_value(
+            self._resize_width_tag, resize.width if resize is not None else 640
+        )
+        dpg.set_value(
+            self._resize_height_tag, resize.height if resize is not None else 360
+        )
         self._show_source_settings(draft.source.selected_type)
         camera = camera_source(draft)
         if camera is None:
@@ -455,21 +548,37 @@ class ConfigurationPage:
             return
         dpg.set_value(self._preview_status_tag, "opening camera preview...")
         camera = camera_source(draft)
-        configuration = CameraSourceConfiguration(
-            CameraDeviceConfiguration(
-                _camera_backend(selected_device.backend),
-                selected_device.name,
-                selected_device.index,
-            ),
-            CameraModeConfiguration(
-                mode.width,
-                mode.height,
-                mode.fps,
-                mode.subtype_guid,
-            ),
-            camera.request_60_fps if camera is not None else False,
-        )
         try:
+            transform = draft.source.transform
+            configuration = CameraSourceConfiguration(
+                CameraDeviceConfiguration(
+                    _camera_backend(selected_device.backend),
+                    selected_device.name,
+                    selected_device.index,
+                ),
+                CameraModeConfiguration(
+                    mode.width,
+                    mode.height,
+                    mode.fps,
+                    mode.subtype_guid,
+                ),
+                camera.request_60_fps if camera is not None else False,
+                SourceTransformConfiguration(
+                    None
+                    if transform.crop is None
+                    else CropConfiguration(
+                        transform.crop.x,
+                        transform.crop.y,
+                        transform.crop.width,
+                        transform.crop.height,
+                    ),
+                    None
+                    if transform.resize is None
+                    else ResizeConfiguration(
+                        transform.resize.width, transform.resize.height
+                    ),
+                ),
+            )
             self._camera_preview.start(configuration, draft.configuration_path.parent)
             dpg.set_value(self._preview_status_tag, "")
         except Exception as error:  # noqa: BLE001
@@ -583,6 +692,70 @@ class ConfigurationPage:
             value = str(path)
             dpg.set_value(self._video_path_tag, value)
             self._model.set_video_path(value)
+
+    def _on_crop_enabled_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        if app_data:
+            self._model.set_crop_values(
+                int(dpg.get_value(self._crop_x_tag)),
+                int(dpg.get_value(self._crop_y_tag)),
+                int(dpg.get_value(self._crop_width_tag)),
+                int(dpg.get_value(self._crop_height_tag)),
+            )
+        else:
+            self._model.set_crop(None)
+        self._restart_camera_preview()
+
+    def _on_crop_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        if (
+            self._model.draft is not None
+            and self._model.draft.source.transform.crop is not None
+        ):
+            self._model.set_crop_values(
+                int(dpg.get_value(self._crop_x_tag)),
+                int(dpg.get_value(self._crop_y_tag)),
+                int(dpg.get_value(self._crop_width_tag)),
+                int(dpg.get_value(self._crop_height_tag)),
+            )
+            self._restart_camera_preview()
+
+    def _on_resize_enabled_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        if app_data:
+            self._model.set_resize_values(
+                int(dpg.get_value(self._resize_width_tag)),
+                int(dpg.get_value(self._resize_height_tag)),
+            )
+        else:
+            self._model.set_resize(None)
+        self._restart_camera_preview()
+
+    def _on_resize_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        if (
+            self._model.draft is not None
+            and self._model.draft.source.transform.resize is not None
+        ):
+            self._model.set_resize_values(
+                int(dpg.get_value(self._resize_width_tag)),
+                int(dpg.get_value(self._resize_height_tag)),
+            )
+            self._restart_camera_preview()
+
+    def _restart_camera_preview(self) -> None:
+        draft = self._model.draft
+        camera = camera_source(draft) if draft is not None else None
+        if camera is None or camera.device is None or camera.mode is None:
+            self._camera_preview.stop()
+            return
+        device = self._camera_by_label.get(str(dpg.get_value(self._camera_tag)))
+        if device is not None:
+            self._refresh_modes(device, camera.mode)
 
     def _on_mode_selected(self, sender, app_data, user_data) -> None:
         if not edit_permission(self._controller.state).source:

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from divergencesplitter.frame.camera import CameraCaptureSettings, OpenCvCameraSource
 from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.normalizer import FrameNormalizationError, FrameNormalizer
 from divergencesplitter.frame.source import FrameSourceError
 from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
@@ -93,11 +94,16 @@ class CameraPreview:
                 if isinstance(frame, FrameSourceError):
                     self._set_error(frame)
                     return
+                normalizer = getattr(source, "normalizer", FrameNormalizer())
+                frame = normalizer.normalize(frame)
+                if isinstance(frame, FrameNormalizationError):
+                    self._set_error(frame)
+                    continue
                 with self._lock:
                     self._latest = frame
         finally:
             source.close()
 
-    def _set_error(self, error: FrameSourceError) -> None:
+    def _set_error(self, error: FrameSourceError | FrameNormalizationError) -> None:
         with self._lock:
             self._error = str(error)

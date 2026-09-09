@@ -18,6 +18,9 @@ from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
+    CropConfiguration,
+    ResizeConfiguration,
+    SourceTransformConfiguration,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
@@ -132,6 +135,59 @@ def test_loads_video_configuration(tmp_path: Path) -> None:
     configuration = load_configuration(path)
 
     assert configuration.source == VideoSourceConfiguration("./run.mp4")
+
+
+def test_loads_and_saves_common_source_transform(tmp_path: Path) -> None:
+    value = camera_configuration()
+    source = cast(dict[str, object], value["source"])
+    source["transform"] = {
+        "crop": {"x": 10, "y": 20, "width": 640, "height": 480},
+        "resize": {"width": 320, "height": 240},
+    }
+    configuration = load_configuration(_write_configuration(tmp_path, value))
+
+    assert isinstance(configuration.source, CameraSourceConfiguration)
+    assert configuration.source.transform == SourceTransformConfiguration(
+        CropConfiguration(10, 20, 640, 480), ResizeConfiguration(320, 240)
+    )
+    saved = tmp_path / "saved.json"
+    save_configuration(saved, configuration)
+    assert load_configuration(saved) == configuration
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: CropConfiguration(-1, 0, 10, 10),
+        lambda: CropConfiguration(0, 0, 0, 10),
+        lambda: ResizeConfiguration(0, 10),
+    ],
+)
+def test_transform_dimensions_are_validated(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()
+
+
+@pytest.mark.parametrize(
+    "transform",
+    [
+        {"crop": None, "resize": {"width": 320, "height": 240}},
+        {"crop": {"x": 0, "y": 0, "width": 640, "height": 480}, "resize": None},
+    ],
+)
+def test_loads_partial_source_transform(
+    tmp_path: Path, transform: dict[str, object]
+) -> None:
+    value = camera_configuration()
+    cast(dict[str, object], value["source"])["transform"] = transform
+
+    configuration = load_configuration(_write_configuration(tmp_path, value))
+
+    assert isinstance(configuration.source, CameraSourceConfiguration)
+    assert (
+        configuration.source.transform.crop is None
+        or configuration.source.transform.resize is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -340,6 +396,23 @@ def test_builds_video_source_relative_to_configuration(tmp_path: Path) -> None:
 
     assert isinstance(source, VideoFileSource)
     assert Path(source.path) == tmp_path / "media" / "run.mp4"
+
+
+def test_builds_video_source_with_normalizer_transform(tmp_path: Path) -> None:
+    configuration = VideoSourceConfiguration(
+        "run.mp4",
+        SourceTransformConfiguration(
+            CropConfiguration(1, 2, 100, 80), ResizeConfiguration(40, 30)
+        ),
+    )
+
+    source = build_frame_source(configuration, base_directory=tmp_path)
+
+    assert isinstance(source, VideoFileSource)
+    assert source.normalizer.clip_region is not None
+    assert source.normalizer.clip_region.x == 1
+    assert source.normalizer.output_size is not None
+    assert source.normalizer.output_size.width == 40
 
 
 def test_resolves_scenario_path_relative_to_configuration(tmp_path: Path) -> None:
