@@ -705,7 +705,7 @@ class ConfigurationPage:
             )
         else:
             self._model.set_crop(None)
-        self._restart_camera_preview()
+        self._update_camera_preview_transform()
 
     def _on_crop_changed(self, sender, app_data, user_data) -> None:
         if not edit_permission(self._controller.state).source:
@@ -720,7 +720,7 @@ class ConfigurationPage:
                 int(dpg.get_value(self._crop_top_tag)),
                 int(dpg.get_value(self._crop_bottom_tag)),
             )
-            self._restart_camera_preview()
+            self._update_camera_preview_transform()
 
     def _on_resize_enabled_changed(self, sender, app_data, user_data) -> None:
         if not edit_permission(self._controller.state).source:
@@ -732,7 +732,7 @@ class ConfigurationPage:
             )
         else:
             self._model.set_resize(None)
-        self._restart_camera_preview()
+        self._update_camera_preview_transform()
 
     def _on_resize_changed(self, sender, app_data, user_data) -> None:
         if not edit_permission(self._controller.state).source:
@@ -745,17 +745,33 @@ class ConfigurationPage:
                 int(dpg.get_value(self._resize_width_tag)),
                 int(dpg.get_value(self._resize_height_tag)),
             )
-            self._restart_camera_preview()
+            self._update_camera_preview_transform()
 
-    def _restart_camera_preview(self) -> None:
+    def _update_camera_preview_transform(self) -> None:
         draft = self._model.draft
-        camera = camera_source(draft) if draft is not None else None
-        if camera is None or camera.device is None or camera.mode is None:
-            self._camera_preview.stop()
+        if draft is None:
             return
-        device = self._camera_by_label.get(str(dpg.get_value(self._camera_tag)))
-        if device is not None:
-            self._refresh_modes(device, camera.mode)
+        transform = draft.source.transform
+        try:
+            self._camera_preview.update_transform(
+                SourceTransformConfiguration(
+                    None
+                    if transform.crop is None
+                    else CropConfiguration(
+                        transform.crop.left,
+                        transform.crop.right,
+                        transform.crop.top,
+                        transform.crop.bottom,
+                    ),
+                    None
+                    if transform.resize is None
+                    else ResizeConfiguration(
+                        transform.resize.width, transform.resize.height
+                    ),
+                )
+            )
+        except (TypeError, ValueError) as error:
+            dpg.set_value(self._preview_status_tag, str(error))
 
     def _on_mode_selected(self, sender, app_data, user_data) -> None:
         if not edit_permission(self._controller.state).source:
