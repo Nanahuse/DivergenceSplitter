@@ -37,10 +37,13 @@ class FakeClock:
 
 
 def make_scenario(*reset_conditions, splits=()) -> ScenarioInstance:
+    conditions = reset_conditions or (Detected(MeanBrightnessDetector(), -1.0),)
     return ScenarioInstance(
         connection=LiveSplitConnection("rpc", "event"),
         scenario=Scenario(
-            reset_conditions=reset_conditions,
+            start_condition=conditions[0],
+            reset_condition=conditions[-1],
+            incomplete_condition=None,
             splits=splits,
         ),
     )
@@ -81,8 +84,8 @@ class TestObservationIdentity:
         )
         index = ObservationIndex.build(observations)
 
-        first_view = view_for(tree.scenarios[0].reset_conditions[0], index)
-        second_view = view_for(tree.scenarios[0].reset_conditions[1], index)
+        first_view = view_for(tree.scenarios[0].start_condition, index)
+        second_view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert first_view.minimum_score == 100.0
         assert first_view.latest_score == 50.0
@@ -99,8 +102,8 @@ class TestObservationIdentity:
         )
         index = ObservationIndex.build(observations)
 
-        first_view = view_for(tree.scenarios[0].reset_conditions[0], index)
-        second_view = view_for(tree.scenarios[0].reset_conditions[1], index)
+        first_view = view_for(tree.scenarios[0].start_condition, index)
+        second_view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert first_view.latest_score == 50.0
         assert second_view.latest_score == 50.0
@@ -112,7 +115,7 @@ class TestObservationIdentity:
         tree = build_detector_tree((make_scenario(condition),))
         index = ObservationIndex.build(())
 
-        view = view_for(tree.scenarios[0].reset_conditions[0], index)
+        view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert view.status_label == UNOBSERVED_LABEL
         assert view.latest_score is None
@@ -128,7 +131,7 @@ class TestSkippedDetection:
         )
         index = ObservationIndex.build(observations)
 
-        view = view_for(tree.scenarios[0].reset_conditions[0], index)
+        view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert view.status_label == "SKIPPED"
         assert view.latest_score is None

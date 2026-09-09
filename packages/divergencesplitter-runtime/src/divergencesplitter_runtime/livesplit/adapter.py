@@ -253,6 +253,7 @@ class LiveSplitBridgeAdapter:
             return
 
         operation: Callable[[], common_pb2.OperationResponse] = {
+            "start": self._client.start,
             "split": self._client.split,
             "skip": self._client.skip,
             "undo": self._client.undo,
@@ -308,6 +309,8 @@ class LiveSplitBridgeAdapter:
     ) -> bool:
         if action.operation == "split":
             return snapshot.phase is TimerPhase.RUNNING
+        if action.operation == "start":
+            return snapshot.phase is TimerPhase.NOT_RUNNING
         if action.operation == "skip":
             return (
                 snapshot.phase is TimerPhase.RUNNING

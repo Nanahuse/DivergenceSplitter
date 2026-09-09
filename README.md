@@ -49,9 +49,12 @@ import divergencesplitter as ds
 brightness = ds.MeanBrightnessDetector()
 split_condition = ds.Detected(brightness, minimum_score=200.0)
 reset_condition = ds.Not(ds.Detected(brightness, minimum_score=10.0))
+start_condition = ds.Detected(brightness, minimum_score=10.0)
 
 scenario = ds.Scenario(
-    reset_conditions=(reset_condition,),
+    start_condition=start_condition,
+    reset_condition=reset_condition,
+    incomplete_condition=None,
     splits=((ds.Rule(split_condition, ds.Action("split")),),),
 )
 ```
@@ -84,15 +87,30 @@ frame source and one or more connection/scenario instances independently:
 
 A scenario may also be written as YAML (`scenario.yaml`). The loader is chosen
 from the file extension: `.py` for Python, `.yaml`/`.yml` for YAML. A YAML
-scenario defines `reset_conditions` and `splits` using `type` discriminators:
+scenario defines `start_condition`, `reset_condition`, optional
+`incomplete_condition`, and `splits` using `type` discriminators:
 
 ```yaml
-reset_conditions:
-  - type: detected
-    minimum_score: 0.8
-    detector:
-      type: template_match
-      reference: ./images/title.png
+start_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: template_match
+    reference: ./images/title.png
+
+reset_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: template_match
+    reference: ./images/title.png
+
+incomplete_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: template_match
+    reference: ./images/title.png
 
 splits:
   - rules:

@@ -115,7 +115,8 @@ def test_runtime_context_identifies_scenario_without_exposing_credentials() -> N
         "tcp://rpc-user:rpc-secret@localhost:16835",
         "tcp://event-user:event-secret@localhost:16836",
     )
-    scenario = Scenario(reset_conditions=(), splits=())
+    condition = Detected(MeanBrightnessDetector(), 300.0)
+    scenario = Scenario(condition, condition, None, ())
     diagnostics.bind_runtime(
         (ScenarioInstance(connection, scenario),),
         VideoFileSource("recording.mp4"),
@@ -177,7 +178,8 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
         Rule(Detected(detector, 300.0), Action("split")),
         Rule(Detected(detector, 400.0), Action("split")),
     )
-    scenario = Scenario(reset_conditions=(), splits=(rules,))
+    condition = Detected(MeanBrightnessDetector(), 300.0)
+    scenario = Scenario(condition, condition, None, (rules,))
     diagnostics.bind_runtime(
         (ScenarioInstance(connection, scenario),),
         VideoFileSource("recording.mp4"),
@@ -201,13 +203,15 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
         for line in stream.getvalue().splitlines()
         if "scenario_runtime.rule_evaluated" in line
     ]
-    assert len(rule_lines) == 2
+    assert len(rule_lines) == 3
     assert 'detector_type="MeanBrightnessDetector"' in rule_lines[0]
     assert "detector_minimum_score=300.0" in rule_lines[0]
     assert "detector_score=0.0" in rule_lines[0]
     assert "detector_cache_hit=false" in rule_lines[0]
-    assert "detector_minimum_score=400.0" in rule_lines[1]
+    assert "detector_minimum_score=300.0" in rule_lines[1]
     assert "detector_cache_hit=true" in rule_lines[1]
+    assert "detector_minimum_score=400.0" in rule_lines[2]
+    assert "detector_cache_hit=true" in rule_lines[2]
 
 
 def test_snapshot_mismatch_names_each_different_precondition() -> None:

@@ -39,9 +39,11 @@ def make_scenario(
     slots: int = 0,
 ) -> Scenario:
     return Scenario(
-        reset_conditions=(PassiveCondition(),)
-        if reset_conditions is None
-        else reset_conditions,
+        start_condition=PassiveCondition(),
+        reset_condition=(
+            PassiveCondition() if reset_conditions is None else reset_conditions[0]
+        ),
+        incomplete_condition=None,
         splits=(None,) * slots,
     )
 
@@ -86,7 +88,9 @@ class Condition:
         pass
 
 scenario = Scenario(
-    reset_conditions=(Condition(),),
+    start_condition=Condition(),
+    reset_condition=Condition(),
+    incomplete_condition=None,
     splits=(None,),
 )
 """
@@ -158,7 +162,9 @@ class Condition:
         pass
 
 scenario = Scenario(
-    reset_conditions=(Condition(),),
+    start_condition=Condition(),
+    reset_condition=Condition(),
+    incomplete_condition=None,
     splits=(None,),
 )
 frame_source = object()
@@ -184,7 +190,9 @@ class Condition:
         pass
 
 scenario = Scenario(
-    reset_conditions=(Condition(),),
+    start_condition=Condition(),
+    reset_condition=Condition(),
+    incomplete_condition=None,
     splits=(None,),
 )
 connection = object()
@@ -201,16 +209,12 @@ connection = object()
 
 
 class ConfigurationValidationTest(unittest.TestCase):
-    def test_scenario_requires_reset_conditions(self) -> None:
-        with self.assertRaises(ExceptionGroup) as raised:
-            validate_scenario(make_scenario(reset_conditions=()))
-        messages = tuple(str(error) for error in raised.exception.exceptions)
-        self.assertEqual(len(messages), 1)
-        self.assertTrue(any("no reset conditions" in message for message in messages))
+    def test_scenario_with_required_conditions_is_valid(self) -> None:
+        validate_scenario(make_scenario())
 
     def test_independent_static_errors_are_aggregated(self) -> None:
         instances = (
-            make_instance("", "", reset_conditions=()),
+            make_instance("", ""),
             make_instance("", ""),
         )
         with self.assertRaises(ExceptionGroup) as raised:
@@ -220,8 +224,7 @@ class ConfigurationValidationTest(unittest.TestCase):
                 )
             )
         messages = tuple(str(error) for error in raised.exception.exceptions)
-        self.assertEqual(len(messages), 7)
-        self.assertTrue(any("no reset conditions" in message for message in messages))
+        self.assertEqual(len(messages), 6)
         self.assertTrue(any("shares rpc_endpoint" in message for message in messages))
         self.assertTrue(any("shares event_endpoint" in message for message in messages))
 
@@ -241,8 +244,9 @@ class ConfigurationValidationTest(unittest.TestCase):
                 )
             )
 
-    def test_split_slots_allow_split_count_plus_one(self) -> None:
-        validate_split_count(make_scenario(slots=3), make_snapshot(2))
+    def test_split_slots_must_not_exceed_split_count(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_split_count(make_scenario(slots=3), make_snapshot(2))
         with self.assertRaises(ValueError):
             validate_split_count(make_scenario(slots=4), make_snapshot(2))
 

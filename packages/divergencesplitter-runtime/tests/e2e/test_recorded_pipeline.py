@@ -129,7 +129,9 @@ def test_recording_is_normalized_before_scenario_evaluation(tmp_path: Path) -> N
     write_image_recording(video, image, frame_count=12, fps=20)
     connection = LiveSplitConnection("normalized-rpc", "normalized-event")
     scenario = Scenario(
-        reset_conditions=(impossible_reset_condition(),),
+        start_condition=impossible_reset_condition(),
+        reset_condition=impossible_reset_condition(),
+        incomplete_condition=None,
         splits=(
             (Rule(Detected(MeanBrightnessDetector(), THRESHOLD), Action("split")),),
         ),
@@ -169,7 +171,9 @@ def test_normalization_failure_stops_the_recording_pipeline(tmp_path: Path) -> N
     write_recording(video, ((BRIGHT, 12),), fps=20)
     connection = LiveSplitConnection("failure-rpc", "failure-event")
     scenario = Scenario(
-        reset_conditions=(impossible_reset_condition(),),
+        start_condition=impossible_reset_condition(),
+        reset_condition=impossible_reset_condition(),
+        incomplete_condition=None,
         splits=(
             (Rule(Detected(MeanBrightnessDetector(), THRESHOLD), Action("split")),),
         ),
@@ -236,11 +240,12 @@ def test_recording_reaches_finish_and_refires_after_external_undo(
     second_split = RisingEdge(Detected(detector, THRESHOLD))
     connection = LiveSplitConnection("e2e-rpc", "e2e-event")
     scenario = Scenario(
-        reset_conditions=(impossible_reset_condition(),),
+        start_condition=impossible_reset_condition(),
+        reset_condition=impossible_reset_condition(),
+        incomplete_condition=None,
         splits=(
             (Rule(first_split, Action("split")),),
             (Rule(second_split, Action("split")),),
-            None,
         ),
     )
     script = BridgeScript(snapshot(split_count=2))
@@ -290,7 +295,9 @@ def test_bridge_resynchronization_stops_evaluation_until_complete(
     write_recording(video, ((DARK, 20), (BRIGHT, 30)), fps=20)
     connection = LiveSplitConnection("gap-rpc", "gap-event")
     scenario = Scenario(
-        reset_conditions=(impossible_reset_condition(),),
+        start_condition=impossible_reset_condition(),
+        reset_condition=impossible_reset_condition(),
+        incomplete_condition=None,
         splits=(
             (
                 Rule(
@@ -345,7 +352,9 @@ def test_slow_processing_overwrites_buffer_and_returns_to_latest_frame(
     blocking = BlockingDetectedCondition(THRESHOLD)
     connection = LiveSplitConnection("drop-rpc", "drop-event")
     scenario = Scenario(
-        reset_conditions=(impossible_reset_condition(),),
+        start_condition=impossible_reset_condition(),
+        reset_condition=impossible_reset_condition(),
+        incomplete_condition=None,
         splits=((Rule(blocking, Action("split")),),),
     )
     script = BridgeScript(snapshot())
@@ -389,7 +398,9 @@ def test_missing_bridge_transition_allows_refire_only_after_scenario_timeout(
     )
     connection = LiveSplitConnection("timeout-rpc", "timeout-event")
     scenario = Scenario(
-        reset_conditions=(impossible_reset_condition(),),
+        start_condition=impossible_reset_condition(),
+        reset_condition=impossible_reset_condition(),
+        incomplete_condition=None,
         splits=(
             (
                 Rule(
@@ -431,7 +442,9 @@ def test_explicit_stop_releases_video_and_all_runtime_threads(tmp_path: Path) ->
     write_recording(video, ((DARK, 120),), fps=30)
     connection = LiveSplitConnection("stop-rpc", "stop-event")
     scenario = Scenario(
-        reset_conditions=(impossible_reset_condition(),),
+        start_condition=impossible_reset_condition(),
+        reset_condition=impossible_reset_condition(),
+        incomplete_condition=None,
         splits=(None,),
     )
     script = BridgeScript(snapshot())

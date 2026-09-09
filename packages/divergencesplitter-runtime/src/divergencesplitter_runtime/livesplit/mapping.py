@@ -11,6 +11,7 @@ from divergencesplitter_runtime.livesplit.models import (
 
 _PHASES = {
     common_pb2.NOT_RUNNING: TimerPhase.NOT_RUNNING,
+    common_pb2.STARTING: TimerPhase.STARTING,
     common_pb2.RUNNING: TimerPhase.RUNNING,
     common_pb2.PAUSED: TimerPhase.PAUSED,
     common_pb2.ENDED: TimerPhase.ENDED,
