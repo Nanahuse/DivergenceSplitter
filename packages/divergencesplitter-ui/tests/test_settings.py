@@ -71,6 +71,7 @@ def camera_configuration(
         source=CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
             CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
+            False,
         ),
         instances=tuple(instances),
         runtime=RuntimeConfiguration("INFO"),
@@ -146,6 +147,7 @@ class TestSettingsModel:
         assert configuration.source == CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 7),
             CameraModeConfiguration(1920, 1080, 59.94, "MJPG-GUID"),
+            False,
         )
 
     def test_video_source_is_preserved_by_camera_edits(self) -> None:

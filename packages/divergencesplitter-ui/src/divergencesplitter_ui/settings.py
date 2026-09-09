@@ -103,6 +103,7 @@ def select_configured_camera(
 class CameraSourceDraft:
     device: CameraDeviceConfiguration
     mode: CameraModeConfiguration | None
+    request_60_fps: bool
 
 
 @dataclass(frozen=True)
@@ -134,7 +135,9 @@ def camera_source(draft: SettingsDraft) -> CameraSourceDraft | None:
 
     if isinstance(draft.source, (CameraSourceConfiguration, CameraSourceDraft)):
         if isinstance(draft.source, CameraSourceConfiguration):
-            return CameraSourceDraft(draft.source.device, draft.source.mode)
+            return CameraSourceDraft(
+                draft.source.device, draft.source.mode, draft.source.request_60_fps
+            )
         return draft.source
     return None
 
@@ -274,7 +277,9 @@ def _configuration_source(
     if isinstance(source, CameraSourceDraft):
         if source.mode is None:
             raise ValueError("a camera capture mode must be selected")
-        return CameraSourceConfiguration(source.device, source.mode)
+        return CameraSourceConfiguration(
+            source.device, source.mode, source.request_60_fps
+        )
     return source
 
 
@@ -315,7 +320,7 @@ class SettingsModel:
         self._draft = SettingsDraft(
             configuration_path=path,
             instances=(),
-            source=CameraSourceDraft(device, mode),
+            source=CameraSourceDraft(device, mode, False),
             log_level="INFO",
         )
         return self._draft
@@ -399,7 +404,9 @@ class SettingsModel:
         self._draft = replace(
             self._draft,
             source=CameraSourceDraft(
-                CameraDeviceConfiguration(backend, name, index), None
+                CameraDeviceConfiguration(backend, name, index),
+                None,
+                camera.request_60_fps,
             ),
         )
         return self._draft
@@ -412,7 +419,19 @@ class SettingsModel:
             return self._draft
         self._draft = replace(
             self._draft,
-            source=CameraSourceDraft(camera.device, mode),
+            source=CameraSourceDraft(camera.device, mode, camera.request_60_fps),
+        )
+        return self._draft
+
+    def set_request_60_fps(self, enabled: bool) -> SettingsDraft | None:
+        if self._draft is None:
+            return None
+        camera = camera_source(self._draft)
+        if camera is None:
+            return self._draft
+        self._draft = replace(
+            self._draft,
+            source=CameraSourceDraft(camera.device, camera.mode, enabled),
         )
         return self._draft
 
