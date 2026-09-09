@@ -49,6 +49,11 @@ class CameraModeConfiguration:
 class CameraSourceConfiguration:
     device: CameraDeviceConfiguration
     mode: CameraModeConfiguration
+    request_60_fps: bool
+
+    def __post_init__(self) -> None:
+        if type(self.request_60_fps) is not bool:
+            raise TypeError("camera request_60_fps must be a boolean")
 
 
 @dataclass(frozen=True)

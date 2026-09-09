@@ -36,6 +36,8 @@ from divergencesplitter_runtime.configuration.source_builder import (
     resolve_camera_device,
 )
 
+from divergencesplitter_ui.session import SessionState
+
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
 
@@ -103,6 +105,7 @@ def select_configured_camera(
 class CameraSourceDraft:
     device: CameraDeviceConfiguration
     mode: CameraModeConfiguration | None
+    request_60_fps: bool
 
 
 @dataclass(frozen=True)
@@ -134,7 +137,9 @@ def camera_source(draft: SettingsDraft) -> CameraSourceDraft | None:
 
     if isinstance(draft.source, (CameraSourceConfiguration, CameraSourceDraft)):
         if isinstance(draft.source, CameraSourceConfiguration):
-            return CameraSourceDraft(draft.source.device, draft.source.mode)
+            return CameraSourceDraft(
+                draft.source.device, draft.source.mode, draft.source.request_60_fps
+            )
         return draft.source
     return None
 
@@ -153,10 +158,17 @@ def draft_from_configuration(
         )
         for instance in configuration.instances
     )
+    source: SourceConfiguration | CameraSourceDraft = configuration.source
+    if isinstance(configuration.source, CameraSourceConfiguration):
+        source = CameraSourceDraft(
+            configuration.source.device,
+            configuration.source.mode,
+            configuration.source.request_60_fps,
+        )
     return SettingsDraft(
         configuration_path=path,
         instances=instances,
-        source=configuration.source,
+        source=source,
         log_level=configuration.runtime.log_level,
     )
 
@@ -232,40 +244,15 @@ class EditPermission:
     log_level: bool
 
 
-def edit_permission(*, active: bool) -> EditPermission:
-    """Resolve editability from whether a session is currently in progress.
+def edit_permission(state: SessionState) -> EditPermission:
+    """Disable configuration operations only during session transitions."""
 
-    Source and every instance are disabled while active so an in-flight session
-    never changes its input or its scenarios and LiveSplit connections. Log
-    level stays editable and is reflected to the active diagnostics on
-    confirmation.
-    """
-
-    return EditPermission(
-        source=not active,
-        instances=not active,
-        log_level=True,
-    )
-
-
-@dataclass(frozen=True)
-class SaveDecision:
-    """What saving should do after persisting the current draft."""
-
-    start: bool
-    reflect_log_level: bool
-
-
-def save_decision(*, active: bool) -> SaveDecision:
-    """Decide the session effect of saving a configuration.
-
-    Saving starts a session when none is active. During an active session it
-    only reflects the editable log level to the current diagnostics.
-    """
-
-    if active:
-        return SaveDecision(start=False, reflect_log_level=True)
-    return SaveDecision(start=True, reflect_log_level=False)
+    editable = state not in {
+        SessionState.LOADING,
+        SessionState.CONNECTING,
+        SessionState.STOPPING,
+    }
+    return EditPermission(source=editable, instances=editable, log_level=editable)
 
 
 def _configuration_source(
@@ -274,7 +261,9 @@ def _configuration_source(
     if isinstance(source, CameraSourceDraft):
         if source.mode is None:
             raise ValueError("a camera capture mode must be selected")
-        return CameraSourceConfiguration(source.device, source.mode)
+        return CameraSourceConfiguration(
+            source.device, source.mode, source.request_60_fps
+        )
     return source
 
 
@@ -290,10 +279,15 @@ class SettingsModel:
     def __init__(self, camera_enumerator: CameraEnumerator) -> None:
         self._camera_enumerator = camera_enumerator
         self._draft: SettingsDraft | None = None
+        self._dirty = False
 
     @property
     def draft(self) -> SettingsDraft | None:
         return self._draft
+
+    @property
+    def is_dirty(self) -> bool:
+        return self._dirty
 
     def open_configuration(
         self,
@@ -302,6 +296,7 @@ class SettingsModel:
     ) -> SettingsDraft:
         draft = draft_from_configuration(configuration, path)
         self._draft = draft
+        self._dirty = False
         return draft
 
     def create_default_camera_configuration(
@@ -315,9 +310,18 @@ class SettingsModel:
         self._draft = SettingsDraft(
             configuration_path=path,
             instances=(),
-            source=CameraSourceDraft(device, mode),
+            source=CameraSourceDraft(device, mode, False),
             log_level="INFO",
         )
+        self._dirty = True
+        return self._draft
+
+    def mark_saved(self, path: Path | None = None) -> SettingsDraft | None:
+        if self._draft is None:
+            return None
+        if path is not None and path != self._draft.configuration_path:
+            self._draft = replace(self._draft, configuration_path=path)
+        self._dirty = False
         return self._draft
 
     def list_cameras(self) -> Sequence[CameraDevice]:
@@ -334,7 +338,7 @@ class SettingsModel:
         if index < 0 or index >= len(instances):
             return self._draft
         instance = instances[index]
-        self._draft = replace(
+        updated = replace(
             self._draft,
             instances=(
                 instances[:index]
@@ -342,6 +346,9 @@ class SettingsModel:
                 + instances[index + 1 :]
             ),
         )
+        if updated != self._draft:
+            self._draft = updated
+            self._dirty = True
         return self._draft
 
     def set_instance_scenario(self, index: int, scenario: str) -> SettingsDraft | None:
@@ -368,6 +375,7 @@ class SettingsModel:
             self._draft,
             instances=self._draft.instances + (InstanceDraft("", "", ""),),
         )
+        self._dirty = True
         return self._draft
 
     def remove_instance(self, index: int) -> SettingsDraft | None:
@@ -385,7 +393,10 @@ class SettingsModel:
     def set_log_level(self, level: str) -> SettingsDraft | None:
         if self._draft is None:
             return None
-        self._draft = replace(self._draft, log_level=level)
+        updated = replace(self._draft, log_level=level)
+        if updated != self._draft:
+            self._draft = updated
+            self._dirty = True
         return self._draft
 
     def set_camera_device(
@@ -396,12 +407,17 @@ class SettingsModel:
         camera = camera_source(self._draft)
         if camera is None:
             return self._draft
-        self._draft = replace(
+        updated = replace(
             self._draft,
             source=CameraSourceDraft(
-                CameraDeviceConfiguration(backend, name, index), None
+                CameraDeviceConfiguration(backend, name, index),
+                None,
+                camera.request_60_fps,
             ),
         )
+        if updated != self._draft:
+            self._draft = updated
+            self._dirty = True
         return self._draft
 
     def set_camera_mode(self, mode: CameraModeConfiguration) -> SettingsDraft | None:
@@ -410,10 +426,28 @@ class SettingsModel:
         camera = camera_source(self._draft)
         if camera is None:
             return self._draft
-        self._draft = replace(
+        updated = replace(
             self._draft,
-            source=CameraSourceDraft(camera.device, mode),
+            source=CameraSourceDraft(camera.device, mode, camera.request_60_fps),
         )
+        if updated != self._draft:
+            self._draft = updated
+            self._dirty = True
+        return self._draft
+
+    def set_request_60_fps(self, enabled: bool) -> SettingsDraft | None:
+        if self._draft is None:
+            return None
+        camera = camera_source(self._draft)
+        if camera is None:
+            return self._draft
+        updated = replace(
+            self._draft,
+            source=CameraSourceDraft(camera.device, camera.mode, enabled),
+        )
+        if updated != self._draft:
+            self._draft = updated
+            self._dirty = True
         return self._draft
 
     def configuration(self) -> ApplicationConfiguration | None:

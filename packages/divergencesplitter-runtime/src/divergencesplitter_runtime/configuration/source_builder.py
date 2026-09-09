@@ -72,10 +72,10 @@ def build_frame_source(
             ) from error
         device = resolve_camera_device(configuration.device, devices)
         mode = resolve_camera_mode(configuration.mode, device.modes, device=device)
-        mode = resolve_camera_mode(configuration.mode, device.modes, device=device)
         module = importlib.import_module("windows_capture_device_list")
         return OpenCvCameraSource(
             capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
+            request_60_fps=configuration.request_60_fps,
         )
     if isinstance(configuration, VideoSourceConfiguration):
         path = _resolve_path(configuration.path, base_directory)
