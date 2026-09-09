@@ -1,22 +1,11 @@
-"""Pure settings draft and confirmation decisions for the settings screen.
-
-Nothing in this module imports Dear PyGui. It owns the *what* of editing one
-configuration: parsing a loaded configuration into an editable draft, applying
-user edits without mutating the draft, deciding which fields are editable while
-a session is active, and deciding whether a confirmation saves, starts, or
-reflects a log-level change. The Dear PyGui widgets only call into these
-helpers.
-
-The single authority for the persisted values remains the JSON file; the draft
-here is an in-memory projection shared by the main screen and the settings
-screen so they never fork the value.
-"""
+"""Editable configuration state and conversion to validated runtime values."""
 
 from __future__ import annotations
 
 import importlib
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -30,6 +19,7 @@ from divergencesplitter_runtime.configuration.models import (
     InstanceConfiguration,
     RuntimeConfiguration,
     SourceConfiguration,
+    VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
@@ -41,59 +31,53 @@ from divergencesplitter_ui.session import SessionState
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
 
+class SourceType(StrEnum):
+    CAMERA = "camera"
+    VIDEO = "video"
+
+
+SOURCE_TYPE_LABELS = {SourceType.CAMERA: "Camera", SourceType.VIDEO: "Video File"}
+SOURCE_TYPE_BY_LABEL = {
+    label: source_type for source_type, label in SOURCE_TYPE_LABELS.items()
+}
+
+
 class CameraMode(Protocol):
     @property
     def width(self) -> int: ...
-
     @property
     def height(self) -> int: ...
-
     @property
     def fps(self) -> float: ...
-
     @property
     def format(self) -> str | None: ...
-
     @property
     def subtype_guid(self) -> str: ...
 
 
 class CameraDevice(Protocol):
-    """A camera device as reported by the platform-specific enumerator."""
-
     @property
     def name(self) -> str: ...
-
     @property
     def backend(self) -> object: ...
-
     @property
     def index(self) -> int: ...
-
     @property
     def modes(self) -> Sequence[CameraMode]: ...
 
 
 class CameraEnumerator(Protocol):
-    """Enumerate connected camera devices and their modes."""
-
     def list_devices(self) -> Sequence[CameraDevice]: ...
 
 
 class WindowsCameraEnumerator:
-    """Enumerate cameras through the Windows-only boundary package."""
-
     def list_devices(self) -> Sequence[CameraDevice]:
-        module = importlib.import_module("windows_capture_device_list")
-        return module.list_devices()
+        return importlib.import_module("windows_capture_device_list").list_devices()
 
 
 def select_configured_camera(
-    configured: CameraDeviceConfiguration,
-    devices: Sequence[CameraDevice],
+    configured: CameraDeviceConfiguration, devices: Sequence[CameraDevice]
 ) -> CameraDevice | None:
-    """Select a current device with the shared name/id resolution rules."""
-
     try:
         selected = resolve_camera_device(configured, devices)
     except SourceConfigurationError:
@@ -101,85 +85,84 @@ def select_configured_camera(
     return next(device for device in devices if device is selected)
 
 
-@dataclass(frozen=True)
-class CameraSourceDraft:
-    device: CameraDeviceConfiguration
+@dataclass
+class EditableCameraSourceConfiguration:
+    device: CameraDeviceConfiguration | None
     mode: CameraModeConfiguration | None
     request_60_fps: bool
 
 
-@dataclass(frozen=True)
-class InstanceDraft:
-    """Editable transfer values for one instance of a settings projection.
+@dataclass
+class EditableVideoSourceConfiguration:
+    path: str
 
-    Unlike the persisted ``InstanceConfiguration``, the empty strings that a
-    newly added instance starts with are valid here; they are only rejected when
-    the whole draft is saved.
-    """
 
+@dataclass
+class EditableSourceSettings:
+    selected_type: SourceType
+    camera: EditableCameraSourceConfiguration
+    video: EditableVideoSourceConfiguration
+
+
+@dataclass
+class EditableInstanceConfiguration:
     rpc_endpoint: str
     event_endpoint: str
     scenario: str
 
 
-@dataclass(frozen=True)
-class SettingsDraft:
-    """Transfer values for one editable configuration projection."""
-
+@dataclass
+class EditableApplicationConfiguration:
     configuration_path: Path
-    instances: tuple[InstanceDraft, ...]
-    source: SourceConfiguration | CameraSourceDraft
+    source: EditableSourceSettings
+    instances: tuple[EditableInstanceConfiguration, ...]
     log_level: str
 
 
-def camera_source(draft: SettingsDraft) -> CameraSourceDraft | None:
-    """Return the camera source carried by a draft, if any."""
-
-    if isinstance(draft.source, (CameraSourceConfiguration, CameraSourceDraft)):
-        if isinstance(draft.source, CameraSourceConfiguration):
-            return CameraSourceDraft(
-                draft.source.device, draft.source.mode, draft.source.request_60_fps
+def editable_from_configuration(
+    configuration: ApplicationConfiguration, path: Path
+) -> EditableApplicationConfiguration:
+    source = configuration.source
+    if isinstance(source, CameraSourceConfiguration):
+        source_settings = EditableSourceSettings(
+            SourceType.CAMERA,
+            EditableCameraSourceConfiguration(
+                source.device, source.mode, source.request_60_fps
+            ),
+            EditableVideoSourceConfiguration(""),
+        )
+    else:
+        source_settings = EditableSourceSettings(
+            SourceType.VIDEO,
+            EditableCameraSourceConfiguration(None, None, False),
+            EditableVideoSourceConfiguration(source.path),
+        )
+    return EditableApplicationConfiguration(
+        path,
+        source_settings,
+        tuple(
+            EditableInstanceConfiguration(
+                i.connection.rpc_endpoint, i.connection.event_endpoint, i.scenario
             )
-        return draft.source
-    return None
-
-
-def draft_from_configuration(
-    configuration: ApplicationConfiguration,
-    path: Path,
-) -> SettingsDraft:
-    """Project one loaded configuration into the shared editable draft."""
-
-    instances = tuple(
-        InstanceDraft(
-            rpc_endpoint=instance.connection.rpc_endpoint,
-            event_endpoint=instance.connection.event_endpoint,
-            scenario=instance.scenario,
-        )
-        for instance in configuration.instances
-    )
-    source: SourceConfiguration | CameraSourceDraft = configuration.source
-    if isinstance(configuration.source, CameraSourceConfiguration):
-        source = CameraSourceDraft(
-            configuration.source.device,
-            configuration.source.mode,
-            configuration.source.request_60_fps,
-        )
-    return SettingsDraft(
-        configuration_path=path,
-        instances=instances,
-        source=source,
-        log_level=configuration.runtime.log_level,
+            for i in configuration.instances
+        ),
+        configuration.runtime.log_level,
     )
 
 
-def validate_instances_draft(instances: tuple[InstanceDraft, ...]) -> None:
-    """Reject empty or duplicated instance values before saving.
+def camera_source(
+    editable: EditableApplicationConfiguration,
+) -> EditableCameraSourceConfiguration | None:
+    return (
+        editable.source.camera
+        if editable.source.selected_type is SourceType.CAMERA
+        else None
+    )
 
-    Whitespace-only values count as empty without normalizing the stored value.
-    Endpoint duplicates are reported with the comparing instance index.
-    """
 
+def validate_instances_draft(
+    instances: tuple[EditableInstanceConfiguration, ...],
+) -> None:
     errors: list[str] = []
     if not instances:
         errors.append("at least one instance is required")
@@ -189,268 +172,256 @@ def validate_instances_draft(instances: tuple[InstanceDraft, ...]) -> None:
         number = index + 1
         if not instance.scenario.strip():
             errors.append(f"Instance {number} has an empty scenario")
-        rpc = instance.rpc_endpoint
-        if not rpc.strip():
-            errors.append(f"Instance {number} has an empty RPC endpoint")
-        elif rpc in rpc_owners:
-            errors.append(
-                f"Instance {number} uses the same RPC endpoint as "
-                f"Instance {rpc_owners[rpc] + 1}."
-            )
-        else:
-            rpc_owners[rpc] = index
-        event = instance.event_endpoint
-        if not event.strip():
-            errors.append(f"Instance {number} has an empty event endpoint")
-        elif event in event_owners:
-            errors.append(
-                f"Instance {number} uses the same event endpoint as "
-                f"Instance {event_owners[event] + 1}."
-            )
-        else:
-            event_owners[event] = index
+        for value, label, owners in (
+            (instance.rpc_endpoint, "RPC endpoint", rpc_owners),
+            (instance.event_endpoint, "event endpoint", event_owners),
+        ):
+            if not value.strip():
+                errors.append(f"Instance {number} has an empty {label}")
+            elif value in owners:
+                errors.append(
+                    f"Instance {number} uses the same {label} as Instance {owners[value] + 1}."
+                )
+            else:
+                owners[value] = index
     if errors:
         raise ValueError("\n".join(errors))
 
 
-def configuration_from_draft(draft: SettingsDraft) -> ApplicationConfiguration:
-    """Build a validated configuration from current draft values."""
-
-    validate_instances_draft(draft.instances)
-    instances = tuple(
-        InstanceConfiguration(
-            connection=LiveSplitConnection(
-                instance.rpc_endpoint,
-                instance.event_endpoint,
-            ),
-            scenario=instance.scenario,
+def configuration_from_editable(
+    editable: EditableApplicationConfiguration,
+) -> ApplicationConfiguration:
+    validate_instances_draft(editable.instances)
+    source_settings = editable.source
+    if source_settings.selected_type is SourceType.CAMERA:
+        camera = source_settings.camera
+        if camera.device is None:
+            raise ValueError("a camera device must be selected")
+        if camera.mode is None:
+            raise ValueError("a camera capture mode must be selected")
+        source: SourceConfiguration = CameraSourceConfiguration(
+            camera.device, camera.mode, camera.request_60_fps
         )
-        for instance in draft.instances
-    )
+    elif source_settings.selected_type is SourceType.VIDEO:
+        path = source_settings.video.path
+        if not path.strip():
+            raise ValueError("a video file must be selected")
+        source = VideoSourceConfiguration(path)
+    else:  # pragma: no cover - protects future source additions
+        raise ValueError(f"unsupported source type: {source_settings.selected_type}")
     return ApplicationConfiguration(
         version=1,
-        source=_configuration_source(draft.source),
-        instances=instances,
-        runtime=RuntimeConfiguration(draft.log_level),
+        source=source,
+        instances=tuple(
+            InstanceConfiguration(
+                LiveSplitConnection(i.rpc_endpoint, i.event_endpoint), i.scenario
+            )
+            for i in editable.instances
+        ),
+        runtime=RuntimeConfiguration(editable.log_level),
     )
 
 
 @dataclass(frozen=True)
 class EditPermission:
-    """Which draft fields may be edited for a given session phase."""
-
     source: bool
     instances: bool
     log_level: bool
 
 
 def edit_permission(state: SessionState) -> EditPermission:
-    """Disable configuration operations only during session transitions."""
-
     editable = state not in {
         SessionState.LOADING,
         SessionState.CONNECTING,
         SessionState.STOPPING,
     }
-    return EditPermission(source=editable, instances=editable, log_level=editable)
-
-
-def _configuration_source(
-    source: SourceConfiguration | CameraSourceDraft,
-) -> SourceConfiguration:
-    if isinstance(source, CameraSourceDraft):
-        if source.mode is None:
-            raise ValueError("a camera capture mode must be selected")
-        return CameraSourceConfiguration(
-            source.device, source.mode, source.request_60_fps
-        )
-    return source
+    return EditPermission(editable, editable, editable)
 
 
 class SettingsModel:
-    """Own the single editable draft shared by the main and settings screens.
-
-    The persisted JSON stays the authority for saved values; this model is the
-    in-memory projection both screens edit so a value is never forked. All edit
-    operations return the updated draft and leave it untouched when no
-    configuration is open or the source type is not editable.
-    """
-
     def __init__(self, camera_enumerator: CameraEnumerator) -> None:
         self._camera_enumerator = camera_enumerator
-        self._draft: SettingsDraft | None = None
+        self._editable: EditableApplicationConfiguration | None = None
         self._dirty = False
 
     @property
-    def draft(self) -> SettingsDraft | None:
-        return self._draft
+    def editable(self) -> EditableApplicationConfiguration | None:
+        return self._editable
+
+    @property
+    def draft(self) -> EditableApplicationConfiguration | None:
+        return self._editable
 
     @property
     def is_dirty(self) -> bool:
         return self._dirty
 
     def open_configuration(
-        self,
-        configuration: ApplicationConfiguration,
-        path: Path,
-    ) -> SettingsDraft:
-        draft = draft_from_configuration(configuration, path)
-        self._draft = draft
+        self, configuration: ApplicationConfiguration, path: Path
+    ) -> EditableApplicationConfiguration:
+        self._editable = editable_from_configuration(configuration, path)
         self._dirty = False
-        return draft
+        return self._editable
+
+    def create_default_configuration(
+        self, path: Path
+    ) -> EditableApplicationConfiguration:
+        self._editable = EditableApplicationConfiguration(
+            path,
+            EditableSourceSettings(
+                SourceType.CAMERA,
+                EditableCameraSourceConfiguration(None, None, False),
+                EditableVideoSourceConfiguration(""),
+            ),
+            (),
+            "INFO",
+        )
+        self._dirty = True
+        return self._editable
 
     def create_default_camera_configuration(
         self,
         path: Path,
         device: CameraDeviceConfiguration,
         mode: CameraModeConfiguration | None = None,
-    ) -> SettingsDraft:
-        """Create an unsaved camera draft without requiring a scenario."""
+    ) -> EditableApplicationConfiguration:
+        editable = self.create_default_configuration(path)
+        editable.source.camera.device = device
+        editable.source.camera.mode = mode
+        return editable
 
-        self._draft = SettingsDraft(
-            configuration_path=path,
-            instances=(),
-            source=CameraSourceDraft(device, mode, False),
-            log_level="INFO",
-        )
-        self._dirty = True
-        return self._draft
-
-    def mark_saved(self, path: Path | None = None) -> SettingsDraft | None:
-        if self._draft is None:
+    def mark_saved(
+        self, path: Path | None = None
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
             return None
-        if path is not None and path != self._draft.configuration_path:
-            self._draft = replace(self._draft, configuration_path=path)
+        if path is not None:
+            self._editable.configuration_path = path
         self._dirty = False
-        return self._draft
+        return self._editable
 
     def list_cameras(self) -> Sequence[CameraDevice]:
         return self._camera_enumerator.list_devices()
 
-    def _replace_instance(
-        self,
-        index: int,
-        **changes: object,
-    ) -> SettingsDraft | None:
-        if self._draft is None:
-            return None
-        instances = self._draft.instances
-        if index < 0 or index >= len(instances):
-            return self._draft
-        instance = instances[index]
-        updated = replace(
-            self._draft,
-            instances=(
-                instances[:index]
-                + (replace(instance, **changes),)
-                + instances[index + 1 :]
-            ),
-        )
-        if updated != self._draft:
-            self._draft = updated
+    def _changed(self, before: object, after: object) -> None:
+        if before != after:
             self._dirty = True
-        return self._draft
 
-    def set_instance_scenario(self, index: int, scenario: str) -> SettingsDraft | None:
-        return self._replace_instance(index, scenario=scenario)
-
-    def set_instance_rpc_endpoint(
-        self,
-        index: int,
-        endpoint: str,
-    ) -> SettingsDraft | None:
-        return self._replace_instance(index, rpc_endpoint=endpoint)
-
-    def set_instance_event_endpoint(
-        self,
-        index: int,
-        endpoint: str,
-    ) -> SettingsDraft | None:
-        return self._replace_instance(index, event_endpoint=endpoint)
-
-    def add_instance(self) -> SettingsDraft | None:
-        if self._draft is None:
+    def set_source_type(
+        self, source_type: SourceType
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
             return None
-        self._draft = replace(
-            self._draft,
-            instances=self._draft.instances + (InstanceDraft("", "", ""),),
-        )
-        self._dirty = True
-        return self._draft
+        before = self._editable.source.selected_type
+        self._editable.source.selected_type = source_type
+        self._changed(before, source_type)
+        return self._editable
 
-    def remove_instance(self, index: int) -> SettingsDraft | None:
-        if self._draft is None:
+    def set_video_path(self, path: str) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
             return None
-        instances = self._draft.instances
-        if index < 0 or index >= len(instances):
-            return self._draft
-        self._draft = replace(
-            self._draft,
-            instances=instances[:index] + instances[index + 1 :],
-        )
-        return self._draft
-
-    def set_log_level(self, level: str) -> SettingsDraft | None:
-        if self._draft is None:
-            return None
-        updated = replace(self._draft, log_level=level)
-        if updated != self._draft:
-            self._draft = updated
-            self._dirty = True
-        return self._draft
+        before = self._editable.source.video.path
+        self._editable.source.video.path = path
+        self._changed(before, path)
+        return self._editable
 
     def set_camera_device(
         self, backend: CameraBackend, name: str, index: int
-    ) -> SettingsDraft | None:
-        if self._draft is None:
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
             return None
-        camera = camera_source(self._draft)
-        if camera is None:
-            return self._draft
-        updated = replace(
-            self._draft,
-            source=CameraSourceDraft(
-                CameraDeviceConfiguration(backend, name, index),
-                None,
-                camera.request_60_fps,
-            ),
-        )
-        if updated != self._draft:
-            self._draft = updated
-            self._dirty = True
-        return self._draft
+        camera = self._editable.source.camera
+        value = CameraDeviceConfiguration(backend, name, index)
+        changed = camera.device != value
+        self._changed(camera.device, value)
+        if changed:
+            camera.device, camera.mode = value, None
+        return self._editable
 
-    def set_camera_mode(self, mode: CameraModeConfiguration) -> SettingsDraft | None:
-        if self._draft is None:
+    def set_camera_mode(
+        self, mode: CameraModeConfiguration
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
             return None
-        camera = camera_source(self._draft)
-        if camera is None:
-            return self._draft
-        updated = replace(
-            self._draft,
-            source=CameraSourceDraft(camera.device, mode, camera.request_60_fps),
-        )
-        if updated != self._draft:
-            self._draft = updated
-            self._dirty = True
-        return self._draft
+        camera = self._editable.source.camera
+        self._changed(camera.mode, mode)
+        camera.mode = mode
+        return self._editable
 
-    def set_request_60_fps(self, enabled: bool) -> SettingsDraft | None:
-        if self._draft is None:
+    def set_request_60_fps(
+        self, enabled: bool
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
             return None
-        camera = camera_source(self._draft)
-        if camera is None:
-            return self._draft
-        updated = replace(
-            self._draft,
-            source=CameraSourceDraft(camera.device, camera.mode, enabled),
+        camera = self._editable.source.camera
+        self._changed(camera.request_60_fps, enabled)
+        camera.request_60_fps = enabled
+        return self._editable
+
+    def _replace_instance(
+        self, index: int, **changes: str
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None or not 0 <= index < len(self._editable.instances):
+            return self._editable
+        instance = self._editable.instances[index]
+        updated = replace(instance, **changes)
+        self._changed(instance, updated)
+        self._editable.instances = (
+            self._editable.instances[:index]
+            + (updated,)
+            + self._editable.instances[index + 1 :]
         )
-        if updated != self._draft:
-            self._draft = updated
-            self._dirty = True
-        return self._draft
+        return self._editable
+
+    def set_instance_scenario(
+        self, index: int, scenario: str
+    ) -> EditableApplicationConfiguration | None:
+        return self._replace_instance(index, scenario=scenario)
+
+    def set_instance_rpc_endpoint(
+        self, index: int, endpoint: str
+    ) -> EditableApplicationConfiguration | None:
+        return self._replace_instance(index, rpc_endpoint=endpoint)
+
+    def set_instance_event_endpoint(
+        self, index: int, endpoint: str
+    ) -> EditableApplicationConfiguration | None:
+        return self._replace_instance(index, event_endpoint=endpoint)
+
+    def add_instance(self) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
+            return None
+        self._editable.instances += (EditableInstanceConfiguration("", "", ""),)
+        self._dirty = True
+        return self._editable
+
+    def remove_instance(self, index: int) -> EditableApplicationConfiguration | None:
+        if self._editable is None or not 0 <= index < len(self._editable.instances):
+            return self._editable
+        self._editable.instances = (
+            self._editable.instances[:index] + self._editable.instances[index + 1 :]
+        )
+        self._dirty = True
+        return self._editable
+
+    def set_log_level(self, level: str) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
+            return None
+        self._changed(self._editable.log_level, level)
+        self._editable.log_level = level
+        return self._editable
 
     def configuration(self) -> ApplicationConfiguration | None:
-        if self._draft is None:
-            return None
-        return configuration_from_draft(self._draft)
+        return (
+            configuration_from_editable(self._editable)
+            if self._editable is not None
+            else None
+        )
+
+
+# Temporary import aliases keep integrations using the former public names source-compatible.
+CameraSourceDraft = EditableCameraSourceConfiguration
+InstanceDraft = EditableInstanceConfiguration
+SettingsDraft = EditableApplicationConfiguration
+draft_from_configuration = editable_from_configuration
+configuration_from_draft = configuration_from_editable

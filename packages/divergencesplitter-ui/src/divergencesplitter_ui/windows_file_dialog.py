@@ -29,6 +29,12 @@ SCENARIO_FILTERS = (
     FileDialogFilter("YAML scenario", ("*.yaml", "*.yml")),
     FileDialogFilter("All files", ("*.*",)),
 )
+VIDEO_FILTERS = (
+    FileDialogFilter(
+        "Video files", ("*.mp4", "*.mkv", "*.avi", "*.mov", "*.webm", "*.m4v")
+    ),
+    FileDialogFilter("All files", ("*.*",)),
+)
 
 
 def filter_string(filters: Sequence[FileDialogFilter]) -> str:
@@ -114,6 +120,16 @@ def select_open_file(
     if not ctypes.windll.comdlg32.GetOpenFileNameW(ctypes.byref(dialog)):
         return None
     return normalize_selected_path(buffer.value)
+
+
+def select_open_script_file(*, initial_path: Path | None = None) -> Path | None:
+    """Select a scenario script with the native Windows Explorer dialog."""
+
+    return select_open_file(
+        title="Select script file",
+        filters=SCENARIO_FILTERS,
+        initial_path=initial_path,
+    )
 
 
 def select_save_file(

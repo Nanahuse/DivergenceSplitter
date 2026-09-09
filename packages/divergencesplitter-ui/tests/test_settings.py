@@ -21,8 +21,11 @@ from divergencesplitter_runtime.configuration.models import (
 from divergencesplitter_ui.session import SessionState, is_active
 from divergencesplitter_ui.settings import (
     CameraDevice,
+    EditableCameraSourceConfiguration,
+    EditableVideoSourceConfiguration,
     InstanceDraft,
     SettingsModel,
+    SourceType,
     camera_source,
     configuration_from_draft,
     draft_from_configuration,
@@ -48,6 +51,11 @@ class FakeCameraEnumerator:
 
     def list_devices(self) -> list[CameraDevice]:
         return self.devices
+
+
+class EmptyCameraEnumerator:
+    def list_devices(self) -> list[CameraDevice]:
+        return []
 
 
 def instance(
@@ -187,6 +195,36 @@ class TestSettingsModel:
         assert saved is not None
         assert saved.source == VideoSourceConfiguration("run.mp4")
 
+    def test_source_switch_preserves_both_editors(self) -> None:
+        model = make_model()
+        model.set_request_60_fps(True)
+        model.set_source_type(SourceType.VIDEO)
+        model.set_video_path("clip.mp4")
+        model.set_source_type(SourceType.CAMERA)
+
+        assert model.draft is not None
+        assert model.draft.source.video.path == "clip.mp4"
+        assert model.draft.source.camera.request_60_fps
+        assert model.configuration() is not None
+        model.set_source_type(SourceType.VIDEO)
+        configuration = model.configuration()
+        assert configuration is not None
+        assert configuration.source == VideoSourceConfiguration("clip.mp4")
+
+    def test_new_configuration_without_camera_can_become_video(self) -> None:
+        model = SettingsModel(EmptyCameraEnumerator())
+        model.create_default_configuration(Path("new.json"))
+        model.set_source_type(SourceType.VIDEO)
+        model.set_video_path("clip.mp4")
+        model.add_instance()
+        model.set_instance_rpc_endpoint(0, "rpc")
+        model.set_instance_event_endpoint(0, "event")
+        model.set_instance_scenario(0, "scenario.py")
+
+        configuration = model.configuration()
+        assert configuration is not None
+        assert configuration.source == VideoSourceConfiguration("clip.mp4")
+
 
 class TestConfigurationProjection:
     def test_single_instance_projects_to_one_draft(self) -> None:
@@ -198,7 +236,11 @@ class TestConfigurationProjection:
 
         assert draft.instances == (InstanceDraft("rpc", "event", "scenario.py"),)
         assert draft.log_level == "DEBUG"
-        assert draft.source == VideoSourceConfiguration("run.mp4")
+        assert draft.source.selected_type is SourceType.VIDEO
+        assert draft.source.video == EditableVideoSourceConfiguration("run.mp4")
+        assert draft.source.camera == EditableCameraSourceConfiguration(
+            None, None, False
+        )
 
     def test_every_instance_projects_with_order_and_values(self) -> None:
         configuration = video_configuration(
