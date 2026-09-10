@@ -29,6 +29,10 @@ from divergencesplitter.detector.phase_correlation import (
     PhaseCorrelationConfig,
     PhaseCorrelationDetector,
 )
+from divergencesplitter.detector.root_mean_square_similarity import (
+    RootMeanSquareSimilarityConfig,
+    RootMeanSquareSimilarityDetector,
+)
 from divergencesplitter.detector.template_match import (
     TemplateMatchConfig,
     TemplateMatchDetector,
@@ -48,6 +52,8 @@ __all__ = [
     "PhaseCorrelationDetector",
     "ReferenceImage",
     "Region",
+    "RootMeanSquareSimilarityConfig",
+    "RootMeanSquareSimilarityDetector",
     "TemplateMatchConfig",
     "TemplateMatchDetector",
     "evaluate",

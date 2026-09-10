@@ -116,9 +116,10 @@ def to_gray(image: ImageArray) -> ImageArray:
     Two-dimensional single-channel images are passed through. Three-channel
     images are converted with ``cv2.COLOR_BGR2GRAY``.
     """
-    array = np.asarray(image, dtype=np.float32)
-    if not np.all(np.isfinite(array)):
+    source = np.asarray(image)
+    if np.issubdtype(source.dtype, np.floating) and not np.all(np.isfinite(source)):
         raise ValueError("image values must be finite")
+    array = source.astype(np.float32, copy=False)
     if array.ndim == 2:
         gray = array
     elif array.ndim == 3 and array.shape[2] == 3:
