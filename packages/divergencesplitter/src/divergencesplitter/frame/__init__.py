@@ -2,6 +2,7 @@ from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.models import Frame, FrameContext, ImageArray
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
+    CropMargins,
     FrameClipError,
     FrameNormalizationError,
     FrameNormalizer,
@@ -18,6 +19,7 @@ from divergencesplitter.frame.video_file import VideoFileSource
 
 __all__ = [
     "ClipRegion",
+    "CropMargins",
     "ErrorAction",
     "Frame",
     "FrameClipError",

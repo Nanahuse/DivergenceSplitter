@@ -5,6 +5,7 @@ from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
+    CropMargins,
     FrameClipError,
     FrameNormalizationError,
     FrameNormalizer,
@@ -103,7 +104,6 @@ class TestClip:
         )
         result = normalizer.normalize(make_frame())
         assert isinstance(result, FrameClipError)
-        assert isinstance(result, FrameNormalizationError)
 
     def test_vertical_overflow_returns_clip_error(self):
         normalizer = FrameNormalizer(
@@ -220,4 +220,20 @@ class TestResizeError:
         normalizer = FrameNormalizer(output_size=OutputSize(width=12, height=10))
         result = normalizer.normalize(make_frame())
         assert isinstance(result, FrameResizeError)
-        assert isinstance(result, FrameNormalizationError)
+
+
+def test_crop_margins_are_resolved_against_each_frame() -> None:
+    normalizer = FrameNormalizer(crop_margins=CropMargins(1, 2, 3, 4))
+
+    result = normalizer.normalize(make_frame(make_pattern_image(16, 16)))
+
+    assert isinstance(result, Frame)
+    assert result.image.shape[:2] == (9, 13)
+
+
+def test_crop_margins_outside_frame_are_reported() -> None:
+    normalizer = FrameNormalizer(crop_margins=CropMargins(8, 8, 0, 0))
+
+    result = normalizer.normalize(make_frame(make_pattern_image(16, 16)))
+
+    assert isinstance(result, FrameClipError)

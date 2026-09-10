@@ -15,6 +15,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
+    ResizeConfiguration,
     RuntimeConfiguration,
     VideoSourceConfiguration,
 )
@@ -22,6 +23,8 @@ from divergencesplitter_ui.session import SessionState, is_active
 from divergencesplitter_ui.settings import (
     CameraDevice,
     EditableCameraSourceConfiguration,
+    EditableCropConfiguration,
+    EditableResizeConfiguration,
     EditableVideoSourceConfiguration,
     InstanceDraft,
     SettingsModel,
@@ -210,6 +213,24 @@ class TestSettingsModel:
         configuration = model.configuration()
         assert configuration is not None
         assert configuration.source == VideoSourceConfiguration("clip.mp4")
+
+    def test_source_transform_is_shared_across_source_types_and_dirty(self) -> None:
+        model = make_model()
+        model.set_crop_values(10, 20, 30, 40)
+        model.set_resize_values(320, 240)
+
+        assert model.draft is not None
+        assert model.draft.source.transform.crop == EditableCropConfiguration(
+            10, 20, 30, 40
+        )
+        assert model.draft.source.transform.resize == EditableResizeConfiguration(
+            320, 240
+        )
+        model.set_source_type(SourceType.VIDEO)
+        model.set_video_path("clip.mp4")
+        configuration = model.configuration()
+        assert configuration is not None
+        assert configuration.source.transform.resize == ResizeConfiguration(320, 240)
 
     def test_new_configuration_without_camera_can_become_video(self) -> None:
         model = SettingsModel(EmptyCameraEnumerator())

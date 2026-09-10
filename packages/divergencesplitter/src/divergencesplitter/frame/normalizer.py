@@ -22,6 +22,18 @@ class ClipRegion:
 
 
 @dataclass(frozen=True)
+class CropMargins:
+    left: int
+    right: int
+    top: int
+    bottom: int
+
+    def __post_init__(self) -> None:
+        if min(self.left, self.right, self.top, self.bottom) < 0:
+            raise ValueError(f"crop margins must be non-negative: {self}")
+
+
+@dataclass(frozen=True)
 class OutputSize:
     width: int
     height: int
@@ -52,9 +64,13 @@ class FrameNormalizer:
     def __init__(
         self,
         clip_region: ClipRegion | None = None,
+        crop_margins: CropMargins | None = None,
         output_size: OutputSize | None = None,
     ) -> None:
+        if clip_region is not None and crop_margins is not None:
+            raise ValueError("clip_region and crop_margins are mutually exclusive")
         self._clip_region = clip_region
+        self._crop_margins = crop_margins
         self._output_size = output_size
 
     @property
@@ -65,10 +81,29 @@ class FrameNormalizer:
     def output_size(self) -> OutputSize | None:
         return self._output_size
 
+    @property
+    def crop_margins(self) -> CropMargins | None:
+        return self._crop_margins
+
     def normalize(self, frame: Frame) -> Frame | FrameNormalizationError:
         image = frame.image
-        if self._clip_region is not None:
-            region = self._clip_region
+        region = self._clip_region
+        if self._crop_margins is not None:
+            margins = self._crop_margins
+            if (
+                margins.left + margins.right >= image.shape[1]
+                or margins.top + margins.bottom >= image.shape[0]
+            ):
+                return FrameClipError(
+                    f"crop margins {margins} do not fit in image shape {image.shape}"
+                )
+            region = ClipRegion(
+                margins.left,
+                margins.top,
+                image.shape[1] - margins.left - margins.right,
+                image.shape[0] - margins.top - margins.bottom,
+            )
+        if region is not None:
             if (
                 region.y + region.height > image.shape[0]
                 or region.x + region.width > image.shape[1]

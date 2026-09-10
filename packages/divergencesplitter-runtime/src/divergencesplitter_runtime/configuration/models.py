@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
+from divergencesplitter.frame.normalizer import CropMargins, OutputSize
 from divergencesplitter.livesplit.models import LiveSplitConnection
 
 
@@ -46,10 +47,45 @@ class CameraModeConfiguration:
 
 
 @dataclass(frozen=True)
+class CropConfiguration:
+    left: int
+    right: int
+    top: int
+    bottom: int
+
+    def __post_init__(self) -> None:
+        if min(self.left, self.right, self.top, self.bottom) < 0:
+            raise ValueError("crop margins must be non-negative")
+
+    def to_crop_margins(self) -> CropMargins:
+        return CropMargins(self.left, self.right, self.top, self.bottom)
+
+
+@dataclass(frozen=True)
+class ResizeConfiguration:
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("resize dimensions must be positive")
+
+    def to_output_size(self) -> OutputSize:
+        return OutputSize(self.width, self.height)
+
+
+@dataclass(frozen=True)
+class SourceTransformConfiguration:
+    crop: CropConfiguration | None = None
+    resize: ResizeConfiguration | None = None
+
+
+@dataclass(frozen=True)
 class CameraSourceConfiguration:
     device: CameraDeviceConfiguration
     mode: CameraModeConfiguration
     request_60_fps: bool
+    transform: SourceTransformConfiguration = SourceTransformConfiguration()
 
     def __post_init__(self) -> None:
         if type(self.request_60_fps) is not bool:
@@ -59,6 +95,7 @@ class CameraSourceConfiguration:
 @dataclass(frozen=True)
 class VideoSourceConfiguration:
     path: str
+    transform: SourceTransformConfiguration = SourceTransformConfiguration()
 
     def __post_init__(self) -> None:
         if not self.path:

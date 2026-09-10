@@ -15,6 +15,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     SourceConfiguration,
+    SourceTransformConfiguration,
     VideoSourceConfiguration,
 )
 
@@ -76,10 +77,16 @@ def build_frame_source(
         return OpenCvCameraSource(
             capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
             request_60_fps=configuration.request_60_fps,
+            crop_margins=_crop_margins(configuration.transform),
+            output_size=_output_size(configuration.transform),
         )
     if isinstance(configuration, VideoSourceConfiguration):
         path = _resolve_path(configuration.path, base_directory)
-        return VideoFileSource(str(path))
+        return VideoFileSource(
+            str(path),
+            crop_margins=_crop_margins(configuration.transform),
+            output_size=_output_size(configuration.transform),
+        )
     assert_never(configuration)
 
 
@@ -159,6 +166,14 @@ def _backend_value(backend: object) -> str:
         return value
     name = getattr(backend, "name", "")
     return str(name).lower()
+
+
+def _crop_margins(transform: SourceTransformConfiguration):
+    return transform.crop.to_crop_margins() if transform.crop is not None else None
+
+
+def _output_size(transform: SourceTransformConfiguration):
+    return transform.resize.to_output_size() if transform.resize is not None else None
 
 
 def resolve_configuration_path(path: str, *, base_directory: Path) -> Path:

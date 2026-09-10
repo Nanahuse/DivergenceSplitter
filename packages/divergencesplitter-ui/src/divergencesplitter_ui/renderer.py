@@ -206,7 +206,7 @@ class ScreenRenderer:
             self._apply_observations(observations)
 
         if self._presenter.image_due():
-            frame = diagnostics.take_latest_input_frame()
+            frame = diagnostics.take_latest_processed_frame()
             if frame is not None:
                 self._apply_image(frame)
         if self._input_signature is not None:

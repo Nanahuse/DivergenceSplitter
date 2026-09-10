@@ -139,6 +139,7 @@ class OperationalDiagnostics:
         self._processed_frames_total = 0
         self._observable_lock = threading.Lock()
         self._latest_input_frame: Frame | None = None
+        self._latest_processed_frame: Frame | None = None
         self._instances: tuple[ScenarioInstance, ...] = ()
         self._condition_observations: tuple[ConditionObservation, ...] = ()
         self._detector_tree: DetectorTreeSnapshot | None = None
@@ -167,6 +168,7 @@ class OperationalDiagnostics:
         with self._observable_lock:
             try:
                 self._instances = instances
+                self._latest_processed_frame = None
                 self._detector_tree = build_detector_tree(instances)
                 self._condition_observations = _collect_condition_observations(
                     instances
@@ -307,6 +309,7 @@ class OperationalDiagnostics:
             self._processed_frames_total += 1
         with self._observable_lock:
             self._condition_observations = observations
+            self._latest_processed_frame = context.frame
         fields: dict[str, object] = {
             **_frame_fields(context.frame),
             "processing_started_at_ns": context.now.nanoseconds,
@@ -331,6 +334,13 @@ class OperationalDiagnostics:
         with self._observable_lock:
             frame = self._latest_input_frame
             self._latest_input_frame = None
+            return frame
+
+    def take_latest_processed_frame(self) -> Frame | None:
+        """Return the newest normalized frame used for scenario evaluation."""
+        with self._observable_lock:
+            frame = self._latest_processed_frame
+            self._latest_processed_frame = None
             return frame
 
     def take_condition_observations(self) -> tuple[ConditionObservation, ...]:
@@ -774,6 +784,7 @@ def _describe_source(source: FrameSource) -> dict[str, object]:
         )
     normalizer = source.normalizer
     clip = normalizer.clip_region
+    margins = normalizer.crop_margins
     output = normalizer.output_size
     if clip is not None:
         fields.update(
@@ -781,6 +792,13 @@ def _describe_source(source: FrameSource) -> dict[str, object]:
             clip_y=clip.y,
             clip_width=clip.width,
             clip_height=clip.height,
+        )
+    if margins is not None:
+        fields.update(
+            crop_left=margins.left,
+            crop_right=margins.right,
+            crop_top=margins.top,
+            crop_bottom=margins.bottom,
         )
     if output is not None:
         fields.update(output_width=output.width, output_height=output.height)

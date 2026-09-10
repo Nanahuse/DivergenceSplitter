@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
@@ -16,9 +16,12 @@ from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
+    CropConfiguration,
     InstanceConfiguration,
+    ResizeConfiguration,
     RuntimeConfiguration,
     SourceConfiguration,
+    SourceTransformConfiguration,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
@@ -98,10 +101,31 @@ class EditableVideoSourceConfiguration:
 
 
 @dataclass
+class EditableCropConfiguration:
+    left: int
+    right: int
+    top: int
+    bottom: int
+
+
+@dataclass
+class EditableResizeConfiguration:
+    width: int
+    height: int
+
+
+@dataclass
+class EditableSourceTransform:
+    crop: EditableCropConfiguration | None = None
+    resize: EditableResizeConfiguration | None = None
+
+
+@dataclass
 class EditableSourceSettings:
     selected_type: SourceType
     camera: EditableCameraSourceConfiguration
     video: EditableVideoSourceConfiguration
+    transform: EditableSourceTransform = field(default_factory=EditableSourceTransform)
 
 
 @dataclass
@@ -130,12 +154,14 @@ def editable_from_configuration(
                 source.device, source.mode, source.request_60_fps
             ),
             EditableVideoSourceConfiguration(""),
+            _editable_transform(source.transform),
         )
     else:
         source_settings = EditableSourceSettings(
             SourceType.VIDEO,
             EditableCameraSourceConfiguration(None, None, False),
             EditableVideoSourceConfiguration(source.path),
+            _editable_transform(source.transform),
         )
     return EditableApplicationConfiguration(
         path,
@@ -158,6 +184,50 @@ def camera_source(
         if editable.source.selected_type is SourceType.CAMERA
         else None
     )
+
+
+def _editable_transform(
+    transform: SourceTransformConfiguration,
+) -> EditableSourceTransform:
+    return EditableSourceTransform(
+        None
+        if transform.crop is None
+        else EditableCropConfiguration(
+            transform.crop.left,
+            transform.crop.right,
+            transform.crop.top,
+            transform.crop.bottom,
+        ),
+        None
+        if transform.resize is None
+        else EditableResizeConfiguration(
+            transform.resize.width, transform.resize.height
+        ),
+    )
+
+
+def _configuration_transform(
+    transform: EditableSourceTransform,
+) -> SourceTransformConfiguration:
+    try:
+        crop = (
+            None
+            if transform.crop is None
+            else CropConfiguration(
+                transform.crop.left,
+                transform.crop.right,
+                transform.crop.top,
+                transform.crop.bottom,
+            )
+        )
+        resize = (
+            None
+            if transform.resize is None
+            else ResizeConfiguration(transform.resize.width, transform.resize.height)
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(str(error)) from error
+    return SourceTransformConfiguration(crop, resize)
 
 
 def validate_instances_draft(
@@ -200,13 +270,18 @@ def configuration_from_editable(
         if camera.mode is None:
             raise ValueError("a camera capture mode must be selected")
         source: SourceConfiguration = CameraSourceConfiguration(
-            camera.device, camera.mode, camera.request_60_fps
+            camera.device,
+            camera.mode,
+            camera.request_60_fps,
+            _configuration_transform(source_settings.transform),
         )
     elif source_settings.selected_type is SourceType.VIDEO:
         path = source_settings.video.path
         if not path.strip():
             raise ValueError("a video file must be selected")
-        source = VideoSourceConfiguration(path)
+        source = VideoSourceConfiguration(
+            path, _configuration_transform(source_settings.transform)
+        )
     else:  # pragma: no cover - protects future source additions
         raise ValueError(f"unsupported source type: {source_settings.selected_type}")
     return ApplicationConfiguration(
@@ -272,6 +347,7 @@ class SettingsModel:
                 SourceType.CAMERA,
                 EditableCameraSourceConfiguration(None, None, False),
                 EditableVideoSourceConfiguration(""),
+                EditableSourceTransform(),
             ),
             (),
             "INFO",
@@ -324,6 +400,36 @@ class SettingsModel:
         self._editable.source.video.path = path
         self._changed(before, path)
         return self._editable
+
+    def set_crop(
+        self, crop: EditableCropConfiguration | None
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
+            return None
+        before = self._editable.source.transform.crop
+        self._editable.source.transform.crop = crop
+        self._changed(before, crop)
+        return self._editable
+
+    def set_resize(
+        self, resize: EditableResizeConfiguration | None
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
+            return None
+        before = self._editable.source.transform.resize
+        self._editable.source.transform.resize = resize
+        self._changed(before, resize)
+        return self._editable
+
+    def set_crop_values(
+        self, left: int, right: int, top: int, bottom: int
+    ) -> EditableApplicationConfiguration | None:
+        return self.set_crop(EditableCropConfiguration(left, right, top, bottom))
+
+    def set_resize_values(
+        self, width: int, height: int
+    ) -> EditableApplicationConfiguration | None:
+        return self.set_resize(EditableResizeConfiguration(width, height))
 
     def set_camera_device(
         self, backend: CameraBackend, name: str, index: int
