@@ -3,7 +3,14 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
-from divergencesplitter import Detected, TemplateMatchDetector, Then
+from divergencesplitter import (
+    Detected,
+    Frame,
+    FrameContext,
+    MonotonicTime,
+    TemplateMatchDetector,
+    Then,
+)
 from divergencesplitter_runtime.configuration.scenario_yaml import (
     ScenarioYamlError,
     ScenarioYamlValidationError,
@@ -31,6 +38,67 @@ def write_scenario(directory: Path, content: str, name: str = "scenario.yaml") -
     path = directory / name
     path.write_text(content, encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize("within", ["500ms", "2s", "1.5s"])
+def test_duration_expressions_work_through_scenario_behavior(
+    tmp_path: Path, within: str
+) -> None:
+    write_reference_image(tmp_path, "title.png")
+    path = write_scenario(
+        tmp_path,
+        f"""
+start_condition:
+  type: then
+  within: {within}
+  conditions:
+    - type: detected
+      minimum_score: 0.8
+      detector:
+        type: template_match
+        reference: ./title.png
+    - type: detected
+      minimum_score: 0.8
+      detector:
+        type: template_match
+        reference: ./title.png
+reset_condition:
+  type: then
+  within: {within}
+  conditions:
+    - type: detected
+      minimum_score: 0.8
+      detector:
+        type: template_match
+        reference: ./title.png
+    - type: detected
+      minimum_score: 0.8
+      detector:
+        type: template_match
+        reference: ./title.png
+splits: []
+""",
+    )
+
+    scenario = load_scenario_yaml(path)
+    assert isinstance(scenario.start_condition, Then)
+    image = cv2.imread(str(tmp_path / "title.png"))
+    assert image is not None
+    first = Frame(image=image, captured_at=MonotonicTime(0))
+    assert (
+        scenario.start_condition.evaluate(FrameContext(first, MonotonicTime(0)))
+        is False
+    )
+    expected_ns = {"500ms": 500_000_000, "2s": 2_000_000_000, "1.5s": 1_500_000_000}[
+        within
+    ]
+    second = Frame(image=image, captured_at=MonotonicTime(expected_ns))
+    assert (
+        scenario.start_condition.evaluate(
+            FrameContext(second, MonotonicTime(expected_ns))
+        )
+        is True
+    )
 
 
 def test_loads_detected_template_match_scenario(tmp_path: Path) -> None:
@@ -220,24 +288,6 @@ splits:
     condition = rules[0].condition
     assert isinstance(condition, Then)
     assert len(condition.children) == 2
-
-
-@pytest.mark.parametrize(
-    ("text", "expected_ns"),
-    [
-        ("500ms", 500_000_000),
-        ("2s", 2_000_000_000),
-        ("1.5s", 1_500_000_000),
-    ],
-)
-def test_duration_expressions_parse_to_nanoseconds(
-    tmp_path: Path,
-    text: str,
-    expected_ns: int,
-) -> None:
-    from divergencesplitter_runtime.configuration.scenario_yaml import _duration
-
-    assert _duration(text, "within") == expected_ns
 
 
 def test_anchor_and_alias_are_resolved_natively(tmp_path: Path) -> None:

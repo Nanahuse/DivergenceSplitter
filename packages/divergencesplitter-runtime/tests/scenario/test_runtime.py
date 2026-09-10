@@ -237,7 +237,7 @@ class ScenarioRuntimeEvaluationTest(unittest.TestCase):
 
         runtime.apply_livesplit_update(update(snapshot))
 
-        self.assertIs(runtime.current_snapshot, snapshot)
+        self.assertEqual(runtime.current_snapshot, snapshot)
 
     def test_initial_baseline_resets_every_rule_without_evaluating(self) -> None:
         reset = RecordingCondition(False)

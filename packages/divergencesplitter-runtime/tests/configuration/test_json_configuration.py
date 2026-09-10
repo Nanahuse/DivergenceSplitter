@@ -305,6 +305,12 @@ def test_builds_camera_source_from_current_device_and_mode(tmp_path: Path) -> No
     )
     devices = [fake_device(7, [mode])]
 
+    capture = SimpleNamespace(
+        isOpened=lambda: True,
+        get=lambda _: 0,
+        set=lambda *_: True,
+        release=lambda: None,
+    )
     with (
         patch(
             "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
@@ -312,13 +318,15 @@ def test_builds_camera_source_from_current_device_and_mode(tmp_path: Path) -> No
         ),
         patch(
             "divergencesplitter_runtime.configuration.source_builder.importlib.import_module",
-            return_value=SimpleNamespace(open_video_capture=lambda resolved_mode: None),
+            return_value=SimpleNamespace(
+                open_video_capture=lambda resolved_mode: capture
+            ),
         ),
     ):
         source = build_frame_source(configuration, base_directory=tmp_path)
 
     assert isinstance(source, OpenCvCameraSource)
-    assert source._capture_factory is not None
+    assert source.prepare() is None
 
 
 def test_camera_enumeration_failure_is_reported(tmp_path: Path) -> None:

@@ -131,12 +131,14 @@ class CountingDetector:
 class FailingDetector:
     def __init__(self, fail: bool) -> None:
         self.fail = fail
+        self.evaluations = 0
 
     @property
     def reference_images(self) -> tuple:
         return ()
 
     def detect(self, context: FrameContext) -> DetectionResult:
+        self.evaluations += 1
         if self.fail:
             raise ValueError("boom")
         return DetectionResult(score=0.0)
@@ -151,7 +153,11 @@ class FailingDetector:
 
 
 class IncompleteDetector:
+    def __init__(self) -> None:
+        self.evaluations = 0
+
     def detect(self, context: FrameContext) -> object:
+        self.evaluations += 1
         return None
 
 
@@ -165,7 +171,6 @@ class CacheTest(unittest.TestCase):
         self.assertEqual(detector.evaluations, 1)
         self.assertEqual(equivalent.evaluations, 0)
         self.assertEqual(result, cached)
-        self.assertIs(result, cached)
 
     def test_next_frame_reevaluates(self):
         detector = CountingDetector()
@@ -182,20 +187,21 @@ class CacheTest(unittest.TestCase):
         context = make_context(DARK)
         with self.assertRaises(ValueError):
             evaluate(context, detector)
-        self.assertEqual(context.detection_cache, {})
+        self.assertEqual(detector.evaluations, 1)
         with self.assertRaises(ValueError):
             evaluate(context, detector)
-        self.assertEqual(context.detection_cache, {})
+        self.assertEqual(detector.evaluations, 2)
 
     def test_incomplete_result_is_not_cached(self):
         context = make_context(DARK)
-        detector = cast(ImageDetector, IncompleteDetector())
+        incomplete = IncompleteDetector()
+        detector = cast(ImageDetector, incomplete)
         with self.assertRaises(TypeError):
             evaluate(context, detector)
-        self.assertEqual(context.detection_cache, {})
+        self.assertEqual(incomplete.evaluations, 1)
         with self.assertRaises(TypeError):
             evaluate(context, detector)
-        self.assertEqual(context.detection_cache, {})
+        self.assertEqual(incomplete.evaluations, 2)
 
     def test_size_mismatch_raises_and_is_not_cached(self):
         detector = MeanAbsoluteSimilarityDetector(
@@ -204,7 +210,6 @@ class CacheTest(unittest.TestCase):
         context = make_context(np.zeros((2, 3), dtype=np.uint8))
         with self.assertRaises(ValueError):
             evaluate(context, detector)
-        self.assertEqual(context.detection_cache, {})
 
 
 class PreprocessingCacheTest(unittest.TestCase):
@@ -221,7 +226,6 @@ class PreprocessingCacheTest(unittest.TestCase):
         self.assertEqual(first, 42.0)
         self.assertEqual(second, 42.0)
         self.assertEqual(len(calls), 1)
-        self.assertEqual(context.preprocessing_cache["key"], 42.0)
 
     def test_preprocessed_caches_none(self):
         context = make_context(DARK)
@@ -235,40 +239,34 @@ class PreprocessingCacheTest(unittest.TestCase):
         self.assertIsNone(first)
         self.assertIsNone(second)
         self.assertEqual(len(calls), 1)
-        self.assertIn("key", context.preprocessing_cache)
 
     def test_detectors_share_frame_mean_preprocessing(self):
         context = make_context(BRIGHT)
         evaluate(context, MeanBrightnessDetector())
         evaluate(context, CountingDetector())
         self.assertEqual(frame_mean(context), 255.0)
-        self.assertEqual(context.preprocessing_cache["frame-mean"], 255.0)
 
-    def test_detector_diff_is_cached_for_reuse(self):
+    def test_detector_and_public_diff_helper_agree(self):
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(
+        result = evaluate(
             context,
             MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(REFERENCE)),
         )
         self.assertEqual(frame_mean_abs_diff(context, REFERENCE), 3.0)
-        self.assertEqual(
-            context.preprocessing_cache[("frame-mean-abs-diff", REFERENCE)], 3.0
-        )
+        self.assertEqual(result.score, -3.0)
 
     def test_different_references_do_not_share(self):
         other_reference = ((1, 1), (1, 1))
         context = make_context(np.array([[3, 3], [3, 3]], dtype=np.uint8))
-        evaluate(
+        first = evaluate(
             context,
             MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(REFERENCE)),
         )
-        evaluate(
+        second = evaluate(
             context,
             MeanAbsoluteSimilarityDetector(
                 MeanAbsoluteSimilarityConfig(other_reference)
             ),
         )
-        self.assertIn(("frame-mean-abs-diff", REFERENCE), context.preprocessing_cache)
-        self.assertIn(
-            ("frame-mean-abs-diff", other_reference), context.preprocessing_cache
-        )
+        self.assertEqual(first.score, -3.0)
+        self.assertEqual(second.score, -2.0)

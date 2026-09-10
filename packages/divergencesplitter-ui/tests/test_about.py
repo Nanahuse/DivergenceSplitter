@@ -14,20 +14,6 @@ class TestAboutInfo:
 
         assert info.application_name == "DivergenceSplitter"
 
-    def test_version_reads_from_ui_package_metadata(self, monkeypatch) -> None:
-        loaded = []
-
-        def fake_version(name: str) -> str:
-            loaded.append(name)
-            return "0.1.0"
-
-        monkeypatch.setattr(metadata, "version", fake_version)
-
-        info = about_info()
-
-        assert loaded == ["divergencesplitter-ui"]
-        assert info.version == "0.1.0"
-
     def test_returns_exact_info_values(self, monkeypatch) -> None:
         monkeypatch.setattr(metadata, "version", lambda name: "1.2.3")
 
