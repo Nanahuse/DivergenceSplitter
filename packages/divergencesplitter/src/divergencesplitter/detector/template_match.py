@@ -53,18 +53,10 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
     def detect(self, context: FrameContext) -> DetectionResult:
         from divergencesplitter.detector.common import frame_region
 
-        frame = np.asarray(frame_region(context, self.config.roi), dtype=np.float32)
-        reference = np.asarray(self.config.reference, dtype=np.float32)
-        mask = None
-        if reference.ndim == 3 and reference.shape[2] == 4:
-            valid = reference[:, :, 3] > 0
-            mask = None if np.all(valid) else valid.astype(np.uint8) * 255
-            template = reference[:, :, :3]
-            if not np.any(valid):
-                raise ValueError("template alpha mask has no valid pixels")
-        else:
-            template = reference
-        if not np.all(np.isfinite(frame)):
+        frame = np.asarray(frame_region(context, self.config.roi))
+        template = self._template
+        mask = self._mask
+        if np.issubdtype(frame.dtype, np.floating) and not np.all(np.isfinite(frame)):
             raise ValueError("frame values must be finite")
         if frame.ndim != template.ndim:
             raise ValueError(
@@ -80,6 +72,8 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
             raise ValueError(
                 f"template {template.shape[:2]} larger than frame {frame.shape[:2]}"
             )
+        if frame.dtype != template.dtype:
+            frame = frame.astype(template.dtype)
         response = (
             cv2.matchTemplate(frame, template, cv2.TM_CCORR_NORMED, mask=mask)
             if mask is not None
@@ -89,3 +83,27 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
         if not math.isfinite(score):
             raise ValueError(f"template match produced non-finite score: {score}")
         return DetectionResult(score=score)
+
+    def __init__(self, config: TemplateMatchConfig) -> None:
+        super().__init__(config)
+        reference = np.asarray(config.reference)
+        mask = None
+        if reference.ndim == 3 and reference.shape[2] == 4:
+            valid = reference[:, :, 3] > 0
+            if not np.any(valid):
+                raise ValueError("template alpha mask has no valid pixels")
+            mask = np.ascontiguousarray(valid.astype(np.uint8) * 255)
+            reference = reference[:, :, :3]
+        if (
+            np.issubdtype(reference.dtype, np.integer)
+            and reference.min() >= 0
+            and reference.max() <= 255
+        ):
+            template = np.ascontiguousarray(reference.astype(np.uint8, copy=False))
+        else:
+            template = np.ascontiguousarray(reference.astype(np.float32))
+        template.setflags(write=False)
+        if mask is not None:
+            mask.setflags(write=False)
+        self._template = template
+        self._mask = mask

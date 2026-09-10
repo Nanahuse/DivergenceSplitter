@@ -49,21 +49,16 @@ class DifferenceHashSimilarityDetector(
         return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
-        reference_hash = tuple(
-            bool(value)
-            for value in dhash_bits(
-                to_gray(np.asarray(self.config.reference)), self.config.hash_size
-            ).flat
-        )
-        frame_hash = tuple(
-            bool(value)
-            for value in frame_dhash(
-                context, self.config.hash_size, self.config.roi
-            ).flat
-        )
-        difference = sum(
-            frame_bit != reference_bit
-            for frame_bit, reference_bit in zip(frame_hash, reference_hash)
+        frame_hash = frame_dhash(context, self.config.hash_size, self.config.roi)
+        difference = int(
+            np.count_nonzero(np.logical_xor(frame_hash, self._reference_hash))
         )
         score = 1.0 - float(difference) / (self.config.hash_size**2)
         return DetectionResult(score=score)
+
+    def __init__(self, config: DifferenceHashSimilarityConfig) -> None:
+        super().__init__(config)
+        self._reference_hash = dhash_bits(
+            to_gray(np.asarray(config.reference)), config.hash_size
+        )
+        self._reference_hash.setflags(write=False)

@@ -27,6 +27,10 @@ from divergencesplitter.detector.models import (
     Region,
     freeze_config_image,
 )
+from divergencesplitter.detector.root_mean_square_similarity import (
+    RootMeanSquareSimilarityConfig,
+    RootMeanSquareSimilarityDetector,
+)
 from divergencesplitter.detector.template_match import (
     TemplateMatchConfig,
     TemplateMatchDetector,
@@ -201,6 +205,14 @@ def _detector(
 
             return MeanAbsoluteSimilarityDetector(
                 MeanAbsoluteSimilarityConfig(
+                    _reference_image(detector["reference"], f"{field}.reference", path),
+                    _roi(detector.get("roi"), f"{field}.roi"),
+                )
+            )
+        case "root_mean_square_similarity":
+            _keys(detector, required={"type", "reference"}, optional={"roi"})
+            return RootMeanSquareSimilarityDetector(
+                RootMeanSquareSimilarityConfig(
                     _reference_image(detector["reference"], f"{field}.reference", path),
                     _roi(detector.get("roi"), f"{field}.roi"),
                 )

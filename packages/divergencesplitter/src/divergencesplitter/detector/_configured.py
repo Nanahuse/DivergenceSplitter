@@ -10,6 +10,7 @@ class ConfiguredDetector[ConfigT]:
 
     def __init__(self, config: ConfigT) -> None:
         self._config = config
+        self._hash = hash((type(self), config))
 
     @property
     def config(self) -> ConfigT:
@@ -26,4 +27,4 @@ class ConfiguredDetector[ConfigT]:
         return self.config == other.config
 
     def __hash__(self) -> int:
-        return hash((type(self), self.config))
+        return self._hash

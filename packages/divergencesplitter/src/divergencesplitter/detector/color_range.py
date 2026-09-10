@@ -63,7 +63,7 @@ class ColorRangeDetector(ConfiguredDetector[ColorRangeConfig]):
             raise ValueError(
                 f"frame has {frame_channels} channels but bounds have {channels} values"
             )
-        if not np.all(np.isfinite(frame)):
+        if np.issubdtype(frame.dtype, np.floating) and not np.all(np.isfinite(frame)):
             raise ValueError("frame values must be finite")
         mask = cv2.inRange(frame, self.config.lower, self.config.upper)
         ratio = float(np.count_nonzero(mask)) / mask.size

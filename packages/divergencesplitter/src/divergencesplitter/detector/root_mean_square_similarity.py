@@ -1,4 +1,4 @@
-"""MeanAbsoluteSimilarityConfig and MeanAbsoluteSimilarityDetector."""
+"""RootMeanSquareSimilarityConfig and RootMeanSquareSimilarityDetector."""
 
 from dataclasses import dataclass
 
@@ -20,8 +20,8 @@ from divergencesplitter.frame.models import FrameContext
 
 
 @dataclass(frozen=True)
-class MeanAbsoluteSimilarityConfig:
-    """Configuration for mean absolute similarity detection."""
+class RootMeanSquareSimilarityConfig:
+    """Configuration for normalized root-mean-square similarity detection."""
 
     reference: FrozenConfigImage
     roi: Region | None = None
@@ -37,16 +37,12 @@ class MeanAbsoluteSimilarityConfig:
             raise ValueError("reference alpha mask has no valid pixels")
 
 
-class MeanAbsoluteSimilarityDetector(ConfiguredDetector[MeanAbsoluteSimilarityConfig]):
-    """Mean-absolute-similarity detector: reports the negated mean absolute
-    difference from ``reference`` as score.
+class RootMeanSquareSimilarityDetector(
+    ConfiguredDetector[RootMeanSquareSimilarityConfig]
+):
+    """Detector whose score is the negative RMSE from the reference."""
 
-    The score follows the ``ImageDetector`` contract that higher values mean a
-    stronger match: a perfect match scores ``0.0`` and larger differences
-    produce smaller (more negative) scores.
-    """
-
-    def __init__(self, config: MeanAbsoluteSimilarityConfig) -> None:
+    def __init__(self, config: RootMeanSquareSimilarityConfig) -> None:
         super().__init__(config)
         self._prepared = prepare_similarity_reference(config.reference)
 
@@ -55,15 +51,5 @@ class MeanAbsoluteSimilarityDetector(ConfiguredDetector[MeanAbsoluteSimilarityCo
         return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
-        diff = similarity_error(context, self._prepared, self.config.roi, 1)
-        key = (
-            ("frame-mean-abs-diff", self.config.reference)
-            if self.config.roi is None
-            else (
-                "frame-mean-abs-diff",
-                self.config.reference,
-                self.config.roi,
-            )
-        )
-        context.preprocessing_cache.setdefault(key, diff)
-        return DetectionResult(score=-diff)
+        error = similarity_error(context, self._prepared, self.config.roi, 2)
+        return DetectionResult(score=-error)

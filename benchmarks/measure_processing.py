@@ -16,9 +16,15 @@ from divergencesplitter import (
     DifferenceHashSimilarityDetector,
     Frame,
     FrameContext,
+    MeanAbsoluteSimilarityConfig,
+    MeanAbsoluteSimilarityDetector,
     MeanBrightnessDetector,
     MonotonicTime,
+    PhaseCorrelationConfig,
+    PhaseCorrelationDetector,
     Region,
+    RootMeanSquareSimilarityConfig,
+    RootMeanSquareSimilarityDetector,
     TemplateMatchConfig,
     TemplateMatchDetector,
     evaluate,
@@ -72,6 +78,24 @@ def _run_case(width: int, height: int, duration_seconds: float) -> None:
                 TemplateMatchConfig(
                     reference, Region(100, 100, width - 164, height - 164)
                 )
+            ),
+        ),
+        (
+            "mean_absolute_similarity",
+            MeanAbsoluteSimilarityDetector(
+                MeanAbsoluteSimilarityConfig(reference, Region(0, 0, 64, 64))
+            ),
+        ),
+        (
+            "root_mean_square_similarity",
+            RootMeanSquareSimilarityDetector(
+                RootMeanSquareSimilarityConfig(reference, Region(0, 0, 64, 64))
+            ),
+        ),
+        (
+            "phase_correlation",
+            PhaseCorrelationDetector(
+                PhaseCorrelationConfig(reference, Region(0, 0, 64, 64))
             ),
         ),
     )
@@ -159,7 +183,7 @@ def main() -> None:
         f" platform={platform.platform()}"
         f" duration_seconds={arguments.duration}"
         f" target_input_fps={INPUT_FPS}"
-        " scenario=five_builtin_detector_cases"
+        " scenario=detector_runtime_optimization_cases"
         " bridge=not_measured"
     )
     for width, height in ((640, 360), (1280, 720)):

@@ -23,6 +23,10 @@ from divergencesplitter.detector.phase_correlation import (
     PhaseCorrelationConfig,
     PhaseCorrelationDetector,
 )
+from divergencesplitter.detector.root_mean_square_similarity import (
+    RootMeanSquareSimilarityConfig,
+    RootMeanSquareSimilarityDetector,
+)
 from divergencesplitter.detector.template_match import (
     TemplateMatchConfig,
     TemplateMatchDetector,
@@ -137,6 +141,33 @@ class PhaseCorrelationDetectorTest(unittest.TestCase):
 
     def test_rejects_shape_mismatch(self) -> None:
         detector = PhaseCorrelationDetector(PhaseCorrelationConfig(PATTERN))
+        with self.assertRaises(ValueError):
+            evaluate(make_context(np.zeros((3, 3), dtype=np.uint8)), detector)
+
+
+class RootMeanSquareSimilarityDetectorTest(unittest.TestCase):
+    def test_known_rmse(self) -> None:
+        detector = RootMeanSquareSimilarityDetector(
+            RootMeanSquareSimilarityConfig(((0, 0),))
+        )
+        score = evaluate(
+            make_context(np.array([[3, 4]], dtype=np.uint8)), detector
+        ).score
+        self.assertAlmostEqual(score, -np.sqrt(12.5))
+
+    def test_alpha_mask_excludes_transparent_pixels(self) -> None:
+        reference = freeze_config_image([[[0, 0, 0, 255], [0, 0, 0, 0]]])
+        detector = RootMeanSquareSimilarityDetector(
+            RootMeanSquareSimilarityConfig(reference)
+        )
+        frame = np.array([[[0, 0, 0], [100, 100, 100]]], dtype=np.uint8)
+        self.assertEqual(evaluate(make_context(frame), detector).score, 0.0)
+
+    def test_exposes_reference_and_rejects_shape_mismatch(self) -> None:
+        detector = RootMeanSquareSimilarityDetector(
+            RootMeanSquareSimilarityConfig(PATTERN)
+        )
+        self.assertEqual(detector.reference_images[0].image, PATTERN)
         with self.assertRaises(ValueError):
             evaluate(make_context(np.zeros((3, 3), dtype=np.uint8)), detector)
 
