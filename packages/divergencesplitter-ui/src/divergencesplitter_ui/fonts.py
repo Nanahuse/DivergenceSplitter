@@ -6,6 +6,12 @@ installed on the operating system. The font is registered once per process and
 bound as Dear PyGui's global font, so every widget and every future UI string
 uses it without any per-widget font binding.
 
+The bundled file is the official Noto Sans JP variable font instantiated at the
+Regular (``wght=400``) weight. Dear PyGui does not expose variable-font weight
+selection and would render the variable font's Thin default, so a static
+Regular instance is shipped instead. Instancing keeps the full glyph set; the
+font is not subset.
+
 ``importlib.resources`` resolves the bundled font from a source checkout, an
 installed wheel, and a PyInstaller bundle alike. A missing font is a broken
 distribution, so it fails with an explicit error instead of silently falling
@@ -18,7 +24,7 @@ import importlib.resources
 from importlib.resources.abc import Traversable
 
 PACKAGE = "divergencesplitter_ui"
-FONT_RESOURCE = "assets/fonts/NotoSansJP[wght].ttf"
+FONT_RESOURCE = "assets/fonts/NotoSansJP-Regular.ttf"
 FONT_LICENSE_RESOURCE = "assets/fonts/OFL.txt"
 DEFAULT_FONT_SIZE = 16
 

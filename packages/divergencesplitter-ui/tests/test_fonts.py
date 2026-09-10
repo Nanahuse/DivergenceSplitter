@@ -7,7 +7,7 @@ def test_bundled_font_resource_exists() -> None:
     resource = fonts.font_resource()
 
     assert resource.is_file()
-    assert resource.name == "NotoSansJP[wght].ttf"
+    assert resource.name == "NotoSansJP-Regular.ttf"
 
 
 def test_bundled_font_is_a_truetype_font() -> None:
