@@ -51,6 +51,6 @@ def configure_default_font() -> None:
     resource = font_resource()
     if not resource.is_file():
         raise BundledFontError(f"bundled font is missing: {FONT_RESOURCE}")
-    with importlib.resources.as_file(resource) as path:
+    with importlib.resources.as_file(resource) as path, dpg.font_registry():
         font = dpg.add_font(str(path), DEFAULT_FONT_SIZE)
     dpg.bind_font(font)
