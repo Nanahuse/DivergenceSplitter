@@ -15,6 +15,7 @@ from typing import TextIO
 from divergencesplitter_ui._dpg import dpg
 from divergencesplitter_ui.about_window import AboutPage
 from divergencesplitter_ui.error_window import ErrorWindow
+from divergencesplitter_ui.fonts import configure_default_font
 from divergencesplitter_ui.license_window import LicensePage
 from divergencesplitter_ui.presentation import (
     ObservableDiagnostics,
@@ -60,6 +61,7 @@ class DesktopApplication:
         try:
             dpg.create_context()
             context_created = True
+            configure_default_font()
             self._renderer.build()
             self._settings.build(ScreenRenderer.CONFIGURATION_PAGE_TAG)
             self._about.build(ScreenRenderer.ABOUT_PAGE_TAG)

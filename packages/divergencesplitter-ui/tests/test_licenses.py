@@ -7,10 +7,12 @@ from typing import Any
 import pytest
 from divergencesplitter_ui.licenses import (
     ApplicationLicense,
+    AssetLicense,
     LicenseEntry,
     LicenseInventory,
     LicenseInventoryError,
     LicenseSection,
+    bundled_inventory,
     license_sections,
     load_inventory,
 )
@@ -20,7 +22,8 @@ def document(
     packages: list[dict[str, Any]],
     *,
     application: dict[str, Any] | None = None,
-    schema_version: int = 2,
+    assets: list[dict[str, Any]] | None = None,
+    schema_version: int = 3,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -31,6 +34,7 @@ def document(
             "license_text": "GPL text",
         },
         "packages": packages,
+        "assets": assets or [],
     }
 
 
@@ -40,6 +44,16 @@ def package(**fields: Any) -> dict[str, Any]:
         "version": "2.5.2",
         "license": "BSD-3-Clause",
         "license_text": "full BSD text",
+    }
+    defaults.update(fields)
+    return defaults
+
+
+def asset(**fields: Any) -> dict[str, Any]:
+    defaults = {
+        "name": "Noto Sans JP",
+        "license": "SIL Open Font License 1.1",
+        "license_text": "the OFL text",
     }
     defaults.update(fields)
     return defaults
@@ -55,13 +69,17 @@ def load(
     packages: list[dict[str, Any]],
     *,
     application: dict[str, Any] | None = None,
-    schema_version: int = 2,
+    assets: list[dict[str, Any]] | None = None,
+    schema_version: int = 3,
 ) -> LicenseInventory:
     return load_inventory(
         StringIO(
             json.dumps(
                 document(
-                    packages, schema_version=schema_version, application=application
+                    packages,
+                    schema_version=schema_version,
+                    application=application,
+                    assets=assets,
                 )
             )
         )
@@ -75,7 +93,7 @@ class TestLoadInventory:
         )
 
         assert inventory == LicenseInventory(
-            schema_version=2,
+            schema_version=3,
             application=ApplicationLicense(
                 "DivergenceSplitter",
                 "GPL-3.0-only",
@@ -85,7 +103,31 @@ class TestLoadInventory:
                 LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "full BSD text"),
                 LicenseEntry("pyyaml", "2.5.2", "MIT", "full BSD text"),
             ),
+            assets=(),
         )
+
+    def test_decodes_assets_separately_from_packages(self) -> None:
+        inventory = load([package()], assets=[asset()])
+
+        assert inventory.assets == (
+            AssetLicense("Noto Sans JP", "SIL Open Font License 1.1", "the OFL text"),
+        )
+
+    def test_missing_asset_field_raises(self) -> None:
+        broken = asset()
+        del broken["license_text"]
+        with pytest.raises(LicenseInventoryError):
+            load([], assets=[broken])
+
+    def test_duplicate_asset_raises(self) -> None:
+        with pytest.raises(LicenseInventoryError):
+            load([], assets=[asset(), asset()])
+
+    def test_missing_assets_list_raises(self) -> None:
+        bad = document([])
+        del bad["assets"]
+        with pytest.raises(LicenseInventoryError):
+            load_inventory(StringIO(json.dumps(bad)))
 
     def test_preserves_document_order(self) -> None:
         inventory = load([package(name="b"), package(name="a")])
@@ -163,13 +205,18 @@ class TestLoadInventory:
 class TestLicenseSections:
     def make_inventory(self) -> LicenseInventory:
         return LicenseInventory(
-            schema_version=2,
+            schema_version=3,
             application=ApplicationLicense(
                 "DivergenceSplitter",
                 "GPL-3.0-only",
                 "the GPL text",
             ),
             packages=(LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "the BSD text"),),
+            assets=(
+                AssetLicense(
+                    "Noto Sans JP", "SIL Open Font License 1.1", "the OFL text"
+                ),
+            ),
         )
 
     def test_application_section_comes_first(self) -> None:
@@ -187,3 +234,21 @@ class TestLicenseSections:
             title="numpy 2.5.2 — BSD-3-Clause",
             text="the BSD text",
         )
+
+    def test_every_asset_is_a_section(self) -> None:
+        sections = license_sections(self.make_inventory())
+
+        assert sections[2] == LicenseSection(
+            title="Noto Sans JP — SIL Open Font License 1.1",
+            text="the OFL text",
+        )
+
+    def test_bundled_inventory_exposes_noto_sans_jp_license(self) -> None:
+        sections = license_sections(bundled_inventory())
+
+        noto = [
+            section for section in sections if section.title.startswith("Noto Sans JP")
+        ]
+        assert len(noto) == 1
+        assert "SIL Open Font License" in noto[0].title
+        assert "SIL OPEN FONT LICENSE Version 1.1" in noto[0].text

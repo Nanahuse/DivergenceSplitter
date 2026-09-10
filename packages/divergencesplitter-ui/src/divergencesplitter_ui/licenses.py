@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from typing import IO
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 INVENTORY_RESOURCE = "license_inventory.json"
 
 
@@ -49,12 +49,26 @@ class ApplicationLicense:
 
 
 @dataclass(frozen=True)
+class AssetLicense:
+    """A non-Python asset redistributed inside the application.
+
+    Unlike ``LicenseEntry`` it has no package version because it is not a
+    distribution; the bundled Noto Sans JP font is conveyed this way.
+    """
+
+    name: str
+    license: str
+    license_text: str
+
+
+@dataclass(frozen=True)
 class LicenseInventory:
     """The machine-readable license inventory bundled with the UI."""
 
     schema_version: int
     application: ApplicationLicense
     packages: tuple[LicenseEntry, ...]
+    assets: tuple[AssetLicense, ...]
 
 
 @dataclass(frozen=True)
@@ -135,7 +149,22 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
             )
         seen.add(name)
         entries.append(LicenseEntry(name, version, license, license_text))
-    return LicenseInventory(schema_version, application, tuple(entries))
+
+    assets_data = document.get("assets")
+    if not isinstance(assets_data, list):
+        raise LicenseInventoryError("license inventory must list assets")
+
+    assets: list[AssetLicense] = []
+    seen_assets: set[str] = set()
+    for index, asset in enumerate(assets_data):
+        name, license, license_text = _entry(
+            index, asset, ("name", "license", "license_text")
+        )
+        if name in seen_assets:
+            raise LicenseInventoryError(f"license inventory lists asset {name!r} twice")
+        seen_assets.add(name)
+        assets.append(AssetLicense(name, license, license_text))
+    return LicenseInventory(schema_version, application, tuple(entries), tuple(assets))
 
 
 def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
@@ -156,6 +185,13 @@ def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
             LicenseSection(
                 title=f"{entry.name} {entry.version} — {entry.license}",
                 text=entry.license_text,
+            )
+        )
+    for asset in inventory.assets:
+        sections.append(
+            LicenseSection(
+                title=f"{asset.name} — {asset.license}",
+                text=asset.license_text,
             )
         )
     return tuple(sections)
