@@ -43,19 +43,18 @@ from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-INVENTORY_PATH = (
-    REPO_ROOT
-    / "packages"
-    / "divergencesplitter-ui"
-    / "src"
-    / "divergencesplitter_ui"
-    / "license_inventory.json"
+UI_MODULE_ROOT = (
+    REPO_ROOT / "packages" / "divergencesplitter-ui" / "src" / "divergencesplitter_ui"
 )
+INVENTORY_PATH = UI_MODULE_ROOT / "license_inventory.json"
 ROOT_DISTRIBUTION = "divergencesplitter-ui"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "GPL-3.0-only"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
+NOTO_SANS_JP_NAME = "Noto Sans JP"
+NOTO_SANS_JP_LICENSE = "SIL Open Font License 1.1"
+NOTO_SANS_JP_LICENSE_PATH = UI_MODULE_ROOT / "assets" / "fonts" / "OFL.txt"
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
 EXCLUDED_DISTRIBUTIONS: dict[str, str] = {
@@ -83,10 +82,17 @@ class ApplicationEntry(TypedDict):
     license_text: str
 
 
+class AssetEntry(TypedDict):
+    name: str
+    license: str
+    license_text: str
+
+
 class InventoryDocument(TypedDict):
     schema_version: int
     application: ApplicationEntry
     packages: list[PackageEntry]
+    assets: list[AssetEntry]
 
 
 OVERRIDES: dict[str, Override] = {
@@ -300,6 +306,23 @@ def application_entry() -> ApplicationEntry:
     }
 
 
+def bundled_assets() -> list[AssetEntry]:
+    """Return the non-Python assets redistributed inside the executable.
+
+    The bundled Noto Sans JP font is not a Python distribution, so it is
+    inventoried as an asset together with the OFL license text that accompanies
+    the font file in the UI package.
+    """
+
+    return [
+        {
+            "name": NOTO_SANS_JP_NAME,
+            "license": NOTO_SANS_JP_LICENSE,
+            "license_text": NOTO_SANS_JP_LICENSE_PATH.read_text(encoding="utf-8"),
+        }
+    ]
+
+
 def build_inventory(
     closure: dict[str, metadata.Distribution],
 ) -> InventoryDocument:
@@ -326,6 +349,7 @@ def build_inventory(
         "schema_version": SCHEMA_VERSION,
         "application": application_entry(),
         "packages": packages,
+        "assets": bundled_assets(),
     }
 
 
@@ -369,6 +393,25 @@ def check_inventory(inventory: InventoryDocument) -> bool:
             if expected_value != actual_value:
                 print(
                     f"{name} {field}: expected {expected_value!r}, "
+                    f"stored {actual_value!r}"
+                )
+                mismatched = True
+
+    expected_assets = {entry["name"]: entry for entry in inventory["assets"]}
+    actual_assets = {entry["name"]: entry for entry in stored.get("assets", [])}
+    for name in sorted(expected_assets.keys() - actual_assets.keys()):
+        print(f"missing from inventory assets: {name}")
+        mismatched = True
+    for name in sorted(actual_assets.keys() - expected_assets.keys()):
+        print(f"extra in inventory assets: {name}")
+        mismatched = True
+    for name in sorted(expected_assets.keys() & actual_assets.keys()):
+        for field in ("license", "license_text"):
+            expected_value = expected_assets[name][field]
+            actual_value = actual_assets[name][field]
+            if expected_value != actual_value:
+                print(
+                    f"asset {name} {field}: expected {expected_value!r}, "
                     f"stored {actual_value!r}"
                 )
                 mismatched = True
