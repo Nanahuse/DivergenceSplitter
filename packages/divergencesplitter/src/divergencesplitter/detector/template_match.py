@@ -13,6 +13,7 @@ from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
     ReferenceImage,
+    Region,
     _validate_frozen_config_image,
 )
 from divergencesplitter.frame.models import FrameContext
@@ -23,10 +24,15 @@ class TemplateMatchConfig:
     """Configuration for normalized template matching."""
 
     reference: FrozenConfigImage
+    roi: Region | None = None
 
     def __post_init__(self) -> None:
         _validate_frozen_config_image(self.reference)
         template = np.asarray(self.reference, dtype=np.float32)
+        if template.ndim == 3 and template.shape[2] == 4:
+            if not np.any(template[:, :, 3] > 0):
+                raise ValueError("template alpha mask has no valid pixels")
+            template = template[:, :, :3]
         if np.all(np.ptp(template, axis=(0, 1)) == 0):
             raise ValueError("template must contain spatial variation")
 
@@ -45,8 +51,19 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
         return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
-        frame = np.asarray(context.frame.image, dtype=np.float32)
-        template = np.asarray(self.config.reference, dtype=np.float32)
+        from divergencesplitter.detector.common import frame_region
+
+        frame = np.asarray(frame_region(context, self.config.roi), dtype=np.float32)
+        reference = np.asarray(self.config.reference, dtype=np.float32)
+        mask = None
+        if reference.ndim == 3 and reference.shape[2] == 4:
+            valid = reference[:, :, 3] > 0
+            mask = None if np.all(valid) else valid.astype(np.uint8) * 255
+            template = reference[:, :, :3]
+            if not np.any(valid):
+                raise ValueError("template alpha mask has no valid pixels")
+        else:
+            template = reference
         if not np.all(np.isfinite(frame)):
             raise ValueError("frame values must be finite")
         if frame.ndim != template.ndim:
@@ -63,7 +80,11 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
             raise ValueError(
                 f"template {template.shape[:2]} larger than frame {frame.shape[:2]}"
             )
-        response = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
+        response = (
+            cv2.matchTemplate(frame, template, cv2.TM_CCORR_NORMED, mask=mask)
+            if mask is not None
+            else cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
+        )
         score = float(np.max(response))
         if not math.isfinite(score):
             raise ValueError(f"template match produced non-finite score: {score}")

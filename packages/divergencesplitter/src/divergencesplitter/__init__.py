@@ -33,7 +33,7 @@ from divergencesplitter.detector import (
     TemplateMatchDetector,
     evaluate,
 )
-from divergencesplitter.detector.models import DetectionResult, ReferenceImage
+from divergencesplitter.detector.models import DetectionResult, ReferenceImage, Region
 from divergencesplitter.frame import (
     ClipRegion,
     CropMargins,
@@ -99,6 +99,7 @@ __all__ = [
     "PhaseCorrelationConfig",
     "PhaseCorrelationDetector",
     "ReferenceImage",
+    "Region",
     "ResetWhen",
     "RisingEdge",
     "Rule",

@@ -19,6 +19,20 @@ FrozenConfigImage = (
 
 
 @dataclass(frozen=True)
+class Region:
+    x: int
+    y: int
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        if self.x < 0 or self.y < 0:
+            raise ValueError("region coordinates must be non-negative")
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("region dimensions must be positive")
+
+
+@dataclass(frozen=True)
 class DetectionResult:
     """Data model holding the numeric observation of a single detector run.
 

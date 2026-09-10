@@ -24,7 +24,7 @@ from divergencesplitter.detector.mean_absolute_similarity import (
     MeanAbsoluteSimilarityDetector,
 )
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
-from divergencesplitter.detector.models import ReferenceImage
+from divergencesplitter.detector.models import ReferenceImage, Region
 from divergencesplitter.detector.phase_correlation import (
     PhaseCorrelationConfig,
     PhaseCorrelationDetector,
@@ -47,6 +47,7 @@ __all__ = [
     "PhaseCorrelationConfig",
     "PhaseCorrelationDetector",
     "ReferenceImage",
+    "Region",
     "TemplateMatchConfig",
     "TemplateMatchDetector",
     "evaluate",
