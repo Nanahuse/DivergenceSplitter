@@ -16,6 +16,7 @@ from divergencesplitter.detector.mean_absolute_similarity import (
 )
 from divergencesplitter.detector.models import (
     ConfigImage,
+    Region,
     freeze_config_image,
 )
 from divergencesplitter.detector.phase_correlation import (
@@ -58,6 +59,25 @@ class TemplateMatchDetectorTest(unittest.TestCase):
         detector = TemplateMatchDetector(TemplateMatchConfig(PATTERN))
         with self.assertRaises(ValueError):
             evaluate(make_context(np.zeros((4, 4, 3), dtype=np.uint8)), detector)
+
+    def test_roi_limits_template_search(self) -> None:
+        frame = np.zeros((5, 6), dtype=np.uint8)
+        frame[2:4, 3:5] = np.asarray(PATTERN, dtype=np.uint8)
+        detector = TemplateMatchDetector(
+            TemplateMatchConfig(PATTERN, Region(0, 0, 1, 1))
+        )
+
+        with self.assertRaises(ValueError):
+            evaluate(make_context(frame), detector)
+
+    def test_transparent_reference_pixels_are_ignored(self) -> None:
+        reference = np.array([[[0, 255, 0, 255], [255, 0, 0, 0]]], dtype=np.uint8)
+        frame = np.array([[[0, 255, 0], [12, 34, 56]]], dtype=np.uint8)
+        detector = TemplateMatchDetector(
+            TemplateMatchConfig(freeze_config_image(reference.tolist()))
+        )
+
+        self.assertAlmostEqual(evaluate(make_context(frame), detector).score, 1.0)
 
 
 class ColorRangeDetectorTest(unittest.TestCase):

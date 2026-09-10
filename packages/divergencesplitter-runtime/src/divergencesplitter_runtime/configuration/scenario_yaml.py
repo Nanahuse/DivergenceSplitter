@@ -21,8 +21,10 @@ import yaml
 from divergencesplitter.condition.detected import Detected
 from divergencesplitter.condition.interface import Condition
 from divergencesplitter.condition.then import Then
+from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.models import (
     FrozenConfigImage,
+    Region,
     freeze_config_image,
 )
 from divergencesplitter.detector.template_match import (
@@ -48,7 +50,6 @@ _UNSUPPORTED_CONDITION_TYPES = (
 _UNSUPPORTED_DETECTOR_TYPES = (
     "color_range",
     "mean_brightness",
-    "mean_absolute_similarity",
     "phase_correlation",
     "difference_hash_similarity",
 )
@@ -173,20 +174,37 @@ def _detector(
     value: object,
     field: str,
     path: Path,
-) -> TemplateMatchDetector:
+) -> ImageDetector:
     detector = _mapping(value, field)
     if "type" not in detector:
         raise ValueError(f"{field}.type is missing")
     detector_type = _string(detector["type"], f"{field}.type")
     match detector_type:
         case "template_match":
-            _keys(detector, required={"type", "reference"})
+            _keys(detector, required={"type", "reference"}, optional={"roi"})
             reference = _reference_image(
                 detector["reference"],
                 f"{field}.reference",
                 path,
             )
-            return TemplateMatchDetector(TemplateMatchConfig(reference))
+            return TemplateMatchDetector(
+                TemplateMatchConfig(
+                    reference, _roi(detector.get("roi"), f"{field}.roi")
+                )
+            )
+        case "mean_absolute_similarity":
+            _keys(detector, required={"type", "reference"}, optional={"roi"})
+            from divergencesplitter.detector.mean_absolute_similarity import (
+                MeanAbsoluteSimilarityConfig,
+                MeanAbsoluteSimilarityDetector,
+            )
+
+            return MeanAbsoluteSimilarityDetector(
+                MeanAbsoluteSimilarityConfig(
+                    _reference_image(detector["reference"], f"{field}.reference", path),
+                    _roi(detector.get("roi"), f"{field}.roi"),
+                )
+            )
         case _ if detector_type in _UNSUPPORTED_DETECTOR_TYPES:
             raise ValueError(
                 f"detector type {detector_type!r} is not yet supported in YAML"
@@ -202,10 +220,23 @@ def _reference_image(
 ) -> FrozenConfigImage:
     reference_path = _string(value, field)
     resolved = _resolve_path(reference_path, path.parent)
-    image = cv2.imread(str(resolved))
+    image = cv2.imread(str(resolved), cv2.IMREAD_UNCHANGED)
     if image is None:
         raise ValueError(f"{field} could not be read as an image: {reference_path!r}")
     return freeze_config_image(image.tolist())
+
+
+def _roi(value: object, field: str) -> Region | None:
+    if value is None:
+        return None
+    mapping = _mapping(value, field)
+    _keys(mapping, required={"x", "y", "width", "height"})
+    return Region(
+        _integer(mapping["x"], f"{field}.x"),
+        _integer(mapping["y"], f"{field}.y"),
+        _integer(mapping["width"], f"{field}.width"),
+        _integer(mapping["height"], f"{field}.height"),
+    )
 
 
 def _duration(value: object, field: str) -> int:
@@ -255,6 +286,12 @@ def _number(value: object, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"{field} must be a number")
     return float(value)
+
+
+def _integer(value: object, field: str) -> int:
+    if type(value) is not int:
+        raise TypeError(f"{field} must be an integer")
+    return value
 
 
 def _keys(

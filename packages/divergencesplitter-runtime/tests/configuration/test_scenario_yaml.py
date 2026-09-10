@@ -105,6 +105,36 @@ splits: []
     assert isinstance(scenario.incomplete_condition, Detected)
 
 
+def test_template_match_roi_is_loaded(tmp_path: Path) -> None:
+    write_reference_image(tmp_path, "title.png")
+    path = write_scenario(
+        tmp_path,
+        """
+start_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: template_match
+    reference: ./title.png
+    roi: {x: 1, y: 2, width: 3, height: 4}
+reset_condition:
+  type: detected
+  minimum_score: 0.8
+  detector:
+    type: template_match
+    reference: ./title.png
+splits: []
+""",
+    )
+
+    scenario = load_scenario_yaml(path)
+
+    assert isinstance(scenario.start_condition, Detected)
+    assert isinstance(scenario.start_condition.detector, TemplateMatchDetector)
+    assert scenario.start_condition.detector.config.roi is not None
+    assert scenario.start_condition.detector.config.roi.x == 1
+
+
 def test_incomplete_condition_can_be_omitted_but_not_null(tmp_path: Path) -> None:
     write_reference_image(tmp_path, "title.png")
     base = """

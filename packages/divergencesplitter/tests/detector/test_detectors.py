@@ -95,6 +95,19 @@ class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
         self.assertEqual(large_diff, -10.0)
         self.assertTrue(match > small_diff > large_diff)
 
+    def test_transparent_reference_pixels_are_ignored(self):
+        reference = (
+            ((10, 0, 0, 255), (0, 0, 0, 0)),
+            ((20, 0, 0, 255), (0, 0, 0, 0)),
+        )
+        detector = MeanAbsoluteSimilarityDetector(
+            MeanAbsoluteSimilarityConfig(reference)
+        )
+        frame = np.zeros((2, 2, 3), dtype=np.uint8)
+        frame[:, :, 0] = np.array([[10, 99], [20, 88]], dtype=np.uint8)
+
+        self.assertEqual(evaluate(make_context(frame), detector).score, 0.0)
+
 
 class CountingDetector:
     def __init__(self) -> None:

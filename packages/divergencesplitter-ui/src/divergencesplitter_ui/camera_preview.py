@@ -121,6 +121,8 @@ class CameraPreview:
         try:
             while not self._stop.is_set():
                 frame = source.read()
+                if frame is None:
+                    continue
                 if isinstance(frame, FrameSourceError):
                     self._set_error(frame)
                     return

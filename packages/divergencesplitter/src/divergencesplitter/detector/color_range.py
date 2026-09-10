@@ -11,6 +11,7 @@ from divergencesplitter.detector._configured import ConfiguredDetector
 from divergencesplitter.detector.models import (
     DetectionResult,
     Pixel,
+    Region,
     freeze_pixel_vector,
 )
 from divergencesplitter.frame.models import FrameContext
@@ -22,6 +23,7 @@ class ColorRangeConfig:
 
     lower: tuple[Pixel, ...]
     upper: tuple[Pixel, ...]
+    roi: Region | None = None
 
     def __post_init__(self) -> None:
         lower = freeze_pixel_vector(self.lower)
@@ -47,7 +49,9 @@ class ColorRangeDetector(ConfiguredDetector[ColorRangeConfig]):
     """
 
     def detect(self, context: FrameContext) -> DetectionResult:
-        frame = context.frame.image
+        from divergencesplitter.detector.common import frame_region
+
+        frame = frame_region(context, self.config.roi)
         channels = len(self.config.lower)
         if frame.ndim == 2:
             frame_channels = 1

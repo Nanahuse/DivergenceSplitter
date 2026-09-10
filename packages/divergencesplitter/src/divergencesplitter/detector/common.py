@@ -19,6 +19,7 @@ from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.models import (
     ConfigImage,
     DetectionResult,
+    Region,
     freeze_config_image,
 )
 from divergencesplitter.frame.models import FrameContext, ImageArray
@@ -57,27 +58,55 @@ def evaluate(context: FrameContext, detector: ImageDetector) -> DetectionResult:
 
 
 def frame_mean(context: FrameContext) -> float:
-    return preprocessed(context, FRAME_MEAN_KEY, lambda: _mean(context.frame.image))
+    return frame_mean_region(context, None)
 
 
-def frame_mean_abs_diff(context: FrameContext, reference: ConfigImage) -> float:
+def frame_region(context: FrameContext, region: Region | None) -> ImageArray:
+    key = "frame-region" if region is None else ("frame-region", region)
+    return preprocessed(context, key, lambda: _region(context.frame.image, region))
+
+
+def frame_mean_region(context: FrameContext, region: Region | None) -> float:
+    key = FRAME_MEAN_KEY if region is None else (FRAME_MEAN_KEY, region)
+    return preprocessed(context, key, lambda: _mean(frame_region(context, region)))
+
+
+def frame_mean_abs_diff(
+    context: FrameContext, reference: ConfigImage, region: Region | None = None
+) -> float:
     frozen_reference = freeze_config_image(reference)
-    key = ("frame-mean-abs-diff", frozen_reference)
+    key = (
+        ("frame-mean-abs-diff", frozen_reference)
+        if region is None
+        else ("frame-mean-abs-diff", frozen_reference, region)
+    )
     return preprocessed(
-        context, key, lambda: _mean_abs_diff(context.frame.image, frozen_reference)
+        context,
+        key,
+        lambda: _mean_abs_diff(frame_region(context, region), frozen_reference),
     )
 
 
-def frame_gray(context: FrameContext) -> ImageArray:
+def frame_gray(context: FrameContext, region: Region | None = None) -> ImageArray:
     """Return the frame converted to grayscale float32, cached per frame."""
-    return preprocessed(context, FRAME_GRAY_KEY, lambda: to_gray(context.frame.image))
-
-
-def frame_dhash(context: FrameContext, hash_size: int) -> ImageArray:
-    """Return the frame's difference-hash bits, cached per frame and hash size."""
-    key = ("frame-dhash", hash_size)
     return preprocessed(
-        context, key, lambda: dhash_bits(frame_gray(context), hash_size)
+        context,
+        FRAME_GRAY_KEY if region is None else (FRAME_GRAY_KEY, region),
+        lambda: to_gray(frame_region(context, region)),
+    )
+
+
+def frame_dhash(
+    context: FrameContext, hash_size: int, region: Region | None = None
+) -> ImageArray:
+    """Return the frame's difference-hash bits, cached per frame and hash size."""
+    key = (
+        ("frame-dhash", hash_size)
+        if region is None
+        else ("frame-dhash", hash_size, region)
+    )
+    return preprocessed(
+        context, key, lambda: dhash_bits(frame_gray(context, region), hash_size)
     )
 
 
@@ -118,7 +147,28 @@ def _mean(image: ImageArray) -> float:
 
 def _mean_abs_diff(left: ImageArray, right: ConfigImage) -> float:
     right_array = np.asarray(right, dtype=np.float64)
+    mask = None
+    if right_array.ndim == 3 and right_array.shape[2] == 4:
+        mask = right_array[:, :, 3] > 0
+        right_array = right_array[:, :, :3]
+        if not np.any(mask):
+            raise ValueError("reference alpha mask has no valid pixels")
     if left.shape != right_array.shape:
         raise ValueError(f"shape mismatch: {left.shape} != {right_array.shape}")
     diff = np.abs(left.astype(np.float64) - right_array)
+    if mask is not None:
+        return float(np.mean(diff[mask]))
     return float(np.mean(diff))
+
+
+def _region(image: ImageArray, region: Region | None) -> ImageArray:
+    if region is None:
+        return image
+    if (
+        region.x + region.width > image.shape[1]
+        or region.y + region.height > image.shape[0]
+    ):
+        raise ValueError(f"region {region} does not fit in image shape {image.shape}")
+    return image[
+        region.y : region.y + region.height, region.x : region.x + region.width
+    ]

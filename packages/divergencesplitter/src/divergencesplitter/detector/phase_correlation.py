@@ -14,6 +14,7 @@ from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
     ReferenceImage,
+    Region,
     _validate_frozen_config_image,
 )
 from divergencesplitter.frame.models import FrameContext
@@ -24,6 +25,7 @@ class PhaseCorrelationConfig:
     """Configuration for phase-correlation detection."""
 
     reference: FrozenConfigImage
+    roi: Region | None = None
 
     def __post_init__(self) -> None:
         _validate_frozen_config_image(self.reference)
@@ -47,7 +49,7 @@ class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
         return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
-        frame = frame_gray(context)
+        frame = frame_gray(context, self.config.roi)
         reference = to_gray(np.asarray(self.config.reference))
         if frame.shape != reference.shape:
             raise ValueError(

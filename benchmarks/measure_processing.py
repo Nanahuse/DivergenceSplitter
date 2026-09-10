@@ -18,6 +18,7 @@ from divergencesplitter import (
     FrameContext,
     MeanBrightnessDetector,
     MonotonicTime,
+    Region,
     TemplateMatchConfig,
     TemplateMatchDetector,
     evaluate,
@@ -55,10 +56,24 @@ def _run_case(width: int, height: int, duration_seconds: float) -> None:
     )
     reference = freeze_config_image(image[:64, :64].tolist())
     detectors = (
-        MeanBrightnessDetector(),
-        ColorRangeDetector(ColorRangeConfig((0, 0, 0), (255, 255, 255))),
-        DifferenceHashSimilarityDetector(DifferenceHashSimilarityConfig(reference)),
-        TemplateMatchDetector(TemplateMatchConfig(reference)),
+        ("mean_brightness", MeanBrightnessDetector()),
+        (
+            "color_range",
+            ColorRangeDetector(ColorRangeConfig((0, 0, 0), (255, 255, 255))),
+        ),
+        (
+            "difference_hash",
+            DifferenceHashSimilarityDetector(DifferenceHashSimilarityConfig(reference)),
+        ),
+        ("template_full", TemplateMatchDetector(TemplateMatchConfig(reference))),
+        (
+            "template_roi",
+            TemplateMatchDetector(
+                TemplateMatchConfig(
+                    reference, Region(100, 100, width - 164, height - 164)
+                )
+            ),
+        ),
     )
     buffer = LatestFrameBuffer()
     measurements = _Measurements()
@@ -82,15 +97,15 @@ def _run_case(width: int, height: int, duration_seconds: float) -> None:
         while (frame := buffer.take()) is not None:
             context = FrameContext(frame, MonotonicTime(time.monotonic_ns()))
             detector_started_at = time.monotonic_ns()
-            for detector in detectors:
+            for name, detector in detectors:
                 started_at = time.monotonic_ns()
                 evaluate(context, detector)
                 completed_at = time.monotonic_ns()
-                measurements.detector_samples.setdefault(
-                    type(detector).__name__, []
-                ).append(completed_at - started_at)
+                measurements.detector_samples.setdefault(name, []).append(
+                    completed_at - started_at
+                )
             detector_completed_at = time.monotonic_ns()
-            evaluate(context, detectors[0])
+            evaluate(context, detectors[0][1])
             cache_hit_completed_at = time.monotonic_ns()
             measurements.processed += 1
             measurements.detector_ns.append(detector_completed_at - detector_started_at)
@@ -144,7 +159,7 @@ def main() -> None:
         f" platform={platform.platform()}"
         f" duration_seconds={arguments.duration}"
         f" target_input_fps={INPUT_FPS}"
-        " scenario=four_builtin_detectors"
+        " scenario=five_builtin_detector_cases"
         " bridge=not_measured"
     )
     for width, height in ((640, 360), (1280, 720)):

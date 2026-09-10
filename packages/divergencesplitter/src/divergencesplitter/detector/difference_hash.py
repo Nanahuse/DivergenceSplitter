@@ -12,6 +12,7 @@ from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
     ReferenceImage,
+    Region,
     _validate_frozen_config_image,
 )
 from divergencesplitter.frame.models import FrameContext
@@ -23,6 +24,7 @@ class DifferenceHashSimilarityConfig:
 
     reference: FrozenConfigImage
     hash_size: int = 8
+    roi: Region | None = None
 
     def __post_init__(self) -> None:
         _validate_frozen_config_image(self.reference)
@@ -54,7 +56,10 @@ class DifferenceHashSimilarityDetector(
             ).flat
         )
         frame_hash = tuple(
-            bool(value) for value in frame_dhash(context, self.config.hash_size).flat
+            bool(value)
+            for value in frame_dhash(
+                context, self.config.hash_size, self.config.roi
+            ).flat
         )
         difference = sum(
             frame_bit != reference_bit
