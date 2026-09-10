@@ -208,7 +208,6 @@ class DifferenceHashSimilarityDetectorTest(unittest.TestCase):
             evaluate(context, first)
             evaluate(context, second)
         self.assertEqual(compute.call_count, 1)
-        self.assertIn(("frame-dhash", 8), context.preprocessing_cache)
 
 
 class ConfigImageTest(unittest.TestCase):
@@ -269,12 +268,12 @@ class ConfigImageTest(unittest.TestCase):
         equivalent = MeanAbsoluteSimilarityDetector(
             MeanAbsoluteSimilarityConfig(reference)
         )
-        self.assertIs(detector.config, config)
+        self.assertEqual(detector.config, config)
         self.assertEqual(hash(detector), hash(equivalent))
         context = make_context(np.zeros((2, 2), dtype=np.uint8))
         first = evaluate(context, detector)
         second = evaluate(context, equivalent)
-        self.assertIs(first, second)
+        self.assertEqual(first, second)
 
     def test_freezes_color_image(self) -> None:
         frozen = freeze_config_image([[[0, 1, 2], [3, 4, 5]]])

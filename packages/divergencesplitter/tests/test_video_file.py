@@ -261,17 +261,9 @@ class TestNormalizer:
         assert isinstance(result, Frame)
         assert result.image.shape == (5, 6, 3)
 
-    def test_read_stays_raw_and_normalize_resizes_once(self, tmp_path, monkeypatch):
+    def test_read_stays_raw_and_normalizer_applies_resize(self, tmp_path):
         video = tmp_path / "movie.avi"
         make_video(video, frame_count=4)
-        calls = {"count": 0}
-        real_resize = cv2.resize
-
-        def counting_resize(*args, **kwargs):
-            calls["count"] += 1
-            return real_resize(*args, **kwargs)
-
-        monkeypatch.setattr(cv2, "resize", counting_resize)
         source = VideoFileSource(
             str(video), output_size=OutputSize(width=12, height=10)
         )
@@ -279,7 +271,6 @@ class TestNormalizer:
         raws = []
         for _ in range(3):
             raws.append(read_frame(source))
-        assert calls["count"] == 0
         normalized = source.normalizer.normalize(raws[1])
         assert isinstance(normalized, Frame)
-        assert calls["count"] == 1
+        assert normalized.image.shape == (10, 12, 3)

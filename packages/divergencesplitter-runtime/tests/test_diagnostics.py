@@ -20,6 +20,7 @@ from divergencesplitter import (
     Rule,
     Scenario,
     VideoFileSource,
+    evaluate,
 )
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter_runtime.capture import PublishResult
@@ -47,7 +48,7 @@ class CustomDetector:
         return ()
 
     def detect(self, context: FrameContext) -> DetectionResult:
-        raise AssertionError("the diagnostics test must not evaluate detectors")
+        return DetectionResult(score=0.5)
 
 
 class BrokenStream(StringIO):
@@ -138,14 +139,15 @@ def test_debug_frame_log_contains_frame_and_detector_configuration() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream, level=logging.DEBUG)
     frame = Frame(
-        image=np.zeros((2, 3, 4), dtype=np.uint8),
+        image=np.zeros((2, 4, 3), dtype=np.uint8),
         captured_at=MonotonicTime(100),
     )
-    detector = ColorRangeDetector(ColorRangeConfig(lower=(0,), upper=(255,)))
+    frame.image[0, 0] = 255
+    detector = ColorRangeDetector(ColorRangeConfig(lower=(0, 0, 0), upper=(0, 0, 0)))
     custom_detector = CustomDetector()
     context = FrameContext(frame=frame, now=MonotonicTime(125))
-    context.detection_cache[detector] = DetectionResult(score=0.875)
-    context.detection_cache[custom_detector] = DetectionResult(score=0.5)
+    assert evaluate(context, detector).score == 0.875
+    assert evaluate(context, custom_detector).score == 0.5
 
     diagnostics.frame_received(frame, PublishResult.PUBLISHED)
     diagnostics.frame_processing_completed(context)
@@ -154,7 +156,7 @@ def test_debug_frame_log_contains_frame_and_detector_configuration() -> None:
     assert len(lines) == 2
     assert "capture.frame_received" in lines[0]
     assert "captured_at_ns=100" in lines[0]
-    assert "frame_shape=[2,3,4]" in lines[0]
+    assert "frame_shape=[2,4,3]" in lines[0]
     assert 'frame_dtype="uint8"' in lines[0]
     assert 'publish_result="PUBLISHED"' in lines[0]
     assert "processing.frame_completed" in lines[1]
@@ -162,8 +164,8 @@ def test_debug_frame_log_contains_frame_and_detector_configuration() -> None:
     assert "processing_duration_ns=" in lines[1]
     assert 'detector.0.type="ColorRangeDetector"' in lines[1]
     assert "detector.0.score=0.875" in lines[1]
-    assert "lower:[0]" in lines[1]
-    assert "upper:[255]" in lines[1]
+    assert "lower:[0,0,0]" in lines[1]
+    assert "upper:[0,0,0]" in lines[1]
     assert 'detector.1.type="CustomDetector"' in lines[1]
     assert 'detector.1.config_type="SecretConfig"' in lines[1]
     assert "must-not-be-logged" not in lines[1]

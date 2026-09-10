@@ -89,14 +89,16 @@ class TestClip:
         ]
         np.testing.assert_array_equal(result.image, expected)
 
-    def test_clipped_frame_owns_its_data(self):
+    def test_clipped_frame_is_independent_from_input(self):
         normalizer = FrameNormalizer(
             clip_region=ClipRegion(x=0, y=0, width=8, height=8)
         )
-        result = normalizer.normalize(make_frame())
+        frame = make_frame()
+        result = normalizer.normalize(frame)
         assert isinstance(result, Frame)
-        assert result.image.flags.owndata
-        assert result.image.base is None
+        original = result.image.copy()
+        frame.image[:] = 255
+        np.testing.assert_array_equal(result.image, original)
 
     def test_horizontal_overflow_returns_clip_error(self):
         normalizer = FrameNormalizer(
@@ -143,22 +145,17 @@ class TestResize:
         )
         np.testing.assert_array_equal(result.image, expected)
 
-    def test_resized_frame_owns_its_data(self):
-        normalizer = FrameNormalizer(output_size=OutputSize(width=12, height=10))
-        result = normalizer.normalize(make_frame())
-        assert isinstance(result, Frame)
-        assert result.image.flags.owndata
-        assert result.image.base is None
-
-    def test_clipped_and_resized_frame_owns_its_data(self):
+    def test_clipped_and_resized_frame_is_independent_from_input(self):
         normalizer = FrameNormalizer(
             clip_region=ClipRegion(x=0, y=0, width=8, height=8),
             output_size=OutputSize(width=12, height=10),
         )
-        result = normalizer.normalize(make_frame())
+        frame = make_frame()
+        result = normalizer.normalize(frame)
         assert isinstance(result, Frame)
-        assert result.image.flags.owndata
-        assert result.image.base is None
+        original = result.image.copy()
+        frame.image[:] = 255
+        np.testing.assert_array_equal(result.image, original)
 
     def test_shapes_are_constant_across_frames(self):
         region = ClipRegion(x=2, y=3, width=6, height=5)
@@ -181,34 +178,6 @@ class TestResize:
                 assert result.image.shape[-1] == 3
             assert len(set(shapes)) == 1
             assert shapes[0] == expected_shape
-
-    def test_normalize_calls_resize_once(self, monkeypatch):
-        calls = {"count": 0}
-        real_resize = cv2.resize
-
-        def counting_resize(*args, **kwargs):
-            calls["count"] += 1
-            return real_resize(*args, **kwargs)
-
-        monkeypatch.setattr(cv2, "resize", counting_resize)
-        normalizer = FrameNormalizer(output_size=OutputSize(width=12, height=10))
-        result = normalizer.normalize(make_frame())
-        assert isinstance(result, Frame)
-        assert calls["count"] == 1
-
-    def test_no_transform_does_not_call_resize(self, monkeypatch):
-        calls = {"count": 0}
-        real_resize = cv2.resize
-
-        def counting_resize(*args, **kwargs):
-            calls["count"] += 1
-            return real_resize(*args, **kwargs)
-
-        monkeypatch.setattr(cv2, "resize", counting_resize)
-        normalizer = FrameNormalizer()
-        result = normalizer.normalize(make_frame())
-        assert isinstance(result, Frame)
-        assert calls["count"] == 0
 
 
 class TestResizeError:

@@ -153,7 +153,10 @@ class TestObservableFrameSlot:
 
         diagnostics.frame_received(frame, PublishResult.PUBLISHED)
 
-        assert diagnostics.take_latest_input_frame() is frame
+        result = diagnostics.take_latest_input_frame()
+        assert result is not None
+        assert result.captured_at == frame.captured_at
+        np.testing.assert_array_equal(result.image, frame.image)
         assert diagnostics.take_latest_input_frame() is None
 
     def test_newer_frame_replaces_an_unread_frame(self) -> None:
@@ -164,15 +167,10 @@ class TestObservableFrameSlot:
         diagnostics.frame_received(first, PublishResult.PUBLISHED)
         diagnostics.frame_received(second, PublishResult.OVERWROTE)
 
-        assert diagnostics.take_latest_input_frame() is second
-
-    def test_frames_are_not_copied(self) -> None:
-        diagnostics = OperationalDiagnostics(StringIO())
-        frame = make_frame(100)
-
-        diagnostics.frame_received(frame, PublishResult.PUBLISHED)
-
-        assert diagnostics.take_latest_input_frame() is frame
+        result = diagnostics.take_latest_input_frame()
+        assert result is not None
+        assert result.captured_at == second.captured_at
+        np.testing.assert_array_equal(result.image, second.image)
 
 
 class TestConditionObservations:
