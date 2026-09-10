@@ -5,7 +5,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
-from divergencesplitter.detector.common import frame_mean_abs_diff
+from divergencesplitter.detector._similarity import (
+    prepare_similarity_reference,
+    similarity_error,
+)
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -43,10 +46,24 @@ class MeanAbsoluteSimilarityDetector(ConfiguredDetector[MeanAbsoluteSimilarityCo
     produce smaller (more negative) scores.
     """
 
+    def __init__(self, config: MeanAbsoluteSimilarityConfig) -> None:
+        super().__init__(config)
+        self._prepared = prepare_similarity_reference(config.reference)
+
     @property
     def reference_images(self) -> tuple[ReferenceImage, ...]:
         return (ReferenceImage("reference", self.config.reference),)
 
     def detect(self, context: FrameContext) -> DetectionResult:
-        diff = frame_mean_abs_diff(context, self.config.reference, self.config.roi)
+        diff = similarity_error(context, self._prepared, self.config.roi, 1)
+        key = (
+            ("frame-mean-abs-diff", self.config.reference)
+            if self.config.roi is None
+            else (
+                "frame-mean-abs-diff",
+                self.config.reference,
+                self.config.roi,
+            )
+        )
+        context.preprocessing_cache.setdefault(key, diff)
         return DetectionResult(score=-diff)

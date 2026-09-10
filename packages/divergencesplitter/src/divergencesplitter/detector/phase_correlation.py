@@ -50,7 +50,7 @@ class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame = frame_gray(context, self.config.roi)
-        reference = to_gray(np.asarray(self.config.reference))
+        reference = self._reference
         if frame.shape != reference.shape:
             raise ValueError(
                 f"shape mismatch: frame {frame.shape} != reference {reference.shape}"
@@ -60,3 +60,7 @@ class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
         if not math.isfinite(score):
             raise ValueError(f"phase correlation produced non-finite response: {score}")
         return DetectionResult(score=score)
+    def __init__(self, config: PhaseCorrelationConfig) -> None:
+        super().__init__(config)
+        self._reference = to_gray(np.asarray(config.reference))
+        self._reference.setflags(write=False)
