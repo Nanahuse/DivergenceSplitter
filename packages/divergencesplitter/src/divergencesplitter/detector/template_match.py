@@ -83,6 +83,7 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
         if not math.isfinite(score):
             raise ValueError(f"template match produced non-finite score: {score}")
         return DetectionResult(score=score)
+
     def __init__(self, config: TemplateMatchConfig) -> None:
         super().__init__(config)
         reference = np.asarray(config.reference)
@@ -93,7 +94,11 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
                 raise ValueError("template alpha mask has no valid pixels")
             mask = np.ascontiguousarray(valid.astype(np.uint8) * 255)
             reference = reference[:, :, :3]
-        if np.issubdtype(reference.dtype, np.integer) and reference.min() >= 0 and reference.max() <= 255:
+        if (
+            np.issubdtype(reference.dtype, np.integer)
+            and reference.min() >= 0
+            and reference.max() <= 255
+        ):
             template = np.ascontiguousarray(reference.astype(np.uint8, copy=False))
         else:
             template = np.ascontiguousarray(reference.astype(np.float32))

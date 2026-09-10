@@ -150,13 +150,13 @@ class RootMeanSquareSimilarityDetectorTest(unittest.TestCase):
         detector = RootMeanSquareSimilarityDetector(
             RootMeanSquareSimilarityConfig(((0, 0),))
         )
-        score = evaluate(make_context(np.array([[3, 4]], dtype=np.uint8)), detector).score
+        score = evaluate(
+            make_context(np.array([[3, 4]], dtype=np.uint8)), detector
+        ).score
         self.assertAlmostEqual(score, -np.sqrt(12.5))
 
     def test_alpha_mask_excludes_transparent_pixels(self) -> None:
-        reference = freeze_config_image(
-            [[[0, 0, 0, 255], [0, 0, 0, 0]]]
-        )
+        reference = freeze_config_image([[[0, 0, 0, 255], [0, 0, 0, 0]]])
         detector = RootMeanSquareSimilarityDetector(
             RootMeanSquareSimilarityConfig(reference)
         )

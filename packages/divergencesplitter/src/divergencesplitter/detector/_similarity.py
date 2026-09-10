@@ -34,11 +34,19 @@ def prepare_similarity_reference(
         raise ValueError(f"unsupported reference shape: {source.shape}")
     if source.ndim == 3 and source.shape[2] not in (1, 3):
         raise ValueError(f"unsupported reference shape: {source.shape}")
-    if np.issubdtype(source.dtype, np.integer) and source.min() >= 0 and source.max() <= 255:
+    if (
+        np.issubdtype(source.dtype, np.integer)
+        and source.min() >= 0
+        and source.max() <= 255
+    ):
         image = np.ascontiguousarray(source.astype(np.uint8, copy=False))
     else:
         image = np.ascontiguousarray(source.astype(np.float64, copy=False))
-    pixels = int(np.count_nonzero(mask)) if mask is not None else image.shape[0] * image.shape[1]
+    pixels = (
+        int(np.count_nonzero(mask))
+        if mask is not None
+        else image.shape[0] * image.shape[1]
+    )
     channels = 1 if image.ndim == 2 else image.shape[2]
     image.setflags(write=False)
     if mask is not None:
@@ -70,7 +78,11 @@ def similarity_error(
             difference = difference * difference
         if prepared.mask is not None:
             difference = difference[prepared.mask != 0]
-        value = float(np.sum(difference)) if order == 1 else float(np.sqrt(np.sum(difference)))
+        value = (
+            float(np.sum(difference))
+            if order == 1
+            else float(np.sqrt(np.sum(difference)))
+        )
     if order == 1:
         return float(value) / prepared.component_count
     return float(value) / float(np.sqrt(prepared.component_count))

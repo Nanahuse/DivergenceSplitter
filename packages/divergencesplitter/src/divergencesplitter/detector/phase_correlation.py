@@ -60,6 +60,7 @@ class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
         if not math.isfinite(score):
             raise ValueError(f"phase correlation produced non-finite response: {score}")
         return DetectionResult(score=score)
+
     def __init__(self, config: PhaseCorrelationConfig) -> None:
         super().__init__(config)
         self._reference = to_gray(np.asarray(config.reference))

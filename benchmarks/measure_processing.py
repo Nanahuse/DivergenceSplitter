@@ -94,7 +94,9 @@ def _run_case(width: int, height: int, duration_seconds: float) -> None:
         ),
         (
             "phase_correlation",
-            PhaseCorrelationDetector(PhaseCorrelationConfig(reference, Region(0, 0, 64, 64))),
+            PhaseCorrelationDetector(
+                PhaseCorrelationConfig(reference, Region(0, 0, 64, 64))
+            ),
         ),
     )
     buffer = LatestFrameBuffer()

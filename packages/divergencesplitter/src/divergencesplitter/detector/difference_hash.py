@@ -50,9 +50,12 @@ class DifferenceHashSimilarityDetector(
 
     def detect(self, context: FrameContext) -> DetectionResult:
         frame_hash = frame_dhash(context, self.config.hash_size, self.config.roi)
-        difference = int(np.count_nonzero(np.logical_xor(frame_hash, self._reference_hash)))
+        difference = int(
+            np.count_nonzero(np.logical_xor(frame_hash, self._reference_hash))
+        )
         score = 1.0 - float(difference) / (self.config.hash_size**2)
         return DetectionResult(score=score)
+
     def __init__(self, config: DifferenceHashSimilarityConfig) -> None:
         super().__init__(config)
         self._reference_hash = dhash_bits(
