@@ -10,11 +10,15 @@ from divergencesplitter.frame.models import FrameContext
 
 
 class Then(ConditionBase):
-    def __init__(self, *conditions: Condition, within_nanoseconds: int) -> None:
+    def __init__(
+        self,
+        *conditions: Condition,
+        within_nanoseconds: int | None = None,
+    ) -> None:
         if not conditions:
             raise ValueError("Then requires at least one condition")
-        if within_nanoseconds < 0:
-            raise ValueError("within_nanoseconds must be a non-negative int")
+        if within_nanoseconds is not None and within_nanoseconds < 0:
+            raise ValueError("within_nanoseconds must be a non-negative int or None")
         self._conditions = conditions
         self._within_nanoseconds = within_nanoseconds
         self._index = 0
@@ -36,7 +40,10 @@ class Then(ConditionBase):
             if context.now < self._started_at:
                 raise ValueError("monotonic time moved backwards")
             elapsed = context.now.nanoseconds - self._started_at.nanoseconds
-            if elapsed > self._within_nanoseconds:
+            if (
+                self._within_nanoseconds is not None
+                and elapsed > self._within_nanoseconds
+            ):
                 self._index = 0
                 self._started_at = None
         current = False
