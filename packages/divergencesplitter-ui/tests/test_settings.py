@@ -15,15 +15,18 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
+    NdiSourceConfiguration,
     ResizeConfiguration,
     RuntimeConfiguration,
     VideoSourceConfiguration,
 )
 from divergencesplitter_ui.session import SessionState, is_active
 from divergencesplitter_ui.settings import (
+    SOURCE_TYPE_LABELS,
     CameraDevice,
     EditableCameraSourceConfiguration,
     EditableCropConfiguration,
+    EditableNdiSourceConfiguration,
     EditableResizeConfiguration,
     EditableVideoSourceConfiguration,
     InstanceDraft,
@@ -33,6 +36,7 @@ from divergencesplitter_ui.settings import (
     configuration_from_draft,
     draft_from_configuration,
     edit_permission,
+    ndi_source,
     select_configured_camera,
     validate_instances_draft,
 )
@@ -95,6 +99,17 @@ def video_configuration(
         source=VideoSourceConfiguration("run.mp4"),
         instances=tuple(instances),
         runtime=RuntimeConfiguration("DEBUG"),
+    )
+
+
+def ndi_configuration(
+    *instances: InstanceConfiguration,
+) -> ApplicationConfiguration:
+    return ApplicationConfiguration(
+        version=1,
+        source=NdiSourceConfiguration("Gaming PC (OBS)"),
+        instances=tuple(instances),
+        runtime=RuntimeConfiguration("INFO"),
     )
 
 
@@ -245,6 +260,110 @@ class TestSettingsModel:
         configuration = model.configuration()
         assert configuration is not None
         assert configuration.source == VideoSourceConfiguration("clip.mp4")
+
+
+class TestNdiSource:
+    def test_source_type_ndi_is_available(self) -> None:
+        assert SourceType.NDI == "ndi"
+        assert SOURCE_TYPE_LABELS[SourceType.NDI] == "NDI"
+
+    def test_ndi_configuration_projects_to_editable(self) -> None:
+        draft = draft_from_configuration(ndi_configuration(), Path("config.json"))
+
+        assert draft.source.selected_type is SourceType.NDI
+        assert draft.source.ndi == EditableNdiSourceConfiguration("Gaming PC (OBS)")
+        assert ndi_source(draft) is draft.source.ndi
+        assert camera_source(draft) is None
+
+    def test_editable_ndi_projects_back_to_configuration(self) -> None:
+        configuration = ndi_configuration(instance("rpc", "event", "s.py"))
+        draft = draft_from_configuration(configuration, Path("config.json"))
+
+        rebuilt = configuration_from_draft(draft)
+
+        assert rebuilt.source == NdiSourceConfiguration("Gaming PC (OBS)")
+        assert rebuilt == configuration
+
+    def test_switch_between_ndi_camera_and_video(self) -> None:
+        model = make_model()
+        model.set_ndi_available(True)
+
+        model.set_source_type(SourceType.NDI)
+        model.set_ndi_source_name("Gaming PC (OBS)")
+        configuration = model.configuration()
+        assert configuration is not None
+        assert configuration.source == NdiSourceConfiguration("Gaming PC (OBS)")
+
+        model.set_source_type(SourceType.CAMERA)
+        configuration = model.configuration()
+        assert configuration is not None
+        assert isinstance(configuration.source, CameraSourceConfiguration)
+
+        model.set_source_type(SourceType.VIDEO)
+        model.set_video_path("clip.mp4")
+        configuration = model.configuration()
+        assert configuration is not None
+        assert configuration.source == VideoSourceConfiguration("clip.mp4")
+
+        model.set_source_type(SourceType.NDI)
+        configuration = model.configuration()
+        assert configuration is not None
+        assert configuration.source == NdiSourceConfiguration("Gaming PC (OBS)")
+
+    def test_ndi_name_is_preserved_across_type_switches(self) -> None:
+        model = SettingsModel(FakeCameraEnumerator())
+        model.set_ndi_available(True)
+        draft = model.open_configuration(ndi_configuration(), Path("config.json"))
+
+        model.set_source_type(SourceType.VIDEO)
+        model.set_source_type(SourceType.NDI)
+
+        assert draft.source.ndi.name == "Gaming PC (OBS)"
+
+    def test_ndi_cannot_be_selected_when_unavailable(self) -> None:
+        model = make_model()
+        model.set_ndi_available(False)
+
+        assert model.set_source_type(SourceType.NDI) is None
+        assert model.draft is not None
+        assert model.draft.source.selected_type is SourceType.CAMERA
+
+    def test_ndi_config_opens_when_unavailable_and_can_change(self) -> None:
+        model = SettingsModel(FakeCameraEnumerator())
+        model.set_ndi_available(False)
+
+        draft = model.open_configuration(
+            ndi_configuration(instance("rpc", "event", "s.py")),
+            Path("config.json"),
+        )
+
+        assert draft.source.selected_type is SourceType.NDI
+        assert draft.source.ndi.name == "Gaming PC (OBS)"
+        assert model.set_source_type(SourceType.VIDEO) is not None
+        assert draft.source.selected_type is SourceType.VIDEO
+        assert draft.source.ndi.name == "Gaming PC (OBS)"
+
+    def test_ndi_name_edit_marks_dirty(self) -> None:
+        model = make_model()
+        model.set_ndi_available(True)
+        model.set_source_type(SourceType.NDI)
+        model.mark_saved()
+        assert not model.is_dirty
+
+        model.set_ndi_source_name("Other Source")
+
+        assert model.is_dirty
+        assert model.draft is not None
+        assert model.draft.source.ndi.name == "Other Source"
+
+    def test_empty_ndi_name_is_rejected_on_projection(self) -> None:
+        model = make_model()
+        model.set_ndi_available(True)
+        model.set_source_type(SourceType.NDI)
+        model.set_ndi_source_name("")
+
+        with pytest.raises(ValueError, match="NDI source must be selected"):
+            model.configuration()
 
 
 class TestConfigurationProjection:

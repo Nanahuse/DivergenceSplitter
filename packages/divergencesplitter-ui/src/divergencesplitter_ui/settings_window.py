@@ -41,6 +41,7 @@ from divergencesplitter_ui.image import (
     source_signature,
     to_rgba_float32,
 )
+from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.session import (
     SessionAlreadyActiveError,
     SessionController,
@@ -59,6 +60,7 @@ from divergencesplitter_ui.settings import (
     SourceType,
     camera_source,
     edit_permission,
+    ndi_source,
     select_configured_camera,
 )
 from divergencesplitter_ui.windows_file_dialog import (
@@ -99,6 +101,11 @@ class ConfigurationPage:
         self._preview_image_tag: int | str | None = None
         self._preview_signature = None
         self._pending_reload_path: Path | None = None
+        self._ndi_discovery = NdiDiscovery()
+        self._ndi_support_applied: bool | None = None
+        self._ndi_sources_applied: tuple[str, ...] | None = None
+        self._ndi_configured_applied: str | None = None
+        self._ndi_item_names: dict[str, str] = {}
 
     def build(self, parent: int | str | None = None) -> None:
         with dpg.group(parent=parent):
@@ -126,7 +133,7 @@ class ConfigurationPage:
             dpg.add_text("Input source")
             self._source_type_tag = dpg.add_combo(
                 label="Source type",
-                items=list(SOURCE_TYPE_LABELS.values()),
+                items=self._source_type_items(),
                 default_value=SOURCE_TYPE_LABELS[SourceType.CAMERA],
                 callback=self._on_source_type_changed,
             )
@@ -181,6 +188,22 @@ class ConfigurationPage:
                 parent=self._video_settings_group,
             )
             dpg.configure_item(self._video_settings_group, show=False)
+            self._ndi_settings_group = dpg.add_group()
+            dpg.add_text("NDI source", parent=self._ndi_settings_group)
+            self._ndi_source_tag = dpg.add_combo(
+                items=[],
+                default_value="",
+                width=-1,
+                callback=self._on_ndi_source_changed,
+                parent=self._ndi_settings_group,
+            )
+            self._ndi_status_tag = dpg.add_text("", parent=self._ndi_settings_group)
+            self._ndi_refresh_tag = dpg.add_button(
+                label="Refresh",
+                callback=self._on_refresh_ndi,
+                parent=self._ndi_settings_group,
+            )
+            dpg.configure_item(self._ndi_settings_group, show=False)
 
             dpg.add_separator()
             self._frame_processing_group = dpg.add_group()
@@ -252,6 +275,18 @@ class ConfigurationPage:
             self._status_tag = dpg.add_text("", color=(255, 200, 120))
 
         self._refresh_cameras(None, None)
+        self._ndi_discovery.refresh()
+
+    def _source_type_items(self) -> list[str]:
+        items = [
+            SOURCE_TYPE_LABELS[SourceType.CAMERA],
+            SOURCE_TYPE_LABELS[SourceType.VIDEO],
+        ]
+        if self._ndi_support_applied:
+            items.append(SOURCE_TYPE_LABELS[SourceType.NDI])
+        elif self._ndi_support_applied is False:
+            items.append(f"{SOURCE_TYPE_LABELS[SourceType.NDI]} (Unavailable)")
+        return items
 
     def open_configuration(self, path: Path) -> None:
         """Load and start one configuration, reporting errors in the screen."""
@@ -328,6 +363,9 @@ class ConfigurationPage:
         dpg.configure_item(self._camera_tag, enabled=source_enabled)
         dpg.configure_item(self._mode_tag, enabled=source_enabled)
         dpg.configure_item(self._request_60_fps_tag, enabled=source_enabled)
+        dpg.configure_item(self._ndi_source_tag, enabled=source_enabled)
+        dpg.configure_item(self._ndi_refresh_tag, enabled=source_enabled)
+        self._apply_ndi_discovery()
         transform = draft.source.transform if draft is not None else None
         crop = transform.crop if transform is not None else None
         resize = transform.resize if transform is not None else None
@@ -378,9 +416,15 @@ class ConfigurationPage:
         self._rebuild_instance_editors(draft)
         dpg.set_value(self._log_level_tag, draft.log_level)
         dpg.set_value(
-            self._source_type_tag, SOURCE_TYPE_LABELS[draft.source.selected_type]
+            self._source_type_tag,
+            self._source_type_display_label(draft.source.selected_type),
         )
         dpg.set_value(self._video_path_tag, draft.source.video.path)
+        ndi = ndi_source(draft)
+        if ndi is not None:
+            self._apply_ndi_sources(ndi.name, self._ndi_discovery.sources())
+            self._ndi_sources_applied = self._ndi_discovery.sources()
+            self._ndi_configured_applied = ndi.name
         transform = draft.source.transform
         crop = transform.crop
         resize = transform.resize
@@ -666,10 +710,76 @@ class ConfigurationPage:
         )
         self._refresh_modes(device, None)
 
+    def _source_type_display_label(self, source_type: SourceType) -> str:
+        if source_type is SourceType.NDI and not self._ndi_support_applied:
+            return f"{SOURCE_TYPE_LABELS[SourceType.NDI]} (Unavailable)"
+        return SOURCE_TYPE_LABELS[source_type]
+
+    def _apply_ndi_discovery(self) -> None:
+        support = self._ndi_discovery.support()
+        available = None if support is None else support.available
+        if available != self._ndi_support_applied:
+            self._ndi_support_applied = available
+            self._model.set_ndi_available(bool(available))
+            current = dpg.get_value(self._source_type_tag)
+            dpg.configure_item(
+                self._source_type_tag,
+                items=self._source_type_items(),
+                default_value=current,
+            )
+        draft = self._model.draft
+        ndi = ndi_source(draft) if draft is not None else None
+        configured = ndi.name if ndi is not None else ""
+        sources = self._ndi_discovery.sources()
+        if (
+            sources != self._ndi_sources_applied
+            or configured != self._ndi_configured_applied
+        ):
+            self._ndi_sources_applied = sources
+            self._ndi_configured_applied = configured
+            self._apply_ndi_sources(configured, sources)
+        if support is not None and not support.available:
+            dpg.set_value(
+                self._ndi_status_tag,
+                "NDI support is not available on this system.",
+            )
+        elif configured and configured not in sources:
+            dpg.set_value(
+                self._ndi_status_tag,
+                f'Waiting for NDI source "{configured}".',
+            )
+        else:
+            dpg.set_value(self._ndi_status_tag, "")
+
+    def _apply_ndi_sources(self, configured: str, discovered: tuple[str, ...]) -> None:
+        items = list(discovered)
+        mapping = {name: name for name in discovered}
+        if configured and configured not in discovered:
+            label = f"{configured} (Unavailable)"
+            items.append(label)
+            mapping[label] = configured
+        self._ndi_item_names = mapping
+        selected = next(
+            (label for label, name in mapping.items() if name == configured), ""
+        )
+        dpg.configure_item(self._ndi_source_tag, items=items, default_value=selected)
+
+    def _on_ndi_source_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        name = self._ndi_item_names.get(app_data, app_data)
+        self._model.set_ndi_source_name(name)
+
+    def _on_refresh_ndi(self) -> None:
+        dpg.set_value(self._ndi_status_tag, "Refreshing NDI sources...")
+        self._ndi_discovery.refresh()
+
     def _show_source_settings(self, source_type: SourceType) -> None:
         camera = source_type is SourceType.CAMERA
+        ndi = source_type is SourceType.NDI
         dpg.configure_item(self._camera_settings_group, show=camera)
-        dpg.configure_item(self._video_settings_group, show=not camera)
+        dpg.configure_item(self._video_settings_group, show=not camera and not ndi)
+        dpg.configure_item(self._ndi_settings_group, show=ndi)
         if not camera:
             self._camera_preview.stop()
 
@@ -682,6 +792,8 @@ class ConfigurationPage:
             and self._model.set_source_type(source_type) is not None
         ):
             self._show_source_settings(source_type)
+            if source_type is SourceType.NDI:
+                self._ndi_discovery.refresh()
 
     def _on_video_path_changed(self, sender, app_data, user_data) -> None:
         if edit_permission(self._controller.state).source:

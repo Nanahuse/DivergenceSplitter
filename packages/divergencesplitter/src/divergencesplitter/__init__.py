@@ -50,9 +50,14 @@ from divergencesplitter.frame import (
     FrameSourceError,
     FrameSourceState,
     ImageArray,
+    NdiNoFrameError,
+    NdiSource,
+    NdiSupport,
     OpenCvCameraSource,
     OutputSize,
     VideoFileSource,
+    detect_ndi_support,
+    discover_ndi_sources,
 )
 from divergencesplitter.livesplit import LiveSplitConnection
 from divergencesplitter.rule import Action, Rule
@@ -92,6 +97,9 @@ __all__ = [
     "MeanAbsoluteSimilarityDetector",
     "MeanBrightnessDetector",
     "MonotonicTime",
+    "NdiNoFrameError",
+    "NdiSource",
+    "NdiSupport",
     "Not",
     "Nth",
     "ObservableCondition",
@@ -113,5 +121,7 @@ __all__ = [
     "Then",
     "TimeProvider",
     "VideoFileSource",
+    "detect_ndi_support",
+    "discover_ndi_sources",
     "evaluate",
 ]

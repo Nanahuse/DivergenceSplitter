@@ -14,6 +14,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     CropConfiguration,
     InstanceConfiguration,
+    NdiSourceConfiguration,
     ResizeConfiguration,
     RuntimeConfiguration,
     SourceConfiguration,
@@ -123,6 +124,12 @@ def _source_dict(source: SourceConfiguration) -> dict[str, object]:
             "path": source.path,
             "transform": _transform_dict(source.transform),
         }
+    if isinstance(source, NdiSourceConfiguration):
+        return {
+            "type": "ndi",
+            "name": source.name,
+            "transform": _transform_dict(source.transform),
+        }
     assert_never(source)
 
 
@@ -162,6 +169,14 @@ def _source(value: object) -> SourceConfiguration:
         _keys(source, required={"type", "path"}, optional={"transform"})
         return VideoSourceConfiguration(
             _string(source["path"], "source.path"),
+            _transform(source["transform"], "source.transform")
+            if "transform" in source
+            else SourceTransformConfiguration(),
+        )
+    if source_type == "ndi":
+        _keys(source, required={"type", "name"}, optional={"transform"})
+        return NdiSourceConfiguration(
+            _string(source["name"], "source.name"),
             _transform(source["transform"], "source.transform")
             if "transform" in source
             else SourceTransformConfiguration(),

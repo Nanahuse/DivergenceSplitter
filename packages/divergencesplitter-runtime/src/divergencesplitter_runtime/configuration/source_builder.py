@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol, assert_never, cast
 
 from divergencesplitter.frame.camera import OpenCvCameraSource
+from divergencesplitter.frame.ndi import NdiSource, detect_ndi_support
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.frame.video_file import VideoFileSource
 
@@ -14,6 +15,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
+    NdiSourceConfiguration,
     SourceConfiguration,
     SourceTransformConfiguration,
     VideoSourceConfiguration,
@@ -84,6 +86,17 @@ def build_frame_source(
         path = _resolve_path(configuration.path, base_directory)
         return VideoFileSource(
             str(path),
+            crop_margins=_crop_margins(configuration.transform),
+            output_size=_output_size(configuration.transform),
+        )
+    if isinstance(configuration, NdiSourceConfiguration):
+        support = detect_ndi_support()
+        if not support.available:
+            raise SourceConfigurationError(
+                support.reason or "NDI is not available on this system"
+            )
+        return NdiSource(
+            configuration.name,
             crop_margins=_crop_margins(configuration.transform),
             output_size=_output_size(configuration.transform),
         )
