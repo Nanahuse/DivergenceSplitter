@@ -2,7 +2,7 @@ from divergencesplitter.clock import MonotonicTime
 from divergencesplitter.condition._base import (
     ConditionBase,
     evaluate_normal,
-    evaluate_short,
+    mark_skipped,
     reset_all,
 )
 from divergencesplitter.condition.interface import Condition
@@ -34,7 +34,7 @@ class Then(ConditionBase):
     ) -> bool | None:
         if self._completed:
             for condition in self._conditions:
-                evaluate_short(condition, context)
+                mark_skipped(condition)
             return None if is_short_circuited else True
         if self._started_at is not None:
             if context.now < self._started_at:
@@ -51,7 +51,7 @@ class Then(ConditionBase):
             if index == self._index:
                 current = evaluate_normal(condition, context)
             else:
-                evaluate_short(condition, context)
+                mark_skipped(condition)
         fired = False
         if current:
             if self._index == 0 and len(self._conditions) > 1:
