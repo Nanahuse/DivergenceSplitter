@@ -16,6 +16,7 @@ from divergencesplitter import (
     LiveSplitConnection,
     MeanBrightnessDetector,
     MonotonicTime,
+    NdiSource,
     ReferenceImage,
     Rule,
     Scenario,
@@ -169,6 +170,19 @@ def test_debug_frame_log_contains_frame_and_detector_configuration() -> None:
     assert 'detector.1.type="CustomDetector"' in lines[1]
     assert 'detector.1.config_type="SecretConfig"' in lines[1]
     assert "must-not-be-logged" not in lines[1]
+
+
+def test_ndi_source_fields_are_logged() -> None:
+    stream = StringIO()
+    diagnostics = OperationalDiagnostics(stream, level=logging.DEBUG)
+    source = NdiSource("Gaming PC (OBS)")
+
+    diagnostics.bind_runtime((), source)
+    diagnostics.preparing()
+
+    output = stream.getvalue()
+    assert 'source_type="NdiSource"' in output
+    assert 'ndi_source_name="Gaming PC (OBS)"' in output
 
 
 def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:

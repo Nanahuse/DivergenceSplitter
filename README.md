@@ -196,6 +196,55 @@ selected backend must also return from synchronous `read()` in finite time,
 because stopping waits for an in-progress read and the source does not add a
 reader thread or a generic read timeout.
 
+## NDI input (optional)
+
+NDI is a third input source alongside Camera and Video File. It selects a
+sender by its advertised NDI name, never by list position, so reordering the
+network source list cannot connect to a different sender:
+
+```json
+{
+  "version": 1,
+  "source": {
+    "type": "ndi",
+    "name": "Gaming PC (OBS)",
+    "transform": { "crop": null, "resize": null }
+  },
+  "instances": [
+    {
+      "connection": {
+        "rpc_endpoint": "tcp://127.0.0.1:54000",
+        "event_endpoint": "tcp://127.0.0.1:54001"
+      },
+      "scenario": "./scenario.py"
+    }
+  ],
+  "runtime": {
+    "log_level": "INFO"
+  }
+}
+```
+
+NDI is optional and never required by DivergenceSplitter itself. The NDI
+runtime and its Python binding load lazily, so an environment without NDI still
+starts, still lists NDI configurations, and still uses Camera and Video File
+normally. When NDI is unavailable the desktop UI shows the NDI source type as
+`NDI (Unavailable)` and refuses to select it, but an already-open NDI
+configuration keeps its source name and can be switched to Camera or Video.
+
+To enable NDI, install the optional extra:
+
+```console
+uv add "divergencesplitter[ndi] @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter"
+```
+
+`ndi-python` redistributes the NDI runtime under its own license (MIT binding,
+NDI runtime notices included in the wheel). A frozen Windows build that should
+support NDI must install the extra and collect the `NDIlib` package. A temporary
+loss of the sender does not stop the session; the receiver resumes when the same
+source name returns. NDI receive uses a bounded timeout, so shutdown stays
+responsive.
+
 ## LiveSplit Bridge constraints
 
 Run a compatible LiveSplit.Bridge instance at the endpoints configured by each

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol, assert_never, cast
 
 from divergencesplitter.frame.camera import OpenCvCameraSource
+from divergencesplitter.frame.ndi import NdiSource, detect_ndi_support
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.frame.video_file import VideoFileSource
 
@@ -14,6 +15,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
+    NdiSourceConfiguration,
     SourceConfiguration,
     SourceTransformConfiguration,
     VideoSourceConfiguration,
@@ -64,29 +66,41 @@ def build_frame_source(
 ) -> FrameSource:
     """Build the concrete source selected by a parsed configuration."""
 
-    if isinstance(configuration, CameraSourceConfiguration):
-        try:
-            devices = _list_camera_devices()
-        except Exception as error:
-            raise SourceConfigurationError(
-                "failed to enumerate camera devices"
-            ) from error
-        device = resolve_camera_device(configuration.device, devices)
-        mode = resolve_camera_mode(configuration.mode, device.modes, device=device)
-        module = importlib.import_module("windows_capture_device_list")
-        return OpenCvCameraSource(
-            capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
-            request_60_fps=configuration.request_60_fps,
-            crop_margins=_crop_margins(configuration.transform),
-            output_size=_output_size(configuration.transform),
-        )
-    if isinstance(configuration, VideoSourceConfiguration):
-        path = _resolve_path(configuration.path, base_directory)
-        return VideoFileSource(
-            str(path),
-            crop_margins=_crop_margins(configuration.transform),
-            output_size=_output_size(configuration.transform),
-        )
+    match configuration:
+        case CameraSourceConfiguration():
+            try:
+                devices = _list_camera_devices()
+            except Exception as error:
+                raise SourceConfigurationError(
+                    "failed to enumerate camera devices"
+                ) from error
+            device = resolve_camera_device(configuration.device, devices)
+            mode = resolve_camera_mode(configuration.mode, device.modes, device=device)
+            module = importlib.import_module("windows_capture_device_list")
+            return OpenCvCameraSource(
+                capture_factory=lambda: module.open_video_capture(cast(Any, mode)),
+                request_60_fps=configuration.request_60_fps,
+                crop_margins=_crop_margins(configuration.transform),
+                output_size=_output_size(configuration.transform),
+            )
+        case VideoSourceConfiguration():
+            path = _resolve_path(configuration.path, base_directory)
+            return VideoFileSource(
+                str(path),
+                crop_margins=_crop_margins(configuration.transform),
+                output_size=_output_size(configuration.transform),
+            )
+        case NdiSourceConfiguration():
+            support = detect_ndi_support()
+            if not support.available:
+                raise SourceConfigurationError(
+                    support.reason or "NDI is not available on this system"
+                )
+            return NdiSource(
+                configuration.name,
+                crop_margins=_crop_margins(configuration.transform),
+                output_size=_output_size(configuration.transform),
+            )
     assert_never(configuration)
 
 

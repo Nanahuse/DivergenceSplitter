@@ -18,6 +18,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     CropConfiguration,
     InstanceConfiguration,
+    NdiSourceConfiguration,
     ResizeConfiguration,
     RuntimeConfiguration,
     SourceConfiguration,
@@ -37,9 +38,14 @@ LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 class SourceType(StrEnum):
     CAMERA = "camera"
     VIDEO = "video"
+    NDI = "ndi"
 
 
-SOURCE_TYPE_LABELS = {SourceType.CAMERA: "Camera", SourceType.VIDEO: "Video File"}
+SOURCE_TYPE_LABELS = {
+    SourceType.CAMERA: "Camera",
+    SourceType.VIDEO: "Video File",
+    SourceType.NDI: "NDI",
+}
 SOURCE_TYPE_BY_LABEL = {
     label: source_type for source_type, label in SOURCE_TYPE_LABELS.items()
 }
@@ -101,6 +107,11 @@ class EditableVideoSourceConfiguration:
 
 
 @dataclass
+class EditableNdiSourceConfiguration:
+    name: str
+
+
+@dataclass
 class EditableCropConfiguration:
     left: int
     right: int
@@ -125,6 +136,7 @@ class EditableSourceSettings:
     selected_type: SourceType
     camera: EditableCameraSourceConfiguration
     video: EditableVideoSourceConfiguration
+    ndi: EditableNdiSourceConfiguration
     transform: EditableSourceTransform = field(default_factory=EditableSourceTransform)
 
 
@@ -147,22 +159,35 @@ def editable_from_configuration(
     configuration: ApplicationConfiguration, path: Path
 ) -> EditableApplicationConfiguration:
     source = configuration.source
-    if isinstance(source, CameraSourceConfiguration):
-        source_settings = EditableSourceSettings(
-            SourceType.CAMERA,
-            EditableCameraSourceConfiguration(
-                source.device, source.mode, source.request_60_fps
-            ),
-            EditableVideoSourceConfiguration(""),
-            _editable_transform(source.transform),
-        )
-    else:
-        source_settings = EditableSourceSettings(
-            SourceType.VIDEO,
-            EditableCameraSourceConfiguration(None, None, False),
-            EditableVideoSourceConfiguration(source.path),
-            _editable_transform(source.transform),
-        )
+    match source:
+        case CameraSourceConfiguration():
+            source_settings = EditableSourceSettings(
+                SourceType.CAMERA,
+                EditableCameraSourceConfiguration(
+                    source.device, source.mode, source.request_60_fps
+                ),
+                EditableVideoSourceConfiguration(""),
+                EditableNdiSourceConfiguration(""),
+                _editable_transform(source.transform),
+            )
+        case VideoSourceConfiguration():
+            source_settings = EditableSourceSettings(
+                SourceType.VIDEO,
+                EditableCameraSourceConfiguration(None, None, False),
+                EditableVideoSourceConfiguration(source.path),
+                EditableNdiSourceConfiguration(""),
+                _editable_transform(source.transform),
+            )
+        case NdiSourceConfiguration():
+            source_settings = EditableSourceSettings(
+                SourceType.NDI,
+                EditableCameraSourceConfiguration(None, None, False),
+                EditableVideoSourceConfiguration(""),
+                EditableNdiSourceConfiguration(source.name),
+                _editable_transform(source.transform),
+            )
+        case _:  # pragma: no cover - protects future source additions
+            raise ValueError(f"unsupported source: {source!r}")
     return EditableApplicationConfiguration(
         path,
         source_settings,
@@ -183,6 +208,14 @@ def camera_source(
         editable.source.camera
         if editable.source.selected_type is SourceType.CAMERA
         else None
+    )
+
+
+def ndi_source(
+    editable: EditableApplicationConfiguration,
+) -> EditableNdiSourceConfiguration | None:
+    return (
+        editable.source.ndi if editable.source.selected_type is SourceType.NDI else None
     )
 
 
@@ -263,27 +296,38 @@ def configuration_from_editable(
 ) -> ApplicationConfiguration:
     validate_instances_draft(editable.instances)
     source_settings = editable.source
-    if source_settings.selected_type is SourceType.CAMERA:
-        camera = source_settings.camera
-        if camera.device is None:
-            raise ValueError("a camera device must be selected")
-        if camera.mode is None:
-            raise ValueError("a camera capture mode must be selected")
-        source: SourceConfiguration = CameraSourceConfiguration(
-            camera.device,
-            camera.mode,
-            camera.request_60_fps,
-            _configuration_transform(source_settings.transform),
-        )
-    elif source_settings.selected_type is SourceType.VIDEO:
-        path = source_settings.video.path
-        if not path.strip():
-            raise ValueError("a video file must be selected")
-        source = VideoSourceConfiguration(
-            path, _configuration_transform(source_settings.transform)
-        )
-    else:  # pragma: no cover - protects future source additions
-        raise ValueError(f"unsupported source type: {source_settings.selected_type}")
+    source: SourceConfiguration
+    match source_settings.selected_type:
+        case SourceType.CAMERA:
+            camera = source_settings.camera
+            if camera.device is None:
+                raise ValueError("a camera device must be selected")
+            if camera.mode is None:
+                raise ValueError("a camera capture mode must be selected")
+            source = CameraSourceConfiguration(
+                camera.device,
+                camera.mode,
+                camera.request_60_fps,
+                _configuration_transform(source_settings.transform),
+            )
+        case SourceType.VIDEO:
+            path = source_settings.video.path
+            if not path.strip():
+                raise ValueError("a video file must be selected")
+            source = VideoSourceConfiguration(
+                path, _configuration_transform(source_settings.transform)
+            )
+        case SourceType.NDI:
+            name = source_settings.ndi.name
+            if not name.strip():
+                raise ValueError("an NDI source must be selected")
+            source = NdiSourceConfiguration(
+                name, _configuration_transform(source_settings.transform)
+            )
+        case _:  # pragma: no cover - protects future source additions
+            raise ValueError(
+                f"unsupported source type: {source_settings.selected_type}"
+            )
     return ApplicationConfiguration(
         version=1,
         source=source,
@@ -318,6 +362,14 @@ class SettingsModel:
         self._camera_enumerator = camera_enumerator
         self._editable: EditableApplicationConfiguration | None = None
         self._dirty = False
+        self._ndi_available = False
+
+    @property
+    def ndi_available(self) -> bool:
+        return self._ndi_available
+
+    def set_ndi_available(self, available: bool) -> None:
+        self._ndi_available = available
 
     @property
     def editable(self) -> EditableApplicationConfiguration | None:
@@ -347,6 +399,7 @@ class SettingsModel:
                 SourceType.CAMERA,
                 EditableCameraSourceConfiguration(None, None, False),
                 EditableVideoSourceConfiguration(""),
+                EditableNdiSourceConfiguration(""),
                 EditableSourceTransform(),
             ),
             (),
@@ -388,9 +441,19 @@ class SettingsModel:
     ) -> EditableApplicationConfiguration | None:
         if self._editable is None:
             return None
+        if source_type is SourceType.NDI and not self._ndi_available:
+            return None
         before = self._editable.source.selected_type
         self._editable.source.selected_type = source_type
         self._changed(before, source_type)
+        return self._editable
+
+    def set_ndi_source_name(self, name: str) -> EditableApplicationConfiguration | None:
+        if self._editable is None:
+            return None
+        before = self._editable.source.ndi.name
+        self._editable.source.ndi.name = name
+        self._changed(before, name)
         return self._editable
 
     def set_video_path(self, path: str) -> EditableApplicationConfiguration | None:
@@ -527,6 +590,7 @@ class SettingsModel:
 
 # Temporary import aliases keep integrations using the former public names source-compatible.
 CameraSourceDraft = EditableCameraSourceConfiguration
+NdiSourceDraft = EditableNdiSourceConfiguration
 InstanceDraft = EditableInstanceConfiguration
 SettingsDraft = EditableApplicationConfiguration
 draft_from_configuration = editable_from_configuration

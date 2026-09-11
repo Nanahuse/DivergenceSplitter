@@ -14,6 +14,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     CropConfiguration,
     InstanceConfiguration,
+    NdiSourceConfiguration,
     ResizeConfiguration,
     RuntimeConfiguration,
     SourceConfiguration,
@@ -100,72 +101,88 @@ def _instance_dict(instance: InstanceConfiguration) -> dict[str, object]:
 
 
 def _source_dict(source: SourceConfiguration) -> dict[str, object]:
-    if isinstance(source, CameraSourceConfiguration):
-        return {
-            "type": "camera",
-            "device": {
-                "backend": source.device.backend.value,
-                "name": source.device.name,
-                "index": source.device.index,
-            },
-            "mode": {
-                "width": source.mode.width,
-                "height": source.mode.height,
-                "fps": source.mode.fps,
-                "subtype_guid": source.mode.subtype_guid,
-            },
-            "request_60_fps": source.request_60_fps,
-            "transform": _transform_dict(source.transform),
-        }
-    if isinstance(source, VideoSourceConfiguration):
-        return {
-            "type": "video",
-            "path": source.path,
-            "transform": _transform_dict(source.transform),
-        }
+    match source:
+        case CameraSourceConfiguration():
+            return {
+                "type": "camera",
+                "device": {
+                    "backend": source.device.backend.value,
+                    "name": source.device.name,
+                    "index": source.device.index,
+                },
+                "mode": {
+                    "width": source.mode.width,
+                    "height": source.mode.height,
+                    "fps": source.mode.fps,
+                    "subtype_guid": source.mode.subtype_guid,
+                },
+                "request_60_fps": source.request_60_fps,
+                "transform": _transform_dict(source.transform),
+            }
+        case VideoSourceConfiguration():
+            return {
+                "type": "video",
+                "path": source.path,
+                "transform": _transform_dict(source.transform),
+            }
+        case NdiSourceConfiguration():
+            return {
+                "type": "ndi",
+                "name": source.name,
+                "transform": _transform_dict(source.transform),
+            }
     assert_never(source)
 
 
 def _source(value: object) -> SourceConfiguration:
     source = _object(value, "source")
     source_type = _string(source.get("type"), "source.type")
-    if source_type == "camera":
-        _keys(
-            source,
-            required={"type", "device", "mode", "request_60_fps"},
-            optional={"transform"},
-        )
-        device_value = _object(source["device"], "source.device")
-        _keys(device_value, required={"backend", "name", "index"})
-        device = CameraDeviceConfiguration(
-            _enum(device_value["backend"], CameraBackend, "source.device.backend"),
-            _string(device_value["name"], "source.device.name"),
-            _integer(device_value["index"], "source.device.index"),
-        )
-        mode_value = _object(source["mode"], "source.mode")
-        _keys(mode_value, required={"width", "height", "fps", "subtype_guid"})
-        mode = CameraModeConfiguration(
-            _integer(mode_value["width"], "source.mode.width"),
-            _integer(mode_value["height"], "source.mode.height"),
-            _number(mode_value["fps"], "source.mode.fps"),
-            _string(mode_value["subtype_guid"], "source.mode.subtype_guid"),
-        )
-        return CameraSourceConfiguration(
-            device,
-            mode,
-            _boolean(source["request_60_fps"], "source.request_60_fps"),
-            _transform(source["transform"], "source.transform")
-            if "transform" in source
-            else SourceTransformConfiguration(),
-        )
-    if source_type == "video":
-        _keys(source, required={"type", "path"}, optional={"transform"})
-        return VideoSourceConfiguration(
-            _string(source["path"], "source.path"),
-            _transform(source["transform"], "source.transform")
-            if "transform" in source
-            else SourceTransformConfiguration(),
-        )
+    match source_type:
+        case "camera":
+            _keys(
+                source,
+                required={"type", "device", "mode", "request_60_fps"},
+                optional={"transform"},
+            )
+            device_value = _object(source["device"], "source.device")
+            _keys(device_value, required={"backend", "name", "index"})
+            device = CameraDeviceConfiguration(
+                _enum(device_value["backend"], CameraBackend, "source.device.backend"),
+                _string(device_value["name"], "source.device.name"),
+                _integer(device_value["index"], "source.device.index"),
+            )
+            mode_value = _object(source["mode"], "source.mode")
+            _keys(mode_value, required={"width", "height", "fps", "subtype_guid"})
+            mode = CameraModeConfiguration(
+                _integer(mode_value["width"], "source.mode.width"),
+                _integer(mode_value["height"], "source.mode.height"),
+                _number(mode_value["fps"], "source.mode.fps"),
+                _string(mode_value["subtype_guid"], "source.mode.subtype_guid"),
+            )
+            return CameraSourceConfiguration(
+                device,
+                mode,
+                _boolean(source["request_60_fps"], "source.request_60_fps"),
+                _transform(source["transform"], "source.transform")
+                if "transform" in source
+                else SourceTransformConfiguration(),
+            )
+        case "video":
+            _keys(source, required={"type", "path"}, optional={"transform"})
+            return VideoSourceConfiguration(
+                _string(source["path"], "source.path"),
+                _transform(source["transform"], "source.transform")
+                if "transform" in source
+                else SourceTransformConfiguration(),
+            )
+        case "ndi":
+            _keys(source, required={"type", "name"}, optional={"transform"})
+            return NdiSourceConfiguration(
+                _string(source["name"], "source.name"),
+                _transform(source["transform"], "source.transform")
+                if "transform" in source
+                else SourceTransformConfiguration(),
+            )
     raise ValueError(f"unsupported source type: {source_type!r}")
 
 

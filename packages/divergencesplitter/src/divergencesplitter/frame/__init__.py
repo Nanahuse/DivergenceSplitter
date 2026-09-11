@@ -1,5 +1,19 @@
 from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.models import Frame, FrameContext, ImageArray
+from divergencesplitter.frame.ndi import (
+    NdiError,
+    NdiInitializationError,
+    NdiNoFrameError,
+    NdiReadBeforeReadyError,
+    NdiReceiveError,
+    NdiReceiverCreationError,
+    NdiSource,
+    NdiSourceNotFoundError,
+    NdiSupport,
+    NdiUnavailableError,
+    detect_ndi_support,
+    discover_ndi_sources,
+)
 from divergencesplitter.frame.normalizer import (
     ClipRegion,
     CropMargins,
@@ -31,7 +45,19 @@ __all__ = [
     "FrameSourceError",
     "FrameSourceState",
     "ImageArray",
+    "NdiError",
+    "NdiInitializationError",
+    "NdiNoFrameError",
+    "NdiReadBeforeReadyError",
+    "NdiReceiveError",
+    "NdiReceiverCreationError",
+    "NdiSource",
+    "NdiSourceNotFoundError",
+    "NdiSupport",
+    "NdiUnavailableError",
     "OpenCvCameraSource",
     "OutputSize",
     "VideoFileSource",
+    "detect_ndi_support",
+    "discover_ndi_sources",
 ]

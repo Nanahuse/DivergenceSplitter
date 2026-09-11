@@ -102,7 +102,21 @@ class VideoSourceConfiguration:
             raise ValueError("video path must not be empty")
 
 
-type SourceConfiguration = CameraSourceConfiguration | VideoSourceConfiguration
+@dataclass(frozen=True)
+class NdiSourceConfiguration:
+    """One NDI source addressed by its advertised name, never by list index."""
+
+    name: str
+    transform: SourceTransformConfiguration = SourceTransformConfiguration()
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("NDI source name must not be empty")
+
+
+type SourceConfiguration = (
+    CameraSourceConfiguration | VideoSourceConfiguration | NdiSourceConfiguration
+)
 
 
 @dataclass(frozen=True)

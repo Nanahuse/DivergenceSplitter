@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 import pytest
 from divergencesplitter.frame.camera import OpenCvCameraSource
+from divergencesplitter.frame.ndi import NdiSource, NdiSupport
+from divergencesplitter.frame.normalizer import CropMargins, OutputSize
 from divergencesplitter.frame.video_file import VideoFileSource
 from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationFileError,
@@ -19,6 +21,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     CropConfiguration,
+    NdiSourceConfiguration,
     ResizeConfiguration,
     SourceTransformConfiguration,
     VideoSourceConfiguration,
@@ -137,6 +140,64 @@ def test_loads_video_configuration(tmp_path: Path) -> None:
     assert configuration.source == VideoSourceConfiguration("./run.mp4")
 
 
+def test_loads_ndi_configuration(tmp_path: Path) -> None:
+    value = camera_configuration()
+    value["source"] = {"type": "ndi", "name": "Gaming PC (OBS)"}
+    path = tmp_path / "config.json"
+    write_configuration(path, value)
+
+    configuration = load_configuration(path)
+
+    assert configuration.version == 1
+    assert configuration.source == NdiSourceConfiguration("Gaming PC (OBS)")
+
+
+def test_ndi_configuration_round_trips_through_save_and_load(tmp_path: Path) -> None:
+    configuration = load_configuration(
+        _write_configuration(
+            tmp_path,
+            {
+                **camera_configuration(),
+                "source": {
+                    "type": "ndi",
+                    "name": "Gaming PC (OBS)",
+                    "transform": {
+                        "crop": {"left": 1, "right": 2, "top": 3, "bottom": 4},
+                        "resize": {"width": 320, "height": 240},
+                    },
+                },
+            },
+        )
+    )
+
+    saved = tmp_path / "saved.json"
+    save_configuration(saved, configuration)
+
+    assert load_configuration(saved) == configuration
+    assert load_configuration(saved).source == NdiSourceConfiguration(
+        "Gaming PC (OBS)",
+        SourceTransformConfiguration(
+            CropConfiguration(1, 2, 3, 4), ResizeConfiguration(320, 240)
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"type": "ndi", "name": ""},
+        {"type": "ndi", "name": "Gaming PC (OBS)", "unknown": 1},
+        {"type": "ndi"},
+    ],
+)
+def test_rejects_invalid_ndi_source(tmp_path: Path, source: object) -> None:
+    value = camera_configuration()
+    value["source"] = source
+
+    with pytest.raises(ConfigurationValidationError):
+        load_configuration(_write_configuration(tmp_path, value))
+
+
 def test_loads_and_saves_common_source_transform(tmp_path: Path) -> None:
     value = camera_configuration()
     source = cast(dict[str, object], value["source"])
@@ -235,7 +296,7 @@ def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
     elif mutation == "unknown version":
         value["version"] = 2
     elif mutation == "unknown source":
-        value["source"] = {"type": "ndi"}
+        value["source"] = {"type": "sdi"}
     elif mutation == "unknown camera field":
         source["path"] = "unexpected.mp4"
     elif mutation == "boolean width":
@@ -347,6 +408,51 @@ def test_camera_enumeration_failure_is_reported(tmp_path: Path) -> None:
         ),
     ):
         build_frame_source(configuration, base_directory=tmp_path)
+
+
+def test_builds_ndi_source_with_transform(tmp_path: Path) -> None:
+    configuration = NdiSourceConfiguration(
+        "Gaming PC (OBS)",
+        SourceTransformConfiguration(
+            crop=CropConfiguration(1, 2, 3, 4),
+            resize=ResizeConfiguration(320, 240),
+        ),
+    )
+    with patch(
+        "divergencesplitter_runtime.configuration.source_builder.detect_ndi_support",
+        return_value=NdiSupport(True),
+    ):
+        source = build_frame_source(configuration, base_directory=tmp_path)
+
+    assert isinstance(source, NdiSource)
+    assert source.source_name == "Gaming PC (OBS)"
+    assert source.normalizer.crop_margins == CropMargins(1, 2, 3, 4)
+    assert source.normalizer.output_size == OutputSize(320, 240)
+
+
+def test_build_ndi_source_fails_only_when_unavailable(tmp_path: Path) -> None:
+    with (
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder.detect_ndi_support",
+            return_value=NdiSupport(False, "NDI is not available on this system"),
+        ),
+        pytest.raises(SourceConfigurationError, match="not available"),
+    ):
+        build_frame_source(
+            NdiSourceConfiguration("Gaming PC (OBS)"), base_directory=tmp_path
+        )
+
+
+def test_video_source_build_ignores_ndi_availability(tmp_path: Path) -> None:
+    with patch(
+        "divergencesplitter_runtime.configuration.source_builder.detect_ndi_support",
+        return_value=NdiSupport(False, "NDI is not available on this system"),
+    ):
+        source = build_frame_source(
+            VideoSourceConfiguration("./run.mp4"), base_directory=tmp_path
+        )
+
+    assert isinstance(source, VideoFileSource)
 
 
 @pytest.mark.parametrize(

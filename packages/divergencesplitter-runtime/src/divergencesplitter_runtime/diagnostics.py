@@ -29,6 +29,8 @@ from divergencesplitter import (
     LiveSplitConnection,
     MeanAbsoluteSimilarityConfig,
     MonotonicTime,
+    NdiNoFrameError,
+    NdiSource,
     OpenCvCameraSource,
     PhaseCorrelationConfig,
     TemplateMatchConfig,
@@ -243,8 +245,9 @@ class OperationalDiagnostics:
             )
 
     def source_error(self, error: FrameSourceError) -> None:
+        level = logging.DEBUG if isinstance(error, NdiNoFrameError) else logging.WARNING
         self._emit(
-            logging.WARNING,
+            level,
             "capture.source_error",
             **self._source_context(),
             error_type=type(error).__name__,
@@ -772,16 +775,23 @@ def _sanitize_text(value: str) -> str:
 
 def _describe_source(source: FrameSource) -> dict[str, object]:
     fields: dict[str, object] = {"source_type": type(source).__name__}
-    if isinstance(source, VideoFileSource):
-        fields["source_path"] = str(Path(source.path))
-    elif isinstance(source, OpenCvCameraSource):
-        fields.update(
-            source_device_index=source.device_index,
-            source_backend=source.backend,
-            source_width=source.width,
-            source_height=source.height,
-            source_requested_fps=source.fps,
-        )
+    match source:
+        case VideoFileSource():
+            fields["source_path"] = str(Path(source.path))
+        case NdiSource():
+            fields["ndi_source_name"] = source.source_name
+            resolution = source.resolution
+            if resolution is not None:
+                fields["ndi_width"] = resolution[0]
+                fields["ndi_height"] = resolution[1]
+        case OpenCvCameraSource():
+            fields.update(
+                source_device_index=source.device_index,
+                source_backend=source.backend,
+                source_width=source.width,
+                source_height=source.height,
+                source_requested_fps=source.fps,
+            )
     normalizer = source.normalizer
     clip = normalizer.clip_region
     margins = normalizer.crop_margins
