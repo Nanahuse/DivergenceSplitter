@@ -225,63 +225,123 @@ class HoldConditionTest(unittest.TestCase):
 
 class ThenConditionTest(unittest.TestCase):
     def test_advances_at_most_one_stage_per_frame(self) -> None:
-        first = SequenceCondition(True, None)
-        second = SequenceCondition(None, True)
-        condition = Then(first, second, within_nanoseconds=5)
+        condition = Then(
+            SequenceCondition(True),
+            SequenceCondition(True),
+            within_nanoseconds=5,
+        )
         self.assertFalse(condition.evaluate(make_context(0)))
         self.assertTrue(condition.evaluate(make_context(5)))
-        self.assertEqual(first.calls, [False, True])
-        self.assertEqual(second.calls, [True, False])
 
     def test_deadline_is_inclusive(self) -> None:
         condition = Then(
-            SequenceCondition(True, None),
-            SequenceCondition(None, True),
+            SequenceCondition(True),
+            SequenceCondition(True),
             within_nanoseconds=5,
         )
         self.assertFalse(condition.evaluate(make_context(0)))
         self.assertTrue(condition.evaluate(make_context(5)))
 
     def test_default_has_no_deadline(self) -> None:
-        first = SequenceCondition(True, None)
-        second = SequenceCondition(None, True)
-        condition = Then(first, second)
+        condition = Then(SequenceCondition(True), SequenceCondition(True))
         self.assertFalse(condition.evaluate(make_context(0)))
         self.assertTrue(condition.evaluate(make_context(10_000_000_000)))
 
     def test_none_deadline_never_expires(self) -> None:
-        first = SequenceCondition(True, None)
-        second = SequenceCondition(None, True)
-        condition = Then(first, second, within_nanoseconds=None)
+        condition = Then(
+            SequenceCondition(True),
+            SequenceCondition(True),
+            within_nanoseconds=None,
+        )
         self.assertFalse(condition.evaluate(make_context(0)))
         self.assertTrue(condition.evaluate(make_context(10_000_000_000)))
 
     def test_expired_attempt_restarts_on_same_frame(self) -> None:
-        first = SequenceCondition(True, True, None)
-        second = SequenceCondition(None, None, True)
+        first = SequenceCondition(True, True)
+        second = SequenceCondition(True)
         condition = Then(first, second, within_nanoseconds=5)
         self.assertFalse(condition.evaluate(make_context(0)))
         self.assertFalse(condition.evaluate(make_context(6)))
         self.assertTrue(condition.evaluate(make_context(11)))
 
-    def test_completed_then_keeps_children_updated(self) -> None:
-        first = SequenceCondition(True, None, None)
-        second = SequenceCondition(None, True, None)
-        condition = Then(first, second, within_nanoseconds=5)
+    def test_inactive_elapsed_does_not_start(self) -> None:
+        first = SequenceCondition(False, True)
+        elapsed = Elapsed(5)
+        condition = Then(first, elapsed, within_nanoseconds=None)
+        self.assertFalse(condition.evaluate(make_context(0)))
+        self.assertFalse(condition.evaluate(make_context(100)))
+        self.assertFalse(condition.evaluate(make_context(104)))
+        self.assertTrue(condition.evaluate(make_context(109)))
+
+    def test_inactive_rising_edge_does_not_update_baseline(self) -> None:
+        gate = SequenceCondition(False, True, True, True, True, True)
+        source = SequenceCondition(True, False, True)
+        condition = Then(gate, RisingEdge(source), within_nanoseconds=None)
+        self.assertFalse(condition.evaluate(make_context(0)))
+        self.assertFalse(condition.evaluate(make_context(1)))
+        self.assertFalse(condition.evaluate(make_context(2)))
+        self.assertFalse(condition.evaluate(make_context(3)))
+        self.assertTrue(condition.evaluate(make_context(4)))
+
+    def test_inactive_falling_edge_does_not_update_baseline(self) -> None:
+        gate = SequenceCondition(False, True, True, True, True, True)
+        source = SequenceCondition(False, True, False)
+        condition = Then(gate, FallingEdge(source), within_nanoseconds=None)
+        self.assertFalse(condition.evaluate(make_context(0)))
+        self.assertFalse(condition.evaluate(make_context(1)))
+        self.assertFalse(condition.evaluate(make_context(2)))
+        self.assertFalse(condition.evaluate(make_context(3)))
+        self.assertTrue(condition.evaluate(make_context(4)))
+
+    def test_inactive_hold_does_not_start_timer(self) -> None:
+        gate = SequenceCondition(False, True, True, True)
+        held = Hold(SequenceCondition(True, True, True, True), 5)
+        condition = Then(gate, held, within_nanoseconds=None)
+        self.assertFalse(condition.evaluate(make_context(0)))
+        self.assertFalse(condition.evaluate(make_context(1)))
+        self.assertFalse(condition.evaluate(make_context(100)))
+        self.assertTrue(condition.evaluate(make_context(105)))
+
+    def test_inactive_child_is_marked_skipped(self) -> None:
+        first = Elapsed(0)
+        second = Elapsed(0)
+        condition = Then(first, second, within_nanoseconds=None)
+        self.assertFalse(condition.evaluate(make_context(0)))
+        self.assertEqual(first.status, ConditionStatus.TRUE)
+        self.assertEqual(second.status, ConditionStatus.SKIPPED)
+        self.assertTrue(condition.evaluate(make_context(1)))
+        self.assertEqual(second.status, ConditionStatus.TRUE)
+        self.assertEqual(first.status, ConditionStatus.SKIPPED)
+
+    def test_inactive_subtree_is_marked_skipped(self) -> None:
+        first = Elapsed(0)
+        left = Elapsed(0)
+        right = Elapsed(0)
+        nested = All(left, right)
+        condition = Then(first, nested, within_nanoseconds=None)
+        condition.evaluate(make_context(0))
+        self.assertEqual(nested.status, ConditionStatus.SKIPPED)
+        self.assertEqual(left.status, ConditionStatus.SKIPPED)
+        self.assertEqual(right.status, ConditionStatus.SKIPPED)
+
+    def test_completed_then_does_not_advance_child_state(self) -> None:
+        first = SequenceCondition(True, False)
+        second = SequenceCondition(True, False)
+        condition = Then(first, second, within_nanoseconds=None)
         condition.evaluate(make_context(0))
         self.assertTrue(condition.evaluate(make_context(1)))
+        remaining = (list(first.results), list(second.results))
         self.assertTrue(condition.evaluate(make_context(2)))
-        self.assertEqual(first.calls, [False, True, True])
-        self.assertEqual(second.calls, [True, False, True])
+        self.assertEqual((list(first.results), list(second.results)), remaining)
 
-    def test_short_circuited_then_advances_state(self) -> None:
-        condition = Then(
-            SequenceCondition(True, None),
-            SequenceCondition(None, True),
-            within_nanoseconds=5,
-        )
+    def test_short_circuited_then_advances_active_stage(self) -> None:
+        first = Elapsed(0)
+        second = Elapsed(0)
+        condition = Then(first, second, within_nanoseconds=None)
         self.assertIsNone(condition.evaluate(make_context(0), is_short_circuited=True))
-        self.assertTrue(condition.evaluate(make_context(5)))
+        self.assertEqual(first.status, ConditionStatus.TRUE)
+        self.assertEqual(second.status, ConditionStatus.SKIPPED)
+        self.assertTrue(condition.evaluate(make_context(1)))
 
     def test_single_child_completes_without_waiting(self) -> None:
         condition = Then(SequenceCondition(True), within_nanoseconds=0)
@@ -289,8 +349,8 @@ class ThenConditionTest(unittest.TestCase):
 
     def test_rejects_backwards_time_while_in_progress(self) -> None:
         condition = Then(
-            SequenceCondition(True, None),
-            SequenceCondition(None, True),
+            SequenceCondition(True),
+            SequenceCondition(True),
             within_nanoseconds=5,
         )
         condition.evaluate(make_context(10))
@@ -299,7 +359,7 @@ class ThenConditionTest(unittest.TestCase):
 
     def test_reset_restarts_progress_and_resets_children(self) -> None:
         first = SequenceCondition(True, True)
-        second = SequenceCondition(None, None)
+        second = SequenceCondition(False)
         condition = Then(first, second, within_nanoseconds=5)
         condition.evaluate(make_context(0))
         condition.reset()
