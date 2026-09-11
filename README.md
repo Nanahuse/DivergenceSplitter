@@ -123,10 +123,40 @@ splits:
         action: split
 ```
 
-Only `detected` and `then` conditions and the `template_match` detector are
-currently mapped for YAML; other condition and detector types raise a clear
-"not yet supported" error. YAML anchors/aliases and `duration`/`within` time
-expressions (`500ms`, `3s`) are supported.
+Every public Condition and Detector exposed by the Python API can also be built
+from YAML. The loader only constructs Core objects; it never re-implements
+condition or detector semantics.
+
+Condition `type` names: `detected`, `all`, `any`, `not`, `rising_edge`,
+`falling_edge`, `once`, `elapsed`, `hold`, `nth`, `reset_when`, `then`.
+
+Detector `type` names: `template_match`, `mean_absolute_similarity`,
+`root_mean_square_similarity`, `difference_hash_similarity`, `mean_brightness`,
+`color_range`, `phase_correlation`.
+
+Compound conditions nest freely:
+
+```yaml
+type: all
+conditions:
+  - type: falling_edge
+    condition:
+      type: detected
+      minimum_score: 0.95
+      detector:
+        type: template_match
+        reference: image.png
+  - type: elapsed
+    duration: 2s
+```
+
+`elapsed` and `hold` take a `duration` (`500ms`, `3s`); `hold` fires only after
+its child condition has been continuously true for that duration. `nth` takes
+`count` and a `condition`; `reset_when` takes `condition` and `reset_condition`.
+`color_range` takes explicit `lower`/`upper` lists, and `mean_brightness` takes
+no configuration beyond an optional `roi`. YAML anchors/aliases and
+`duration`/`within` time expressions are supported, and unknown fields or types
+are rejected.
 
 Run it with the runtime CLI:
 

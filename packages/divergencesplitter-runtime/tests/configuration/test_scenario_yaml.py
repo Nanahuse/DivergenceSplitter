@@ -1,16 +1,36 @@
+import textwrap
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
 from divergencesplitter import (
+    All,
+    Any,
+    ColorRangeDetector,
+    Condition,
     Detected,
+    DifferenceHashSimilarityDetector,
+    Elapsed,
+    FallingEdge,
     Frame,
     FrameContext,
+    Hold,
+    MeanAbsoluteSimilarityDetector,
+    MeanBrightnessDetector,
     MonotonicTime,
+    Not,
+    Nth,
+    Once,
+    PhaseCorrelationDetector,
+    Region,
+    ResetWhen,
+    RisingEdge,
+    RootMeanSquareSimilarityDetector,
     TemplateMatchDetector,
     Then,
 )
+from divergencesplitter.detector import ImageDetector
 from divergencesplitter_runtime.configuration.scenario_yaml import (
     ScenarioYamlError,
     ScenarioYamlValidationError,
@@ -38,6 +58,53 @@ def write_scenario(directory: Path, content: str, name: str = "scenario.yaml") -
     path = directory / name
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def make_context(nanoseconds: int = 0) -> FrameContext:
+    image = np.zeros((2, 2, 3), dtype=np.uint8)
+    return FrameContext(
+        frame=Frame(image=image, captured_at=MonotonicTime(nanoseconds)),
+        now=MonotonicTime(nanoseconds),
+    )
+
+
+def load_condition(directory: Path, condition_yaml: str) -> Condition:
+    write_reference_image(directory, "title.png")
+    path = write_scenario(
+        directory,
+        f"""
+start_condition:
+{textwrap.indent(condition_yaml.strip(), "  ")}
+reset_condition:
+  type: detected
+  minimum_score: 0.5
+  detector: {{type: template_match, reference: ./title.png}}
+splits: []
+""",
+    )
+    return load_scenario_yaml(path).start_condition
+
+
+def load_detector(directory: Path, detector_yaml: str) -> ImageDetector:
+    write_reference_image(directory, "title.png")
+    path = write_scenario(
+        directory,
+        f"""
+start_condition:
+  type: detected
+  minimum_score: 0.5
+  detector:
+{textwrap.indent(detector_yaml.strip(), "    ")}
+reset_condition:
+  type: detected
+  minimum_score: 0.5
+  detector: {{type: template_match, reference: ./title.png}}
+splits: []
+""",
+    )
+    condition = load_scenario_yaml(path).start_condition
+    assert isinstance(condition, Detected)
+    return condition.detector
 
 
 @pytest.mark.parametrize("within", ["500ms", "2s", "1.5s"])
@@ -330,46 +397,458 @@ splits:
     assert split_detector == reset_detector
 
 
-def test_unsupported_condition_type_is_rejected_clearly(tmp_path: Path) -> None:
-    path = write_scenario(
+def test_loads_all_condition(tmp_path: Path) -> None:
+    condition = load_condition(
         tmp_path,
         """
-start_condition:
-  type: elapsed
-  duration: 2s
-reset_condition:
-  type: elapsed
-  duration: 2s
-splits: []
+type: all
+conditions:
+  - type: detected
+    minimum_score: 0.9
+    detector: {type: template_match, reference: ./title.png}
+  - type: detected
+    minimum_score: 0.8
+    detector: {type: template_match, reference: ./title.png}
 """,
     )
 
-    with pytest.raises(ScenarioYamlValidationError, match="elapsed.*not yet supported"):
-        load_scenario_yaml(path)
+    assert isinstance(condition, All)
+    assert len(condition.children) == 2
+    assert all(isinstance(child, Detected) for child in condition.children)
 
 
-def test_unsupported_detector_type_is_rejected_clearly(tmp_path: Path) -> None:
-    path = write_scenario(
+def test_loads_any_condition(tmp_path: Path) -> None:
+    condition = load_condition(
         tmp_path,
         """
-start_condition:
-  type: detected
-  minimum_score: 0.8
-  detector:
-    type: mean_brightness
-reset_condition:
-  type: detected
-  minimum_score: 0.8
-  detector:
-    type: mean_brightness
-splits: []
+type: any
+conditions:
+  - type: elapsed
+    duration: 1s
+  - type: elapsed
+    duration: 2s
 """,
     )
 
-    with pytest.raises(
-        ScenarioYamlValidationError, match="mean_brightness.*not yet supported"
-    ):
-        load_scenario_yaml(path)
+    assert isinstance(condition, Any)
+    assert len(condition.children) == 2
+    assert all(isinstance(child, Elapsed) for child in condition.children)
+
+
+def test_loads_not_condition(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: not
+condition:
+  type: elapsed
+  duration: 1s
+""",
+    )
+
+    assert isinstance(condition, Not)
+    assert len(condition.children) == 1
+    assert isinstance(condition.children[0], Elapsed)
+
+
+def test_loads_rising_edge_condition(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: rising_edge
+condition:
+  type: elapsed
+  duration: 100ms
+""",
+    )
+
+    assert isinstance(condition, RisingEdge)
+    assert isinstance(condition.children[0], Elapsed)
+    assert condition.evaluate(make_context(0)) is False
+    assert condition.evaluate(make_context(100_000_000)) is True
+
+
+def test_loads_falling_edge_condition(tmp_path: Path) -> None:
+    write_reference_image(tmp_path, "a.png")
+    condition = load_condition(
+        tmp_path,
+        """
+type: falling_edge
+condition:
+  type: detected
+  minimum_score: 0.95
+  detector:
+    type: template_match
+    reference: ./a.png
+""",
+    )
+
+    assert isinstance(condition, FallingEdge)
+    assert isinstance(condition.children[0], Detected)
+
+
+def test_loads_once_condition(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: once
+condition:
+  type: elapsed
+  duration: 0s
+""",
+    )
+
+    assert isinstance(condition, Once)
+    assert isinstance(condition.children[0], Elapsed)
+
+
+def test_loads_elapsed_condition_with_duration(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: elapsed
+duration: 3s
+""",
+    )
+
+    assert isinstance(condition, Elapsed)
+    assert condition.evaluate(make_context(0)) is False
+    assert condition.evaluate(make_context(2_999_999_999)) is False
+    assert condition.evaluate(make_context(3_000_000_000)) is True
+
+
+def test_loads_hold_condition_requires_continuous_truth(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: hold
+duration: 500ms
+condition:
+  type: elapsed
+  duration: 0s
+""",
+    )
+
+    assert isinstance(condition, Hold)
+    assert isinstance(condition.children[0], Elapsed)
+    assert condition.evaluate(make_context(0)) is False
+    assert condition.evaluate(make_context(499_999_999)) is False
+    assert condition.evaluate(make_context(500_000_000)) is True
+
+
+def test_loads_nth_condition_and_counts(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: nth
+count: 3
+condition:
+  type: elapsed
+  duration: 0s
+""",
+    )
+
+    assert isinstance(condition, Nth)
+    assert isinstance(condition.children[0], Elapsed)
+    assert condition.evaluate(make_context(0)) is False
+    assert condition.evaluate(make_context(0)) is False
+    assert condition.evaluate(make_context(0)) is True
+
+
+def test_loads_reset_when_condition(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: reset_when
+condition:
+  type: once
+  condition:
+    type: elapsed
+    duration: 0s
+reset_condition:
+  type: elapsed
+  duration: 100ms
+""",
+    )
+
+    assert isinstance(condition, ResetWhen)
+    assert len(condition.children) == 2
+    assert isinstance(condition.children[0], Once)
+    assert isinstance(condition.children[1], Elapsed)
+
+
+def test_nested_conditions_are_parsed_recursively(tmp_path: Path) -> None:
+    write_reference_image(tmp_path, "a.png")
+    condition = load_condition(
+        tmp_path,
+        """
+type: all
+conditions:
+  - type: falling_edge
+    condition:
+      type: detected
+      minimum_score: 0.95
+      detector:
+        type: template_match
+        reference: ./a.png
+  - type: not
+    condition:
+      type: elapsed
+      duration: 2s
+""",
+    )
+
+    assert isinstance(condition, All)
+    first, second = condition.children
+    assert isinstance(first, FallingEdge)
+    assert isinstance(first.children[0], Detected)
+    assert isinstance(second, Not)
+    assert isinstance(second.children[0], Elapsed)
+
+
+def test_loads_color_range_detector(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: color_range
+lower: [10, 20, 30]
+upper: [40, 50, 60]
+""",
+    )
+
+    assert isinstance(detector, ColorRangeDetector)
+    assert detector.config.lower == (10, 20, 30)
+    assert detector.config.upper == (40, 50, 60)
+    assert detector.config.roi is None
+
+
+def test_loads_color_range_detector_with_single_channel_and_roi(
+    tmp_path: Path,
+) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: color_range
+lower: [0]
+upper: [255]
+roi: {x: 1, y: 2, width: 3, height: 4}
+""",
+    )
+
+    assert isinstance(detector, ColorRangeDetector)
+    assert detector.config.roi == Region(1, 2, 3, 4)
+
+
+def test_loads_difference_hash_detector(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: difference_hash_similarity
+reference: ./title.png
+hash_size: 4
+""",
+    )
+
+    assert isinstance(detector, DifferenceHashSimilarityDetector)
+    assert detector.config.hash_size == 4
+
+
+def test_difference_hash_hash_size_defaults_to_core_default(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: difference_hash_similarity
+reference: ./title.png
+""",
+    )
+
+    assert isinstance(detector, DifferenceHashSimilarityDetector)
+    assert detector.config.hash_size == 8
+
+
+def test_loads_mean_absolute_similarity_detector(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: mean_absolute_similarity
+reference: ./title.png
+roi: {x: 0, y: 0, width: 2, height: 2}
+""",
+    )
+
+    assert isinstance(detector, MeanAbsoluteSimilarityDetector)
+    assert detector.config.roi == Region(0, 0, 2, 2)
+
+
+def test_loads_phase_correlation_detector(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: phase_correlation
+reference: ./title.png
+""",
+    )
+
+    assert isinstance(detector, PhaseCorrelationDetector)
+
+
+def test_loads_root_mean_square_similarity_detector(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: root_mean_square_similarity
+reference: ./title.png
+""",
+    )
+
+    assert isinstance(detector, RootMeanSquareSimilarityDetector)
+
+
+def test_loads_mean_brightness_detector_without_config(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: mean_brightness
+""",
+    )
+
+    assert isinstance(detector, MeanBrightnessDetector)
+    assert detector.roi is None
+
+
+def test_loads_mean_brightness_detector_with_roi(tmp_path: Path) -> None:
+    detector = load_detector(
+        tmp_path,
+        """
+type: mean_brightness
+roi: {x: 5, y: 6, width: 7, height: 8}
+""",
+    )
+
+    assert isinstance(detector, MeanBrightnessDetector)
+    assert detector.roi == Region(5, 6, 7, 8)
+
+
+def test_reference_image_absolute_path_is_accepted(tmp_path: Path) -> None:
+    image_path = write_reference_image(tmp_path, "absolute.png")
+    detector = load_detector(
+        tmp_path,
+        f"""
+type: mean_absolute_similarity
+reference: {image_path.as_posix()}
+""",
+    )
+
+    assert isinstance(detector, MeanAbsoluteSimilarityDetector)
+
+
+def test_unreadable_reference_image_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="could not be read"):
+        load_detector(
+            tmp_path,
+            """
+type: mean_absolute_similarity
+reference: ./missing.png
+""",
+        )
+
+
+def test_invalid_roi_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError):
+        load_detector(
+            tmp_path,
+            """
+type: mean_brightness
+roi: {x: -1, y: 0, width: 2, height: 2}
+""",
+        )
+
+
+def test_unknown_detector_type_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="unsupported detector type"):
+        load_detector(tmp_path, "type: mystery\n")
+
+
+def test_missing_required_condition_field_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="missing scenario fields"):
+        load_condition(
+            tmp_path,
+            """
+type: all
+""",
+        )
+
+
+def test_unknown_condition_field_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="unknown scenario fields"):
+        load_condition(
+            tmp_path,
+            """
+type: elapsed
+duration: 1s
+unexpected: true
+""",
+        )
+
+
+def test_non_list_conditions_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="must be a list"):
+        load_condition(
+            tmp_path,
+            """
+type: all
+conditions: {}
+""",
+        )
+
+
+def test_non_mapping_condition_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="must be a mapping"):
+        load_condition(
+            tmp_path,
+            """
+type: not
+condition: []
+""",
+        )
+
+
+def test_boolean_minimum_score_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="must be a number"):
+        load_condition(
+            tmp_path,
+            """
+type: detected
+minimum_score: true
+detector: {type: template_match, reference: ./title.png}
+""",
+        )
+
+
+def test_boolean_nth_count_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="must be an integer"):
+        load_condition(
+            tmp_path,
+            """
+type: nth
+count: true
+condition:
+  type: elapsed
+  duration: 0s
+""",
+        )
+
+
+def test_non_integer_hash_size_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ScenarioYamlValidationError, match="must be an integer"):
+        load_detector(
+            tmp_path,
+            """
+type: difference_hash_similarity
+reference: ./title.png
+hash_size: small
+""",
+        )
 
 
 def test_unknown_condition_type_is_rejected(tmp_path: Path) -> None:
