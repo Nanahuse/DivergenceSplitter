@@ -151,8 +151,10 @@ conditions:
 ```
 
 `elapsed` and `hold` take a `duration` (`500ms`, `3s`); `hold` fires only after
-its child condition has been continuously true for that duration. `nth` takes
-`count` and a `condition`; `reset_when` takes `condition` and `reset_condition`.
+its child condition has been continuously true for that duration. `then`'s
+`within` is optional; without it the sequence waits with no deadline. `nth`
+takes `count` and a `condition`; `reset_when` takes `condition` and
+`reset_condition`.
 `color_range` takes explicit `lower`/`upper` lists, and `mean_brightness` takes
 no configuration beyond an optional `roi`. YAML anchors/aliases and
 `duration`/`within` time expressions are supported, and unknown fields or types

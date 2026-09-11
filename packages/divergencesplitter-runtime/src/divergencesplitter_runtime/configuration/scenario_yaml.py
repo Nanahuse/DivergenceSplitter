@@ -211,8 +211,12 @@ def _condition_value(value: object, field: str, path: Path) -> Condition:
             )
             return ResetWhen(child, reset_condition)
         case "then":
-            _keys(condition, required={"type", "within", "conditions"})
-            within_nanoseconds = _duration(condition["within"], f"{field}.within")
+            _keys(condition, required={"type", "conditions"}, optional={"within"})
+            within_nanoseconds = (
+                _duration(condition["within"], f"{field}.within")
+                if "within" in condition
+                else None
+            )
             children = _condition_list(
                 condition["conditions"],
                 f"{field}.conditions",

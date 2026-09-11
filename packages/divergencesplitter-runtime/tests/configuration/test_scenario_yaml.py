@@ -357,6 +357,24 @@ splits:
     assert len(condition.children) == 2
 
 
+def test_then_without_within_has_no_deadline(tmp_path: Path) -> None:
+    condition = load_condition(
+        tmp_path,
+        """
+type: then
+conditions:
+  - type: elapsed
+    duration: 0s
+  - type: elapsed
+    duration: 0s
+""",
+    )
+
+    assert isinstance(condition, Then)
+    assert condition.evaluate(make_context(0)) is False
+    assert condition.evaluate(make_context(10_000_000_000)) is True
+
+
 def test_anchor_and_alias_are_resolved_natively(tmp_path: Path) -> None:
     write_reference_image(tmp_path, "title.png")
     path = write_scenario(

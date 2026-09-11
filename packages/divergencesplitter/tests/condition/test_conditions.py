@@ -242,6 +242,20 @@ class ThenConditionTest(unittest.TestCase):
         self.assertFalse(condition.evaluate(make_context(0)))
         self.assertTrue(condition.evaluate(make_context(5)))
 
+    def test_default_has_no_deadline(self) -> None:
+        first = SequenceCondition(True, None)
+        second = SequenceCondition(None, True)
+        condition = Then(first, second)
+        self.assertFalse(condition.evaluate(make_context(0)))
+        self.assertTrue(condition.evaluate(make_context(10_000_000_000)))
+
+    def test_none_deadline_never_expires(self) -> None:
+        first = SequenceCondition(True, None)
+        second = SequenceCondition(None, True)
+        condition = Then(first, second, within_nanoseconds=None)
+        self.assertFalse(condition.evaluate(make_context(0)))
+        self.assertTrue(condition.evaluate(make_context(10_000_000_000)))
+
     def test_expired_attempt_restarts_on_same_frame(self) -> None:
         first = SequenceCondition(True, True, None)
         second = SequenceCondition(None, None, True)
