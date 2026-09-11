@@ -775,22 +775,23 @@ def _sanitize_text(value: str) -> str:
 
 def _describe_source(source: FrameSource) -> dict[str, object]:
     fields: dict[str, object] = {"source_type": type(source).__name__}
-    if isinstance(source, VideoFileSource):
-        fields["source_path"] = str(Path(source.path))
-    elif isinstance(source, NdiSource):
-        fields["ndi_source_name"] = source.source_name
-        resolution = source.resolution
-        if resolution is not None:
-            fields["ndi_width"] = resolution[0]
-            fields["ndi_height"] = resolution[1]
-    elif isinstance(source, OpenCvCameraSource):
-        fields.update(
-            source_device_index=source.device_index,
-            source_backend=source.backend,
-            source_width=source.width,
-            source_height=source.height,
-            source_requested_fps=source.fps,
-        )
+    match source:
+        case VideoFileSource():
+            fields["source_path"] = str(Path(source.path))
+        case NdiSource():
+            fields["ndi_source_name"] = source.source_name
+            resolution = source.resolution
+            if resolution is not None:
+                fields["ndi_width"] = resolution[0]
+                fields["ndi_height"] = resolution[1]
+        case OpenCvCameraSource():
+            fields.update(
+                source_device_index=source.device_index,
+                source_backend=source.backend,
+                source_width=source.width,
+                source_height=source.height,
+                source_requested_fps=source.fps,
+            )
     normalizer = source.normalizer
     clip = normalizer.clip_region
     margins = normalizer.crop_margins

@@ -159,32 +159,35 @@ def editable_from_configuration(
     configuration: ApplicationConfiguration, path: Path
 ) -> EditableApplicationConfiguration:
     source = configuration.source
-    if isinstance(source, CameraSourceConfiguration):
-        source_settings = EditableSourceSettings(
-            SourceType.CAMERA,
-            EditableCameraSourceConfiguration(
-                source.device, source.mode, source.request_60_fps
-            ),
-            EditableVideoSourceConfiguration(""),
-            EditableNdiSourceConfiguration(""),
-            _editable_transform(source.transform),
-        )
-    elif isinstance(source, VideoSourceConfiguration):
-        source_settings = EditableSourceSettings(
-            SourceType.VIDEO,
-            EditableCameraSourceConfiguration(None, None, False),
-            EditableVideoSourceConfiguration(source.path),
-            EditableNdiSourceConfiguration(""),
-            _editable_transform(source.transform),
-        )
-    else:
-        source_settings = EditableSourceSettings(
-            SourceType.NDI,
-            EditableCameraSourceConfiguration(None, None, False),
-            EditableVideoSourceConfiguration(""),
-            EditableNdiSourceConfiguration(source.name),
-            _editable_transform(source.transform),
-        )
+    match source:
+        case CameraSourceConfiguration():
+            source_settings = EditableSourceSettings(
+                SourceType.CAMERA,
+                EditableCameraSourceConfiguration(
+                    source.device, source.mode, source.request_60_fps
+                ),
+                EditableVideoSourceConfiguration(""),
+                EditableNdiSourceConfiguration(""),
+                _editable_transform(source.transform),
+            )
+        case VideoSourceConfiguration():
+            source_settings = EditableSourceSettings(
+                SourceType.VIDEO,
+                EditableCameraSourceConfiguration(None, None, False),
+                EditableVideoSourceConfiguration(source.path),
+                EditableNdiSourceConfiguration(""),
+                _editable_transform(source.transform),
+            )
+        case NdiSourceConfiguration():
+            source_settings = EditableSourceSettings(
+                SourceType.NDI,
+                EditableCameraSourceConfiguration(None, None, False),
+                EditableVideoSourceConfiguration(""),
+                EditableNdiSourceConfiguration(source.name),
+                _editable_transform(source.transform),
+            )
+        case _:  # pragma: no cover - protects future source additions
+            raise ValueError(f"unsupported source: {source!r}")
     return EditableApplicationConfiguration(
         path,
         source_settings,
@@ -293,34 +296,38 @@ def configuration_from_editable(
 ) -> ApplicationConfiguration:
     validate_instances_draft(editable.instances)
     source_settings = editable.source
-    if source_settings.selected_type is SourceType.CAMERA:
-        camera = source_settings.camera
-        if camera.device is None:
-            raise ValueError("a camera device must be selected")
-        if camera.mode is None:
-            raise ValueError("a camera capture mode must be selected")
-        source: SourceConfiguration = CameraSourceConfiguration(
-            camera.device,
-            camera.mode,
-            camera.request_60_fps,
-            _configuration_transform(source_settings.transform),
-        )
-    elif source_settings.selected_type is SourceType.VIDEO:
-        path = source_settings.video.path
-        if not path.strip():
-            raise ValueError("a video file must be selected")
-        source = VideoSourceConfiguration(
-            path, _configuration_transform(source_settings.transform)
-        )
-    elif source_settings.selected_type is SourceType.NDI:
-        name = source_settings.ndi.name
-        if not name.strip():
-            raise ValueError("an NDI source must be selected")
-        source = NdiSourceConfiguration(
-            name, _configuration_transform(source_settings.transform)
-        )
-    else:  # pragma: no cover - protects future source additions
-        raise ValueError(f"unsupported source type: {source_settings.selected_type}")
+    source: SourceConfiguration
+    match source_settings.selected_type:
+        case SourceType.CAMERA:
+            camera = source_settings.camera
+            if camera.device is None:
+                raise ValueError("a camera device must be selected")
+            if camera.mode is None:
+                raise ValueError("a camera capture mode must be selected")
+            source = CameraSourceConfiguration(
+                camera.device,
+                camera.mode,
+                camera.request_60_fps,
+                _configuration_transform(source_settings.transform),
+            )
+        case SourceType.VIDEO:
+            path = source_settings.video.path
+            if not path.strip():
+                raise ValueError("a video file must be selected")
+            source = VideoSourceConfiguration(
+                path, _configuration_transform(source_settings.transform)
+            )
+        case SourceType.NDI:
+            name = source_settings.ndi.name
+            if not name.strip():
+                raise ValueError("an NDI source must be selected")
+            source = NdiSourceConfiguration(
+                name, _configuration_transform(source_settings.transform)
+            )
+        case _:  # pragma: no cover - protects future source additions
+            raise ValueError(
+                f"unsupported source type: {source_settings.selected_type}"
+            )
     return ApplicationConfiguration(
         version=1,
         source=source,
