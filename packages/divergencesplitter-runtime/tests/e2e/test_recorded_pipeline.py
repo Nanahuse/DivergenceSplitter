@@ -37,7 +37,7 @@ from .support import (
 
 BRIGHT = 240
 DARK = 10
-THRESHOLD = 128.0
+THRESHOLD = 128.0 / 255.0
 FRAME_SIZE = (16, 16)
 
 

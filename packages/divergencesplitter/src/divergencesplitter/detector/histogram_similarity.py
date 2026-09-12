@@ -6,7 +6,11 @@ import cv2
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
-from divergencesplitter.detector.common import frame_region, prepare_reference_alpha
+from divergencesplitter.detector.common import (
+    _clamp_unit_score,
+    frame_region,
+    prepare_reference_alpha,
+)
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -60,6 +64,10 @@ class HistogramSimilarityDetector(ConfiguredDetector[HistogramSimilarityConfig])
             raise ValueError("frame shape must match reference shape when masked")
         frame_hist = self._calculate(frame, self._mask)
         return DetectionResult(
-            score=1.0
-            - cv2.compareHist(self._histogram, frame_hist, cv2.HISTCMP_BHATTACHARYYA)
+            score=_clamp_unit_score(
+                1.0
+                - cv2.compareHist(
+                    self._histogram, frame_hist, cv2.HISTCMP_BHATTACHARYYA
+                )
+            )
         )

@@ -109,7 +109,7 @@ class BooleanConditionTest(unittest.TestCase):
         )
         self.assertTrue(parent.evaluate(good))
         self.assertIs(condition.status, ConditionStatus.TRUE)
-        self.assertEqual(condition.latest_score, 0.0)
+        self.assertEqual(condition.latest_score, 1.0)
         parent.reset()
         self.assertIsNone(condition.status)
 

@@ -7,7 +7,12 @@ from dataclasses import dataclass
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
-from divergencesplitter.detector.common import dhash_bits, frame_dhash, to_gray
+from divergencesplitter.detector.common import (
+    _clamp_unit_score,
+    dhash_bits,
+    frame_dhash,
+    to_gray,
+)
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -53,7 +58,7 @@ class DifferenceHashSimilarityDetector(
         difference = int(
             np.count_nonzero(np.logical_xor(frame_hash, self._reference_hash))
         )
-        score = 1.0 - float(difference) / (self.config.hash_size**2)
+        score = _clamp_unit_score(1.0 - float(difference) / (self.config.hash_size**2))
         return DetectionResult(score=score)
 
     def __init__(self, config: DifferenceHashSimilarityConfig) -> None:

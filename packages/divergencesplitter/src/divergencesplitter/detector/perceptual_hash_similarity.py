@@ -6,7 +6,11 @@ import cv2
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
-from divergencesplitter.detector.common import frame_region, prepare_reference_alpha
+from divergencesplitter.detector.common import (
+    _clamp_unit_score,
+    frame_region,
+    prepare_reference_alpha,
+)
 from divergencesplitter.detector.histogram_similarity import _uint8_bgr
 from divergencesplitter.detector.models import (
     DetectionResult,
@@ -55,4 +59,4 @@ class PerceptualHashSimilarityDetector(
             raise ValueError("frame shape must match reference shape when masked")
         other_hash = self._compute(frame, self._mask)
         distance = int(np.unpackbits(np.bitwise_xor(self._hash, other_hash)).sum())
-        return DetectionResult(score=1.0 - distance / 64.0)
+        return DetectionResult(score=_clamp_unit_score(1.0 - distance / 64.0))

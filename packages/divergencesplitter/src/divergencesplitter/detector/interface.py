@@ -17,8 +17,9 @@ class ImageDetector(Protocol):
     ``DetectionResult``. They must be immutable and hashable by configuration
     value so equivalent definitions share one evaluation per frame.
 
-    ``DetectionResult.score`` is a detector-specific measure, not normalized or
-    comparable across detectors. Higher values always mean a stronger match.
+    ``DetectionResult.score`` is detector-specific, and higher values always
+    mean a stronger match. Built-in detectors generally map scores to
+    ``[0.0, 1.0]`` when practical, but this is not required by the protocol.
     If the underlying library reports scores in the opposite direction, the
     implementation must invert the value inside ``detect`` so this contract
     holds.

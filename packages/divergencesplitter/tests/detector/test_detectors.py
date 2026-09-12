@@ -44,7 +44,7 @@ class MeanBrightnessDetectorTest(unittest.TestCase):
         dark = evaluate(make_context(DARK), detector)
         self.assertEqual(dark.score, 0.0)
         bright = evaluate(make_context(BRIGHT), detector)
-        self.assertEqual(bright.score, 255.0)
+        self.assertEqual(bright.score, 1.0)
 
     def test_multidimensional_image(self):
         detector = MeanBrightnessDetector()
@@ -55,7 +55,7 @@ class MeanBrightnessDetectorTest(unittest.TestCase):
         bright_color = evaluate(
             make_context(np.full((2, 2, 3), 255, dtype=np.uint8)), detector
         )
-        self.assertEqual(bright_color.score, 255.0)
+        self.assertEqual(bright_color.score, 1.0)
 
 
 class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
@@ -64,11 +64,11 @@ class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
             MeanAbsoluteSimilarityConfig(REFERENCE)
         )
         same = evaluate(make_context(REFERENCE_IMAGE), detector)
-        self.assertEqual(same.score, 0.0)
+        self.assertEqual(same.score, 1.0)
         changed = evaluate(
             make_context(np.array([[10, 10], [10, 10]], dtype=np.uint8)), detector
         )
-        self.assertEqual(changed.score, -10.0)
+        self.assertAlmostEqual(changed.score, 1.0 - 10.0 / 255.0)
 
     def test_exposes_reference_image_with_a_label(self):
         detector = MeanAbsoluteSimilarityDetector(
@@ -90,9 +90,9 @@ class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
         large_diff = evaluate(
             make_context(np.array([[10, 10], [10, 10]], dtype=np.uint8)), detector
         ).score
-        self.assertEqual(match, 0.0)
-        self.assertEqual(small_diff, -1.0)
-        self.assertEqual(large_diff, -10.0)
+        self.assertEqual(match, 1.0)
+        self.assertEqual(small_diff, 1.0 - 1.0 / 255.0)
+        self.assertEqual(large_diff, 1.0 - 10.0 / 255.0)
         self.assertTrue(match > small_diff > large_diff)
 
     def test_transparent_reference_pixels_are_ignored(self):
@@ -106,7 +106,7 @@ class MeanAbsoluteSimilarityDetectorTest(unittest.TestCase):
         frame = np.zeros((2, 2, 3), dtype=np.uint8)
         frame[:, :, 0] = np.array([[10, 99], [20, 88]], dtype=np.uint8)
 
-        self.assertEqual(evaluate(make_context(frame), detector).score, 0.0)
+        self.assertEqual(evaluate(make_context(frame), detector).score, 1.0)
 
 
 class CountingDetector:
@@ -253,7 +253,7 @@ class PreprocessingCacheTest(unittest.TestCase):
             MeanAbsoluteSimilarityDetector(MeanAbsoluteSimilarityConfig(REFERENCE)),
         )
         self.assertEqual(frame_mean_abs_diff(context, REFERENCE), 3.0)
-        self.assertEqual(result.score, -3.0)
+        self.assertEqual(result.score, 1.0 - 3.0 / 255.0)
 
     def test_different_references_do_not_share(self):
         other_reference = ((1, 1), (1, 1))
@@ -268,5 +268,5 @@ class PreprocessingCacheTest(unittest.TestCase):
                 MeanAbsoluteSimilarityConfig(other_reference)
             ),
         )
-        self.assertEqual(first.score, -3.0)
-        self.assertEqual(second.score, -2.0)
+        self.assertEqual(first.score, 1.0 - 3.0 / 255.0)
+        self.assertEqual(second.score, 1.0 - 2.0 / 255.0)
