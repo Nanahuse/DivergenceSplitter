@@ -315,10 +315,12 @@ class ScreenRenderer:
                 parent=condition_handle,
                 label=node.detector.detector_type,
             )
-            score_handles = tuple(
-                dpg.add_text(label, parent=detector_handle)
-                for label in ("threshold    —", "current      —", "max          —")
-            )
+            score_handles = []
+            for label in ("threshold", "current", "max"):
+                with dpg.group(horizontal=True, parent=detector_handle):
+                    dpg.add_text(label, width=95)
+                    score_handles.append(dpg.add_text("—", width=72))
+            score_handles = tuple(score_handles)
             self._build_reference(detector_handle, node.detector)
         else:
             score_handles = None
@@ -428,9 +430,9 @@ class ScreenRenderer:
                 dpg.configure_item(row.detector_handle, label=formatted_detector)
             if row.score_handles is not None:
                 values = (
-                    f"threshold    {format_score(view.minimum_score)}",
-                    f"current      {format_score(view.latest_score)}",
-                    f"max          {format_score(view.max_score)}",
+                    format_score(view.minimum_score),
+                    format_score(view.latest_score),
+                    format_score(view.max_score),
                 )
                 for handle, value in zip(row.score_handles, values):
                     dpg.set_value(handle, value)
