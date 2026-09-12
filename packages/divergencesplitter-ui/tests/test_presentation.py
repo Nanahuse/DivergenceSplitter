@@ -60,11 +60,11 @@ class TestStatusAndScoreFormatting:
         assert status_label(ConditionStatus.ERROR) == "ERROR"
 
     def test_format_score_none_is_empty(self) -> None:
-        assert format_score(None) == ""
+        assert format_score(None) == "—"
 
     def test_format_score_number(self) -> None:
-        assert format_score(0.0) == "0"
-        assert format_score(78.51234) == "78.51"
+        assert format_score(0.0) == "0.0000"
+        assert format_score(78.51234) == "78.5123"
 
     def test_scenario_label_contains_connection_destination(self) -> None:
         scenario = make_scenario()
@@ -142,9 +142,7 @@ class TestSkippedDetection:
         assert view.latest_score is None
         assert view.max_score == 0.0
         assert condition_label(view) == "Detected [SKIPPED]"
-        assert detector_label(view) == (
-            "MeanBrightnessDetector [SKIPPED]  threshold=-1  current=—  max=0"
-        )
+        assert detector_label(view) == "MeanBrightnessDetector [SKIPPED]"
 
 
 class TestObservationId:

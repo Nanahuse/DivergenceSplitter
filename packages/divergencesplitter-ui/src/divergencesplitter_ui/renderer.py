@@ -40,6 +40,7 @@ from divergencesplitter_ui.presentation import (
     ScreenPresenter,
     condition_label,
     detector_label,
+    format_score,
     has_new_observations,
     scenario_label,
     view_for,
@@ -62,6 +63,7 @@ class _ConditionRow:
     node: ConditionNode
     condition_handle: int | str
     detector_handle: int | str | None
+    score_handles: tuple[int | str, int | str, int | str] | None
 
 
 @dataclass
@@ -313,12 +315,29 @@ class ScreenRenderer:
                 parent=condition_handle,
                 label=node.detector.detector_type,
             )
+            score_items: list[int | str] = []
+            # Text items do not accept width; the table owns column sizing.
+            with dpg.table(
+                parent=detector_handle,
+                header_row=False,
+                policy=dpg.mvTable_SizingFixedFit,
+            ):
+                dpg.add_table_column(width_fixed=True, init_width_or_weight=95)
+                dpg.add_table_column(width_fixed=True, init_width_or_weight=72)
+                for label in ("threshold", "current", "max"):
+                    with dpg.table_row():
+                        dpg.add_text(label)
+                        score_items.append(dpg.add_text("—"))
+            score_handles = (score_items[0], score_items[1], score_items[2])
             self._build_reference(detector_handle, node.detector)
+        else:
+            score_handles = None
         self._rows.append(
             _ConditionRow(
                 node=node,
                 condition_handle=condition_handle,
                 detector_handle=detector_handle,
+                score_handles=score_handles,
             )
         )
         for child in node.children:
@@ -412,11 +431,26 @@ class ScreenRenderer:
     def _apply_observations(self, observations) -> None:
         index = ObservationIndex.build(observations)
         for row in self._rows:
+            if not dpg.does_item_exist(row.condition_handle):
+                continue
             view = view_for(row.node, index)
             dpg.configure_item(row.condition_handle, label=condition_label(view))
             formatted_detector = detector_label(view)
-            if row.detector_handle is not None and formatted_detector is not None:
+            if (
+                row.detector_handle is not None
+                and formatted_detector is not None
+                and dpg.does_item_exist(row.detector_handle)
+            ):
                 dpg.configure_item(row.detector_handle, label=formatted_detector)
+            if row.score_handles is not None:
+                values = (
+                    format_score(view.minimum_score),
+                    format_score(view.latest_score),
+                    format_score(view.max_score),
+                )
+                for handle, value in zip(row.score_handles, values):
+                    if dpg.does_item_exist(handle):
+                        dpg.set_value(handle, value)
 
     def _apply_image(self, frame) -> None:
         rgba = to_rgba_float32(frame.image)

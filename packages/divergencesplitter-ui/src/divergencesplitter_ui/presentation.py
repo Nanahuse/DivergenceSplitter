@@ -77,8 +77,8 @@ def format_score(value: float | None) -> str:
     """Format a detector score for display, or an empty string for ``None``."""
 
     if value is None:
-        return ""
-    return f"{value:.4g}"
+        return "—"
+    return f"{value:.4f}"
 
 
 def has_new_observations(observations: tuple[ConditionObservation, ...]) -> bool:
@@ -117,6 +117,11 @@ class ConditionView:
     latest_score: float | None
     max_score: float | None
 
+    @property
+    def active(self) -> bool:
+        """Whether this condition has a current evaluation result."""
+        return self.status_label in {"TRUE", "FALSE", "ERROR"}
+
 
 def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
     """Resolve one condition node to its display values.
@@ -146,7 +151,9 @@ def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
 def condition_label(view: ConditionView) -> str:
     """Format one Condition node label."""
 
-    return f"{view.condition_type} [{view.status_label}]"
+    marker = "▶ " if view.active else ""
+    active = "  ACTIVE" if view.active else ""
+    return f"{marker}{view.condition_type} [{view.status_label}]{active}"
 
 
 def scenario_label(node: ScenarioNode) -> str:
@@ -160,17 +167,13 @@ def scenario_label(node: ScenarioNode) -> str:
 
 
 def detector_label(view: ConditionView) -> str | None:
-    """Format one Detector node label, including all score values."""
+    """Format the stable Detector node label; scores are separate fields."""
 
     if view.detector_type is None:
         return None
-    threshold = format_score(view.minimum_score) or "—"
-    latest = format_score(view.latest_score) or "—"
-    maximum = format_score(view.max_score) or "—"
-    return (
-        f"{view.detector_type} [{view.status_label}]"
-        f"  threshold={threshold}  current={latest}  max={maximum}"
-    )
+    marker = "▶ " if view.active else ""
+    active = "  ACTIVE" if view.active else ""
+    return f"{marker}{view.detector_type} [{view.status_label}]{active}"
 
 
 class ScreenPresenter:
