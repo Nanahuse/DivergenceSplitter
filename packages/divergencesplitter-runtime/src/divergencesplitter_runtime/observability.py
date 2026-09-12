@@ -260,9 +260,17 @@ def _collect_condition_observations(
                 "nanoseconds",
             )
         elif isinstance(condition, Nth):
-            progress_current, progress_target, progress_unit = condition.observed, condition.count, "count"
+            progress_current, progress_target, progress_unit = (
+                condition.observed,
+                condition.count,
+                "count",
+            )
         elif isinstance(condition, Then):
-            progress_current, progress_target, progress_unit = condition.current_step, condition.step_count, "step"
+            progress_current, progress_target, progress_unit = (
+                condition.current_step,
+                condition.step_count,
+                "step",
+            )
         status = (
             condition.status if isinstance(condition, ObservableCondition) else None
         )
