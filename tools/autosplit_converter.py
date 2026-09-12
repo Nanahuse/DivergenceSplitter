@@ -185,7 +185,9 @@ def _top_condition(definition: AutoSplitImageDefinition, reference: str) -> list
     return [line[2:] for line in lines[1:]]
 
 
-def _stage(definition: AutoSplitImageDefinition, reference: str) -> list[str]:
+def _stage(
+    definition: AutoSplitImageDefinition, reference: str
+) -> list[list[str]]:
     """Return condition stages, retaining pause semantics and edge flags."""
     stages = [_top_condition(definition, reference)]
     if definition.pause_seconds:
