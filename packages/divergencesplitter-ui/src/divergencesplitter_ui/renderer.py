@@ -93,11 +93,8 @@ class ScreenRenderer:
     ABOUT_PAGE_TAG = "divergence-splitter-about-page"
     LICENSE_PAGE_TAG = "divergence-splitter-licenses-page"
 
-    def __init__(
-        self, presenter: ScreenPresenter | None = None, *, stop_callback=None
-    ) -> None:
+    def __init__(self, presenter: ScreenPresenter | None = None) -> None:
         self._presenter = presenter or ScreenPresenter()
-        self._stop_callback = stop_callback
         self._bound_diagnostics: ObservableDiagnostics | None = None
         self._tree: DetectorTreeSnapshot | None = None
         self._rows: list[_ConditionRow] = []
@@ -136,8 +133,6 @@ class ScreenRenderer:
             dpg.add_separator()
             with dpg.group(tag=self.MONITOR_PAGE_TAG):
                 with dpg.group(horizontal=True):
-                    dpg.add_button(label="Start", callback=self._start)
-                    dpg.add_button(label="Stop", callback=self._stop)
                     dpg.add_text("State: —", tag=self._STATE_TAG)
                     dpg.add_text("input: — fps | processing: — fps", tag=self._FPS_TAG)
                 with dpg.group(horizontal=True):
@@ -162,14 +157,6 @@ class ScreenRenderer:
                         )
             dpg.add_group(tag=self.CONFIGURATION_PAGE_TAG, show=False)
             dpg.add_group(tag=self.ABOUT_PAGE_TAG, show=False)
-
-    def _start(self, sender=None, app_data=None, user_data=None) -> None:
-        dpg.configure_item(self.CONFIGURATION_PAGE_TAG, show=True)
-        dpg.configure_item(self.MONITOR_PAGE_TAG, show=False)
-
-    def _stop(self, sender=None, app_data=None, user_data=None) -> None:
-        if self._stop_callback is not None:
-            self._stop_callback()
 
     def _show_page(self, sender, app_data, user_data) -> None:
         for tag in (

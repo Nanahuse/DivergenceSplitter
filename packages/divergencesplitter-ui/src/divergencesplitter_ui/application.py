@@ -46,9 +46,7 @@ class DesktopApplication:
         settings_model: SettingsModel | None = None,
     ) -> None:
         self._controller = controller
-        self._renderer = ScreenRenderer(
-            presenter, stop_callback=controller.request_stop
-        )
+        self._renderer = ScreenRenderer(presenter)
         self._initial_configuration = initial_configuration
         model = settings_model or SettingsModel(WindowsCameraEnumerator())
         self._settings = ConfigurationPage(controller, model)
