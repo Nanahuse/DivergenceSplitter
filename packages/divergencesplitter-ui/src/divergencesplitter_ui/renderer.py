@@ -23,6 +23,7 @@ from divergencesplitter_runtime.observability import (
 )
 
 from divergencesplitter_ui._dpg import dpg
+from divergencesplitter_ui.fonts import configure_diagnostics_fonts
 from divergencesplitter_ui.frame_preview import fit_preview
 from divergencesplitter_ui.image import (
     TextureEvent,
@@ -67,6 +68,13 @@ class _ConditionRow:
 
 
 @dataclass
+class _BranchRow:
+    handle: int | str
+    label: str
+    conditions: tuple[ConditionNode, ...]
+
+
+@dataclass
 class _ReferenceRow:
     detector: DetectorNode
     detector_handle: int | str
@@ -100,6 +108,8 @@ class ScreenRenderer:
         self._bound_diagnostics: ObservableDiagnostics | None = None
         self._tree: DetectorTreeSnapshot | None = None
         self._rows: list[_ConditionRow] = []
+        self._branches: list[_BranchRow] = []
+        self._highlighted: dict[int | str, bool] = {}
         self._reference_rows: list[_ReferenceRow] = []
         self._expansion = ExpansionState()
 
@@ -109,6 +119,18 @@ class ScreenRenderer:
 
     def build(self) -> None:
         """Create the static widget structure once, before the render loop."""
+
+        self._regular_font, self._bold_font = configure_diagnostics_fonts()
+        with (
+            dpg.theme() as self._active_theme,
+            dpg.theme_component(dpg.mvTreeNode),
+        ):
+            dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 210, 80, 255))
+        with (
+            dpg.theme() as self._inactive_theme,
+            dpg.theme_component(dpg.mvTreeNode),
+        ):
+            dpg.add_theme_color(dpg.mvThemeCol_Text, (220, 220, 220, 255))
 
         with dpg.window(
             tag=self.WINDOW_TAG,
@@ -247,6 +269,8 @@ class ScreenRenderer:
             dpg.delete_item(row.handler_registry_handle)
         dpg.delete_item(self._TREE_TAG, children_only=True)
         self._rows = []
+        self._branches = []
+        self._highlighted = {}
         self._reference_rows = []
         self._expansion = ExpansionState()
 
@@ -276,6 +300,7 @@ class ScreenRenderer:
             self._build_split(scenario_node, split)
 
     def _build_split(self, parent: int | str, split: SplitNode) -> None:
+        first_row = len(self._rows)
         split_node = dpg.add_tree_node(
             parent=parent,
             label=f"Split {split.split_index}",
@@ -285,30 +310,58 @@ class ScreenRenderer:
                 self._build_rule_sequence(split_node, rule)
             else:
                 self._build_rule(split_node, rule)
+        self._track_branch(split_node, first_row)
 
     def _build_rule(self, parent: int | str, rule: RuleNode) -> None:
+        first_row = len(self._rows)
         rule_node = dpg.add_tree_node(
             parent=parent,
             label=f"Rule {rule.rule_index} ({rule.action})",
         )
         self._build_condition(rule_node, rule.condition)
+        self._track_branch(rule_node, first_row)
 
     def _build_rule_sequence(
         self, parent: int | str, sequence: RuleSequenceNode
     ) -> None:
+        first_row = len(self._rows)
         sequence_node = dpg.add_tree_node(
             parent=parent,
             label=f"Rule {sequence.rule_index} (sequence)",
         )
         for rule in sequence.rules:
+            step_first_row = len(self._rows)
             step_node = dpg.add_tree_node(
                 parent=sequence_node,
                 label=f"Step {rule.rule_index} ({rule.action})",
             )
             self._build_condition(step_node, rule.condition)
+            self._track_branch(step_node, step_first_row)
+        self._track_branch(sequence_node, first_row)
+
+    def _track_branch(self, handle: int | str, first_row: int) -> None:
+        self._branches.append(
+            _BranchRow(
+                handle,
+                dpg.get_item_label(handle) or "",
+                tuple(row.node for row in self._rows[first_row:]),
+            )
+        )
+
+    def _highlight(self, handle: int | str, active: bool) -> None:
+        if self._highlighted.get(handle) == active:
+            return
+        dpg.bind_item_theme(
+            handle, self._active_theme if active else self._inactive_theme
+        )
+        dpg.bind_item_font(handle, self._bold_font if active else self._regular_font)
+        self._highlighted[handle] = active
 
     def _build_condition(self, parent: int | str, node: ConditionNode) -> None:
-        condition_handle = dpg.add_tree_node(parent=parent, label=node.condition_type)
+        condition_handle = dpg.add_tree_node(
+            parent=parent,
+            label=condition_label(view_for(node, ObservationIndex.build(()))),
+        )
         detector_handle: int | str | None = None
         if node.detector is not None:
             detector_handle = dpg.add_tree_node(
@@ -430,10 +483,18 @@ class ScreenRenderer:
 
     def _apply_observations(self, observations) -> None:
         index = ObservationIndex.build(observations)
+        for branch in self._branches:
+            if not dpg.does_item_exist(branch.handle):
+                continue
+            active = any(view_for(node, index).active for node in branch.conditions)
+            self._highlight(branch.handle, active)
+            label = f"▶ {branch.label}  ACTIVE" if active else branch.label
+            dpg.configure_item(branch.handle, label=label)
         for row in self._rows:
             if not dpg.does_item_exist(row.condition_handle):
                 continue
             view = view_for(row.node, index)
+            self._highlight(row.condition_handle, view.active)
             dpg.configure_item(row.condition_handle, label=condition_label(view))
             formatted_detector = detector_label(view)
             if (
@@ -441,6 +502,7 @@ class ScreenRenderer:
                 and formatted_detector is not None
                 and dpg.does_item_exist(row.detector_handle)
             ):
+                self._highlight(row.detector_handle, view.active)
                 dpg.configure_item(row.detector_handle, label=formatted_detector)
             if row.score_handles is not None:
                 values = (

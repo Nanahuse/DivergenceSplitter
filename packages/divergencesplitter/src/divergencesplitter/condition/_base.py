@@ -41,6 +41,8 @@ class ConditionBase(ABC):
         *,
         is_short_circuited: bool = False,
     ) -> bool | None:
+        if not is_short_circuited:
+            context.evaluated_condition_ids.add(id(self))
         try:
             result = self._evaluate(context, is_short_circuited=is_short_circuited)
         except Exception:

@@ -12,6 +12,7 @@ from divergencesplitter import (
     Condition,
     ConditionStatus,
     Detected,
+    Elapsed,
     ImageDetector,
     LiveSplitConnection,
     ObservableCondition,
@@ -42,6 +43,7 @@ class ConditionNode:
     condition_type: str
     children: tuple[ConditionNode, ...] = ()
     detector: DetectorNode | None = None
+    duration_nanoseconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -96,12 +98,16 @@ class ConditionObservation:
     detector and for a detector that has not run since start or reset. The
     observation carries the source ``condition`` so consumers can join it to the
     display tree by identity without reading the condition's private state.
+    ``active`` is true only for conditions evaluated in the published frame;
+    a retained TRUE/FALSE/ERROR result alone does not imply current activity.
     """
 
     condition: Condition
     status: ConditionStatus | None
     latest_score: float | None
     max_score: float | None
+    active: bool = False
+    elapsed_nanoseconds: int | None = None
 
 
 def build_detector_tree(
@@ -194,11 +200,16 @@ def _condition_node(condition: Condition) -> ConditionNode:
         condition=condition,
         condition_type=type(condition).__name__,
         children=tuple(_condition_node(item) for item in condition.children),
+        duration_nanoseconds=(
+            condition.duration_nanoseconds if isinstance(condition, Elapsed) else None
+        ),
     )
 
 
 def _collect_condition_observations(
     instances: tuple[ScenarioInstance, ...],
+    *,
+    evaluated_condition_ids: set[int] | None = None,
 ) -> tuple[ConditionObservation, ...]:
     """Read the latest evaluation outcome of every condition in ``instances``.
 
@@ -230,6 +241,21 @@ def _collect_condition_observations(
                 status=status,
                 latest_score=latest_score,
                 max_score=max_score,
+                elapsed_nanoseconds=(
+                    condition.elapsed_nanoseconds
+                    if isinstance(condition, Elapsed)
+                    else None
+                ),
+                active=(
+                    evaluated_condition_ids is not None
+                    and identity in evaluated_condition_ids
+                    and status
+                    in (
+                        ConditionStatus.TRUE,
+                        ConditionStatus.FALSE,
+                        ConditionStatus.ERROR,
+                    )
+                ),
             )
         )
         for child in condition.children:

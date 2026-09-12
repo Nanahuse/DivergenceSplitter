@@ -249,10 +249,35 @@ class TestConditionObservations:
             item.condition: item for item in diagnostics.take_condition_observations()
         }
         assert observations[condition].status is ConditionStatus.FALSE
+        assert observations[condition].active
+        assert not observations[skipped].active
         assert observations[skipped].status is ConditionStatus.SKIPPED
         assert observations[skipped].latest_score is None
         assert observations[skipped].max_score == 0.0
         assert diagnostics.take_condition_observations() == ()
+
+    def test_active_tracks_current_frame_without_erasing_previous_results(self) -> None:
+        first = Detected(MeanBrightnessDetector(), -1.0)
+        second = Detected(MeanBrightnessDetector(), 1.0)
+        scenario = Scenario(
+            start_condition=first,
+            reset_condition=None,
+            incomplete_condition=None,
+            splits=((Rule(second, Action("split")),),),
+        )
+        diagnostics = OperationalDiagnostics(StringIO())
+        diagnostics.bind_runtime((make_instance(scenario),), make_frame_source())
+        for current in (first, second, None):
+            context = make_context()
+            if current is not None:
+                current.evaluate(context)
+            diagnostics.frame_processing_completed(context)
+            observations = diagnostics.take_condition_observations()
+            assert {id(item.condition) for item in observations if item.active} == (
+                {id(current)} if current is not None else set()
+            )
+            assert observations[0].status is ConditionStatus.TRUE
+            assert observations[0].max_score == 0.0
 
 
 class TestObservabilityBoundary:

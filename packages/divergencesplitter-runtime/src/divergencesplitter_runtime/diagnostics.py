@@ -306,7 +306,9 @@ class OperationalDiagnostics:
 
     def frame_processing_completed(self, context: FrameContext) -> None:
         completed_at = self._time_provider.now()
-        observations = _collect_condition_observations(self._instances)
+        observations = _collect_condition_observations(
+            self._instances, evaluated_condition_ids=context.evaluated_condition_ids
+        )
         with self._metrics_lock:
             self._processing_rate.record(completed_at)
             self._processed_frames_total += 1

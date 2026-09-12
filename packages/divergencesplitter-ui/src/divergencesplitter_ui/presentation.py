@@ -117,10 +117,9 @@ class ConditionView:
     latest_score: float | None
     max_score: float | None
 
-    @property
-    def active(self) -> bool:
-        """Whether this condition has a current evaluation result."""
-        return self.status_label in {"TRUE", "FALSE", "ERROR"}
+    active: bool = False
+    duration_nanoseconds: int | None = None
+    elapsed_nanoseconds: int | None = None
 
 
 def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
@@ -145,6 +144,11 @@ def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
         minimum_score=minimum_score,
         latest_score=observation.latest_score if observation is not None else None,
         max_score=observation.max_score if observation is not None else None,
+        active=observation.active if observation is not None else False,
+        duration_nanoseconds=node.duration_nanoseconds,
+        elapsed_nanoseconds=(
+            observation.elapsed_nanoseconds if observation is not None else None
+        ),
     )
 
 
@@ -153,7 +157,15 @@ def condition_label(view: ConditionView) -> str:
 
     marker = "▶ " if view.active else ""
     active = "  ACTIVE" if view.active else ""
-    return f"{marker}{view.condition_type} [{view.status_label}]{active}"
+    progress = ""
+    if view.duration_nanoseconds is not None:
+        elapsed = (
+            "—"
+            if view.elapsed_nanoseconds is None
+            else f"{view.elapsed_nanoseconds / 1_000_000_000:.3f} s"
+        )
+        progress = f"  {elapsed} / {view.duration_nanoseconds / 1_000_000_000:.3f} s"
+    return f"{marker}{view.condition_type} [{view.status_label}]{progress}{active}"
 
 
 def scenario_label(node: ScenarioNode) -> str:

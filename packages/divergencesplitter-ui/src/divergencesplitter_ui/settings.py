@@ -20,6 +20,7 @@ from divergencesplitter_runtime.configuration.models import (
     InstanceConfiguration,
     NdiSourceConfiguration,
     ResizeConfiguration,
+    ResizeInterpolation,
     RuntimeConfiguration,
     SourceConfiguration,
     SourceTransformConfiguration,
@@ -123,6 +124,7 @@ class EditableCropConfiguration:
 class EditableResizeConfiguration:
     width: int
     height: int
+    interpolation: ResizeInterpolation = ResizeInterpolation.AREA
 
 
 @dataclass
@@ -234,7 +236,9 @@ def _editable_transform(
         None
         if transform.resize is None
         else EditableResizeConfiguration(
-            transform.resize.width, transform.resize.height
+            transform.resize.width,
+            transform.resize.height,
+            transform.resize.interpolation,
         ),
     )
 
@@ -256,7 +260,11 @@ def _configuration_transform(
         resize = (
             None
             if transform.resize is None
-            else ResizeConfiguration(transform.resize.width, transform.resize.height)
+            else ResizeConfiguration(
+                transform.resize.width,
+                transform.resize.height,
+                transform.resize.interpolation,
+            )
         )
     except (TypeError, ValueError) as error:
         raise ValueError(str(error)) from error
@@ -492,7 +500,23 @@ class SettingsModel:
     def set_resize_values(
         self, width: int, height: int
     ) -> EditableApplicationConfiguration | None:
-        return self.set_resize(EditableResizeConfiguration(width, height))
+        current = self._editable.source.transform.resize if self._editable else None
+        interpolation = (
+            current.interpolation if current is not None else ResizeInterpolation.AREA
+        )
+        return self.set_resize(
+            EditableResizeConfiguration(width, height, interpolation)
+        )
+
+    def set_resize_interpolation(
+        self, interpolation: ResizeInterpolation
+    ) -> EditableApplicationConfiguration | None:
+        if self._editable is None or self._editable.source.transform.resize is None:
+            return self._editable
+        current = self._editable.source.transform.resize
+        return self.set_resize(
+            EditableResizeConfiguration(current.width, current.height, interpolation)
+        )
 
     def set_camera_device(
         self, backend: CameraBackend, name: str, index: int

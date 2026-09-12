@@ -34,3 +34,5 @@ class FrameContext:
     now: MonotonicTime
     preprocessing_cache: dict[object, object] = field(default_factory=dict)
     detection_cache: dict[ImageDetector, DetectionResult] = field(default_factory=dict)
+    # Per-frame activity, separate from persistent condition results and scores.
+    evaluated_condition_ids: set[int] = field(default_factory=set)

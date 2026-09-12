@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import numpy as np
 from divergencesplitter import (
     ConditionStatus,
     Detected,
+    Elapsed,
+    Frame,
+    FrameContext,
     LiveSplitConnection,
     MeanBrightnessDetector,
+    MonotonicTime,
     Scenario,
 )
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
+    _collect_condition_observations,
     build_detector_tree,
 )
 from divergencesplitter_ui.presentation import (
@@ -212,3 +218,36 @@ class TestExpansionState:
         assert state.reconcile(2, expanded=True, has_reference_images=False) is (
             ExpansionEvent.NONE
         )
+
+
+def test_elapsed_progress_from_condition_through_observation_to_label() -> None:
+    elapsed = Elapsed(2_000_000_000)
+    instance = make_scenario(elapsed)
+    node = build_detector_tree((instance,)).scenarios[0].start_condition
+
+    def label(context=None):
+        observations = _collect_condition_observations(
+            (instance,),
+            evaluated_condition_ids=(
+                context.evaluated_condition_ids if context is not None else None
+            ),
+        )
+        return condition_label(view_for(node, ObservationIndex.build(observations)))
+
+    assert label() == "Elapsed [UNOBSERVED]  — / 2.000 s"
+    for now, expected, short in (
+        (0, "0.000 s / 2.000 s", False),
+        (750_000_000, "0.750 s / 2.000 s", False),
+        (1_000_000_000, "1.000 s / 2.000 s", True),
+        (3_000_000_000, "2.000 s / 2.000 s", False),
+        (4_000_000_000, "2.000 s / 2.000 s", False),
+    ):
+        context = FrameContext(
+            Frame(np.zeros((1, 1), dtype=np.uint8), MonotonicTime(now)),
+            MonotonicTime(now),
+        )
+        elapsed.evaluate(context, is_short_circuited=short)
+        assert expected in label(context)
+        assert ("ACTIVE" in label(context)) is not short
+    elapsed.reset()
+    assert label() == "Elapsed [UNOBSERVED]  — / 2.000 s"

@@ -4,11 +4,14 @@ from unittest.mock import Mock
 
 import pytest
 from divergencesplitter import (
+    Action,
     ConditionStatus,
     Detected,
     LiveSplitConnection,
     MeanBrightnessDetector,
     MonotonicTime,
+    Rule,
+    RuleSequence,
     Scenario,
 )
 from divergencesplitter_runtime.instances import ScenarioInstance
@@ -61,7 +64,9 @@ def test_scenario_diagnostics_build_update_and_restart() -> None:
             ]
 
             diagnostics.take_condition_observations.return_value = (
-                ConditionObservation(condition, ConditionStatus.TRUE, 123.5, 150.0),
+                ConditionObservation(
+                    condition, ConditionStatus.TRUE, 123.5, 150.0, active=True
+                ),
             )
             renderer.tick("RUNNING", diagnostics)
             assert [dpg.get_value(handle) for handle in row.score_handles] == [
@@ -73,5 +78,73 @@ def test_scenario_diagnostics_build_update_and_restart() -> None:
 
             renderer.tick("STOPPED", None)
             assert all(not dpg.does_item_exist(handle) for handle in row.score_handles)
+    finally:
+        dpg.destroy_context()
+
+
+def test_active_style_propagates_to_split_rule_and_step_then_clears() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    first = Detected(MeanBrightnessDetector(), 0.5)
+    second = Detected(MeanBrightnessDetector(), 0.7)
+    tree = build_detector_tree(
+        (
+            ScenarioInstance(
+                connection=LiveSplitConnection("rpc", "event"),
+                scenario=Scenario(
+                    start_condition=Detected(MeanBrightnessDetector(), 0.9),
+                    reset_condition=None,
+                    incomplete_condition=None,
+                    splits=(
+                        (Rule(first, Action("split")),),
+                        (RuleSequence(Rule(second, Action("split"))),),
+                    ),
+                ),
+            ),
+        )
+    )
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        renderer._build_scenario(tree.scenarios[0])
+        for current in (first, second, None):
+            renderer._apply_observations(
+                tuple(
+                    ConditionObservation(
+                        condition,
+                        # Old results persist after advancing to another split.
+                        ConditionStatus.FALSE,
+                        0.2 if condition is current else None,
+                        0.3,
+                        active=condition is current,
+                    )
+                    for condition in (first, second)
+                )
+            )
+            for branch in renderer._branches:
+                active = any(node.condition is current for node in branch.conditions)
+                info = dpg.get_item_info(branch.handle)
+                assert info["theme"] == (
+                    renderer._active_theme if active else renderer._inactive_theme
+                )
+                expected_font = (
+                    renderer._bold_font if active else renderer._regular_font
+                )
+                assert info["font"] == expected_font
+                assert ("ACTIVE" in dpg.get_item_label(branch.handle)) == active
+            for row in renderer._rows:
+                active = row.node.condition is current
+                for handle in (row.condition_handle, row.detector_handle):
+                    assert handle is not None
+                    info = dpg.get_item_info(handle)
+                    assert info["theme"] == (
+                        renderer._active_theme if active else renderer._inactive_theme
+                    )
+                    expected_font = (
+                        renderer._bold_font if active else renderer._regular_font
+                    )
+                    assert info["font"] == expected_font
     finally:
         dpg.destroy_context()
