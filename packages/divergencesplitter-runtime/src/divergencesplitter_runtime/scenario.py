@@ -7,7 +7,7 @@ from typing import NotRequired, TypedDict
 from divergencesplitter.condition import Detected
 from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame.models import FrameContext
-from divergencesplitter.rule import Action, Rule
+from divergencesplitter.rule import Action, Rule, RuleSequence, ScenarioRule
 from divergencesplitter.scenario.models import Scenario
 
 from divergencesplitter_runtime.livesplit.models import (
@@ -26,6 +26,7 @@ class _RuleEvaluationFields(TypedDict):
     detector_minimum_score: NotRequired[float]
     detector_cache_hit: NotRequired[bool]
     detector_score: NotRequired[float | None]
+    sequence_rule_index: NotRequired[int]
 
 
 class ScenarioRuntime:
@@ -247,7 +248,7 @@ class ScenarioRuntime:
 
     def _evaluate_rules(
         self,
-        rules: tuple[Rule, ...],
+        rules: tuple[ScenarioRule, ...],
         context: FrameContext,
         snapshot: LiveSplitSnapshot,
         *,
@@ -255,7 +256,10 @@ class ScenarioRuntime:
         split_index: int | None,
     ) -> Action | None:
         for rule_index, rule in enumerate(rules):
-            evaluation_fields = _rule_evaluation_fields(rule, context)
+            leaf_rule, sequence_rule_index = _active_rule_metadata(rule)
+            evaluation_fields = _rule_evaluation_fields(
+                leaf_rule, sequence_rule_index, context
+            )
             try:
                 action = rule.evaluate(context)
             except Exception as error:  # noqa: BLE001
@@ -269,7 +273,7 @@ class ScenarioRuntime:
                     **evaluation_fields,
                 )
                 continue
-            evaluation_fields.update(_rule_evaluation_result_fields(rule, context))
+            evaluation_fields.update(_rule_evaluation_result_fields(leaf_rule, context))
             self._log_rule(
                 logging.DEBUG,
                 "scenario_runtime.rule_evaluated",
@@ -392,7 +396,7 @@ class ScenarioRuntime:
 
     def _reset_rule_group(
         self,
-        rules: tuple[Rule, ...],
+        rules: tuple[ScenarioRule, ...],
         group: str,
         split_index: int | None,
     ) -> None:
@@ -426,14 +430,18 @@ class ScenarioRuntime:
     def _log_rule_exception(
         self,
         error: Exception,
-        rule: Rule,
+        rule: ScenarioRule,
         snapshot: LiveSplitSnapshot,
         group: str,
         split_index: int | None,
         rule_index: int,
         **extra: object,
     ) -> None:
-        extra.setdefault("condition_type", type(rule.condition).__name__)
+        leaf_rule, sequence_rule_index = _active_rule_metadata(rule)
+        if leaf_rule is not None:
+            extra.setdefault("condition_type", type(leaf_rule.condition).__name__)
+        if sequence_rule_index is not None:
+            extra.setdefault("sequence_rule_index", sequence_rule_index)
         self._log_rule(
             logging.ERROR,
             "scenario_runtime.rule_exception",
@@ -509,10 +517,16 @@ def _safe_exception_message(error: Exception) -> str:
 
 
 def _rule_evaluation_fields(
-    rule: Rule,
+    rule: Rule | None,
+    sequence_rule_index: int | None,
     context: FrameContext,
 ) -> _RuleEvaluationFields:
-    fields = _RuleEvaluationFields(condition_type=type(rule.condition).__name__)
+    fields = _RuleEvaluationFields()
+    if sequence_rule_index is not None:
+        fields["sequence_rule_index"] = sequence_rule_index
+    if rule is None:
+        return fields
+    fields["condition_type"] = type(rule.condition).__name__
     if isinstance(rule.condition, Detected):
         fields.update(
             detector_type=type(rule.condition.detector).__name__,
@@ -523,12 +537,22 @@ def _rule_evaluation_fields(
 
 
 def _rule_evaluation_result_fields(
-    rule: Rule,
+    rule: Rule | None,
     context: FrameContext,
 ) -> _RuleEvaluationFields:
-    if not isinstance(rule.condition, Detected):
+    if rule is None or not isinstance(rule.condition, Detected):
         return {}
     result = context.detection_cache.get(rule.condition.detector)
     return {
         "detector_score": result.score if isinstance(result, DetectionResult) else None
     }
+
+
+def _active_rule_metadata(
+    rule: ScenarioRule,
+) -> tuple[Rule | None, int | None]:
+    if isinstance(rule, RuleSequence):
+        return rule.active_rule, rule.active_rule_index
+    if isinstance(rule, Rule):
+        return rule, None
+    return None, None

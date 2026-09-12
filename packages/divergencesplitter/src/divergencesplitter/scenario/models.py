@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from divergencesplitter.condition.interface import Condition
-    from divergencesplitter.rule.rule import Rule
+    from divergencesplitter.rule.interface import ScenarioRule
 
 
 @dataclass(frozen=True)
@@ -17,4 +17,4 @@ class Scenario:
     start_condition: Condition
     reset_condition: Condition
     incomplete_condition: Condition | None
-    splits: tuple[tuple[Rule, ...] | None, ...]
+    splits: tuple[tuple[ScenarioRule, ...] | None, ...]

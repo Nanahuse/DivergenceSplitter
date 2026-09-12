@@ -13,6 +13,8 @@ EXPECTED_PUBLIC_API = (
     "FrameSource",
     "LiveSplitConnection",
     "Rule",
+    "RuleSequence",
+    "ScenarioRule",
     "Scenario",
 )
 

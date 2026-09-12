@@ -21,7 +21,7 @@ from divergencesplitter import (
 from divergencesplitter_runtime.capture import PublishResult
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instances import ScenarioInstance
-from divergencesplitter_runtime.observability import build_detector_tree
+from divergencesplitter_runtime.observability import RuleNode, build_detector_tree
 
 
 def make_frame(captured_at: int = 100) -> Frame:
@@ -91,6 +91,7 @@ class TestDetectorTree:
         assert len(first_split.rules) == 2
 
         first_rule = first_split.rules[0]
+        assert isinstance(first_rule, RuleNode)
         assert first_rule.rule_index == 0
         assert first_rule.action == "split"
         assert first_rule.condition.condition_type == "All"
@@ -107,6 +108,7 @@ class TestDetectorTree:
         assert not_node.children[0].detector.minimum_score == 50.0
 
         second_rule = first_split.rules[1]
+        assert isinstance(second_rule, RuleNode)
         assert second_rule.rule_index == 1
         assert second_rule.condition.detector is not None
         assert second_rule.condition.detector.minimum_score == 400.0
@@ -123,7 +125,9 @@ class TestDetectorTree:
         scenario_node = tree.scenarios[0]
 
         reset_node = scenario_node.reset_condition.detector
-        split_node = scenario_node.splits[0].rules[0].condition.detector
+        first_rule = scenario_node.splits[0].rules[0]
+        assert isinstance(first_rule, RuleNode)
+        split_node = first_rule.condition.detector
         assert reset_node is not None
         assert split_node is not None
         assert reset_node.detector is shared
@@ -180,6 +184,7 @@ class TestConditionObservations:
         scenario = make_scenario(detector)
         split_rules = scenario.splits[0]
         assert split_rules is not None
+        assert isinstance(split_rules[0], Rule)
 
         diagnostics.bind_runtime((make_instance(scenario),), make_frame_source())
         observations = diagnostics.take_condition_observations()
