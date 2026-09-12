@@ -84,6 +84,47 @@ class TemplateMatchDetectorTest(unittest.TestCase):
         self.assertAlmostEqual(evaluate(make_context(frame), detector).score, 1.0)
 
 
+class ReferenceAlphaTest(unittest.TestCase):
+    def test_partial_and_fully_transparent_references_are_rejected(self) -> None:
+        factories = (
+            lambda image: MeanAbsoluteSimilarityDetector(
+                MeanAbsoluteSimilarityConfig(freeze_config_image(image.tolist()))
+            ),
+            lambda image: RootMeanSquareSimilarityDetector(
+                RootMeanSquareSimilarityConfig(freeze_config_image(image.tolist()))
+            ),
+            lambda image: TemplateMatchDetector(
+                TemplateMatchConfig(freeze_config_image(image.tolist()))
+            ),
+        )
+        for alpha in (0, 128):
+            reference = np.zeros((2, 2, 4), dtype=np.uint8)
+            reference[:, :, :3] = 255
+            reference[:, :, 3] = alpha
+            for factory in factories:
+                with (
+                    self.subTest(alpha=alpha, factory=factory),
+                    self.assertRaises(ValueError),
+                ):
+                    factory(reference)
+
+    def test_opaque_bgra_is_equivalent_to_bgr(self) -> None:
+        bgr = np.array([[[0, 10, 20], [30, 40, 50]]], dtype=np.uint8)
+        bgra = np.concatenate((bgr, np.full((1, 2, 1), 255, dtype=np.uint8)), axis=2)
+        for factory in (
+            lambda image: MeanAbsoluteSimilarityDetector(
+                MeanAbsoluteSimilarityConfig(freeze_config_image(image.tolist()))
+            ),
+            lambda image: RootMeanSquareSimilarityDetector(
+                RootMeanSquareSimilarityConfig(freeze_config_image(image.tolist()))
+            ),
+        ):
+            with self.subTest(factory=factory):
+                bgr_score = evaluate(make_context(bgr), factory(bgr)).score
+                bgra_score = evaluate(make_context(bgr), factory(bgra)).score
+                self.assertEqual(bgr_score, bgra_score)
+
+
 class ColorRangeDetectorTest(unittest.TestCase):
     def test_bounds_are_inclusive_and_score_is_pixel_ratio(self) -> None:
         frame = np.array([[0, 10], [20, 30]], dtype=np.uint8)

@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
+from divergencesplitter.detector.common import prepare_reference_alpha
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -28,11 +29,8 @@ class TemplateMatchConfig:
 
     def __post_init__(self) -> None:
         _validate_frozen_config_image(self.reference)
-        template = np.asarray(self.reference, dtype=np.float32)
-        if template.ndim == 3 and template.shape[2] == 4:
-            if not np.any(template[:, :, 3] > 0):
-                raise ValueError("template alpha mask has no valid pixels")
-            template = template[:, :, :3]
+        template, _ = prepare_reference_alpha(np.asarray(self.reference))
+        template = template.astype(np.float32, copy=False)
         if np.all(np.ptp(template, axis=(0, 1)) == 0):
             raise ValueError("template must contain spatial variation")
 
@@ -86,14 +84,7 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
 
     def __init__(self, config: TemplateMatchConfig) -> None:
         super().__init__(config)
-        reference = np.asarray(config.reference)
-        mask = None
-        if reference.ndim == 3 and reference.shape[2] == 4:
-            valid = reference[:, :, 3] > 0
-            if not np.any(valid):
-                raise ValueError("template alpha mask has no valid pixels")
-            mask = np.ascontiguousarray(valid.astype(np.uint8) * 255)
-            reference = reference[:, :, :3]
+        reference, mask = prepare_reference_alpha(np.asarray(config.reference))
         if (
             np.issubdtype(reference.dtype, np.integer)
             and reference.min() >= 0
