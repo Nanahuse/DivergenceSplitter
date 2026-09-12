@@ -4,7 +4,11 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from divergencesplitter.frame.normalizer import CropMargins, OutputSize, ResizeInterpolation
+from divergencesplitter.frame.normalizer import (
+    CropMargins,
+    OutputSize,
+    ResizeInterpolation,
+)
 from divergencesplitter.livesplit.models import LiveSplitConnection
 
 
