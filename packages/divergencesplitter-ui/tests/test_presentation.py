@@ -85,6 +85,7 @@ class TestObservationIdentity:
         index = ObservationIndex.build(observations)
 
         first_view = view_for(tree.scenarios[0].start_condition, index)
+        assert tree.scenarios[0].reset_condition is not None
         second_view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert first_view.minimum_score == 100.0
@@ -103,6 +104,7 @@ class TestObservationIdentity:
         index = ObservationIndex.build(observations)
 
         first_view = view_for(tree.scenarios[0].start_condition, index)
+        assert tree.scenarios[0].reset_condition is not None
         second_view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert first_view.latest_score == 50.0
@@ -115,6 +117,7 @@ class TestObservationIdentity:
         tree = build_detector_tree((make_scenario(condition),))
         index = ObservationIndex.build(())
 
+        assert tree.scenarios[0].reset_condition is not None
         view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert view.status_label == UNOBSERVED_LABEL
@@ -131,6 +134,7 @@ class TestSkippedDetection:
         )
         index = ObservationIndex.build(observations)
 
+        assert tree.scenarios[0].reset_condition is not None
         view = view_for(tree.scenarios[0].reset_condition, index)
 
         assert view.status_label == "SKIPPED"

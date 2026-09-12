@@ -97,11 +97,15 @@ def _scenario(value: object, path: Path) -> Scenario:
     root = _mapping(value, "scenario")
     _keys(
         root,
-        required={"start_condition", "reset_condition", "splits"},
-        optional={"incomplete_condition"},
+        required={"start_condition", "splits"},
+        optional={"reset_condition", "incomplete_condition"},
     )
     start_condition = _condition_value(root["start_condition"], "start_condition", path)
-    reset_condition = _condition_value(root["reset_condition"], "reset_condition", path)
+    reset_condition = (
+        _condition_value(root["reset_condition"], "reset_condition", path)
+        if "reset_condition" in root
+        else None
+    )
     incomplete_condition = (
         _condition_value(root["incomplete_condition"], "incomplete_condition", path)
         if "incomplete_condition" in root

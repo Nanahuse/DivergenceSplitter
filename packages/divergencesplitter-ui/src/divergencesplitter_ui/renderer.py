@@ -271,11 +271,12 @@ class ScreenRenderer:
             label="Start condition",
         )
         self._build_condition(start_node, scenario.start_condition)
-        reset_node = dpg.add_tree_node(
-            parent=scenario_node,
-            label="Reset condition",
-        )
-        self._build_condition(reset_node, scenario.reset_condition)
+        if scenario.reset_condition is not None:
+            reset_node = dpg.add_tree_node(
+                parent=scenario_node,
+                label="Reset condition",
+            )
+            self._build_condition(reset_node, scenario.reset_condition)
         if scenario.incomplete_condition is not None:
             incomplete_node = dpg.add_tree_node(
                 parent=scenario_node,

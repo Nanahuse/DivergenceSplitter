@@ -59,6 +59,9 @@ scenario = ds.Scenario(
 )
 ```
 
+`reset_condition` is optional. Omit it (or pass `None` in Python) when the
+scenario has no automatic reset condition.
+
 Scenarios do not carry a LiveSplit connection; the JSON configuration pairs
 each scenario with a connection destination. The JSON configuration selects the
 frame source and one or more connection/scenario instances independently:
@@ -87,7 +90,7 @@ frame source and one or more connection/scenario instances independently:
 
 A scenario may also be written as YAML (`scenario.yaml`). The loader is chosen
 from the file extension: `.py` for Python, `.yaml`/`.yml` for YAML. A YAML
-scenario defines `start_condition`, `reset_condition`, optional
+scenario defines `start_condition`, optional `reset_condition`, optional
 `incomplete_condition`, and `splits` using `type` discriminators:
 
 ```yaml

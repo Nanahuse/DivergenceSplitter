@@ -7,6 +7,7 @@ from divergencesplitter import (
     All,
     ConditionStatus,
     Detected,
+    Elapsed,
     Frame,
     FrameContext,
     LiveSplitConnection,
@@ -79,6 +80,7 @@ class TestDetectorTree:
         assert scenario_node.connection == instance.connection
 
         reset_condition = scenario_node.reset_condition
+        assert reset_condition is not None
         assert reset_condition.condition_type == "Detected"
         assert reset_condition.detector is not None
         assert reset_condition.detector.minimum_score == 200.0
@@ -124,6 +126,7 @@ class TestDetectorTree:
         tree = build_detector_tree((make_instance(make_scenario(shared)),))
         scenario_node = tree.scenarios[0]
 
+        assert scenario_node.reset_condition is not None
         reset_node = scenario_node.reset_condition.detector
         first_rule = scenario_node.splits[0].rules[0]
         assert isinstance(first_rule, RuleNode)
@@ -142,12 +145,18 @@ class TestDetectorTree:
         node = build_detector_tree((make_instance(make_scenario(detector)),)).scenarios[
             0
         ]
+        assert node.reset_condition is not None
         reset_detector = node.reset_condition.detector
         assert reset_detector is not None
         images = reset_detector.reference_images
         assert len(images) == 1
         assert images[0].label == "reference"
         assert images[0].image == reference
+
+    def test_optional_reset_condition_is_omitted(self) -> None:
+        scenario = Scenario(Elapsed(0), None, None, ())
+        tree = build_detector_tree((make_instance(scenario),))
+        assert tree.scenarios[0].reset_condition is None
 
 
 class TestObservableFrameSlot:
