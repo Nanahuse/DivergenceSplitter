@@ -4,12 +4,12 @@ The application ships ``Noto Sans JP`` so Japanese paths and other Unicode
 strings render the same on every Windows machine without depending on a font
 installed on the operating system. The font is registered once per process and
 bound as Dear PyGui's global font, so every widget and every future UI string
-uses it without any per-widget font binding.
+uses it by default. Active diagnostics bind the bundled Bold variant per widget.
 
 The bundled file is the official Noto Sans JP variable font instantiated at the
-Regular (``wght=400``) weight. Dear PyGui does not expose variable-font weight
+Regular (``wght=400``) and Bold (``wght=700``) weights. Dear PyGui does not expose variable-font weight
 selection and would render the variable font's Thin default, so a static
-Regular instance is shipped instead. Instancing keeps the full glyph set; the
+instances are shipped instead. Instancing keeps the full glyph set; the
 font is not subset.
 
 ``importlib.resources`` resolves the bundled font from a source checkout, an
@@ -25,6 +25,8 @@ from importlib.resources.abc import Traversable
 
 PACKAGE = "divergencesplitter_ui"
 FONT_RESOURCE = "assets/fonts/NotoSansJP-Regular.ttf"
+BOLD_FONT_RESOURCE = "assets/fonts/NotoSansJP-Bold.ttf"
+REGULAR_FONT_TAG = "divergence-splitter-regular-font"
 FONT_LICENSE_RESOURCE = "assets/fonts/OFL.txt"
 DEFAULT_FONT_SIZE = 16
 
@@ -58,5 +60,19 @@ def configure_default_font() -> None:
     if not resource.is_file():
         raise BundledFontError(f"bundled font is missing: {FONT_RESOURCE}")
     with importlib.resources.as_file(resource) as path, dpg.font_registry():
-        font = dpg.add_font(str(path), DEFAULT_FONT_SIZE)
+        font = dpg.add_font(str(path), DEFAULT_FONT_SIZE, tag=REGULAR_FONT_TAG)
     dpg.bind_font(font)
+
+
+def configure_diagnostics_fonts() -> tuple[int | str, int | str]:
+    """Register a bundled static 700-weight font for active diagnostics."""
+    from divergencesplitter_ui._dpg import dpg
+
+    if not dpg.does_item_exist(REGULAR_FONT_TAG):
+        configure_default_font()
+    resource = importlib.resources.files(PACKAGE).joinpath(BOLD_FONT_RESOURCE)
+    if not resource.is_file():
+        raise BundledFontError(f"bundled font is missing: {BOLD_FONT_RESOURCE}")
+    with importlib.resources.as_file(resource) as path, dpg.font_registry():
+        bold = dpg.add_font(str(path), DEFAULT_FONT_SIZE)
+    return REGULAR_FONT_TAG, bold

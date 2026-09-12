@@ -12,7 +12,11 @@ from pathlib import Path
 
 from divergencesplitter.frame.camera import CameraCaptureSettings, OpenCvCameraSource
 from divergencesplitter.frame.models import Frame
-from divergencesplitter.frame.normalizer import FrameNormalizationError, FrameNormalizer
+from divergencesplitter.frame.normalizer import (
+    FrameNormalizationError,
+    FrameNormalizer,
+    ResizeInterpolation,
+)
 from divergencesplitter.frame.source import FrameSourceError
 from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
@@ -67,6 +71,11 @@ class CameraPreview:
                     if configuration.transform.resize is not None
                     else None
                 ),
+                resize_interpolation=(
+                    configuration.transform.resize.interpolation
+                    if configuration.transform.resize is not None
+                    else ResizeInterpolation.AREA
+                ),
             )
         self._stop.clear()
         self._thread = threading.Thread(
@@ -106,6 +115,11 @@ class CameraPreview:
                 transform.resize.to_output_size()
                 if transform.resize is not None
                 else None
+            ),
+            resize_interpolation=(
+                transform.resize.interpolation
+                if transform.resize is not None
+                else ResizeInterpolation.AREA
             ),
         )
         with self._lock:

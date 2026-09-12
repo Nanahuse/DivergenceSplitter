@@ -11,6 +11,16 @@ class Elapsed(ConditionBase):
         self._duration_nanoseconds = duration_nanoseconds
         self._started_at: MonotonicTime | None = None
         self._completed = False
+        self._elapsed_nanoseconds: int | None = None
+
+    @property
+    def duration_nanoseconds(self) -> int:
+        return self._duration_nanoseconds
+
+    @property
+    def elapsed_nanoseconds(self) -> int | None:
+        """Last evaluated progress, capped at the duration; None before starting."""
+        return self._elapsed_nanoseconds
 
     @property
     def children(self) -> tuple[Condition, ...]:
@@ -26,10 +36,12 @@ class Elapsed(ConditionBase):
         if self._started_at is None:
             self._started_at = context.now
         elapsed = context.now.nanoseconds - self._started_at.nanoseconds
+        self._elapsed_nanoseconds = min(elapsed, self._duration_nanoseconds)
         if elapsed >= self._duration_nanoseconds:
             self._completed = True
         return None if is_short_circuited else self._completed
 
     def _reset_state(self) -> None:
+        self._elapsed_nanoseconds = None
         self._started_at = None
         self._completed = False

@@ -25,6 +25,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     CropConfiguration,
     ResizeConfiguration,
+    ResizeInterpolation,
     SourceTransformConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
@@ -254,6 +255,13 @@ class ConfigurationPage:
                 callback=self._on_resize_changed,
                 parent=self._frame_processing_group,
             )
+            self._resize_interpolation_tag = dpg.add_combo(
+                label="Interpolation",
+                items=["Area", "Nearest", "Linear", "Cubic", "Lanczos4"],
+                default_value="Area",
+                callback=self._on_resize_interpolation_changed,
+                parent=self._frame_processing_group,
+            )
 
             dpg.add_separator()
             dpg.add_text("Instances")
@@ -378,7 +386,11 @@ class ConfigurationPage:
             self._crop_bottom_tag,
         ):
             dpg.configure_item(tag, enabled=source_enabled and crop is not None)
-        for tag in (self._resize_width_tag, self._resize_height_tag):
+        for tag in (
+            self._resize_width_tag,
+            self._resize_height_tag,
+            self._resize_interpolation_tag,
+        ):
             dpg.configure_item(tag, enabled=source_enabled and resize is not None)
         if transform is not None:
             dpg.set_value(self._crop_enabled_tag, crop is not None)
@@ -391,6 +403,10 @@ class ConfigurationPage:
             if resize is not None:
                 dpg.set_value(self._resize_width_tag, resize.width)
                 dpg.set_value(self._resize_height_tag, resize.height)
+                dpg.set_value(
+                    self._resize_interpolation_tag,
+                    resize.interpolation.value.title(),
+                )
         dpg.configure_item(
             self._log_level_tag,
             enabled=draft is not None and permission.log_level,
@@ -862,6 +878,19 @@ class ConfigurationPage:
             )
             self._update_camera_preview_transform()
 
+    def _on_resize_interpolation_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        values = {
+            "Area": ResizeInterpolation.AREA,
+            "Nearest": ResizeInterpolation.NEAREST,
+            "Linear": ResizeInterpolation.LINEAR,
+            "Cubic": ResizeInterpolation.CUBIC,
+            "Lanczos4": ResizeInterpolation.LANCZOS4,
+        }
+        self._model.set_resize_interpolation(values[app_data])
+        self._update_camera_preview_transform()
+
     def _update_camera_preview_transform(self) -> None:
         draft = self._model.draft
         if draft is None:
@@ -881,7 +910,9 @@ class ConfigurationPage:
                     None
                     if transform.resize is None
                     else ResizeConfiguration(
-                        transform.resize.width, transform.resize.height
+                        transform.resize.width,
+                        transform.resize.height,
+                        transform.resize.interpolation,
                     ),
                 )
             )
