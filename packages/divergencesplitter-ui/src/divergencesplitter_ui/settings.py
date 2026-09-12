@@ -504,7 +504,9 @@ class SettingsModel:
         interpolation = (
             current.interpolation if current is not None else ResizeInterpolation.AREA
         )
-        return self.set_resize(EditableResizeConfiguration(width, height, interpolation))
+        return self.set_resize(
+            EditableResizeConfiguration(width, height, interpolation)
+        )
 
     def set_resize_interpolation(
         self, interpolation: ResizeInterpolation
