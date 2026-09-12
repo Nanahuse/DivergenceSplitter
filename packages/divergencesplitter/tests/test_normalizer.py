@@ -124,7 +124,7 @@ class TestResize:
         result = normalizer.normalize(make_frame(image))
         assert isinstance(result, Frame)
         expected = cv2.resize(
-            image, (size.width, size.height), interpolation=cv2.INTER_LINEAR
+            image, (size.width, size.height), interpolation=cv2.INTER_AREA
         )
         np.testing.assert_array_equal(result.image, expected)
 
@@ -141,7 +141,7 @@ class TestResize:
             region.x : region.x + region.width,
         ]
         expected = cv2.resize(
-            manual_clip, (size.width, size.height), interpolation=cv2.INTER_LINEAR
+            manual_clip, (size.width, size.height), interpolation=cv2.INTER_AREA
         )
         np.testing.assert_array_equal(result.image, expected)
 

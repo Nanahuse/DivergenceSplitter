@@ -279,7 +279,7 @@ def _transform(value: object, path: str) -> SourceTransformConfiguration:
     resize = None
     if resize_value is not None:
         resize_object = _object(resize_value, f"{path}.resize")
-        _keys(resize_object, required={"width", "height"})
+        _keys(resize_object, required={"width", "height"}, optional={"interpolation"})
         resize = ResizeConfiguration(
             _integer(resize_object["width"], f"{path}.resize.width"),
             _integer(resize_object["height"], f"{path}.resize.height"),
