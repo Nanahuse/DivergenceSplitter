@@ -27,6 +27,7 @@ from divergencesplitter import (
     ResetWhen,
     RisingEdge,
     RootMeanSquareSimilarityDetector,
+    Rule,
     TemplateMatchDetector,
     Then,
 )
@@ -207,6 +208,8 @@ splits:
     assert reset.minimum_score == 0.8
     rules = scenario.splits[0]
     assert rules is not None
+    assert isinstance(rules[0], Rule)
+    assert isinstance(rules[0], Rule)
     assert rules[0].action.operation == "split"
     assert isinstance(rules[0].condition, Detected)
     assert isinstance(rules[0].condition.detector, TemplateMatchDetector)
@@ -352,6 +355,7 @@ splits:
 
     rules = scenario.splits[0]
     assert rules is not None
+    assert isinstance(rules[0], Rule)
     condition = rules[0].condition
     assert isinstance(condition, Then)
     assert len(condition.children) == 2
@@ -406,6 +410,7 @@ splits:
 
     rules = scenario.splits[0]
     assert rules is not None
+    assert isinstance(rules[0], Rule)
     reset_condition = scenario.reset_condition
     assert isinstance(reset_condition, Detected)
     assert isinstance(rules[0].condition, Detected)

@@ -17,6 +17,8 @@ from divergencesplitter import (
     ObservableCondition,
     ReferenceImage,
     Rule,
+    RuleSequence,
+    ScenarioRule,
 )
 
 from divergencesplitter_runtime.instances import ScenarioInstance
@@ -52,11 +54,19 @@ class RuleNode:
 
 
 @dataclass(frozen=True)
+class RuleSequenceNode:
+    """A sequence of rules within one split rule position."""
+
+    rule_index: int
+    rules: tuple[RuleNode, ...]
+
+
+@dataclass(frozen=True)
 class SplitNode:
     """A split position with its rules in declaration order."""
 
     split_index: int
-    rules: tuple[RuleNode, ...]
+    rules: tuple[RuleNode | RuleSequenceNode, ...]
 
 
 @dataclass(frozen=True)
@@ -127,13 +137,14 @@ def _scenario_node(
     )
 
 
-def _split_node(index: int, rules: tuple[Rule, ...] | None) -> SplitNode:
+def _split_node(index: int, rules: tuple[ScenarioRule, ...] | None) -> SplitNode:
     if rules is None:
         return SplitNode(split_index=index, rules=())
     return SplitNode(
         split_index=index,
         rules=tuple(
-            _rule_node(rule_index, rule) for rule_index, rule in enumerate(rules)
+            _scenario_rule_node(rule_index, rule)
+            for rule_index, rule in enumerate(rules)
         ),
     )
 
@@ -144,6 +155,22 @@ def _rule_node(rule_index: int, rule: Rule) -> RuleNode:
         action=rule.action.operation,
         condition=_condition_node(rule.condition),
     )
+
+
+def _scenario_rule_node(
+    rule_index: int, rule: ScenarioRule
+) -> RuleNode | RuleSequenceNode:
+    if isinstance(rule, RuleSequence):
+        return RuleSequenceNode(
+            rule_index=rule_index,
+            rules=tuple(
+                _rule_node(sequence_index, sequence_rule)
+                for sequence_index, sequence_rule in enumerate(rule.rules)
+            ),
+        )
+    if isinstance(rule, Rule):
+        return _rule_node(rule_index, rule)
+    raise TypeError(f"unsupported ScenarioRule: {type(rule).__name__}")
 
 
 def _condition_node(condition: Condition) -> ConditionNode:
@@ -214,6 +241,10 @@ def _collect_condition_observations(
             if rules is None:
                 continue
             for rule in rules:
-                visit(rule.condition)
+                if isinstance(rule, RuleSequence):
+                    for sequence_rule in rule.rules:
+                        visit(sequence_rule.condition)
+                elif isinstance(rule, Rule):
+                    visit(rule.condition)
 
     return tuple(observations)

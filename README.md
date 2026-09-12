@@ -302,3 +302,30 @@ uv run pytest
 uv run --package divergencesplitter pytest packages/divergencesplitter/tests
 uv run --package divergencesplitter-runtime pytest packages/divergencesplitter-runtime/tests
 ```
+
+To run multiple actions in order within one split slot, use `RuleSequence`:
+
+```python
+ds.RuleSequence(
+    ds.Rule(..., ds.Action("pause")),
+    ds.Rule(..., ds.Action("resume")),
+    ds.Rule(..., ds.Action("split")),
+)
+```
+
+The YAML equivalent keeps the existing `splits -> rules` shape:
+
+```yaml
+splits:
+  - rules:
+      - sequence:
+          - condition: {type: elapsed, duration: 1s}
+            action: pause
+          - condition: {type: elapsed, duration: 2s}
+            action: resume
+          - condition: {type: elapsed, duration: 3s}
+            action: split
+```
+
+`Then` sequences conditions until one Action is reached; `RuleSequence`
+sequences multiple Rules and their Actions.

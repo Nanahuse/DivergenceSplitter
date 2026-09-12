@@ -17,6 +17,7 @@ from divergencesplitter_runtime.observability import (
     DetectorNode,
     DetectorTreeSnapshot,
     RuleNode,
+    RuleSequenceNode,
     ScenarioNode,
     SplitNode,
 )
@@ -290,7 +291,10 @@ class ScreenRenderer:
             label=f"Split {split.split_index}",
         )
         for rule in split.rules:
-            self._build_rule(split_node, rule)
+            if isinstance(rule, RuleSequenceNode):
+                self._build_rule_sequence(split_node, rule)
+            else:
+                self._build_rule(split_node, rule)
 
     def _build_rule(self, parent: int | str, rule: RuleNode) -> None:
         rule_node = dpg.add_tree_node(
@@ -298,6 +302,20 @@ class ScreenRenderer:
             label=f"Rule {rule.rule_index} ({rule.action})",
         )
         self._build_condition(rule_node, rule.condition)
+
+    def _build_rule_sequence(
+        self, parent: int | str, sequence: RuleSequenceNode
+    ) -> None:
+        sequence_node = dpg.add_tree_node(
+            parent=parent,
+            label=f"Rule {sequence.rule_index} (sequence)",
+        )
+        for rule in sequence.rules:
+            step_node = dpg.add_tree_node(
+                parent=sequence_node,
+                label=f"Step {rule.rule_index} ({rule.action})",
+            )
+            self._build_condition(step_node, rule.condition)
 
     def _build_condition(self, parent: int | str, node: ConditionNode) -> None:
         condition_handle = dpg.add_tree_node(parent=parent, label=node.condition_type)

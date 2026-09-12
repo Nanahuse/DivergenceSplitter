@@ -60,7 +60,7 @@ from divergencesplitter.frame import (
     discover_ndi_sources,
 )
 from divergencesplitter.livesplit import LiveSplitConnection
-from divergencesplitter.rule import Action, Rule
+from divergencesplitter.rule import Action, Rule, RuleSequence, ScenarioRule
 from divergencesplitter.scenario import Scenario
 
 __all__ = [
@@ -115,7 +115,9 @@ __all__ = [
     "RootMeanSquareSimilarityConfig",
     "RootMeanSquareSimilarityDetector",
     "Rule",
+    "RuleSequence",
     "Scenario",
+    "ScenarioRule",
     "TemplateMatchConfig",
     "TemplateMatchDetector",
     "Then",

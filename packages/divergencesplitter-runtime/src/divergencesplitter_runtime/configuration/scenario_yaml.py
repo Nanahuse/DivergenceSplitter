@@ -56,7 +56,7 @@ from divergencesplitter.detector.models import (
     Region,
     freeze_config_image,
 )
-from divergencesplitter.rule import Action, Rule
+from divergencesplitter.rule import Action, Rule, RuleSequence, ScenarioRule
 from divergencesplitter.scenario.models import Scenario
 
 _TIME_PATTERN = re.compile(r"^(?P<value>\d+(?:\.\d+)?)(?P<unit>ms|s)$")
@@ -114,18 +114,29 @@ def _scenario(value: object, path: Path) -> Scenario:
 def _splits(
     value: object,
     path: Path,
-) -> tuple[tuple[Rule, ...] | None, ...]:
+) -> tuple[tuple[ScenarioRule, ...] | None, ...]:
     items = _list(value, "splits")
     return tuple(_split(item, path) for item in items)
 
 
-def _split(value: object, path: Path) -> tuple[Rule, ...] | None:
+def _split(value: object, path: Path) -> tuple[ScenarioRule, ...] | None:
     if value is None:
         return None
     split = _mapping(value, "split")
     _keys(split, required={"rules"})
     rules = _list(split["rules"], "split.rules")
-    return tuple(_rule(item, path) for item in rules)
+    return tuple(_scenario_rule(item, path) for item in rules)
+
+
+def _scenario_rule(value: object, path: Path) -> ScenarioRule:
+    rule = _mapping(value, "rule")
+    if "sequence" in rule:
+        _keys(rule, required={"sequence"})
+        items = _list(rule["sequence"], "rule.sequence")
+        if not items:
+            raise ValueError("rule.sequence must not be empty")
+        return RuleSequence(*(_rule(item, path) for item in items))
+    return _rule(rule, path)
 
 
 def _rule(value: object, path: Path) -> Rule:
