@@ -120,6 +120,9 @@ class ConditionView:
     active: bool = False
     duration_nanoseconds: int | None = None
     elapsed_nanoseconds: int | None = None
+    progress_current: float | int | None = None
+    progress_target: float | int | None = None
+    progress_unit: str | None = None
 
 
 def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
@@ -149,6 +152,13 @@ def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
         elapsed_nanoseconds=(
             observation.elapsed_nanoseconds if observation is not None else None
         ),
+        progress_current=(
+            observation.progress_current if observation is not None else None
+        ),
+        progress_target=(
+            observation.progress_target if observation is not None else None
+        ),
+        progress_unit=observation.progress_unit if observation is not None else None,
     )
 
 
@@ -158,6 +168,14 @@ def condition_label(view: ConditionView) -> str:
     marker = "▶ " if view.active else ""
     active = "  ACTIVE" if view.active else ""
     progress = ""
+    if view.progress_unit == "score":
+        current = format_score(view.progress_current)
+        target = format_score(view.progress_target)
+        progress = f"  {current} / {target}"
+    elif view.progress_unit == "count":
+        progress = f"  {view.progress_current} / {view.progress_target}"
+    elif view.progress_unit == "step":
+        progress = f"  step {view.progress_current} / {view.progress_target}"
     if view.duration_nanoseconds is not None:
         elapsed = (
             "—"

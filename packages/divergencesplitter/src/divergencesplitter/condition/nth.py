@@ -17,6 +17,14 @@ class Nth(ConditionBase):
         self._completed = False
 
     @property
+    def count(self) -> int:
+        return self._count
+
+    @property
+    def observed(self) -> int:
+        return self._observed
+
+    @property
     def children(self) -> tuple[Condition, ...]:
         return (self._condition,)
 
