@@ -257,6 +257,7 @@ def _transform_dict(transform: SourceTransformConfiguration) -> dict[str, object
             "width": transform.resize.width,
             "height": transform.resize.height,
             "interpolation": transform.resize.interpolation.value,
+            "resize_references": transform.resize.resize_references,
         },
     }
 
@@ -279,11 +280,16 @@ def _transform(value: object, path: str) -> SourceTransformConfiguration:
     resize = None
     if resize_value is not None:
         resize_object = _object(resize_value, f"{path}.resize")
-        _keys(resize_object, required={"width", "height"}, optional={"interpolation"})
+        _keys(
+            resize_object,
+            required={"width", "height"},
+            optional={"interpolation", "resize_references"},
+        )
         resize = ResizeConfiguration(
             _integer(resize_object["width"], f"{path}.resize.width"),
             _integer(resize_object["height"], f"{path}.resize.height"),
             ResizeInterpolation(resize_object.get("interpolation", "area")),
+            bool(resize_object.get("resize_references", False)),
         )
     return SourceTransformConfiguration(crop, resize)
 

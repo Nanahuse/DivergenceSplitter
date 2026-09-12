@@ -125,6 +125,7 @@ class EditableResizeConfiguration:
     width: int
     height: int
     interpolation: ResizeInterpolation = ResizeInterpolation.AREA
+    resize_references: bool = False
 
 
 @dataclass
@@ -239,6 +240,7 @@ def _editable_transform(
             transform.resize.width,
             transform.resize.height,
             transform.resize.interpolation,
+            transform.resize.resize_references,
         ),
     )
 
@@ -264,6 +266,7 @@ def _configuration_transform(
                 transform.resize.width,
                 transform.resize.height,
                 transform.resize.interpolation,
+                transform.resize.resize_references,
             )
         )
     except (TypeError, ValueError) as error:
@@ -504,8 +507,9 @@ class SettingsModel:
         interpolation = (
             current.interpolation if current is not None else ResizeInterpolation.AREA
         )
+        resize_references = current.resize_references if current is not None else False
         return self.set_resize(
-            EditableResizeConfiguration(width, height, interpolation)
+            EditableResizeConfiguration(width, height, interpolation, resize_references)
         )
 
     def set_resize_interpolation(
@@ -515,7 +519,19 @@ class SettingsModel:
             return self._editable
         current = self._editable.source.transform.resize
         return self.set_resize(
-            EditableResizeConfiguration(current.width, current.height, interpolation)
+            EditableResizeConfiguration(
+                current.width, current.height, interpolation, current.resize_references
+            )
+        )
+
+    def set_resize_references(self, enabled: bool):
+        if self._editable is None or self._editable.source.transform.resize is None:
+            return self._editable
+        current = self._editable.source.transform.resize
+        return self.set_resize(
+            EditableResizeConfiguration(
+                current.width, current.height, current.interpolation, enabled
+            )
         )
 
     def set_camera_device(
