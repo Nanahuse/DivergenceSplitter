@@ -1,6 +1,7 @@
 """Common clip and resize normalization shared by all frame sources."""
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 import cv2
 
@@ -43,6 +44,23 @@ class OutputSize:
             raise ValueError(f"output size must be positive: {self}")
 
 
+class ResizeInterpolation(StrEnum):
+    AREA = "area"
+    NEAREST = "nearest"
+    LINEAR = "linear"
+    CUBIC = "cubic"
+    LANCZOS4 = "lanczos4"
+
+
+_INTERPOLATION_TO_CV2 = {
+    ResizeInterpolation.AREA: cv2.INTER_AREA,
+    ResizeInterpolation.NEAREST: cv2.INTER_NEAREST,
+    ResizeInterpolation.LINEAR: cv2.INTER_LINEAR,
+    ResizeInterpolation.CUBIC: cv2.INTER_CUBIC,
+    ResizeInterpolation.LANCZOS4: cv2.INTER_LANCZOS4,
+}
+
+
 @dataclass(frozen=True)
 class FrameNormalizationError:
     """Base type for errors returned by ``FrameNormalizer.normalize``."""
@@ -66,12 +84,14 @@ class FrameNormalizer:
         clip_region: ClipRegion | None = None,
         crop_margins: CropMargins | None = None,
         output_size: OutputSize | None = None,
+        resize_interpolation: ResizeInterpolation = ResizeInterpolation.AREA,
     ) -> None:
         if clip_region is not None and crop_margins is not None:
             raise ValueError("clip_region and crop_margins are mutually exclusive")
         self._clip_region = clip_region
         self._crop_margins = crop_margins
         self._output_size = output_size
+        self._resize_interpolation = ResizeInterpolation(resize_interpolation)
 
     @property
     def clip_region(self) -> ClipRegion | None:
@@ -84,6 +104,10 @@ class FrameNormalizer:
     @property
     def crop_margins(self) -> CropMargins | None:
         return self._crop_margins
+
+    @property
+    def resize_interpolation(self) -> ResizeInterpolation:
+        return self._resize_interpolation
 
     def normalize(self, frame: Frame) -> Frame | FrameNormalizationError:
         image = frame.image
@@ -123,7 +147,7 @@ class FrameNormalizer:
                 image = cv2.resize(
                     image,
                     (self._output_size.width, self._output_size.height),
-                    interpolation=cv2.INTER_LINEAR,
+                    interpolation=_INTERPOLATION_TO_CV2[self._resize_interpolation],
                 )
             except cv2.error as error:
                 return FrameResizeError(f"failed to resize frame: {error}")

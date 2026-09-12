@@ -8,6 +8,7 @@ from typing import Any, Protocol, assert_never, cast
 
 from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.ndi import NdiSource, detect_ndi_support
+from divergencesplitter.frame.normalizer import ResizeInterpolation
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.frame.video_file import VideoFileSource
 
@@ -82,6 +83,7 @@ def build_frame_source(
                 request_60_fps=configuration.request_60_fps,
                 crop_margins=_crop_margins(configuration.transform),
                 output_size=_output_size(configuration.transform),
+                resize_interpolation=_resize_interpolation(configuration.transform),
             )
         case VideoSourceConfiguration():
             path = _resolve_path(configuration.path, base_directory)
@@ -89,6 +91,7 @@ def build_frame_source(
                 str(path),
                 crop_margins=_crop_margins(configuration.transform),
                 output_size=_output_size(configuration.transform),
+                resize_interpolation=_resize_interpolation(configuration.transform),
             )
         case NdiSourceConfiguration():
             support = detect_ndi_support()
@@ -100,6 +103,7 @@ def build_frame_source(
                 configuration.name,
                 crop_margins=_crop_margins(configuration.transform),
                 output_size=_output_size(configuration.transform),
+                resize_interpolation=_resize_interpolation(configuration.transform),
             )
     assert_never(configuration)
 
@@ -188,6 +192,14 @@ def _crop_margins(transform: SourceTransformConfiguration):
 
 def _output_size(transform: SourceTransformConfiguration):
     return transform.resize.to_output_size() if transform.resize is not None else None
+
+
+def _resize_interpolation(transform: SourceTransformConfiguration):
+    return (
+        transform.resize.interpolation
+        if transform.resize is not None
+        else ResizeInterpolation.AREA
+    )
 
 
 def resolve_configuration_path(path: str, *, base_directory: Path) -> Path:

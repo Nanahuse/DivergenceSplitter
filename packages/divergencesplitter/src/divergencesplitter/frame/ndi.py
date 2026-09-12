@@ -30,6 +30,7 @@ from divergencesplitter.frame.normalizer import (
     CropMargins,
     FrameNormalizer,
     OutputSize,
+    ResizeInterpolation,
 )
 from divergencesplitter.frame.source import (
     ErrorAction,
@@ -301,6 +302,7 @@ class NdiSource:
         clip_region: ClipRegion | None = None,
         crop_margins: CropMargins | None = None,
         output_size: OutputSize | None = None,
+        resize_interpolation: ResizeInterpolation = ResizeInterpolation.AREA,
         time_provider: TimeProvider | None = None,
         api: NdiApi | None = None,
         receive_timeout_ms: int = DEFAULT_RECEIVE_TIMEOUT_MS,
@@ -313,6 +315,7 @@ class NdiSource:
             clip_region=clip_region,
             crop_margins=crop_margins,
             output_size=output_size,
+            resize_interpolation=resize_interpolation,
         )
         self._source_name = source_name
         self._time_provider = (
