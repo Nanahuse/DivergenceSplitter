@@ -117,6 +117,11 @@ class ConditionView:
     latest_score: float | None
     max_score: float | None
 
+    @property
+    def active(self) -> bool:
+        """Whether this condition has a current evaluation result."""
+        return self.status_label in {"TRUE", "FALSE", "ERROR"}
+
 
 def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
     """Resolve one condition node to its display values.
@@ -146,7 +151,9 @@ def view_for(node: ConditionNode, index: ObservationIndex) -> ConditionView:
 def condition_label(view: ConditionView) -> str:
     """Format one Condition node label."""
 
-    return f"{view.condition_type} [{view.status_label}]"
+    marker = "▶ " if view.active else ""
+    active = "  ACTIVE" if view.active else ""
+    return f"{marker}{view.condition_type} [{view.status_label}]{active}"
 
 
 def scenario_label(node: ScenarioNode) -> str:
@@ -164,7 +171,9 @@ def detector_label(view: ConditionView) -> str | None:
 
     if view.detector_type is None:
         return None
-    return f"{view.detector_type} [{view.status_label}]"
+    marker = "▶ " if view.active else ""
+    active = "  ACTIVE" if view.active else ""
+    return f"{marker}{view.detector_type} [{view.status_label}]{active}"
 
 
 class ScreenPresenter:
