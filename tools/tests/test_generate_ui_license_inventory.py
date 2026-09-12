@@ -237,7 +237,11 @@ class TestBuildInventory:
     def test_packages_are_sorted_by_normalized_name(self) -> None:
         dists = [
             ui_distribution(
-                requires=["numpy", "opencv-python", "divergencesplitter-runtime"]
+                requires=[
+                    "numpy",
+                    "opencv-contrib-python",
+                    "divergencesplitter-runtime",
+                ]
             ),
             FakeDistribution(
                 "divergencesplitter-runtime",
@@ -251,14 +255,14 @@ class TestBuildInventory:
                 license_files={"licenses/LICENSE.txt": "numpy text"},
             ),
             FakeDistribution(
-                "opencv-python",
+                "opencv-contrib-python",
                 "5.0.0.93",
                 license="Apache 2.0",
                 license_files={"LICENSE.txt": "opencv text"},
             ),
         ]
-        override = invgen.OVERRIDES["opencv-python"]
-        invgen.OVERRIDES["opencv-python"] = invgen.Override(
+        override = invgen.OVERRIDES["opencv-contrib-python"]
+        invgen.OVERRIDES["opencv-contrib-python"] = invgen.Override(
             "Apache-2.0", "test override"
         )
         try:
@@ -266,12 +270,12 @@ class TestBuildInventory:
                 invgen.release_closure(installed(*dists))
             )
         finally:
-            invgen.OVERRIDES["opencv-python"] = override
+            invgen.OVERRIDES["opencv-contrib-python"] = override
 
         names = [entry["name"] for entry in inventory["packages"]]
 
         assert names == sorted(names, key=canonicalize_name)
-        assert names == ["numpy", "opencv-python"]
+        assert names == ["numpy", "opencv-contrib-python"]
 
     def test_name_version_license_and_text_are_extracted(self) -> None:
         dists = [

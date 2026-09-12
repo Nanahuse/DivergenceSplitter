@@ -39,10 +39,14 @@ from divergencesplitter.detector import (
     ColorRangeDetector,
     DifferenceHashSimilarityConfig,
     DifferenceHashSimilarityDetector,
+    HistogramSimilarityConfig,
+    HistogramSimilarityDetector,
     ImageDetector,
     MeanAbsoluteSimilarityConfig,
     MeanAbsoluteSimilarityDetector,
     MeanBrightnessDetector,
+    PerceptualHashSimilarityConfig,
+    PerceptualHashSimilarityDetector,
     PhaseCorrelationConfig,
     PhaseCorrelationDetector,
     RootMeanSquareSimilarityConfig,
@@ -296,6 +300,22 @@ def _detector(
             _keys(detector, required={"type", "reference"}, optional={"roi"})
             return PhaseCorrelationDetector(
                 PhaseCorrelationConfig(
+                    _reference_image(detector["reference"], f"{field}.reference", path),
+                    _roi(detector.get("roi"), f"{field}.roi"),
+                )
+            )
+        case "histogram_similarity":
+            _keys(detector, required={"type", "reference"}, optional={"roi"})
+            return HistogramSimilarityDetector(
+                HistogramSimilarityConfig(
+                    _reference_image(detector["reference"], f"{field}.reference", path),
+                    _roi(detector.get("roi"), f"{field}.roi"),
+                )
+            )
+        case "perceptual_hash_similarity":
+            _keys(detector, required={"type", "reference"}, optional={"roi"})
+            return PerceptualHashSimilarityDetector(
+                PerceptualHashSimilarityConfig(
                     _reference_image(detector["reference"], f"{field}.reference", path),
                     _roi(detector.get("roi"), f"{field}.roi"),
                 )

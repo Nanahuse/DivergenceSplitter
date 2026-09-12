@@ -18,6 +18,10 @@ from divergencesplitter.detector.difference_hash import (
     DifferenceHashSimilarityConfig,
     DifferenceHashSimilarityDetector,
 )
+from divergencesplitter.detector.histogram_similarity import (
+    HistogramSimilarityConfig,
+    HistogramSimilarityDetector,
+)
 from divergencesplitter.detector.interface import ImageDetector
 from divergencesplitter.detector.mean_absolute_similarity import (
     MeanAbsoluteSimilarityConfig,
@@ -25,6 +29,10 @@ from divergencesplitter.detector.mean_absolute_similarity import (
 )
 from divergencesplitter.detector.mean_brightness import MeanBrightnessDetector
 from divergencesplitter.detector.models import ReferenceImage, Region
+from divergencesplitter.detector.perceptual_hash_similarity import (
+    PerceptualHashSimilarityConfig,
+    PerceptualHashSimilarityDetector,
+)
 from divergencesplitter.detector.phase_correlation import (
     PhaseCorrelationConfig,
     PhaseCorrelationDetector,
@@ -44,10 +52,14 @@ __all__ = [
     "ColorRangeDetector",
     "DifferenceHashSimilarityConfig",
     "DifferenceHashSimilarityDetector",
+    "HistogramSimilarityConfig",
+    "HistogramSimilarityDetector",
     "ImageDetector",
     "MeanAbsoluteSimilarityConfig",
     "MeanAbsoluteSimilarityDetector",
     "MeanBrightnessDetector",
+    "PerceptualHashSimilarityConfig",
+    "PerceptualHashSimilarityDetector",
     "PhaseCorrelationConfig",
     "PhaseCorrelationDetector",
     "ReferenceImage",
