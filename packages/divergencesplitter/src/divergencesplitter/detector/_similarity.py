@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from divergencesplitter.detector.common import frame_region
+from divergencesplitter.detector.common import frame_region, prepare_reference_alpha
 from divergencesplitter.detector.models import FrozenConfigImage, Region
 from divergencesplitter.frame.models import FrameContext
 
@@ -22,14 +22,7 @@ class PreparedSimilarityReference:
 def prepare_similarity_reference(
     reference: FrozenConfigImage,
 ) -> PreparedSimilarityReference:
-    source = np.asarray(reference)
-    mask: np.ndarray | None = None
-    if source.ndim == 3 and source.shape[2] == 4:
-        valid = source[:, :, 3] > 0
-        if not np.any(valid):
-            raise ValueError("reference alpha mask has no valid pixels")
-        mask = np.ascontiguousarray(valid.astype(np.uint8) * 255)
-        source = source[:, :, :3]
+    source, mask = prepare_reference_alpha(np.asarray(reference))
     if source.ndim not in (2, 3):
         raise ValueError(f"unsupported reference shape: {source.shape}")
     if source.ndim == 3 and source.shape[2] not in (1, 3):

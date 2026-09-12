@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 
-import numpy as np
-
 from divergencesplitter.detector._configured import ConfiguredDetector
 from divergencesplitter.detector._similarity import (
     prepare_similarity_reference,
@@ -28,13 +26,6 @@ class RootMeanSquareSimilarityConfig:
 
     def __post_init__(self) -> None:
         _validate_frozen_config_image(self.reference)
-        reference = np.asarray(self.reference)
-        if (
-            reference.ndim == 3
-            and reference.shape[2] == 4
-            and not np.any(reference[:, :, 3] > 0)
-        ):
-            raise ValueError("reference alpha mask has no valid pixels")
 
 
 class RootMeanSquareSimilarityDetector(

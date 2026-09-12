@@ -28,6 +28,23 @@ FRAME_MEAN_KEY = "frame-mean"
 FRAME_GRAY_KEY = "frame-gray"
 
 
+def prepare_reference_alpha(
+    reference: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Remove a reference alpha channel and apply the binary mask contract."""
+    source = np.asarray(reference)
+    if source.ndim != 3 or source.shape[2] != 4:
+        return source, None
+    alpha = source[:, :, 3]
+    if np.all(alpha == 0):
+        raise ValueError("reference alpha mask has no valid pixels")
+    if not np.all((alpha == 0) | (alpha == 255)):
+        raise ValueError("reference alpha must contain only 0 or 255")
+    if np.all(alpha == 255):
+        return source[:, :, :3], None
+    return source[:, :, :3], np.ascontiguousarray((alpha == 255).astype(np.uint8) * 255)
+
+
 def preprocessed[T](context: FrameContext, key: object, compute: Callable[[], T]) -> T:
     """Return the value for ``key``, computing and caching it on the first use.
 
@@ -147,18 +164,13 @@ def _mean(image: ImageArray) -> float:
 
 
 def _mean_abs_diff(left: ImageArray, right: ConfigImage) -> float:
-    right_array = np.asarray(right, dtype=np.float64)
-    mask = None
-    if right_array.ndim == 3 and right_array.shape[2] == 4:
-        mask = right_array[:, :, 3] > 0
-        right_array = right_array[:, :, :3]
-        if not np.any(mask):
-            raise ValueError("reference alpha mask has no valid pixels")
+    right_array, mask = prepare_reference_alpha(np.asarray(right))
+    right_array = right_array.astype(np.float64, copy=False)
     if left.shape != right_array.shape:
         raise ValueError(f"shape mismatch: {left.shape} != {right_array.shape}")
     diff = np.abs(left.astype(np.float64) - right_array)
     if mask is not None:
-        return float(np.mean(diff[mask]))
+        return float(np.mean(diff[mask != 0]))
     return float(np.mean(diff))
 
 
