@@ -40,6 +40,7 @@ from divergencesplitter_ui.presentation import (
     ScreenPresenter,
     condition_label,
     detector_label,
+    format_score,
     has_new_observations,
     scenario_label,
     view_for,
@@ -62,6 +63,7 @@ class _ConditionRow:
     node: ConditionNode
     condition_handle: int | str
     detector_handle: int | str | None
+    score_handles: tuple[int | str, int | str, int | str] | None
 
 
 @dataclass
@@ -313,12 +315,19 @@ class ScreenRenderer:
                 parent=condition_handle,
                 label=node.detector.detector_type,
             )
+            score_handles = tuple(
+                dpg.add_text(label, parent=detector_handle)
+                for label in ("threshold    —", "current      —", "max          —")
+            )
             self._build_reference(detector_handle, node.detector)
+        else:
+            score_handles = None
         self._rows.append(
             _ConditionRow(
                 node=node,
                 condition_handle=condition_handle,
                 detector_handle=detector_handle,
+                score_handles=score_handles,
             )
         )
         for child in node.children:
@@ -417,6 +426,14 @@ class ScreenRenderer:
             formatted_detector = detector_label(view)
             if row.detector_handle is not None and formatted_detector is not None:
                 dpg.configure_item(row.detector_handle, label=formatted_detector)
+            if row.score_handles is not None:
+                values = (
+                    f"threshold    {format_score(view.minimum_score)}",
+                    f"current      {format_score(view.latest_score)}",
+                    f"max          {format_score(view.max_score)}",
+                )
+                for handle, value in zip(row.score_handles, values):
+                    dpg.set_value(handle, value)
 
     def _apply_image(self, frame) -> None:
         rgba = to_rgba_float32(frame.image)
