@@ -22,6 +22,7 @@ from divergencesplitter.frame.normalizer import (
     FrameNormalizer,
     FrameResizeError,
     OutputSize,
+    ResizeInterpolation,
 )
 from divergencesplitter.frame.source import (
     ErrorAction,
@@ -57,6 +58,7 @@ __all__ = [
     "NdiUnavailableError",
     "OpenCvCameraSource",
     "OutputSize",
+    "ResizeInterpolation",
     "VideoFileSource",
     "detect_ndi_support",
     "discover_ndi_sources",

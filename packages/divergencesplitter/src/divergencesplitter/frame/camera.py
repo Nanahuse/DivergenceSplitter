@@ -21,6 +21,7 @@ from divergencesplitter.frame.normalizer import (
     CropMargins,
     FrameNormalizer,
     OutputSize,
+    ResizeInterpolation,
 )
 from divergencesplitter.frame.source import (
     ErrorAction,
@@ -74,6 +75,7 @@ class OpenCvCameraSource:
         clip_region: ClipRegion | None = None,
         crop_margins: CropMargins | None = None,
         output_size: OutputSize | None = None,
+        resize_interpolation: ResizeInterpolation = ResizeInterpolation.AREA,
         time_provider: TimeProvider | None = None,
         capture_factory: Callable[[], cv2.VideoCapture | None] | None = None,
         request_60_fps: bool = False,
@@ -90,6 +92,7 @@ class OpenCvCameraSource:
             clip_region=clip_region,
             crop_margins=crop_margins,
             output_size=output_size,
+            resize_interpolation=resize_interpolation,
         )
         self._device_index = device_index
         self._backend = backend

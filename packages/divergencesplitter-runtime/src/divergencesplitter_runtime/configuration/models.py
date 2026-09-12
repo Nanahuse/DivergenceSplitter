@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from divergencesplitter.frame.normalizer import CropMargins, OutputSize
+from divergencesplitter.frame.normalizer import CropMargins, OutputSize, ResizeInterpolation
 from divergencesplitter.livesplit.models import LiveSplitConnection
 
 
@@ -65,6 +65,7 @@ class CropConfiguration:
 class ResizeConfiguration:
     width: int
     height: int
+    interpolation: ResizeInterpolation = ResizeInterpolation.AREA
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.height <= 0:
