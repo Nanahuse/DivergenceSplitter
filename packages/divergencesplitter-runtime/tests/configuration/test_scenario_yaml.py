@@ -39,6 +39,26 @@ from divergencesplitter_runtime.configuration.scenario_yaml import (
 )
 
 
+def test_reset_condition_is_optional_when_omitted(tmp_path: Path) -> None:
+    path = tmp_path / "scenario.yaml"
+    path.write_text(
+        "start_condition:\n  type: elapsed\n  duration: 0s\nsplits: []\n",
+        encoding="utf-8",
+    )
+    assert load_scenario_yaml(path).reset_condition is None
+
+
+def test_reset_condition_null_is_invalid(tmp_path: Path) -> None:
+    path = tmp_path / "scenario.yaml"
+    path.write_text(
+        "start_condition:\n  type: elapsed\n  duration: 0s\n"
+        "reset_condition: null\nsplits: []\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ScenarioYamlValidationError):
+        load_scenario_yaml(path)
+
+
 def write_reference_image(directory: Path, name: str = "title.png") -> Path:
     image = np.array(
         [

@@ -15,6 +15,6 @@ class Scenario:
     """A pre-constructed scenario: what to judge and which actions to fire."""
 
     start_condition: Condition
-    reset_condition: Condition
+    reset_condition: Condition | None
     incomplete_condition: Condition | None
     splits: tuple[tuple[ScenarioRule, ...] | None, ...]

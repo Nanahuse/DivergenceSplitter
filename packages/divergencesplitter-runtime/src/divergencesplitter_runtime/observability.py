@@ -76,7 +76,7 @@ class ScenarioNode:
     scenario_index: int
     connection: LiveSplitConnection
     start_condition: ConditionNode
-    reset_condition: ConditionNode
+    reset_condition: ConditionNode | None
     incomplete_condition: ConditionNode | None
     splits: tuple[SplitNode, ...]
 
@@ -125,7 +125,11 @@ def _scenario_node(
         scenario_index=scenario_index,
         connection=instance.connection,
         start_condition=_condition_node(scenario.start_condition),
-        reset_condition=_condition_node(scenario.reset_condition),
+        reset_condition=(
+            None
+            if scenario.reset_condition is None
+            else _condition_node(scenario.reset_condition)
+        ),
         incomplete_condition=(
             None
             if scenario.incomplete_condition is None
@@ -234,7 +238,8 @@ def _collect_condition_observations(
     for instance in instances:
         scenario = instance.scenario
         visit(scenario.start_condition)
-        visit(scenario.reset_condition)
+        if scenario.reset_condition is not None:
+            visit(scenario.reset_condition)
         if scenario.incomplete_condition is not None:
             visit(scenario.incomplete_condition)
         for rules in scenario.splits:

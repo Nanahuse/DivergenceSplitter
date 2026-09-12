@@ -39,7 +39,11 @@ class ScenarioRuntime:
         self._scenario = scenario
         self._logger = logger or logging.getLogger(__name__)
         self._start_rules = (Rule(scenario.start_condition, Action("start")),)
-        self._reset_rules = (Rule(scenario.reset_condition, Action("reset")),)
+        self._reset_rules = (
+            ()
+            if scenario.reset_condition is None
+            else (Rule(scenario.reset_condition, Action("reset")),)
+        )
         self._incomplete_rules = (
             ()
             if scenario.incomplete_condition is None
