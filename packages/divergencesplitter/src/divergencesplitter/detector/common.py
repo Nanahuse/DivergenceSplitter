@@ -28,6 +28,10 @@ FRAME_MEAN_KEY = "frame-mean"
 FRAME_GRAY_KEY = "frame-gray"
 
 
+def _clamp_unit_score(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
 def prepare_reference_alpha(
     reference: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray | None]:

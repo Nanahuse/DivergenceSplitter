@@ -151,7 +151,7 @@ def _detector(
 ) -> tuple[str, float]:
     method = definition.comparison_method
     if method == 0:
-        return "root_mean_square_similarity", -255.0 * (1.0 - definition.threshold)
+        return "root_mean_square_similarity", definition.threshold
     if method == 1:
         return "histogram_similarity", definition.threshold
     if method == 2:

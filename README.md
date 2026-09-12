@@ -62,6 +62,10 @@ scenario = ds.Scenario(
 `reset_condition` is optional. Omit it (or pass `None` in Python) when the
 scenario has no automatic reset condition.
 
+Built-in detectors generally report scores in the range `[0.0, 1.0]`, with
+higher values indicating a stronger response. Custom detectors are not
+required to use this range.
+
 Scenarios do not carry a LiveSplit connection; the JSON configuration pairs
 each scenario with a connection destination. The JSON configuration selects the
 frame source and one or more connection/scenario instances independently:

@@ -7,6 +7,7 @@ from divergencesplitter.detector._similarity import (
     prepare_similarity_reference,
     similarity_error,
 )
+from divergencesplitter.detector.common import _clamp_unit_score
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -57,4 +58,4 @@ class MeanAbsoluteSimilarityDetector(ConfiguredDetector[MeanAbsoluteSimilarityCo
             )
         )
         context.preprocessing_cache.setdefault(key, diff)
-        return DetectionResult(score=-diff)
+        return DetectionResult(score=_clamp_unit_score(1.0 - diff / 255.0))

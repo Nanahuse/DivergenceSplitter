@@ -9,7 +9,10 @@ import cv2
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
-from divergencesplitter.detector.common import prepare_reference_alpha
+from divergencesplitter.detector.common import (
+    _clamp_unit_score,
+    prepare_reference_alpha,
+)
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -80,7 +83,9 @@ class TemplateMatchDetector(ConfiguredDetector[TemplateMatchConfig]):
         score = float(np.max(response))
         if not math.isfinite(score):
             raise ValueError(f"template match produced non-finite score: {score}")
-        return DetectionResult(score=score)
+        if mask is None:
+            score = (score + 1.0) / 2.0
+        return DetectionResult(score=_clamp_unit_score(score))
 
     def __init__(self, config: TemplateMatchConfig) -> None:
         super().__init__(config)

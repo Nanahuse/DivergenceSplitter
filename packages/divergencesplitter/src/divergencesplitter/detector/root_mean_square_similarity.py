@@ -7,6 +7,7 @@ from divergencesplitter.detector._similarity import (
     prepare_similarity_reference,
     similarity_error,
 )
+from divergencesplitter.detector.common import _clamp_unit_score
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -43,4 +44,4 @@ class RootMeanSquareSimilarityDetector(
 
     def detect(self, context: FrameContext) -> DetectionResult:
         error = similarity_error(context, self._prepared, self.config.roi, 2)
-        return DetectionResult(score=-error)
+        return DetectionResult(score=_clamp_unit_score(1.0 - error / 255.0))

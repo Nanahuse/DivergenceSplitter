@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from divergencesplitter.detector.common import frame_mean_region
+from divergencesplitter.detector.common import _clamp_unit_score, frame_mean_region
 from divergencesplitter.detector.models import DetectionResult, ReferenceImage, Region
 from divergencesplitter.frame.models import FrameContext
 
@@ -19,4 +19,4 @@ class MeanBrightnessDetector:
 
     def detect(self, context: FrameContext) -> DetectionResult:
         mean = frame_mean_region(context, self.roi)
-        return DetectionResult(score=mean)
+        return DetectionResult(score=_clamp_unit_score(mean / 255.0))

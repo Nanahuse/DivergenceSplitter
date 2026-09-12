@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 
 from divergencesplitter.detector._configured import ConfiguredDetector
-from divergencesplitter.detector.common import frame_gray, to_gray
+from divergencesplitter.detector.common import _clamp_unit_score, frame_gray, to_gray
 from divergencesplitter.detector.models import (
     DetectionResult,
     FrozenConfigImage,
@@ -59,7 +59,7 @@ class PhaseCorrelationDetector(ConfiguredDetector[PhaseCorrelationConfig]):
         score = float(response)
         if not math.isfinite(score):
             raise ValueError(f"phase correlation produced non-finite response: {score}")
-        return DetectionResult(score=score)
+        return DetectionResult(score=_clamp_unit_score(score))
 
     def __init__(self, config: PhaseCorrelationConfig) -> None:
         super().__init__(config)

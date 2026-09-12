@@ -194,7 +194,7 @@ class RootMeanSquareSimilarityDetectorTest(unittest.TestCase):
         score = evaluate(
             make_context(np.array([[3, 4]], dtype=np.uint8)), detector
         ).score
-        self.assertAlmostEqual(score, -np.sqrt(12.5))
+        self.assertAlmostEqual(score, 1.0 - np.sqrt(12.5) / 255.0)
 
     def test_alpha_mask_excludes_transparent_pixels(self) -> None:
         reference = freeze_config_image([[[0, 0, 0, 255], [0, 0, 0, 0]]])
@@ -202,7 +202,7 @@ class RootMeanSquareSimilarityDetectorTest(unittest.TestCase):
             RootMeanSquareSimilarityConfig(reference)
         )
         frame = np.array([[[0, 0, 0], [100, 100, 100]]], dtype=np.uint8)
-        self.assertEqual(evaluate(make_context(frame), detector).score, 0.0)
+        self.assertEqual(evaluate(make_context(frame), detector).score, 1.0)
 
     def test_exposes_reference_and_rejects_shape_mismatch(self) -> None:
         detector = RootMeanSquareSimilarityDetector(
