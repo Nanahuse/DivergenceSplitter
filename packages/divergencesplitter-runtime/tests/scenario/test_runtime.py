@@ -500,6 +500,55 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         )
         self.assertEqual(condition.resets, baseline)
 
+    def test_game_time_revision_does_not_stop_start_evaluation(self) -> None:
+        start = RecordingCondition(False)
+        runtime = ScenarioRuntime(make_scenario((), start_condition=start))
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                )
+            )
+        )
+        resets = start.resets
+        for sequence in range(1, 4):
+            runtime.apply_livesplit_update(
+                update(
+                    make_snapshot(
+                        phase=TimerPhase.NOT_RUNNING,
+                        split_index=-1,
+                        state_revision=1,
+                        event_sequence=sequence,
+                    ),
+                    LiveSplitUpdateKind.PERIODIC,
+                )
+            )
+            runtime.evaluate(context(sequence))
+        self.assertEqual(start.calls, 3)
+        self.assertEqual(start.resets, resets)
+        assert runtime.current_snapshot is not None
+        self.assertEqual(runtime.current_snapshot.state_revision, 1)
+
+    def test_same_sequence_resync_releases_wait_for_original_session(self) -> None:
+        start = RecordingCondition(True)
+        runtime = ScenarioRuntime(make_scenario((), start_condition=start))
+        baseline = make_snapshot(phase=TimerPhase.NOT_RUNNING, split_index=-1)
+        runtime.apply_livesplit_update(update(baseline))
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(
+                    session_id=2,
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                ),
+                LiveSplitUpdateKind.PERIODIC,
+            )
+        )
+        self.assertIsNone(runtime.evaluate(context()))
+        runtime.apply_livesplit_update(update(baseline, LiveSplitUpdateKind.RESYNC))
+        self.assertEqual(runtime.evaluate(context()), Action("start"))
+
     def test_gap_stops_evaluation_until_resync(self) -> None:
         condition = RecordingCondition(True)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))

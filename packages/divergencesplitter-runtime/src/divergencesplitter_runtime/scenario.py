@@ -85,16 +85,21 @@ class ScenarioRuntime:
             self._log(logging.INFO, "scenario_runtime.session_resynced")
             return
 
+        # An RPC resync can confirm the same sequence: no new event is required
+        # to release a synchronization wait or refresh the authoritative state.
+        if update.kind is LiveSplitUpdateKind.RESYNC:
+            if snapshot.event_sequence < current.event_sequence:
+                self._log(logging.DEBUG, "scenario_runtime.update_ignored")
+                return
+            self._apply_resync(snapshot, current)
+            return
+
         if snapshot.event_sequence <= current.event_sequence:
             self._log(logging.DEBUG, "scenario_runtime.update_ignored")
             return
 
         if update.kind is LiveSplitUpdateKind.INITIAL:
             self._log(logging.WARNING, "scenario_runtime.initial_update_ignored")
-            return
-
-        if update.kind is LiveSplitUpdateKind.RESYNC:
-            self._apply_resync(snapshot, current)
             return
 
         if self._awaiting_resync:
@@ -143,8 +148,9 @@ class ScenarioRuntime:
         received: LiveSplitSnapshot,
     ) -> bool:
         return (
-            current.state_revision != received.state_revision
-            or current.phase is not received.phase
+            # Game-time events advance the revision without changing which
+            # scenario rules should run. They are valid PERIODIC updates.
+            current.phase is not received.phase
             or current.split_index != received.split_index
             or current.split_count != received.split_count
         )
