@@ -57,6 +57,7 @@ class TestStatusAndScoreFormatting:
         assert status_label(ConditionStatus.TRUE) == "TRUE"
         assert status_label(ConditionStatus.FALSE) == "FALSE"
         assert status_label(ConditionStatus.SKIPPED) == "SKIPPED"
+        assert status_label(ConditionStatus.ERROR) == "ERROR"
 
     def test_format_score_none_is_empty(self) -> None:
         assert format_score(None) == ""

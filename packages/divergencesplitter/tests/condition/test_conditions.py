@@ -18,6 +18,10 @@ from divergencesplitter.condition import (
     RisingEdge,
     Then,
 )
+from divergencesplitter.detector import (
+    RootMeanSquareSimilarityConfig,
+    RootMeanSquareSimilarityDetector,
+)
 from divergencesplitter.detector.models import DetectionResult
 from divergencesplitter.frame.models import Frame, FrameContext
 
@@ -86,6 +90,29 @@ class CountingDetector:
 
 
 class BooleanConditionTest(unittest.TestCase):
+    def test_detector_shape_error_is_observable_and_can_recover(self) -> None:
+        condition = Detected(
+            RootMeanSquareSimilarityDetector(
+                RootMeanSquareSimilarityConfig(reference=((0, 0), (0, 0)))
+            ),
+            minimum_score=-1.0,
+        )
+        parent = All(condition)
+        with self.assertRaisesRegex(ValueError, "shape mismatch"):
+            parent.evaluate(make_context())
+        self.assertIs(condition.status, ConditionStatus.ERROR)
+        self.assertIs(parent.status, ConditionStatus.ERROR)
+        self.assertIsNone(condition.latest_score)
+        good = FrameContext(
+            Frame(np.zeros((2, 2), dtype=np.uint8), MonotonicTime(0)),
+            MonotonicTime(0),
+        )
+        self.assertTrue(parent.evaluate(good))
+        self.assertIs(condition.status, ConditionStatus.TRUE)
+        self.assertEqual(condition.latest_score, 0.0)
+        parent.reset()
+        self.assertIsNone(condition.status)
+
     def test_empty_identities(self) -> None:
         self.assertTrue(All().evaluate(make_context()))
         self.assertFalse(Any().evaluate(make_context()))

@@ -34,6 +34,7 @@ _STATUS_LABELS = {
     ConditionStatus.TRUE: "TRUE",
     ConditionStatus.FALSE: "FALSE",
     ConditionStatus.SKIPPED: "SKIPPED",
+    ConditionStatus.ERROR: "ERROR",
 }
 
 

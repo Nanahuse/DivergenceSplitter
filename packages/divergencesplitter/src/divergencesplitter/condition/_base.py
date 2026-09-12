@@ -41,7 +41,11 @@ class ConditionBase(ABC):
         *,
         is_short_circuited: bool = False,
     ) -> bool | None:
-        result = self._evaluate(context, is_short_circuited=is_short_circuited)
+        try:
+            result = self._evaluate(context, is_short_circuited=is_short_circuited)
+        except Exception:
+            self._status = ConditionStatus.ERROR
+            raise
         if is_short_circuited:
             self._status = ConditionStatus.SKIPPED
         if type(result) is bool:
@@ -50,6 +54,7 @@ class ConditionBase(ABC):
             return result
         if is_short_circuited and result is None:
             return None
+        self._status = ConditionStatus.ERROR
         raise TypeError(f"condition must return a strict bool, got {result!r}")
 
     @abstractmethod
