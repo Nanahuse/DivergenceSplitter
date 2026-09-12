@@ -315,12 +315,20 @@ class ScreenRenderer:
                 parent=condition_handle,
                 label=node.detector.detector_type,
             )
-            score_handles = []
-            for label in ("threshold", "current", "max"):
-                with dpg.group(horizontal=True, parent=detector_handle):
-                    dpg.add_text(label, width=95)
-                    score_handles.append(dpg.add_text("—", width=72))
-            score_handles = tuple(score_handles)
+            score_items: list[int | str] = []
+            # Text items do not accept width; the table owns column sizing.
+            with dpg.table(
+                parent=detector_handle,
+                header_row=False,
+                policy=dpg.mvTable_SizingFixedFit,
+            ):
+                dpg.add_table_column(width_fixed=True, init_width_or_weight=95)
+                dpg.add_table_column(width_fixed=True, init_width_or_weight=72)
+                for label in ("threshold", "current", "max"):
+                    with dpg.table_row():
+                        dpg.add_text(label)
+                        score_items.append(dpg.add_text("—"))
+            score_handles = (score_items[0], score_items[1], score_items[2])
             self._build_reference(detector_handle, node.detector)
         else:
             score_handles = None
