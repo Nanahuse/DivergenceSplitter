@@ -77,8 +77,8 @@ def format_score(value: float | None) -> str:
     """Format a detector score for display, or an empty string for ``None``."""
 
     if value is None:
-        return ""
-    return f"{value:.4g}"
+        return "—"
+    return f"{value:.4f}"
 
 
 def has_new_observations(observations: tuple[ConditionObservation, ...]) -> bool:
@@ -160,17 +160,11 @@ def scenario_label(node: ScenarioNode) -> str:
 
 
 def detector_label(view: ConditionView) -> str | None:
-    """Format one Detector node label, including all score values."""
+    """Format the stable Detector node label; scores are separate fields."""
 
     if view.detector_type is None:
         return None
-    threshold = format_score(view.minimum_score) or "—"
-    latest = format_score(view.latest_score) or "—"
-    maximum = format_score(view.max_score) or "—"
-    return (
-        f"{view.detector_type} [{view.status_label}]"
-        f"  threshold={threshold}  current={latest}  max={maximum}"
-    )
+    return f"{view.detector_type} [{view.status_label}]"
 
 
 class ScreenPresenter:
