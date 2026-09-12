@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Sync locked environment
-        run: uv sync --locked --all-packages
+        run: uv sync --locked --all-packages --all-groups
       - name: Build converter executable
         run: uv run pyinstaller --onefile --windowed tools/converter_entry.py --name autosplit-converter
       - name: Upload converter executable
