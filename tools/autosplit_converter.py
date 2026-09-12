@@ -23,7 +23,7 @@ class AutoSplitImageDefinition:
     threshold: float
     comparison_method: int
     delay_ms: float = 0.0
-    pause_ms: float = 0.0
+    pause_seconds: float = 0.0
     loop_count: int = 1
     dummy: bool = False
     below_threshold: bool = False
@@ -146,6 +146,10 @@ def _duration(milliseconds: float) -> str:
     return f"{milliseconds:g}ms"
 
 
+def _pause_duration(seconds: float) -> str:
+    return f"{seconds:g}s"
+
+
 def _detector(
     definition: AutoSplitImageDefinition, reference: str
 ) -> tuple[str, float]:
@@ -173,17 +177,31 @@ def _condition(definition: AutoSplitImageDefinition, reference: str) -> list[str
         lines = ["condition:", "  type: falling_edge", "  condition:"] + [
             "  " + line for line in lines
         ]
-    if definition.delay_ms:
-        lines += [
-            "  # delay is represented by the following Then stage",
-            "  # duration: " + _duration(definition.delay_ms),
-        ]
     return lines
 
 
 def _top_condition(definition: AutoSplitImageDefinition, reference: str) -> list[str]:
     lines = _condition(definition, reference)
     return [line[2:] for line in lines[1:]]
+
+
+def _stage(definition: AutoSplitImageDefinition, reference: str) -> list[str]:
+    """Return condition stages, retaining pause semantics and edge flags."""
+    stages = [_top_condition(definition, reference)]
+    if definition.pause_seconds:
+        stages.append(
+            ["type: elapsed", f"duration: {_pause_duration(definition.pause_seconds)}"]
+        )
+    return stages
+
+
+def _then(stages: list[list[str]]) -> list[str]:
+    if len(stages) == 1:
+        return stages[0]
+    lines = ["type: then", "conditions:"]
+    for stage in stages:
+        lines += ["  - " + stage[0]] + ["    " + line for line in stage[1:]]
+    return lines
 
 
 def convert(analysis: ConversionAnalysis, output_path: str | Path) -> ConversionResult:
@@ -242,22 +260,59 @@ def convert(analysis: ConversionAnalysis, output_path: str | Path) -> Conversion
             "  " + line for line in _top_condition(analysis.reset, reference)
         ]
     lines += ["splits:"]
+    pending: list[list[str]] = []
+    slot: list[tuple[list[str], str, str]] = []
+    pause_state = False
+
+    def emit_slot() -> None:
+        nonlocal slot
+        if not slot:
+            return
+        lines.extend(["  - rules:", "      -"])
+        if len(slot) == 1:
+            condition, action, _ = slot[0]
+            lines.extend(
+                "        " + value
+                for value in ["condition:"] + ["  " + v for v in condition]
+            )
+            lines.append(f"        action: {action}")
+        else:
+            lines.append("        sequence:")
+            for condition, action, _ in slot:
+                lines.append("          - condition:")
+                lines.extend("              " + value for value in condition)
+                lines.append(f"            action: {action}")
+        slot = []
+
     for index, definition in enumerate(analysis.images, 1):
         try:
             reference = asset(definition.source_path, "split", index)
-            repeat = definition.loop_count
-            for _ in range(repeat):
+            for _ in range(definition.loop_count):
+                pending.extend(_stage(definition, reference))
                 if definition.dummy:
+                    if definition.delay_ms:
+                        not_converted.append(
+                            f"{definition.source_path.name}: ignored delay on dummy image"
+                        )
                     continue
+                if definition.delay_ms:
+                    pending.append(
+                        ["type: elapsed", f"duration: {_duration(definition.delay_ms)}"]
+                    )
                 action = "pause" if definition.pause_action else "split"
-                lines += (
-                    ["  - rules:", "      -"]
-                    + ["        " + line for line in _condition(definition, reference)]
-                    + [f"        action: {action}"]
-                )
+                if definition.pause_action:
+                    action = "resume" if pause_state else "pause"
+                    pause_state = not pause_state
+                slot.append((_then(pending), action, definition.source_path.name))
+                pending = []
                 converted.append(definition.source_path.name)
+                if action == "split":
+                    emit_slot()
         except ValueError as error:
             not_converted.append(f"{definition.source_path.name}: {error}")
+    if pending:
+        not_converted.append("Terminal dummy sequence was not emitted.")
+    emit_slot()
     if not_converted:
         lines[1] = "# Import result: Partial"
     if manual:
