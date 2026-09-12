@@ -262,6 +262,11 @@ class ConfigurationPage:
                 callback=self._on_resize_interpolation_changed,
                 parent=self._frame_processing_group,
             )
+            self._resize_references_tag = dpg.add_checkbox(
+                label="Resize reference images",
+                callback=self._on_resize_references_changed,
+                parent=self._frame_processing_group,
+            )
 
             dpg.add_separator()
             dpg.add_text("Instances")
@@ -390,6 +395,7 @@ class ConfigurationPage:
             self._resize_width_tag,
             self._resize_height_tag,
             self._resize_interpolation_tag,
+            self._resize_references_tag,
         ):
             dpg.configure_item(tag, enabled=source_enabled and resize is not None)
         if transform is not None:
@@ -407,6 +413,7 @@ class ConfigurationPage:
                     self._resize_interpolation_tag,
                     resize.interpolation.value.title(),
                 )
+                dpg.set_value(self._resize_references_tag, resize.resize_references)
         dpg.configure_item(
             self._log_level_tag,
             enabled=draft is not None and permission.log_level,
@@ -891,6 +898,11 @@ class ConfigurationPage:
         self._model.set_resize_interpolation(values[app_data])
         self._update_camera_preview_transform()
 
+    def _on_resize_references_changed(self, sender, app_data, user_data) -> None:
+        if not edit_permission(self._controller.state).source:
+            return
+        self._model.set_resize_references(bool(app_data))
+
     def _update_camera_preview_transform(self) -> None:
         draft = self._model.draft
         if draft is None:
@@ -913,6 +925,7 @@ class ConfigurationPage:
                         transform.resize.width,
                         transform.resize.height,
                         transform.resize.interpolation,
+                        transform.resize.resize_references,
                     ),
                 )
             )

@@ -70,6 +70,7 @@ class ResizeConfiguration:
     width: int
     height: int
     interpolation: ResizeInterpolation = ResizeInterpolation.AREA
+    resize_references: bool = False
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.height <= 0:
