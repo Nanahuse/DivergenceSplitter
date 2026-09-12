@@ -14,9 +14,9 @@ from divergencesplitter import (
     Detected,
     Elapsed,
     Hold,
-    Nth,
     ImageDetector,
     LiveSplitConnection,
+    Nth,
     ObservableCondition,
     ReferenceImage,
     Rule,
@@ -246,7 +246,7 @@ def _collect_condition_observations(
                 condition.minimum_score,
                 "score",
             )
-        elif isinstance(condition, Elapsed) or isinstance(condition, Hold):
+        elif isinstance(condition, (Elapsed, Hold)):
             progress_current, progress_target, progress_unit = (
                 condition.elapsed_nanoseconds,
                 condition.duration_nanoseconds,
