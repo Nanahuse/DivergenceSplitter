@@ -26,6 +26,14 @@ class Then(ConditionBase):
         self._completed = False
 
     @property
+    def current_step(self) -> int:
+        return self._index
+
+    @property
+    def step_count(self) -> int:
+        return len(self._conditions)
+
+    @property
     def children(self) -> tuple[Condition, ...]:
         return self._conditions
 

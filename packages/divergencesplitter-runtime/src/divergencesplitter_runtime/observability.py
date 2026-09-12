@@ -13,6 +13,10 @@ from divergencesplitter import (
     ConditionStatus,
     Detected,
     Elapsed,
+    Hold,
+    Nth,
+    Then,
+    Elapsed,
     ImageDetector,
     LiveSplitConnection,
     ObservableCondition,
@@ -108,6 +112,9 @@ class ConditionObservation:
     max_score: float | None
     active: bool = False
     elapsed_nanoseconds: int | None = None
+    progress_current: float | int | None = None
+    progress_target: float | int | None = None
+    progress_unit: str | None = None
 
 
 def build_detector_tree(
@@ -228,10 +235,34 @@ def _collect_condition_observations(
         seen.add(identity)
         latest_score: float | None = None
         max_score: float | None = None
+        progress_current: float | int | None = None
+        progress_target: float | int | None = None
+        progress_unit: str | None = None
         if isinstance(condition, Detected):
             if condition.status in (ConditionStatus.TRUE, ConditionStatus.FALSE):
                 latest_score = condition.latest_score
             max_score = condition.max_score
+            progress_current, progress_target, progress_unit = (
+                latest_score,
+                condition.minimum_score,
+                "score",
+            )
+        elif isinstance(condition, Elapsed):
+            progress_current, progress_target, progress_unit = (
+                condition.elapsed_nanoseconds,
+                condition.duration_nanoseconds,
+                "nanoseconds",
+            )
+        elif isinstance(condition, Hold):
+            progress_current, progress_target, progress_unit = (
+                condition.elapsed_nanoseconds,
+                condition.duration_nanoseconds,
+                "nanoseconds",
+            )
+        elif isinstance(condition, Nth):
+            progress_current, progress_target, progress_unit = condition.observed, condition.count, "count"
+        elif isinstance(condition, Then):
+            progress_current, progress_target, progress_unit = condition.current_step, condition.step_count, "step"
         status = (
             condition.status if isinstance(condition, ObservableCondition) else None
         )
@@ -256,6 +287,9 @@ def _collect_condition_observations(
                         ConditionStatus.ERROR,
                     )
                 ),
+                progress_current=progress_current,
+                progress_target=progress_target,
+                progress_unit=progress_unit,
             )
         )
         for child in condition.children:

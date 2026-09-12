@@ -11,6 +11,15 @@ class Hold(ConditionBase):
         self._condition = condition
         self._duration_nanoseconds = duration_nanoseconds
         self._started_at: MonotonicTime | None = None
+        self._elapsed_nanoseconds: int | None = None
+
+    @property
+    def duration_nanoseconds(self) -> int:
+        return self._duration_nanoseconds
+
+    @property
+    def elapsed_nanoseconds(self) -> int | None:
+        return self._elapsed_nanoseconds
 
     @property
     def children(self) -> tuple[Condition, ...]:
@@ -24,14 +33,17 @@ class Hold(ConditionBase):
             raise ValueError("monotonic time moved backwards")
         if not current:
             self._started_at = None
+            self._elapsed_nanoseconds = 0
             result = False
         else:
             if self._started_at is None:
                 self._started_at = context.now
             elapsed = context.now.nanoseconds - self._started_at.nanoseconds
+            self._elapsed_nanoseconds = min(elapsed, self._duration_nanoseconds)
             result = elapsed >= self._duration_nanoseconds
         return None if is_short_circuited else result
 
     def _reset_state(self) -> None:
         self._started_at = None
+        self._elapsed_nanoseconds = None
         self._condition.reset()
