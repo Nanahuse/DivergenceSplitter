@@ -423,10 +423,16 @@ class ScreenRenderer:
     def _apply_observations(self, observations) -> None:
         index = ObservationIndex.build(observations)
         for row in self._rows:
+            if not dpg.does_item_exist(row.condition_handle):
+                continue
             view = view_for(row.node, index)
             dpg.configure_item(row.condition_handle, label=condition_label(view))
             formatted_detector = detector_label(view)
-            if row.detector_handle is not None and formatted_detector is not None:
+            if (
+                row.detector_handle is not None
+                and formatted_detector is not None
+                and dpg.does_item_exist(row.detector_handle)
+            ):
                 dpg.configure_item(row.detector_handle, label=formatted_detector)
             if row.score_handles is not None:
                 values = (
@@ -435,7 +441,8 @@ class ScreenRenderer:
                     format_score(view.max_score),
                 )
                 for handle, value in zip(row.score_handles, values):
-                    dpg.set_value(handle, value)
+                    if dpg.does_item_exist(handle):
+                        dpg.set_value(handle, value)
 
     def _apply_image(self, frame) -> None:
         rgba = to_rgba_float32(frame.image)
