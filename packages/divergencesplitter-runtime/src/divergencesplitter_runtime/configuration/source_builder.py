@@ -8,9 +8,9 @@ from typing import Any, Protocol, assert_never, cast
 
 from divergencesplitter.frame.camera import OpenCvCameraSource
 from divergencesplitter.frame.ndi import NdiSource, detect_ndi_support
+from divergencesplitter.frame.normalizer import ResizeInterpolation
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.frame.video_file import VideoFileSource
-from divergencesplitter.frame.normalizer import ResizeInterpolation
 
 from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
