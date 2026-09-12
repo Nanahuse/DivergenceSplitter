@@ -108,7 +108,7 @@ OVERRIDES: dict[str, Override] = {
         "BSD-3-Clause",
         "release metadata License is '3-Clause BSD License', not an SPDX expression",
     ),
-    "opencv-python": Override(
+    "opencv-contrib-python": Override(
         "Apache-2.0",
         "release metadata License is 'Apache 2.0', not an SPDX expression",
     ),
