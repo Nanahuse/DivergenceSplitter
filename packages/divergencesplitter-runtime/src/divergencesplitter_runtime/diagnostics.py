@@ -10,6 +10,7 @@ import traceback
 import uuid
 from collections.abc import Mapping, MutableMapping
 from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, TextIO
 from urllib.parse import urlsplit, urlunsplit
@@ -117,16 +118,27 @@ class OperationalDiagnostics:
 
     def __init__(
         self,
-        stream: TextIO,
+        stream: TextIO | None,
         *,
         level: int = logging.INFO,
         time_provider: TimeProvider | None = None,
+        log_path: Path | None = None,
     ) -> None:
         self._logger = logging.getLogger(
             f"divergencesplitter.operational.{uuid.uuid4().hex}"
         )
         self._logger.setLevel(level)
-        handler = _SafeStreamHandler(stream)
+        if log_path is not None:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            handler = RotatingFileHandler(
+                log_path,
+                maxBytes=5 * 1024 * 1024,
+                backupCount=3,
+                encoding="utf-8",
+                delay=True,
+            )
+        else:
+            handler = _SafeStreamHandler(stream)
         handler.setFormatter(_OneLineFormatter())
         self._logger.addHandler(handler)
         self._logger.propagate = False
@@ -149,6 +161,11 @@ class OperationalDiagnostics:
 
     def set_level(self, level: int) -> None:
         self._logger.setLevel(level)
+
+    def close(self) -> None:
+        for handler in tuple(self._logger.handlers):
+            handler.close()
+            self._logger.removeHandler(handler)
 
     def bind_runtime(
         self,

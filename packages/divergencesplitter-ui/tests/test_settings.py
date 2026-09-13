@@ -139,14 +139,14 @@ class TestSettingsModel:
         model = make_model()
         assert not model.is_dirty
 
-        model.set_log_level("DEBUG")
+        model.set_log_level("OFF")
         assert model.is_dirty
-        model.set_log_level("INFO")
+        model.set_log_level("DEBUG")
         assert model.is_dirty
 
         model.mark_saved()
         assert not model.is_dirty
-        model.set_log_level("INFO")
+        model.set_log_level("DEBUG")
         assert not model.is_dirty
 
     def test_new_default_configuration_is_dirty(self) -> None:
@@ -282,7 +282,9 @@ class TestNdiSource:
         rebuilt = configuration_from_draft(draft)
 
         assert rebuilt.source == NdiSourceConfiguration("Gaming PC (OBS)")
-        assert rebuilt == configuration
+        from dataclasses import replace
+
+        assert rebuilt == replace(configuration, runtime=RuntimeConfiguration("DEBUG"))
 
     def test_switch_between_ndi_camera_and_video(self) -> None:
         model = make_model()

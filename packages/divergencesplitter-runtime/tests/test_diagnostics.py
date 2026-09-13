@@ -383,3 +383,30 @@ def test_metrics_are_thread_safe_across_capture_processing_and_readers() -> None
     assert snapshot.processing_fps == 400.0
     assert snapshot.input_frames_total == 400
     assert snapshot.processed_frames_total == 400
+
+
+def test_file_logging_with_no_stderr_and_live_off_switch(tmp_path):
+    path = tmp_path / "logs" / "diagnostics.log"
+    diagnostics = OperationalDiagnostics(
+        None, log_path=path, level=logging.CRITICAL + 1
+    )
+    try:
+        diagnostics.runtime_started()
+        assert not path.exists()
+        diagnostics.set_level(logging.DEBUG)
+        diagnostics.scenario_logger(0).debug("detailed evaluation 日本語")
+        try:
+            raise ValueError("reference size mismatch")
+        except ValueError as error:
+            diagnostics.runtime_failed(error)
+        text = path.read_text(encoding="utf-8")
+        assert "detailed evaluation 日本語" in text
+        assert "reference size mismatch" in text
+        assert "Traceback" in text
+        diagnostics.set_level(logging.CRITICAL + 1)
+        diagnostics.runtime_started()
+        diagnostics.scenario_logger(0).debug("must not be written")
+        assert path.read_text(encoding="utf-8") == text
+    finally:
+        diagnostics.close()
+    path.unlink()  # The session released its Windows file handle.

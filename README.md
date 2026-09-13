@@ -87,7 +87,7 @@ frame source and one or more connection/scenario instances independently:
     }
   ],
   "runtime": {
-    "log_level": "INFO"
+    "log_level": "DEBUG"
   }
 }
 ```
@@ -212,7 +212,7 @@ enumeration ID to disambiguate devices with the same name:
     }
   ],
   "runtime": {
-    "log_level": "INFO"
+    "log_level": "DEBUG"
   }
 }
 ```
@@ -259,7 +259,7 @@ network source list cannot connect to a different sender:
     }
   ],
   "runtime": {
-    "log_level": "INFO"
+    "log_level": "DEBUG"
   }
 }
 ```
@@ -355,3 +355,18 @@ autosplit-converter/
 Extract the entire archive before launching either executable. Both applications
 use PyInstaller's directory distribution format; keep each executable together
 with its `_internal` directory.
+
+## Diagnostic logging
+
+Choose `OFF` (no log output) or `DEBUG` (all diagnostic details) in Configuration.
+Changing this setting also updates the running session immediately. Save the
+configuration to keep the choice for future sessions.
+
+The Windows desktop application writes UTF-8 logs to `diagnostics.log` in the
+same directory as `DivergenceSplitter.exe`, including when launched without a
+console. Source runs write to the current working directory instead.
+The Configuration page displays the full path.
+Logs rotate at 5 MiB with up to three backups (`.1`, `.2`, `.3`). OFF suppresses
+new output; it does not remove previously recorded logs. The CLI continues to
+write to standard error. Existing INFO, WARNING, and ERROR settings are accepted
+as compatibility aliases for DEBUG.
