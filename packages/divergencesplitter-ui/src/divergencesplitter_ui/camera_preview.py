@@ -96,6 +96,12 @@ class CameraPreview:
             self._latest = None
             return frame
 
+    def normalize_frame(self, frame: Frame) -> Frame | FrameNormalizationError:
+        """Apply the current draft transform to an unprocessed input frame."""
+        with self._lock:
+            normalizer = self._normalizer
+        return normalizer.normalize(frame)
+
     def stop(self) -> None:
         self._stop.set()
         source = self._source
