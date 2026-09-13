@@ -16,27 +16,33 @@ jobs:
         with:
           python-version: "3.14"
       - name: Sync locked environment
-        run: uv sync --locked --all-packages --group build
+        run: uv sync --locked --all-packages --group build --extra ndi
       - name: Check license inventory
-        run: uv run python tools/generate_ui_license_inventory.py --check
+        run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
       - name: Build UI directory distribution
         run: >-
-          uv run pyinstaller
+          uv run --no-sync pyinstaller
           --onedir
           --windowed
           --clean
           --name DivergenceSplitter
           --collect-all dearpygui
           --collect-all windows_capture_device_list
+          --collect-all NDIlib
+          --copy-metadata ndi-python
           --collect-data divergencesplitter_ui
           --copy-metadata divergencesplitter-ui
           --distpath dist/windows
           --workpath build/ui-pyinstaller
           --specpath build/ui-pyinstaller
           tools/ui_entry.py
+      - name: Verify NDI in frozen UI
+        run: >-
+          uv run --no-sync python -c
+          "import subprocess; subprocess.run(['dist/windows/DivergenceSplitter/DivergenceSplitter.exe', '--check-ndi'], check=True, timeout=30)"
       - name: Build converter directory distribution
         run: >-
-          uv run pyinstaller
+          uv run --no-sync pyinstaller
           --onedir
           --windowed
           --clean

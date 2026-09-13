@@ -279,7 +279,11 @@ uv add "divergencesplitter[ndi] @ git+https://github.com/Nanahuse/DivergenceSpli
 
 `ndi-python` redistributes the NDI runtime under its own license (MIT binding,
 NDI runtime notices included in the wheel). A frozen Windows build that should
-support NDI must install the extra and collect the `NDIlib` package. A temporary
+support NDI must install the extra and collect the `NDIlib` package. The Windows
+distribution CI does both and includes the binding and runtime license notices.
+For the same build environment locally, use
+`uv sync --locked --all-packages --group build --extra ndi` and run build tools
+with `uv run --no-sync` to preserve the optional dependency. A temporary
 loss of the sender does not stop the session; the receiver resumes when the same
 source name returns. NDI receive uses a bounded timeout, so shutdown stays
 responsive.

@@ -7,6 +7,9 @@ target, and resolves each requirement to a distribution installed in the
 current environment. It never queries a network and never lists every
 installed package.
 
+The Windows build also explicitly includes ``ndi-python`` as a release root,
+including the NDI runtime notices stored outside its distribution metadata.
+
 For each inventoried component the generator also bundles the full license
 text files shipped by the installed distribution, so the license screen can
 reproduce the actual license texts (not just SPDX identifiers) that are
@@ -134,16 +137,19 @@ def _windows_environment() -> dict[str, str]:
 
 def release_closure(
     installed: Mapping[str, metadata.Distribution],
+    *,
+    additional_roots: tuple[str, ...] = (),
 ) -> dict[str, metadata.Distribution]:
     """Return the Windows release closure keyed by normalized package name.
 
     ``installed`` maps normalized package names to the available distribution
     metadata so the closure can be built from fixtures in tests.
+    ``additional_roots`` includes optional backends collected by PyInstaller.
     """
 
     environment = _windows_environment()
     closure: dict[str, metadata.Distribution] = {}
-    pending = [ROOT_DISTRIBUTION]
+    pending = [ROOT_DISTRIBUTION, *additional_roots]
     while pending:
         requested = pending.pop()
         key = canonicalize_name(requested)
@@ -282,6 +288,11 @@ def license_text(dist: metadata.Distribution) -> str:
         entries[read_path] = content
     for read_path, content in _scanned_license_files(dist):
         entries[read_path] = content
+    if canonicalize_name(dist.metadata["Name"]) == "ndi-python":
+        runtime_notice = "NDIlib/Processing.NDI.Lib.Licenses.txt"
+        entries[runtime_notice] = dist.locate_file(runtime_notice).read_text(
+            encoding="utf-8"
+        )
     if not entries:
         raise RuntimeError(
             f"cannot collect any license text for {dist.metadata['Name']!r}"
@@ -427,7 +438,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    closure = release_closure(installed_distributions())
+    # The Windows executable also bundles the optional NDI input backend.
+    closure = release_closure(
+        installed_distributions(), additional_roots=("ndi-python",)
+    )
     inventory = build_inventory(closure)
     if args.check:
         if not check_inventory(inventory):
