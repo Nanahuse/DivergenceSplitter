@@ -79,11 +79,13 @@ class DesktopApplication:
             while dpg.is_dearpygui_running():
                 state = self._controller.state
                 result = self._controller.result
-                self._settings.tick(state)
                 self._errors.tick(result)
                 self._renderer.tick(
                     state,
                     self._observable(),
+                )
+                self._settings.tick(
+                    state, runtime_frame=self._renderer.latest_preview_frame
                 )
                 dpg.render_dearpygui_frame()
         finally:

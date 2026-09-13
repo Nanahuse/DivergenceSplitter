@@ -23,6 +23,50 @@ from divergencesplitter_runtime.observability import (
 from divergencesplitter_ui.presentation import ObservableDiagnostics
 
 
+@pytest.mark.parametrize("source_type", ["camera", "ndi"])
+def test_configuration_displays_runtime_frames_for_both_sources(source_type, tmp_path):
+    import numpy as np
+    from divergencesplitter.frame.models import Frame
+    from divergencesplitter_ui.session import SessionState
+    from divergencesplitter_ui.settings import SettingsModel, SourceType
+
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+    from divergencesplitter_ui.settings_window import ConfigurationPage
+
+    model = SettingsModel(Mock(list_devices=Mock(return_value=[])))
+    draft = model.create_default_configuration(tmp_path / "config.json")
+    draft.source.selected_type = SourceType(source_type)
+    controller = Mock(state=SessionState.RUNNING)
+    dpg.create_context()
+    page = ConfigurationPage(controller, model)
+    page._ndi_discovery.refresh = Mock()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        page.build(renderer.CONFIGURATION_PAGE_TAG)
+        page._show_source_settings(draft.source.selected_type)
+        for value in (64, 192):
+            frame = Frame(
+                np.full((2, 3, 3), value, dtype=np.uint8), MonotonicTime(value)
+            )
+            renderer._apply_image(frame)
+            page.tick(SessionState.RUNNING, runtime_frame=renderer.latest_preview_frame)
+            assert dpg.does_item_exist(page._preview_image_tag)
+            pixels = dpg.get_value(page._preview_texture_tag)
+            assert pixels[0] == pytest.approx(value / 255)
+            assert dpg.get_item_parent(page._preview_group_tag) == (
+                page._ndi_settings_group
+                if source_type == "ndi"
+                else page._camera_settings_group
+            )
+        renderer._reset_input_image()
+        assert renderer.latest_preview_frame is None
+    finally:
+        page.close()
+        dpg.destroy_context()
+
+
 def test_scenario_diagnostics_build_update_and_restart() -> None:
     dpg = pytest.importorskip("dearpygui.dearpygui")
     from divergencesplitter_ui.renderer import ScreenRenderer

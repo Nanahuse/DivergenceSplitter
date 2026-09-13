@@ -116,6 +116,12 @@ class ScreenRenderer:
         self._input_texture_tag: int | str | None = None
         self._input_image_tag: int | str | None = None
         self._input_signature = None
+        self._latest_preview_frame = None
+
+    @property
+    def latest_preview_frame(self):
+        """The last displayed runtime frame, shared with Configuration."""
+        return self._latest_preview_frame
 
     def build(self) -> None:
         """Create the static widget structure once, before the render loop."""
@@ -515,6 +521,7 @@ class ScreenRenderer:
                         dpg.set_value(handle, value)
 
     def _apply_image(self, frame) -> None:
+        self._latest_preview_frame = frame
         rgba = to_rgba_float32(frame.image)
         signature = source_signature(frame.image)
         event = plan_texture(self._input_signature, signature)
@@ -551,6 +558,7 @@ class ScreenRenderer:
             )
 
     def _reset_input_image(self) -> None:
+        self._latest_preview_frame = None
         if self._input_image_tag is not None:
             dpg.delete_item(self._input_image_tag)
         if self._input_texture_tag is not None:

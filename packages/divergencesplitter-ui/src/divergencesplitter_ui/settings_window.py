@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from divergencesplitter.frame.models import Frame
 from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationFileError,
     ConfigurationValidationError,
@@ -110,6 +111,8 @@ class ConfigurationPage:
         self._ndi_configured_applied: str | None = None
         self._ndi_item_names: dict[str, str] = {}
         self._ndi_preview_name: str | None = None
+        self._runtime_preview_frame: Frame | None = None
+        self._preview_was_active = False
 
     def build(self, parent: int | str | None = None) -> None:
         with dpg.group(parent=parent):
@@ -327,7 +330,7 @@ class ConfigurationPage:
             return
         self._set_status(f"started {path.name}")
 
-    def tick(self, state: SessionState) -> None:
+    def tick(self, state: SessionState, *, runtime_frame: Frame | None = None) -> None:
         if self._pending_reload_path is not None and not is_active(state):
             path = self._pending_reload_path
             self._pending_reload_path = None
@@ -336,7 +339,20 @@ class ConfigurationPage:
         if is_active(state):
             self._camera_preview.stop()
             self._ndi_preview_name = None
+            self._preview_was_active = True
+            if (
+                runtime_frame is not None
+                and runtime_frame is not self._runtime_preview_frame
+            ):
+                self._apply_preview_frame(runtime_frame)
+                self._runtime_preview_frame = runtime_frame
+                dpg.set_value(self._preview_status_tag, "")
         else:
+            self._runtime_preview_frame = None
+            if self._preview_was_active:
+                self._preview_was_active = False
+                if self._model.draft is not None:
+                    self._populate(self._model.draft)
             self._ensure_ndi_preview()
             frame = self._camera_preview.take_latest()
             if frame is not None:
