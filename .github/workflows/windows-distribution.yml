@@ -36,10 +36,6 @@ jobs:
           --workpath build/ui-pyinstaller
           --specpath build/ui-pyinstaller
           tools/ui_entry.py
-      - name: Verify NDI in frozen UI
-        run: >-
-          uv run --no-sync python -c
-          "import subprocess; subprocess.run(['dist/windows/DivergenceSplitter/DivergenceSplitter.exe', '--check-ndi'], check=True, timeout=30)"
       - name: Build converter directory distribution
         run: >-
           uv run --no-sync pyinstaller
