@@ -32,6 +32,9 @@ from divergencesplitter_runtime.configuration.models import (
     ApplicationConfiguration,
     SourceConfiguration,
 )
+from divergencesplitter_runtime.configuration.reference_resize import (
+    resize_scenario_references,
+)
 from divergencesplitter_runtime.configuration.scenario_loader import (
     ScenarioLoaderError,
     load_scenario,
@@ -370,6 +373,9 @@ class SessionController:
                 base_directory=base_directory,
             )
             scenario = scenario_loader.load(scenario_path)
+            scenario = resize_scenario_references(
+                scenario, configuration.source.transform
+            )
             instances.append(
                 ScenarioInstance(connection=instance.connection, scenario=scenario)
             )
