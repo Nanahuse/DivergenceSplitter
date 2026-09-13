@@ -103,6 +103,7 @@ def _scenario(value: object, path: Path) -> Scenario:
         root,
         required={"start_condition", "splits"},
         optional={"reset_condition", "incomplete_condition"},
+        allow_unknown=True,
     )
     start_condition = _condition_value(root["start_condition"], "start_condition", path)
     reset_condition = (
@@ -437,10 +438,11 @@ def _keys(
     *,
     required: set[str],
     optional: set[str] | frozenset[str] = frozenset(),
+    allow_unknown=False,
 ) -> None:
     missing = required - value.keys()
     unknown = value.keys() - required - optional
     if missing:
         raise ValueError(f"missing scenario fields: {sorted(missing)!r}")
-    if unknown:
+    if unknown and not allow_unknown:
         raise ValueError(f"unknown scenario fields: {sorted(unknown)!r}")
