@@ -1,0 +1,75 @@
+name: Windows distribution
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          python-version: "3.14"
+      - name: Sync locked environment
+        run: uv sync --locked --all-packages --group build
+      - name: Check license inventory
+        run: uv run python tools/generate_ui_license_inventory.py --check
+      - name: Build UI directory distribution
+        run: >-
+          uv run pyinstaller
+          --onedir
+          --windowed
+          --clean
+          --name DivergenceSplitter
+          --collect-all dearpygui
+          --collect-all windows_capture_device_list
+          --collect-data divergencesplitter_ui
+          --copy-metadata divergencesplitter-ui
+          --distpath dist/windows
+          --workpath build/ui-pyinstaller
+          --specpath build/ui-pyinstaller
+          tools/ui_entry.py
+      - name: Build converter directory distribution
+        run: >-
+          uv run pyinstaller
+          --onedir
+          --windowed
+          --clean
+          --name autosplit-converter
+          --distpath dist/windows
+          --workpath build/converter-pyinstaller
+          --specpath build/converter-pyinstaller
+          tools/converter_entry.py
+      - name: Verify directory distributions
+        shell: pwsh
+        run: |
+          foreach ($name in @("DivergenceSplitter", "autosplit-converter")) {
+            $exe = Get-Item "dist/windows/$name/$name.exe" -ErrorAction Stop
+            if ($exe.Length -eq 0) {
+              throw "Built executable is empty: $name"
+            }
+            if (-not (Test-Path "dist/windows/$name/_internal" -PathType Container)) {
+              throw "Missing dependency directory: $name"
+            }
+            Write-Output "Built $($exe.FullName) ($($exe.Length) bytes)"
+          }
+      - name: Create and verify 7z archive
+        shell: pwsh
+        working-directory: dist/windows
+        run: |
+          7z a -t7z ../DivergenceSplitter-windows-x64.7z DivergenceSplitter autosplit-converter
+          if ($LASTEXITCODE -ne 0) { throw "7z archive creation failed" }
+          7z t ../DivergenceSplitter-windows-x64.7z
+          if ($LASTEXITCODE -ne 0) { throw "7z archive verification failed" }
+      - name: Upload Windows distribution archive
+        uses: actions/upload-artifact@v5
+        with:
+          name: DivergenceSplitter-windows-x64
+          path: dist/DivergenceSplitter-windows-x64.7z
+          compression-level: 0
+          if-no-files-found: error
