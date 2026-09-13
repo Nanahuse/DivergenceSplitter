@@ -291,7 +291,10 @@ class NdiModuleApi:
         data = video.data  # ty: ignore[unresolved-attribute]
 
         try:
-            if fourcc == module.FOURCC_VIDEO_TYPE_UYVY:
+            if fourcc in (
+                module.FOURCC_VIDEO_TYPE_UYVY,
+                module.FOURCC_VIDEO_TYPE_UYVA,
+            ):
                 return cv2.cvtColor(data, cv2.COLOR_YUV2BGR_UYVY)
 
             if fourcc in (
