@@ -336,3 +336,22 @@ splits:
 
 `Then` sequences conditions until one Action is reached; `RuleSequence`
 sequences multiple Rules and their Actions.
+
+## Windows distribution
+
+The `Windows distribution` CI workflow builds the desktop UI and AutoSplit
+Converter sequentially in one Windows job. Its `DivergenceSplitter-windows-x64.7z`
+artifact downloads directly as a 7z archive without an outer ZIP wrapper:
+
+```text
+DivergenceSplitter/
+  DivergenceSplitter.exe
+  _internal/
+autosplit-converter/
+  autosplit-converter.exe
+  _internal/
+```
+
+Extract the entire archive before launching either executable. Both applications
+use PyInstaller's directory distribution format; keep each executable together
+with its `_internal` directory.
