@@ -197,6 +197,26 @@ class TestNdiSupport:
 
 
 class TestDiscovery:
+    def test_waits_for_late_sources_after_first_change(self, monkeypatch) -> None:
+        module = FakeNdiModule(source_names=("Early sender",))
+        install_fake_module(monkeypatch, module)
+        now = [0.0]
+        waits: list[int] = []
+        monkeypatch.setattr(ndi.time, "monotonic", lambda: now[0])
+
+        def wait(finder: object, timeout_ms: int) -> bool:
+            waits.append(timeout_ms)
+            now[0] += 0.5
+            if len(waits) == 2:
+                module.source_names.append("Late sender")
+            return True
+
+        monkeypatch.setattr(module, "find_wait_for_sources", wait)
+
+        assert ndi.discover_ndi_sources(1000) == ("Early sender", "Late sender")
+        assert waits == [1000, 500]
+        assert module.destroyed == 1
+
     def test_returns_advertised_source_names(self, monkeypatch) -> None:
         module = FakeNdiModule(source_names=("Gaming PC (OBS)", "Laptop"))
         install_fake_module(monkeypatch, module)

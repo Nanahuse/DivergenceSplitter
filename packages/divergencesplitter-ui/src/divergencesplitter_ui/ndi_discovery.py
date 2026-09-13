@@ -11,13 +11,12 @@ import threading
 from collections.abc import Callable
 
 from divergencesplitter.frame.ndi import (
+    DEFAULT_DISCOVERY_TIMEOUT_MS,
     NdiError,
     NdiSupport,
     detect_ndi_support,
     discover_ndi_sources,
 )
-
-DEFAULT_DISCOVERY_TIMEOUT_MS = 1000
 
 
 class NdiDiscovery:
