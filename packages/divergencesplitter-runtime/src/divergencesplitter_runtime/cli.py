@@ -45,10 +45,11 @@ EXIT_RUNTIME_ERROR = 5
 EXIT_INTERRUPTED = 130
 
 _LOG_LEVELS = {
+    "OFF": logging.CRITICAL + 1,
     "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
+    "INFO": logging.DEBUG,
+    "WARNING": logging.DEBUG,
+    "ERROR": logging.DEBUG,
 }
 _STATUS_INTERVAL_SECONDS = 1.0
 

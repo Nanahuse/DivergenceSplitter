@@ -140,7 +140,7 @@ class RuntimeConfiguration:
     log_level: str
 
     def __post_init__(self) -> None:
-        if self.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
+        if self.log_level not in {"OFF", "DEBUG", "INFO", "WARNING", "ERROR"}:
             raise ValueError(f"unsupported log level: {self.log_level!r}")
 
 

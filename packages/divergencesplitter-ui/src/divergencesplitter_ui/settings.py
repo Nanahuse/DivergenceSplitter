@@ -33,7 +33,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
 
 from divergencesplitter_ui.session import SessionState
 
-LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+LOG_LEVELS = ("OFF", "DEBUG")
 
 
 class SourceType(StrEnum):
@@ -200,7 +200,7 @@ def editable_from_configuration(
             )
             for i in configuration.instances
         ),
-        configuration.runtime.log_level,
+        "OFF" if configuration.runtime.log_level == "OFF" else "DEBUG",
     )
 
 
@@ -614,6 +614,8 @@ class SettingsModel:
         return self._editable
 
     def set_log_level(self, level: str) -> EditableApplicationConfiguration | None:
+        if level not in LOG_LEVELS:
+            raise ValueError(f"unsupported logging mode: {level!r}")
         if self._editable is None:
             return None
         self._changed(self._editable.log_level, level)

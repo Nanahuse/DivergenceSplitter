@@ -57,10 +57,11 @@ from divergencesplitter_runtime.observability import (
 )
 
 _LOG_LEVELS = {
+    "OFF": logging.CRITICAL + 1,
     "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
+    "INFO": logging.DEBUG,
+    "WARNING": logging.DEBUG,
+    "ERROR": logging.DEBUG,
 }
 
 
@@ -217,11 +218,14 @@ class DefaultSourceBuilder:
 
 
 class OperationalDiagnosticsFactory:
-    def __init__(self, stream: TextIO) -> None:
+    def __init__(self, stream: TextIO | None, *, log_path: Path | None = None) -> None:
         self._stream = stream
+        self._log_path = log_path
 
     def create(self) -> OperationalDiagnostics:
-        return OperationalDiagnostics(self._stream)
+        return OperationalDiagnostics(
+            self._stream, log_path=self._log_path, level=logging.DEBUG
+        )
 
 
 class ApplicationRuntimeFactory:
@@ -359,6 +363,10 @@ class SessionController:
             if diagnostics is not None:
                 diagnostics.runtime_failed(error)
             self._fail(SessionFailureKind.RUNTIME, error)
+
+        finally:
+            if isinstance(diagnostics, OperationalDiagnostics):
+                diagnostics.close()
 
     def _load_instances(
         self,

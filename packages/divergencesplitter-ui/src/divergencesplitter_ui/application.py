@@ -17,6 +17,7 @@ from divergencesplitter_ui.about_window import AboutPage
 from divergencesplitter_ui.error_window import ErrorWindow
 from divergencesplitter_ui.fonts import configure_default_font
 from divergencesplitter_ui.license_window import LicensePage
+from divergencesplitter_ui.logs import log_file_path
 from divergencesplitter_ui.presentation import (
     ObservableDiagnostics,
     ScreenPresenter,
@@ -99,7 +100,9 @@ class DesktopApplication:
             dpg.destroy_context()
 
 
-def build_controller(*, stream: TextIO) -> SessionController:
+def build_controller(
+    *, stream: TextIO | None, log_path: Path | None = None
+) -> SessionController:
     """Construct a session pipeline identical to the command line's."""
 
     return SessionController(
@@ -107,14 +110,14 @@ def build_controller(*, stream: TextIO) -> SessionController:
         scenario_loader=DefaultScenarioLoader(),
         source_builder=DefaultSourceBuilder(),
         runtime_factory=ApplicationRuntimeFactory(),
-        diagnostics_factory=OperationalDiagnosticsFactory(stream),
+        diagnostics_factory=OperationalDiagnosticsFactory(stream, log_path=log_path),
     )
 
 
 def run_configuration(configuration: Path | None = None) -> None:
     """Run the UI and optionally open one configuration on startup."""
 
-    controller = build_controller(stream=sys.stderr)
+    controller = build_controller(stream=sys.stderr, log_path=log_file_path())
     application = DesktopApplication(
         controller,
         initial_configuration=configuration,

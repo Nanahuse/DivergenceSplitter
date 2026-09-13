@@ -42,6 +42,7 @@ from divergencesplitter_ui.image import (
     source_signature,
     to_rgba_float32,
 )
+from divergencesplitter_ui.logs import log_file_path
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.session import (
     SessionAlreadyActiveError,
@@ -278,12 +279,13 @@ class ConfigurationPage:
 
             dpg.add_separator()
             self._log_level_tag = dpg.add_combo(
-                label="Log level",
+                label="Logging (OFF / DEBUG: all details)",
                 items=list(LOG_LEVELS),
-                default_value="INFO",
+                default_value="DEBUG",
                 callback=self._on_log_level_changed,
             )
 
+            dpg.add_text(f"DEBUG log: {log_file_path()}", wrap=650)
             dpg.add_separator()
             self._status_tag = dpg.add_text("", color=(255, 200, 120))
 
@@ -965,6 +967,7 @@ class ConfigurationPage:
 
     def _on_log_level_changed(self, sender, app_data, user_data) -> None:
         self._model.set_log_level(app_data)
+        self._controller.set_log_level(app_data)
 
     def close(self) -> None:
         self._camera_preview.stop()
