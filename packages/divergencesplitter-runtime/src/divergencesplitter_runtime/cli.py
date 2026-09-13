@@ -18,6 +18,9 @@ from divergencesplitter_runtime.configuration.json_file import (
     load_configuration,
 )
 from divergencesplitter_runtime.configuration.models import ApplicationConfiguration
+from divergencesplitter_runtime.configuration.reference_resize import (
+    resize_scenario_references,
+)
 from divergencesplitter_runtime.configuration.scenario_loader import (
     ScenarioLoaderError,
     load_scenario,
@@ -93,11 +96,14 @@ def _load_instances(
     return tuple(
         ScenarioInstance(
             connection=instance.connection,
-            scenario=load_scenario(
-                resolve_configuration_path(
-                    instance.scenario,
-                    base_directory=base_directory,
-                )
+            scenario=resize_scenario_references(
+                load_scenario(
+                    resolve_configuration_path(
+                        instance.scenario,
+                        base_directory=base_directory,
+                    )
+                ),
+                configuration.source.transform,
             ),
         )
         for instance in configuration.instances

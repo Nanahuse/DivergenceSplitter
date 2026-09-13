@@ -446,3 +446,41 @@ def test_diagnostic_formatting_failure_does_not_stop_runtime() -> None:
     result, _, _, _, _ = run_with_fake_runtime()
 
     assert result == EXIT_COMPLETED
+
+
+def test_cli_load_resizes_references(monkeypatch, tmp_path) -> None:
+    from dataclasses import replace
+
+    from divergencesplitter.detector import (
+        RootMeanSquareSimilarityConfig,
+        RootMeanSquareSimilarityDetector,
+    )
+    from divergencesplitter_runtime.cli import _load_instances
+    from divergencesplitter_runtime.configuration.models import (
+        ResizeConfiguration,
+        SourceTransformConfiguration,
+    )
+
+    condition = Detected(
+        RootMeanSquareSimilarityDetector(
+            RootMeanSquareSimilarityConfig(((0, 0), (0, 0)))
+        ),
+        0.9,
+    )
+    scenario = Scenario(condition, None, None, ())
+    monkeypatch.setattr(
+        "divergencesplitter_runtime.cli.load_scenario", lambda path: scenario
+    )
+    original = make_configuration()
+    configuration = replace(
+        original,
+        source=replace(
+            original.source,
+            transform=SourceTransformConfiguration(
+                resize=ResizeConfiguration(1, 1, resize_references=True)
+            ),
+        ),
+    )
+    loaded = _load_instances(configuration, tmp_path)[0].scenario.start_condition
+    assert isinstance(loaded, Detected)
+    assert loaded.detector.reference_images[0].image == ((0,),)

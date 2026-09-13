@@ -482,3 +482,48 @@ class TestRestart:
         assert controller.state is SessionState.COMPLETED
         assert len(runtime_factory.runtimes) == 2
         assert len(diagnostics_factory.created) == 2
+
+
+def test_reference_resize_is_applied_before_session_starts() -> None:
+    from dataclasses import replace
+
+    import numpy as np
+    from divergencesplitter import Frame, FrameContext, MonotonicTime
+    from divergencesplitter.detector import (
+        RootMeanSquareSimilarityConfig,
+        RootMeanSquareSimilarityDetector,
+    )
+    from divergencesplitter_runtime.configuration.models import (
+        ResizeConfiguration,
+        SourceTransformConfiguration,
+    )
+
+    condition = Detected(
+        RootMeanSquareSimilarityDetector(
+            RootMeanSquareSimilarityConfig(((0, 0), (0, 0)))
+        ),
+        0.9,
+    )
+    scenario = Scenario(condition, None, None, ())
+    original = make_configuration()
+    configuration = replace(
+        original,
+        source=replace(
+            original.source,
+            transform=SourceTransformConfiguration(
+                resize=ResizeConfiguration(1, 1, resize_references=True)
+            ),
+        ),
+    )
+    controller, _, diagnostics_factory = make_controller(
+        configuration_loader=FakeConfigurationLoader(configuration=configuration),
+        scenario_loader=FakeScenarioLoader(scenario=scenario),
+    )
+    controller.start(Path("config.json"))
+    assert controller.join(5.0)
+    assert controller.state is SessionState.COMPLETED
+    instances, _ = diagnostics_factory.created[0].bind_runtime_calls[0]
+    frame = Frame(np.zeros((1, 1), dtype=np.uint8), MonotonicTime(0))
+    assert instances[0].scenario.start_condition.evaluate(
+        FrameContext(frame, MonotonicTime(0))
+    )
