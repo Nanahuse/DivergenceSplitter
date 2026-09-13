@@ -24,6 +24,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     CropConfiguration,
+    NdiSourceConfiguration,
     ResizeConfiguration,
     ResizeInterpolation,
     SourceTransformConfiguration,
@@ -108,6 +109,7 @@ class ConfigurationPage:
         self._ndi_sources_applied: tuple[str, ...] | None = None
         self._ndi_configured_applied: str | None = None
         self._ndi_item_names: dict[str, str] = {}
+        self._ndi_preview_name: str | None = None
 
     def build(self, parent: int | str | None = None) -> None:
         with dpg.group(parent=parent):
@@ -162,7 +164,9 @@ class ConfigurationPage:
                 callback=self._on_request_60_fps_changed,
                 parent=self._camera_settings_group,
             )
-            dpg.add_text("Camera preview", parent=self._camera_settings_group)
+            self._preview_label_tag = dpg.add_text(
+                "Input preview", parent=self._camera_settings_group
+            )
             dpg.add_texture_registry(
                 tag="divergence-splitter-camera-preview-textures",
             )
@@ -331,7 +335,9 @@ class ConfigurationPage:
             state = self._controller.state
         if is_active(state):
             self._camera_preview.stop()
+            self._ndi_preview_name = None
         else:
+            self._ensure_ndi_preview()
             frame = self._camera_preview.take_latest()
             if frame is not None:
                 dpg.set_value(self._preview_status_tag, "")
@@ -339,7 +345,7 @@ class ConfigurationPage:
             if self._camera_preview.error is not None:
                 dpg.set_value(
                     self._preview_status_tag,
-                    f"camera preview: {self._camera_preview.error}",
+                    f"input preview: {self._camera_preview.error}",
                 )
         settings = self._camera_preview.capture_settings
         if settings is None:
@@ -795,16 +801,53 @@ class ConfigurationPage:
         name = self._ndi_item_names.get(app_data, app_data)
         self._model.set_ndi_source_name(name)
 
+    def _ensure_ndi_preview(self) -> None:
+        draft = self._model.draft
+        if draft is None:
+            return
+        source = ndi_source(draft)
+        if source is None or not source.name or not self._ndi_support_applied:
+            return
+        if self._ndi_preview_name == source.name:
+            return
+        self._ndi_preview_name = source.name
+        if self._preview_image_tag is not None:
+            dpg.delete_item(self._preview_image_tag)
+            self._preview_image_tag = None
+        if self._preview_texture_tag is not None:
+            dpg.delete_item(self._preview_texture_tag)
+            self._preview_texture_tag = None
+        self._preview_signature = None
+        dpg.set_value(self._preview_status_tag, "Waiting for NDI video...")
+        try:
+            self._camera_preview.start(
+                NdiSourceConfiguration(source.name), draft.configuration_path.parent
+            )
+            self._update_camera_preview_transform()
+        except Exception as error:  # noqa: BLE001
+            dpg.set_value(self._preview_status_tag, f"NDI preview: {error}")
+
     def _on_refresh_ndi(self) -> None:
+        self._ndi_preview_name = None
         dpg.set_value(self._ndi_status_tag, "Refreshing NDI sources...")
         self._ndi_discovery.refresh()
 
     def _show_source_settings(self, source_type: SourceType) -> None:
+        self._ndi_preview_name = None
         camera = source_type is SourceType.CAMERA
         ndi = source_type is SourceType.NDI
         dpg.configure_item(self._camera_settings_group, show=camera)
         dpg.configure_item(self._video_settings_group, show=not camera and not ndi)
         dpg.configure_item(self._ndi_settings_group, show=ndi)
+        preview_parent = (
+            self._ndi_settings_group if ndi else self._camera_settings_group
+        )
+        for tag in (
+            self._preview_label_tag,
+            self._preview_group_tag,
+            self._preview_status_tag,
+        ):
+            dpg.move_item(tag, parent=preview_parent)
         if not camera:
             self._camera_preview.stop()
 
