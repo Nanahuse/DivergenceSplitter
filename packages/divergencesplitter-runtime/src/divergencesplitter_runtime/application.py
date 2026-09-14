@@ -72,7 +72,9 @@ class ApplicationRuntime:
         self._instances = tuple(
             InstanceRuntime(
                 instance.scenario,
-                ScenarioRuntime(instance.scenario, logger=diagnostics.scenario_logger(index)),
+                ScenarioRuntime(
+                    instance.scenario, logger=diagnostics.scenario_logger(index)
+                ),
                 BridgeWorker(instance.connection, diagnostics=diagnostics),
             )
             for index, instance in enumerate(instances)
