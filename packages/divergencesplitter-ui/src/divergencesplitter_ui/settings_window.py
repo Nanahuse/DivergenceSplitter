@@ -857,6 +857,32 @@ class ConfigurationPage:
         except Exception as error:  # noqa: BLE001
             dpg.set_value(self._preview_status_tag, f"NDI preview: {error}")
 
+    def _ensure_ndi_preview(self) -> None:
+        draft = self._model.draft
+        if draft is None:
+            return
+        source = ndi_source(draft)
+        if source is None or not source.name or not self._ndi_support_applied:
+            return
+        if self._ndi_preview_name == source.name:
+            return
+        self._ndi_preview_name = source.name
+        if self._preview_image_tag is not None:
+            dpg.delete_item(self._preview_image_tag)
+            self._preview_image_tag = None
+        if self._preview_texture_tag is not None:
+            dpg.delete_item(self._preview_texture_tag)
+            self._preview_texture_tag = None
+        self._preview_signature = None
+        dpg.set_value(self._preview_status_tag, "Waiting for NDI video...")
+        try:
+            self._camera_preview.start(
+                NdiSourceConfiguration(source.name), draft.configuration_path.parent
+            )
+            self._update_camera_preview_transform()
+        except Exception as error:  # noqa: BLE001
+            dpg.set_value(self._preview_status_tag, f"NDI preview: {error}")
+
     def _on_refresh_ndi(self) -> None:
         self._ndi_preview_name = None
         dpg.set_value(self._ndi_status_tag, "Refreshing NDI sources...")

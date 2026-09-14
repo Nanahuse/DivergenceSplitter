@@ -8,8 +8,9 @@ The NDI global state is owned once for the whole process by ``_NdiGlobal`` and
 reference counted, so a capability probe, a discovery call, and a running
 receiver never initialize or destroy it out of order.
 
-Received video is copied out of the NDI buffer before that buffer is freed, so
-``Frame.image`` never aliases NDI-managed memory.
+Received video is converted directly from the NDI-managed buffer to an owned
+BGR image before that buffer is freed, so ``Frame.image`` never aliases
+NDI-managed memory.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from types import ModuleType, TracebackType
 from typing import Protocol, Self
 
-import numpy as np
+import cv2
 
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter.frame.models import Frame, ImageArray
@@ -253,7 +254,7 @@ class NdiModuleApi:
                 f"NDI source is not currently available: {source_name!r}"
             )
         create = module.RecvCreateV3()
-        create.color_format = module.RECV_COLOR_FORMAT_BGRX_BGRA
+        create.color_format = module.RECV_COLOR_FORMAT_FASTEST
         receiver = module.recv_create_v3(create)
         if receiver is None:
             raise NdiReceiverCreationError(
@@ -277,11 +278,42 @@ class NdiModuleApi:
         try:
             if video.data is None or int(video.xres) <= 0 or int(video.yres) <= 0:
                 return None
-            raw = np.array(video.data, copy=True)
-            image = np.ascontiguousarray(raw[:, :, :3])
+            image = self._convert_to_bgr(module, video)
         finally:
             module.recv_free_video_v2(receiver, video)
         return NdiVideoFrame(image)
+
+    @staticmethod
+    def _convert_to_bgr(module: ModuleType, video: object) -> ImageArray:
+        """Convert an NDI-owned video buffer directly to an owned BGR image."""
+
+        fourcc = video.FourCC  # ty: ignore[unresolved-attribute]
+        data = video.data  # ty: ignore[unresolved-attribute]
+
+        try:
+            if fourcc in (
+                module.FOURCC_VIDEO_TYPE_UYVY,
+                module.FOURCC_VIDEO_TYPE_UYVA,
+            ):
+                return cv2.cvtColor(data, cv2.COLOR_YUV2BGR_UYVY)
+
+            if fourcc in (
+                module.FOURCC_VIDEO_TYPE_BGRA,
+                module.FOURCC_VIDEO_TYPE_BGRX,
+            ):
+                return cv2.cvtColor(data, cv2.COLOR_BGRA2BGR)
+
+            if fourcc in (
+                module.FOURCC_VIDEO_TYPE_RGBA,
+                module.FOURCC_VIDEO_TYPE_RGBX,
+            ):
+                return cv2.cvtColor(data, cv2.COLOR_RGBA2BGR)
+        except cv2.error as error:
+            raise NdiReceiveError(
+                f"failed to convert NDI video frame with FourCC {fourcc!r} to BGR"
+            ) from error
+
+        raise NdiReceiveError(f"unsupported NDI video FourCC: {fourcc!r}")
 
     def destroy_receiver(self, receiver: object) -> None:
         if self._module is not None:

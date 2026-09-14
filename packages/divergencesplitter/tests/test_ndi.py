@@ -70,10 +70,25 @@ class FakeNdiApi:
 
 
 class FakeVideo:
-    def __init__(self, data: np.ndarray) -> None:
+    FAKE_RECV_COLOR_FORMAT_FASTEST = 101
+
+    FAKE_FOURCC_UYVY = 200
+    FAKE_FOURCC_UYVA = 201
+    FAKE_FOURCC_BGRA = 202
+    FAKE_FOURCC_BGRX = 203
+    FAKE_FOURCC_RGBA = 204
+    FAKE_FOURCC_RGBX = 205
+
+    def __init__(
+        self,
+        data: np.ndarray,
+        *,
+        fourcc: object = FAKE_FOURCC_BGRA,
+    ) -> None:
         self.data = data
         self.xres = data.shape[1]
         self.yres = data.shape[0]
+        self.FourCC = fourcc
 
 
 class FakeNdiSourceHandle:
@@ -86,7 +101,15 @@ class FakeNdiModule:
 
     FRAME_TYPE_VIDEO = 1
     FRAME_TYPE_ERROR = 4
-    RECV_COLOR_FORMAT_BGRX_BGRA = 100
+
+    RECV_COLOR_FORMAT_FASTEST = FakeVideo.FAKE_RECV_COLOR_FORMAT_FASTEST
+
+    FOURCC_VIDEO_TYPE_UYVY = FakeVideo.FAKE_FOURCC_UYVY
+    FOURCC_VIDEO_TYPE_UYVA = FakeVideo.FAKE_FOURCC_UYVA
+    FOURCC_VIDEO_TYPE_BGRA = FakeVideo.FAKE_FOURCC_BGRA
+    FOURCC_VIDEO_TYPE_BGRX = FakeVideo.FAKE_FOURCC_BGRX
+    FOURCC_VIDEO_TYPE_RGBA = FakeVideo.FAKE_FOURCC_RGBA
+    FOURCC_VIDEO_TYPE_RGBX = FakeVideo.FAKE_FOURCC_RGBX
 
     def __init__(
         self,
@@ -105,6 +128,7 @@ class FakeNdiModule:
         self.freed = False
         self.recv_error = False
         self.connected: list[str] = []
+        self.receiver_color_format: object | None = None
 
     def initialize(self) -> bool:
         self.initialized = self.initialize_ok
@@ -133,6 +157,7 @@ class FakeNdiModule:
         return FakeNdiModule._RecvCreate()
 
     def recv_create_v3(self, create: object) -> object | None:
+        self.receiver_color_format = create.color_format  # ty: ignore[unresolved-attribute]
         return object() if self.receiver_created else None
 
     def recv_connect(self, receiver: object, source: FakeNdiSourceHandle) -> None:
@@ -268,21 +293,48 @@ class TestNdiModuleApi:
         api.open_receiver("Gaming PC (OBS)")
 
         assert module.connected == ["Gaming PC (OBS)"]
+        assert module.receiver_color_format == module.RECV_COLOR_FORMAT_FASTEST
         api.close()
 
     def test_received_video_survives_buffer_free(self, monkeypatch) -> None:
         buffer = np.arange(4 * 6 * 4, dtype=np.uint8).reshape(4, 6, 4)
-        module = FakeNdiModule(video=FakeVideo(buffer))
+        original = buffer.copy()
+
+        module = FakeNdiModule(
+            video=FakeVideo(
+                buffer,
+                fourcc=FakeVideo.FAKE_FOURCC_BGRA,
+            )
+        )
         install_fake_module(monkeypatch, module)
         api = ndi.NdiModuleApi()
 
         received = api.receive_video(object(), 100)
 
         assert received is not None
-        expected = (np.arange(4 * 6 * 4, dtype=np.uint8).reshape(4, 6, 4))[:, :, :3]
         assert module.freed is True
         assert int(buffer.max()) == 255
+
+        expected = original[:, :, :3]
         np.testing.assert_array_equal(received.image, expected)
+
+        api.close()
+
+    def test_unsupported_fourcc_raises_and_frees_buffer(self, monkeypatch) -> None:
+        buffer = np.zeros((4, 6, 4), dtype=np.uint8)
+        module = FakeNdiModule(
+            video=FakeVideo(
+                buffer,
+                fourcc=9999,
+            )
+        )
+        install_fake_module(monkeypatch, module)
+        api = ndi.NdiModuleApi()
+
+        with pytest.raises(NdiReceiveError, match="unsupported NDI video FourCC"):
+            api.receive_video(object(), 100)
+
+        assert module.freed is True
         api.close()
 
     def test_receive_error_is_reported(self, monkeypatch) -> None:

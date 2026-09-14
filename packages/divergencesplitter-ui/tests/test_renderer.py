@@ -55,11 +55,7 @@ def test_configuration_displays_runtime_frames_for_both_sources(source_type, tmp
             frame = Frame(
                 np.full((2, 3, 3), value, dtype=np.uint8), MonotonicTime(value)
             )
-            diagnostics.take_latest_input_frame.return_value = frame
-            diagnostics.take_latest_processed_frame.return_value = Frame(
-                np.zeros((1, 1, 3), dtype=np.uint8), MonotonicTime(value)
-            )
-            renderer.tick(SessionState.RUNNING, diagnostics)
+            renderer._apply_image(frame)
             page.tick(SessionState.RUNNING, runtime_frame=renderer.latest_preview_frame)
             assert dpg.does_item_exist(page._preview_image_tag)
             pixels = dpg.get_value(page._preview_texture_tag)

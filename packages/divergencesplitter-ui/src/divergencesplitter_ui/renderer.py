@@ -120,7 +120,7 @@ class ScreenRenderer:
 
     @property
     def latest_preview_frame(self):
-        """The latest unprocessed input, for previewing unsaved transforms."""
+        """The last displayed runtime frame, shared with Configuration."""
         return self._latest_preview_frame
 
     def build(self) -> None:
@@ -524,6 +524,7 @@ class ScreenRenderer:
                         dpg.set_value(handle, value)
 
     def _apply_image(self, frame) -> None:
+        self._latest_preview_frame = frame
         rgba = to_rgba_float32(frame.image)
         signature = source_signature(frame.image)
         event = plan_texture(self._input_signature, signature)
