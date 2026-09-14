@@ -13,6 +13,7 @@ from divergencesplitter import (
     OutputSize,
 )
 from divergencesplitter.clock import TimeProvider
+from divergencesplitter.scenario.models import Scenario
 from divergencesplitter_runtime import (
     ActionSubmission,
     InstanceRuntime,
@@ -24,7 +25,6 @@ from divergencesplitter_runtime import (
     ScenarioRuntime,
     TimerPhase,
 )
-from divergencesplitter.scenario.models import Scenario
 from divergencesplitter_runtime.livesplit import BridgeWorker
 
 

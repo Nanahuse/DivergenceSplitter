@@ -16,8 +16,8 @@ from divergencesplitter_runtime.configuration.validation import (
     validate_instances,
     validate_split_count,
 )
-from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.instance_runtime import InstanceRuntime
+from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.worker import (
     BridgeWorker,
     BridgeWorkerDiagnostics,
