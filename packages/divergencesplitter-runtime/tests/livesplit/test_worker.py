@@ -99,6 +99,9 @@ class RecordingDiagnostics:
     def scenario_logger(self, scenario_index: int) -> logging.Logger:
         return logging.getLogger(f"test-worker-scenario-{scenario_index}")
 
+    def instances_changed(self, statuses) -> None:
+        pass
+
     def runtime_started(self) -> None:
         pass
 

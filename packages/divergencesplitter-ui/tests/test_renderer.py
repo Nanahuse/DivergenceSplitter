@@ -49,6 +49,7 @@ def test_configuration_displays_runtime_frames_for_both_sources(source_type, tmp
         page.build(renderer.CONFIGURATION_PAGE_TAG)
         page._show_source_settings(draft.source.selected_type)
         diagnostics = Mock(spec=ObservableDiagnostics)
+        diagnostics.instance_statuses.return_value = ()
         diagnostics.detector_tree.return_value = None
         diagnostics.take_condition_observations.return_value = ()
         for value in (64, 192):
@@ -115,6 +116,7 @@ def test_scenario_diagnostics_build_update_and_restart() -> None:
         )
     )
     diagnostics = Mock(spec=ObservableDiagnostics)
+    diagnostics.instance_statuses.return_value = ()
     diagnostics.detector_tree.return_value = tree
     diagnostics.take_latest_processed_frame.return_value = None
     diagnostics.metrics_snapshot.return_value = RuntimeMetricsSnapshot(
@@ -219,5 +221,80 @@ def test_active_style_propagates_to_split_rule_and_step_then_clears() -> None:
                         renderer._bold_font if active else renderer._regular_font
                     )
                     assert info["font"] == expected_font
+    finally:
+        dpg.destroy_context()
+
+
+def test_instance_status_rows_update_without_rebuilding_tree_or_new_frames() -> None:
+    from divergencesplitter_runtime import InstanceRuntimeState, InstanceStatus
+
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    conditions = tuple(Detected(MeanBrightnessDetector(), 0.5) for _ in range(2))
+    tree = build_detector_tree(
+        tuple(
+            ScenarioInstance(
+                LiveSplitConnection(f"rpc-{i}", f"event-{i}"),
+                Scenario(condition, None, None, ()),
+            )
+            for i, condition in enumerate(conditions)
+        )
+    )
+    diagnostics = Mock(spec=ObservableDiagnostics)
+    diagnostics.detector_tree.return_value = tree
+    diagnostics.instance_statuses.return_value = (
+        InstanceStatus(0, InstanceRuntimeState.READY),
+        InstanceStatus(1, InstanceRuntimeState.CONNECTING),
+    )
+    diagnostics.take_condition_observations.return_value = (
+        ConditionObservation(
+            conditions[0], ConditionStatus.TRUE, 0.8, 0.8, active=True
+        ),
+    )
+    diagnostics.take_latest_processed_frame.return_value = None
+    diagnostics.take_latest_input_frame.return_value = None
+    diagnostics.metrics_snapshot.return_value = RuntimeMetricsSnapshot(
+        MonotonicTime(0), 1.0, 0.0, 0.0, 0, 0
+    )
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        renderer.tick("RUNNING", diagnostics)
+        first_handle = renderer._instance_rows[0]
+        second_handle = renderer._instance_rows[1]
+        scenario_handle = renderer._scenario_nodes[0][0]
+        dpg.set_value(scenario_handle, True)
+        assert "Connected" in dpg.get_value(first_handle)
+        assert "Connecting..." in dpg.get_value(second_handle)
+        assert "ACTIVE" in dpg.get_item_label(renderer._rows[0].condition_handle)
+        diagnostics.take_condition_observations.return_value = ()
+        diagnostics.instance_statuses.return_value = (
+            InstanceStatus(0, InstanceRuntimeState.CONNECTING),
+            InstanceStatus(1, InstanceRuntimeState.READY),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert "Connecting..." in dpg.get_value(first_handle)
+        assert "Connected" in dpg.get_value(second_handle)
+        assert renderer._scenario_nodes[0][0] == scenario_handle
+        assert dpg.get_value(scenario_handle) is True
+        assert "Connecting..." in dpg.get_item_label(scenario_handle)
+        assert "ACTIVE" not in dpg.get_item_label(renderer._rows[0].condition_handle)
+
+        diagnostics.instance_statuses.return_value = (
+            InstanceStatus(0, InstanceRuntimeState.READY),
+            InstanceStatus(1, InstanceRuntimeState.FAILED, "split count mismatch"),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert "Failed" in dpg.get_value(second_handle)
+        assert "split count mismatch" in dpg.get_value(second_handle)
+        assert "ACTIVE" not in dpg.get_item_label(renderer._rows[0].condition_handle)
+
+        renderer.tick("STOPPED", None)
+        assert not dpg.does_item_exist(first_handle)
+        assert not dpg.does_item_exist(second_handle)
+        assert renderer._instance_rows == {}
     finally:
         dpg.destroy_context()

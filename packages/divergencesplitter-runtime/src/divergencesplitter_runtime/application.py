@@ -15,7 +15,11 @@ from divergencesplitter_runtime.capture import (
 from divergencesplitter_runtime.configuration.validation import (
     validate_instances,
 )
-from divergencesplitter_runtime.instance_runtime import InstanceRuntime
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntime,
+    InstanceRuntimeState,
+    InstanceStatus,
+)
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.worker import (
     BridgeWorker,
@@ -40,6 +44,8 @@ class ApplicationDiagnostics(
         scenario_index: int,
     ) -> logging.Logger | logging.LoggerAdapter: ...
 
+    def instances_changed(self, statuses: tuple[InstanceStatus, ...]) -> None: ...
+
     def runtime_started(self) -> None:
         """Shared Capture/Processing is starting; instances may still be connecting."""
         ...
@@ -51,6 +57,18 @@ class ApplicationStartupValidationError(Exception):
     def __init__(self, error: ValueError) -> None:
         self.error = error
         super().__init__(str(error))
+
+
+class AllInstancesFailedError(RuntimeError):
+    """Every configured instance failed; shared runtime resources are closed."""
+
+    def __init__(self, statuses: tuple[InstanceStatus, ...]) -> None:
+        self.statuses = statuses
+        details = "; ".join(
+            f"Instance {status.scenario_index}: {status.error or 'failed'}"
+            for status in statuses
+        )
+        super().__init__(f"All LiveSplit instances failed: {details}")
 
 
 class ApplicationRuntime:
@@ -89,10 +107,16 @@ class ApplicationRuntime:
             diagnostics=diagnostics,
         )
         self._stop_requested = threading.Event()
+        self._diagnostics.instances_changed(self.instance_statuses())
 
     @property
     def instances(self) -> tuple[InstanceRuntime, ...]:
         return self._instances
+
+    def instance_statuses(self) -> tuple[InstanceStatus, ...]:
+        return tuple(
+            instance.status(index) for index, instance in enumerate(self._instances)
+        )
 
     def request_stop(self) -> None:
         self._stop_requested.set()
@@ -110,6 +134,8 @@ class ApplicationRuntime:
         for thread in worker_threads:
             thread.start()
 
+        instance_failure: AllInstancesFailedError | None = None
+        last_statuses = self.instance_statuses()
         capture_error: list[BaseException] = []
         processing_error: list[BaseException] = []
         capture_thread: threading.Thread | None = None
@@ -137,7 +163,22 @@ class ApplicationRuntime:
             processing_thread.start()
             capture_thread.start()
             capture_started = True
-            capture_thread.join()
+            while True:
+                last_statuses = self.instance_statuses()
+                self._diagnostics.instances_changed(last_statuses)
+                if (
+                    not self._stop_requested.is_set()
+                    and last_statuses
+                    and all(
+                        status.state is InstanceRuntimeState.FAILED
+                        for status in last_statuses
+                    )
+                ):
+                    instance_failure = AllInstancesFailedError(last_statuses)
+                    break
+                if not capture_thread.is_alive():
+                    break
+                capture_thread.join(0.05)
         finally:
             self.request_stop()
             if capture_thread is not None and capture_thread.is_alive():
@@ -152,11 +193,26 @@ class ApplicationRuntime:
                 thread.join()
             for instance in self._instances:
                 instance.stop()
+            # Keep failed outcomes visible after teardown; other instances stopped.
+            self._diagnostics.instances_changed(
+                tuple(
+                    status
+                    if status.state is InstanceRuntimeState.FAILED
+                    else InstanceStatus(
+                        status.scenario_index,
+                        InstanceRuntimeState.STOPPED,
+                        status.error,
+                    )
+                    for status in last_statuses
+                )
+            )
 
         if capture_error:
             raise capture_error[0]
         if processing_error:
             raise processing_error[0]
+        if instance_failure is not None:
+            raise instance_failure
 
     def _run_recording_errors(
         self,

@@ -410,3 +410,68 @@ def test_file_logging_with_no_stderr_and_live_off_switch(tmp_path):
     finally:
         diagnostics.close()
     path.unlink()  # The session released its Windows file handle.
+
+
+def test_instance_snapshots_survive_logging_off_and_are_not_consumed() -> None:
+    from divergencesplitter_runtime import InstanceRuntimeState, InstanceStatus
+
+    stream = StringIO()
+    diagnostics = OperationalDiagnostics(stream, level=logging.CRITICAL + 1)
+    statuses = (
+        InstanceStatus(0, InstanceRuntimeState.READY),
+        InstanceStatus(1, InstanceRuntimeState.FAILED, "split count mismatch"),
+    )
+    diagnostics.instances_changed(statuses)
+    assert diagnostics.instance_statuses() == statuses
+    assert diagnostics.instance_statuses() == statuses
+    assert stream.getvalue() == ""
+    replacement = (InstanceStatus(0, InstanceRuntimeState.CONNECTING),)
+    diagnostics.instances_changed(replacement)
+    assert statuses[0].state is InstanceRuntimeState.READY
+    assert diagnostics.instance_statuses() == replacement
+
+
+def test_instance_lifecycle_events_include_identity_and_only_log_changes() -> None:
+    from divergencesplitter_runtime import InstanceRuntimeState, InstanceStatus
+
+    stream = StringIO()
+    diagnostics = OperationalDiagnostics(stream)
+    for state in (
+        InstanceRuntimeState.CONNECTING,
+        InstanceRuntimeState.READY,
+        InstanceRuntimeState.READY,
+        InstanceRuntimeState.CONNECTING,
+        InstanceRuntimeState.FAILED,
+    ):
+        diagnostics.instances_changed((InstanceStatus(1, state),))
+    lines = stream.getvalue().splitlines()
+    assert len(lines) == 4
+    assert all("scenario_index=1" in line for line in lines)
+    assert "bridge.instance_connecting" in lines[0]
+    assert "bridge.instance_ready" in lines[1]
+    assert "bridge.instance_failed" in lines[-1]
+
+
+def test_instance_snapshots_are_consistent_across_threads() -> None:
+    from divergencesplitter_runtime import InstanceRuntimeState, InstanceStatus
+
+    diagnostics = OperationalDiagnostics(StringIO(), level=logging.CRITICAL + 1)
+    ready = tuple(InstanceStatus(i, InstanceRuntimeState.READY) for i in range(2))
+    waiting = tuple(
+        InstanceStatus(i, InstanceRuntimeState.CONNECTING) for i in range(2)
+    )
+    diagnostics.instances_changed(ready)
+    finished = threading.Event()
+
+    def write() -> None:
+        for _ in range(100):
+            diagnostics.instances_changed(waiting)
+            diagnostics.instances_changed(ready)
+        finished.set()
+
+    writer = threading.Thread(target=write)
+    writer.start()
+    while not finished.is_set():
+        assert diagnostics.instance_statuses() in (ready, waiting)
+    writer.join(1)
+    assert not writer.is_alive()

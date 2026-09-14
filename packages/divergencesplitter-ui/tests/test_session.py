@@ -33,6 +33,10 @@ from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntimeState,
+    InstanceStatus,
+)
 from divergencesplitter_ui.session import (
     SessionAlreadyActiveError,
     SessionController,
@@ -137,6 +141,13 @@ class FakeDiagnostics(OperationalDiagnostics):
 
     def bind_runtime(self, instances, frame_source) -> None:
         self.bind_runtime_calls.append((instances, frame_source))
+        super().bind_runtime(instances, frame_source)
+        self.instances_changed(
+            tuple(
+                InstanceStatus(i, InstanceRuntimeState.CONNECTING)
+                for i in range(len(instances))
+            )
+        )
 
     def runtime_started(self) -> None:
         self.runtime_started_calls += 1
@@ -184,6 +195,12 @@ class FakeRuntime:
         self.ran.set()
         if self._call_runtime_started:
             self._diagnostics.runtime_started()
+            self._diagnostics.instances_changed(
+                tuple(
+                    InstanceStatus(status.scenario_index, InstanceRuntimeState.READY)
+                    for status in self._diagnostics.instance_statuses()
+                )
+            )
         if not self._release_on_run:
             self._release.wait()
         if self._error is not None:
@@ -527,3 +544,118 @@ def test_reference_resize_is_applied_before_session_starts() -> None:
     assert instances[0].scenario.start_condition.evaluate(
         FrameContext(frame, MonotonicTime(0))
     )
+
+
+@pytest.mark.parametrize(
+    ("states", "expected"),
+    [
+        (("CONNECTING", "CONNECTING"), SessionState.CONNECTING),
+        (("READY", "CONNECTING"), SessionState.RUNNING),
+        (("READY", "FAILED"), SessionState.RUNNING),
+        (("CONNECTING", "FAILED"), SessionState.CONNECTING),
+        (("FAILED", "FAILED"), SessionState.FAILED),
+        (("READY", "READY"), SessionState.RUNNING),
+    ],
+)
+def test_session_aggregation(states, expected) -> None:
+    from divergencesplitter_ui.session import aggregate_instance_states
+
+    statuses = tuple(
+        InstanceStatus(i, InstanceRuntimeState[name]) for i, name in enumerate(states)
+    )
+    assert aggregate_instance_states(statuses) is expected
+    assert aggregate_instance_states(tuple(reversed(statuses))) is expected
+
+
+def test_session_tracks_disconnect_and_reconnect_without_runtime_restart() -> None:
+    factory = FakeRuntimeFactory(release_on_run=False)
+    factory.call_runtime_started = False
+    controller, _, diagnostics_factory = make_controller(runtime_factory=factory)
+    controller.start("config.json")
+    try:
+        assert wait_until(
+            lambda: bool(factory.runtimes) and factory.runtimes[0].ran.is_set()
+        )
+        diagnostics = diagnostics_factory.created[0]
+        diagnostics.runtime_started()  # Shared Capture startup alone is not RUNNING.
+        assert controller.state is SessionState.CONNECTING
+        for states, expected in (
+            (("READY", "CONNECTING"), SessionState.RUNNING),
+            (("CONNECTING", "CONNECTING"), SessionState.CONNECTING),
+            (("CONNECTING", "READY"), SessionState.RUNNING),
+            (("FAILED", "READY"), SessionState.RUNNING),
+            (("FAILED", "CONNECTING"), SessionState.CONNECTING),
+        ):
+            diagnostics.instances_changed(
+                tuple(
+                    InstanceStatus(i, InstanceRuntimeState[name])
+                    for i, name in enumerate(states)
+                )
+            )
+            assert controller.state is expected
+        assert len(factory.runtimes) == 1
+        assert factory.runtimes[0].request_stop_calls == 0
+    finally:
+        controller.request_stop()
+        assert controller.join(2)
+    assert controller.state is SessionState.STOPPED
+
+
+def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
+    from unittest.mock import patch
+
+    from divergencesplitter import ErrorAction, FrameSourceError
+    from divergencesplitter_runtime import AllInstancesFailedError
+    from divergencesplitter_ui.session import ApplicationRuntimeFactory
+    from livesplit_bridge import BridgeProtocolError
+
+    class WaitingSource(VideoFileSource):
+        def __init__(self) -> None:
+            super().__init__("unused.mp4")
+            self.close_calls = 0
+
+        def prepare(self) -> FrameSourceError:
+            return FrameSourceError()
+
+        def handle_error(self, error: FrameSourceError) -> ErrorAction:
+            return ErrorAction.RETRY
+
+        def close(self) -> None:
+            self.close_calls += 1
+            super().close()
+
+    class WaitingSourceBuilder:
+        def __init__(self) -> None:
+            self.sources: list[WaitingSource] = []
+
+        def build(self, configuration, *, base_directory):
+            source = WaitingSource()
+            self.sources.append(source)
+            return source
+
+    source_builder = WaitingSourceBuilder()
+    controller, _, diagnostics_factory = make_controller(
+        source_builder=source_builder, runtime_factory=ApplicationRuntimeFactory()
+    )
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter"
+    ) as adapter:
+        adapter.return_value.attach.side_effect = BridgeProtocolError(
+            "incompatible protocol"
+        )
+        for _ in range(2):
+            controller.start("config.json")
+            try:
+                assert controller.join(3)
+                assert controller.state is SessionState.FAILED
+                assert controller.result is not None
+                assert controller.result.failure_kind is SessionFailureKind.INSTANCES
+                assert isinstance(controller.result.error, AllInstancesFailedError)
+                statuses = diagnostics_factory.created[-1].instance_statuses()
+                assert statuses[0].state is InstanceRuntimeState.FAILED
+                assert statuses[0].error == "incompatible protocol"
+                assert source_builder.sources[-1].close_calls == 1
+            finally:
+                controller.request_stop()
+                controller.join(3)
+        assert adapter.return_value.close.call_count == 2

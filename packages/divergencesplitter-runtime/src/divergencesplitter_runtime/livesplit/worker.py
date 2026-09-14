@@ -190,6 +190,11 @@ class BridgeWorker:
             return self._state
 
     @property
+    def failure(self) -> Exception | None:
+        with self._state_lock:
+            return self._initial_error
+
+    @property
     def is_available(self) -> bool:
         return self.state is BridgeWorkerState.READY and self._available.is_set()
 

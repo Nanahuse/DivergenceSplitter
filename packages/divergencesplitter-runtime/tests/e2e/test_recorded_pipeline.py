@@ -584,3 +584,61 @@ def test_independent_instances_keep_one_shared_capture_across_reconnect(
             instance.state is InstanceRuntimeState.STOPPED
             for instance in runtime.instances
         )
+
+
+def test_all_validation_failures_stop_capture_and_keep_failure_details(
+    tmp_path: Path,
+) -> None:
+    from io import StringIO
+
+    from divergencesplitter_runtime import (
+        AllInstancesFailedError,
+        OperationalDiagnostics,
+    )
+
+    video = tmp_path / "all-failed.avi"
+    write_recording(video, ((BRIGHT, 600),), fps=60)
+    instances = tuple(
+        ScenarioInstance(
+            LiveSplitConnection(f"rpc-{i}", f"event-{i}"),
+            Scenario(impossible_reset_condition(), None, None, (None, None)),
+        )
+        for i in range(2)
+    )
+    ScriptedBridgeAdapter.scripts = {
+        instance.connection: BridgeScript(snapshot()) for instance in instances
+    }
+    source = VideoFileSource(str(video))
+    diagnostics = OperationalDiagnostics(StringIO())
+    diagnostics.bind_runtime(instances, source)
+    runtime = ApplicationRuntime(instances, source, diagnostics=diagnostics)
+    with (
+        patch(
+            "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+            ScriptedBridgeAdapter,
+        ),
+        patch.object(source, "close", wraps=source.close) as close,
+    ):
+        thread, errors = start_runtime(runtime)
+        try:
+            thread.join(3)
+            assert not thread.is_alive()
+            assert len(errors) == 1
+            assert isinstance(errors[0], AllInstancesFailedError)
+            assert close.call_count == 1
+            statuses = diagnostics.instance_statuses()
+            assert len(statuses) == 2
+            assert all(
+                status.state is InstanceRuntimeState.FAILED for status in statuses
+            )
+            assert all(
+                status.error and "split slots" in status.error for status in statuses
+            )
+            assert all(
+                instance.state is InstanceRuntimeState.STOPPED
+                for instance in runtime.instances
+            )
+        finally:
+            runtime.request_stop()
+            thread.join(3)
+            diagnostics.close()

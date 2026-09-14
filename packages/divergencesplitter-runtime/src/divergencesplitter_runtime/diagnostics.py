@@ -40,6 +40,10 @@ from divergencesplitter import (
 )
 
 from divergencesplitter_runtime.capture import PublishResult
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntimeState,
+    InstanceStatus,
+)
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
@@ -158,6 +162,7 @@ class OperationalDiagnostics:
         self._condition_observations: tuple[ConditionObservation, ...] = ()
         self._detector_tree: DetectorTreeSnapshot | None = None
         self._runtime_started = threading.Event()
+        self._instance_statuses: tuple[InstanceStatus, ...] = ()
 
     def set_level(self, level: int) -> None:
         self._logger.setLevel(level)
@@ -195,6 +200,33 @@ class OperationalDiagnostics:
             except Exception:  # noqa: BLE001
                 self._detector_tree = None
                 self._condition_observations = ()
+
+    def instance_statuses(self) -> tuple[InstanceStatus, ...]:
+        """Copy the latest lifecycle outcomes, independently of logging level."""
+        with self._observable_lock:
+            return self._instance_statuses
+
+    def instances_changed(self, statuses: tuple[InstanceStatus, ...]) -> None:
+        with self._observable_lock:
+            previous = {
+                status.scenario_index: status for status in self._instance_statuses
+            }
+            self._instance_statuses = statuses
+        for status in statuses:
+            if previous.get(status.scenario_index) == status:
+                continue
+            level = (
+                logging.ERROR
+                if status.state is InstanceRuntimeState.FAILED
+                else logging.INFO
+            )
+            self._emit(
+                level,
+                f"bridge.instance_{status.state.name.lower()}",
+                scenario_index=status.scenario_index,
+                instance_state=status.state.name,
+                error=status.error,
+            )
 
     def scenario_logger(
         self,
@@ -448,6 +480,9 @@ class OperationalDiagnostics:
         connection: LiveSplitConnection,
         error: Exception,
     ) -> None:
+        self._emit_connection(
+            logging.WARNING, "bridge.instance_connection_lost", connection
+        )
         self._emit_connection(
             logging.WARNING,
             "bridge.connection_lost",

@@ -20,6 +20,10 @@ from enum import Enum, auto
 from typing import Protocol
 
 from divergencesplitter import ConditionStatus, Frame
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntimeState,
+    InstanceStatus,
+)
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
     ConditionNode,
@@ -48,6 +52,8 @@ class ObservableDiagnostics(Protocol):
     def take_condition_observations(self) -> tuple[ConditionObservation, ...]: ...
 
     def detector_tree(self) -> DetectorTreeSnapshot | None: ...
+
+    def instance_statuses(self) -> tuple[InstanceStatus, ...]: ...
 
     def metrics_snapshot(self) -> RuntimeMetricsSnapshot: ...
 
@@ -184,6 +190,16 @@ def condition_label(view: ConditionView) -> str:
         )
         progress = f"  {elapsed} / {view.duration_nanoseconds / 1_000_000_000:.3f} s"
     return f"{marker}{view.condition_type} [{view.status_label}]{progress}{active}"
+
+
+def instance_status_label(status: InstanceStatus) -> str:
+    label = {
+        InstanceRuntimeState.CONNECTING: "Connecting...",
+        InstanceRuntimeState.READY: "Connected",
+        InstanceRuntimeState.FAILED: "Failed",
+        InstanceRuntimeState.STOPPED: "Stopped",
+    }[status.state]
+    return f"{label} — {status.error}" if status.error else label
 
 
 def scenario_label(node: ScenarioNode) -> str:

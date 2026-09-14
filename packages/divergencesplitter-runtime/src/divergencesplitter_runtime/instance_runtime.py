@@ -1,6 +1,7 @@
 """Processing-thread owner of one independent scenario execution session."""
 
 import logging
+from dataclasses import dataclass
 from enum import Enum, auto
 
 from divergencesplitter.scenario.models import Scenario
@@ -16,6 +17,15 @@ class InstanceRuntimeState(Enum):
     READY = auto()
     FAILED = auto()
     STOPPED = auto()
+
+
+@dataclass(frozen=True)
+class InstanceStatus:
+    """Immutable, indexed lifecycle snapshot for Diagnostics and UI."""
+
+    scenario_index: int
+    state: InstanceRuntimeState
+    error: str | None = None
 
 
 class InstanceRuntime:
@@ -50,6 +60,11 @@ class InstanceRuntime:
         if generation != self.generation or state is BridgeWorkerState.CONNECTING:
             return InstanceRuntimeState.CONNECTING
         return self._state
+
+    def status(self, scenario_index: int) -> InstanceStatus:
+        state = self.state
+        error = self.error or self.worker.failure
+        return InstanceStatus(scenario_index, state, str(error) if error else None)
 
     def process_updates(self) -> None:
         if self._state in (InstanceRuntimeState.FAILED, InstanceRuntimeState.STOPPED):
