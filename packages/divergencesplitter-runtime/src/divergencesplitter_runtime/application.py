@@ -158,6 +158,8 @@ class ApplicationRuntime:
     def _initialize_scenarios(self) -> None:
         for instance in self._instances:
             instance.worker.wait_until_initialized()
+            if self._stop_requested.is_set():
+                return
         for instance in self._instances:
             updates = instance.worker.drain_updates()
             if not updates:

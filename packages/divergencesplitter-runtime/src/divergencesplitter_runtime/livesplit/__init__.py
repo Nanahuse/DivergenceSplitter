@@ -19,6 +19,7 @@ from divergencesplitter_runtime.livesplit.worker import (
     ActionSubmission,
     BridgeActionRequest,
     BridgeWorker,
+    BridgeWorkerState,
     BridgeWorkerDiagnostics,
 )
 
@@ -26,6 +27,7 @@ __all__ = [
     "ActionSubmission",
     "BridgeActionRequest",
     "BridgeWorker",
+    "BridgeWorkerState",
     "BridgeWorkerDiagnostics",
     "LiveSplitBridgeAdapter",
     "LiveSplitBridgeDiagnostics",
