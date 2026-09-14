@@ -25,11 +25,26 @@ from divergencesplitter_runtime import (
     InstanceRuntime,
     InstanceRuntimeState,
     LatestFrameBuffer,
+    LiveSplitRunInfo,
+    LiveSplitSegmentInfo,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     ProcessingRuntime,
 )
 from e2e.support import RecordingDiagnostics, snapshot
+
+
+def run_info(
+    *,
+    session_id: int = 1,
+    run_revision: int = 1,
+    name: str = "A",
+) -> LiveSplitRunInfo:
+    return LiveSplitRunInfo(
+        session_id=session_id,
+        run_revision=run_revision,
+        segments=(LiveSplitSegmentInfo(0, name),),
+    )
 
 
 class ControlledWorker(BridgeWorker):
@@ -40,11 +55,32 @@ class ControlledWorker(BridgeWorker):
             LiveSplitConnection("rpc", "event"), diagnostics=RecordingDiagnostics()
         )
 
-    def initial(self, *, session_id: int = 1, split_count: int = 1) -> None:
+    def initial(
+        self,
+        *,
+        session_id: int = 1,
+        split_count: int = 1,
+        run: LiveSplitRunInfo | None = None,
+    ) -> None:
         self._updates.replace(
             LiveSplitUpdate(
                 LiveSplitUpdateKind.INITIAL,
                 snapshot(session_id=session_id, split_count=split_count),
+                run,
+            )
+        )
+
+    def transition(
+        self,
+        *,
+        session_id: int = 1,
+        run: LiveSplitRunInfo | None = None,
+    ) -> None:
+        self._updates.replace(
+            LiveSplitUpdate(
+                LiveSplitUpdateKind.TRANSITION,
+                snapshot(session_id=session_id),
+                run,
             )
         )
 
@@ -262,6 +298,93 @@ def test_initial_is_validated_before_ready_and_lifecycle_is_logged(
     instance.stop()
     assert instance.state is InstanceRuntimeState.STOPPED
     assert instance.scenario_runtime is None
+
+
+def test_initial_establishes_current_run_info() -> None:
+    worker = ControlledWorker()
+    instance = InstanceRuntime(scenario(), worker)
+    expected = run_info(run_revision=3)
+
+    worker.initial(run=expected)
+    instance.process_updates()
+
+    assert instance.state is InstanceRuntimeState.READY
+    assert instance.run_info == expected
+
+
+def test_transition_replaces_current_run_info() -> None:
+    worker = ControlledWorker()
+    instance = InstanceRuntime(scenario(), worker)
+    worker.initial(run=run_info(run_revision=1))
+    instance.process_updates()
+
+    worker.transition(run=run_info(run_revision=2, name="B"))
+    instance.process_updates()
+
+    assert instance.run_info == run_info(run_revision=2, name="B")
+
+
+def test_transition_without_run_info_keeps_current_run_info() -> None:
+    worker = ControlledWorker()
+    instance = InstanceRuntime(scenario(), worker)
+    worker.initial(run=run_info(run_revision=1))
+    instance.process_updates()
+
+    worker.transition()
+    instance.process_updates()
+
+    assert instance.run_info == run_info(run_revision=1)
+
+
+def test_generation_change_discards_run_info() -> None:
+    worker = ControlledWorker()
+    instance = InstanceRuntime(scenario(), worker)
+    worker.initial(run=run_info(run_revision=1))
+    instance.process_updates()
+
+    worker.disconnect()
+    instance.process_updates()
+
+    assert instance.run_info is None
+
+
+def test_worker_failure_discards_run_info() -> None:
+    worker = ControlledWorker()
+    instance = InstanceRuntime(scenario(), worker)
+    worker.initial(run=run_info(run_revision=1))
+    instance.process_updates()
+
+    worker.fail()
+    instance.process_updates()
+
+    assert instance.state is InstanceRuntimeState.FAILED
+    assert instance.run_info is None
+
+
+def test_stop_discards_run_info() -> None:
+    worker = ControlledWorker()
+    instance = InstanceRuntime(scenario(), worker)
+    worker.initial(run=run_info(run_revision=1))
+    instance.process_updates()
+
+    instance.stop()
+
+    assert instance.run_info is None
+    assert instance.state is InstanceRuntimeState.STOPPED
+
+
+def test_run_info_change_does_not_change_lifecycle_status() -> None:
+    worker = ControlledWorker()
+    instance = InstanceRuntime(scenario(), worker)
+    worker.initial(run=run_info(run_revision=1))
+    instance.process_updates()
+    before = instance.status(0)
+
+    worker.transition(run=run_info(run_revision=2))
+    instance.process_updates()
+
+    assert instance.run_info == run_info(run_revision=2)
+    assert instance.status(0) == before
 
 
 def test_drain_cannot_revive_a_failed_or_disconnected_worker() -> None:

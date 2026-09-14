@@ -1,8 +1,10 @@
 """Convert LiveSplit.Bridge protobuf messages into runtime models."""
 
-from livesplit_bridge import common_pb2
+from livesplit_bridge import common_pb2, run_pb2
 
 from divergencesplitter_runtime.livesplit.models import (
+    LiveSplitRunInfo,
+    LiveSplitSegmentInfo,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -51,9 +53,21 @@ def snapshot_from_proto(snapshot: common_pb2.TimerSnapshot) -> LiveSplitSnapshot
         session_id=snapshot.session_id,
         state_revision=snapshot.state_revision,
         event_sequence=snapshot.event_sequence,
+        run_revision=snapshot.run_revision,
         phase=phase,
         split_index=snapshot.split_index,
         split_count=snapshot.split_count,
+    )
+
+
+def run_info_from_proto(run: run_pb2.RunSnapshot) -> LiveSplitRunInfo:
+    return LiveSplitRunInfo(
+        session_id=run.session_id,
+        run_revision=run.run_revision,
+        segments=tuple(
+            LiveSplitSegmentInfo(index=segment.index, name=segment.name)
+            for segment in run.segments
+        ),
     )
 
 

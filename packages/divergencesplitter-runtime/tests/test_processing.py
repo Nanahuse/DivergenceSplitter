@@ -34,6 +34,7 @@ def snapshot() -> LiveSplitSnapshot:
         session_id=1,
         state_revision=0,
         event_sequence=0,
+        run_revision=1,
         phase=TimerPhase.RUNNING,
         split_index=0,
         split_count=1,

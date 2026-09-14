@@ -367,6 +367,10 @@ class BridgeWorker:
             # session-start marker, using the latest authoritative snapshot.
             pending = self._updates.drain()
             if any(item.kind is LiveSplitUpdateKind.INITIAL for item in pending):
-                resync = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, resync.snapshot)
+                resync = LiveSplitUpdate(
+                    LiveSplitUpdateKind.INITIAL,
+                    resync.snapshot,
+                    resync.run_info,
+                )
             self._updates.replace(resync)
             self._sync_in_progress = False

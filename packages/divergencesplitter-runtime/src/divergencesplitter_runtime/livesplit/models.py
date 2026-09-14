@@ -22,12 +22,19 @@ class LiveSplitSnapshot:
     session_id: int
     state_revision: int
     event_sequence: int
+    run_revision: int
     phase: TimerPhase
     split_index: int
     split_count: int
 
     def __post_init__(self) -> None:
-        for name in ("session_id", "state_revision", "event_sequence", "split_count"):
+        for name in (
+            "session_id",
+            "state_revision",
+            "event_sequence",
+            "run_revision",
+            "split_count",
+        ):
             _require_non_negative_integer(name, getattr(self, name))
         if self.phase is TimerPhase.NOT_RUNNING:
             if self.split_index != -1:
@@ -42,6 +49,26 @@ class LiveSplitSnapshot:
                 )
         elif self.split_count == 0 or self.split_index != self.split_count:
             raise ValueError("ENDED requires split_index == split_count > 0")
+
+
+@dataclass(frozen=True)
+class LiveSplitSegmentInfo:
+    index: int
+    name: str
+
+    def __post_init__(self) -> None:
+        _require_non_negative_integer("index", self.index)
+
+
+@dataclass(frozen=True)
+class LiveSplitRunInfo:
+    session_id: int
+    run_revision: int
+    segments: tuple[LiveSplitSegmentInfo, ...]
+
+    def __post_init__(self) -> None:
+        _require_non_negative_integer("session_id", self.session_id)
+        _require_non_negative_integer("run_revision", self.run_revision)
 
 
 class LiveSplitUpdateKind(Enum):
@@ -62,3 +89,4 @@ class LiveSplitResyncReason(Enum):
 class LiveSplitUpdate:
     kind: LiveSplitUpdateKind
     snapshot: LiveSplitSnapshot
+    run_info: LiveSplitRunInfo | None = None
