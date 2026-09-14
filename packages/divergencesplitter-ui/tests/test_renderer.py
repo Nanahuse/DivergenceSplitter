@@ -85,9 +85,9 @@ def split_labels(renderer, scenario_index: int = 0) -> list[str | None]:
 
 
 def dpg_label(handle) -> str | None:
-    import dearpygui.dearpygui as _dpg
+    from divergencesplitter_ui._dpg import dpg
 
-    return _dpg.get_item_label(handle)
+    return dpg.get_item_label(handle)
 
 
 @pytest.mark.parametrize("source_type", ["camera", "ndi"])
