@@ -344,8 +344,7 @@ class ConfigurationPage:
             self._preview_was_active = True
             if (
                 not self._restart_preview_requested
-                and
-                runtime_frame is not None
+                and runtime_frame is not None
                 and runtime_frame is not self._runtime_preview_frame
             ):
                 self._runtime_preview_frame = runtime_frame
