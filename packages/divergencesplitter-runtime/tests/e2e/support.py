@@ -74,6 +74,7 @@ class BridgeScript:
         self.resync_entered = threading.Event()
         self._resync_release = threading.Event()
         self._block_resync = False
+        self._attach_count = 0
 
     @property
     def current_snapshot(self) -> LiveSplitSnapshot:
@@ -81,6 +82,12 @@ class BridgeScript:
             return self._snapshot
 
     def attach(self) -> LiveSplitUpdate:
+        self._attach_count += 1
+        if self._attach_count > 1 and self._block_resync:
+            self.resync_entered.set()
+            if not self._resync_release.wait(5):
+                raise TimeoutError("test did not release fresh attach")
+        self.closed.clear()
         with self._condition:
             return LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, self._snapshot)
 

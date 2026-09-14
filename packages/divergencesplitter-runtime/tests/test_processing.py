@@ -17,6 +17,7 @@ from divergencesplitter.scenario.models import Scenario
 from divergencesplitter_runtime import (
     ActionSubmission,
     InstanceRuntime,
+    InstanceRuntimeState,
     LatestFrameBuffer,
     LiveSplitSnapshot,
     LiveSplitUpdate,
@@ -91,7 +92,11 @@ class FakeWorker(BridgeWorker):
         return updates
 
     def submit_action(
-        self, action: Action, expected_snapshot: LiveSplitSnapshot
+        self,
+        action: Action,
+        expected_snapshot: LiveSplitSnapshot,
+        *,
+        generation: int | None = None,
     ) -> ActionSubmission:
         self.requests.append((action, expected_snapshot))
         return ActionSubmission.ACCEPTED
@@ -122,8 +127,23 @@ class RecordingNormalizer(FrameNormalizer):
         return super().normalize(frame)
 
 
+class ProcessingInstance(InstanceRuntime):
+    """Prepared instance double; lifecycle is covered in test_instance_runtime."""
+
+    @property
+    def state(self) -> InstanceRuntimeState:
+        return InstanceRuntimeState.READY
+
+    def process_updates(self) -> None:
+        assert self.scenario_runtime is not None
+        for update in self.worker.drain_updates():
+            self.scenario_runtime.apply_livesplit_update(update)
+
+
 def instance(scenario: ScenarioRuntime, worker: BridgeWorker) -> InstanceRuntime:
-    return InstanceRuntime(cast(Scenario, None), scenario, worker)
+    result = ProcessingInstance(cast(Scenario, None), worker)
+    result.scenario_runtime = scenario
+    return result
 
 
 class RecordingDiagnostics:

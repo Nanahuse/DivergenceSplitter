@@ -431,6 +431,22 @@ class AdapterTest(unittest.TestCase):
 
         client.close.assert_called_once_with()
 
+    def test_resync_snapshot_from_new_session_requires_fresh_connection(self) -> None:
+        client = create_autospec(BridgeClient, instance=True)
+        client.attach.return_value = bridge_pb2.AttachResponse(
+            session_id=1,
+            snapshot=proto_snapshot(),
+        )
+        client.snapshot.return_value = proto_snapshot(session_id=2)
+        with LiveSplitBridgeAdapter(
+            LiveSplitConnection("rpc", "event"),
+            diagnostics=RecordingDiagnostics(),
+            client=client,
+        ) as adapter:
+            adapter.attach()
+            with self.assertRaises(BridgeConnectionLostError):
+                adapter.resync(LiveSplitResyncReason.GAP)
+
 
 class ActionExecutionTest(unittest.TestCase):
     def make_adapter(
@@ -610,7 +626,10 @@ class ActionExecutionTest(unittest.TestCase):
         diagnostics = RecordingDiagnostics()
         action = Action(operation="split")
 
-        self.make_adapter(client, diagnostics).execute_action(action, domain_snapshot())
+        with self.assertRaises(BridgeResponseTimeoutError):
+            self.make_adapter(client, diagnostics).execute_action(
+                action, domain_snapshot()
+            )
 
         self.assert_no_operation(client)
         self.assertEqual(
@@ -676,9 +695,10 @@ class ActionExecutionTest(unittest.TestCase):
                 diagnostics = RecordingDiagnostics()
                 action = Action(operation="split")
 
-                self.make_adapter(client, diagnostics).execute_action(
-                    action, domain_snapshot()
-                )
+                with self.assertRaises(type(error)):
+                    self.make_adapter(client, diagnostics).execute_action(
+                        action, domain_snapshot()
+                    )
 
                 client.split.assert_called_once_with()
                 self.assertEqual(

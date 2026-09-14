@@ -32,7 +32,10 @@ from divergencesplitter_runtime.configuration import (
     validate_split_count,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
-from divergencesplitter_runtime.instance_runtime import InstanceRuntime
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntime,
+    InstanceRuntimeState,
+)
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit import (
     ActionSubmission,
@@ -87,6 +90,7 @@ __all__ = [
     "DetectorTreeSnapshot",
     "InstanceConfiguration",
     "InstanceRuntime",
+    "InstanceRuntimeState",
     "LatestFrameBuffer",
     "LiveSplitBridgeAdapter",
     "LiveSplitBridgeDiagnostics",
