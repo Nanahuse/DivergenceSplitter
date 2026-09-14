@@ -7,7 +7,10 @@ from enum import Enum, auto
 from divergencesplitter.scenario.models import Scenario
 
 from divergencesplitter_runtime.configuration.validation import validate_split_count
-from divergencesplitter_runtime.livesplit.models import LiveSplitUpdateKind
+from divergencesplitter_runtime.livesplit.models import (
+    LiveSplitRunInfo,
+    LiveSplitUpdateKind,
+)
 from divergencesplitter_runtime.livesplit.worker import BridgeWorker, BridgeWorkerState
 from divergencesplitter_runtime.scenario import ScenarioRuntime
 
@@ -42,6 +45,7 @@ class InstanceRuntime:
         self.worker = worker
         self._logger = logger or logging.getLogger(__name__)
         self.scenario_runtime: ScenarioRuntime | None = None
+        self.run_info: LiveSplitRunInfo | None = None
         self._state = InstanceRuntimeState.CONNECTING
         self.generation = 0
         self.error: Exception | None = None
@@ -72,12 +76,14 @@ class InstanceRuntime:
         state, generation, updates = self.worker.drain_connection_updates()
         if generation != self.generation:
             self.scenario_runtime = None
+            self.run_info = None
             self.generation = generation
             self._state = InstanceRuntimeState.CONNECTING
             self._log("instance.connection_lost")
             self._log("instance.connecting")
         if state in (BridgeWorkerState.FAILED, BridgeWorkerState.STOPPED):
             self.scenario_runtime = None
+            self.run_info = None
             self._state = InstanceRuntimeState[state.name]
             self._log(f"instance.{state.name.lower()}")
             return
@@ -93,6 +99,8 @@ class InstanceRuntime:
                     self._log("instance.validation_failed", error=str(error))
                     self.worker.request_stop()
                     return
+                if update.run_info is not None:
+                    self.run_info = update.run_info
                 runtime = ScenarioRuntime(self.scenario, logger=self._logger)
                 runtime.apply_livesplit_update(update)
                 self.scenario_runtime = runtime
@@ -101,12 +109,16 @@ class InstanceRuntime:
                     self._log("instance.reinitialized")
                 self._initialized_once = True
                 self._log("instance.ready")
-            elif self.scenario_runtime is not None:
-                self.scenario_runtime.apply_livesplit_update(update)
+            else:
+                if update.run_info is not None:
+                    self.run_info = update.run_info
+                if self.scenario_runtime is not None:
+                    self.scenario_runtime.apply_livesplit_update(update)
 
     def stop(self) -> None:
         """Called after Processing has joined, so it cannot race evaluation."""
         self.scenario_runtime = None
+        self.run_info = None
         self._state = InstanceRuntimeState.STOPPED
 
     def _log(self, event: str, **fields: object) -> None:

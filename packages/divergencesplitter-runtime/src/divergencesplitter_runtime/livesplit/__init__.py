@@ -5,11 +5,14 @@ from divergencesplitter_runtime.livesplit.adapter import (
     LiveSplitBridgeDiagnostics,
 )
 from divergencesplitter_runtime.livesplit.mapping import (
+    run_info_from_proto,
     snapshot_from_proto,
     update_from_proto,
 )
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
+    LiveSplitRunInfo,
+    LiveSplitSegmentInfo,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -32,10 +35,13 @@ __all__ = [
     "LiveSplitBridgeAdapter",
     "LiveSplitBridgeDiagnostics",
     "LiveSplitResyncReason",
+    "LiveSplitRunInfo",
+    "LiveSplitSegmentInfo",
     "LiveSplitSnapshot",
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",
     "TimerPhase",
+    "run_info_from_proto",
     "snapshot_from_proto",
     "update_from_proto",
 ]

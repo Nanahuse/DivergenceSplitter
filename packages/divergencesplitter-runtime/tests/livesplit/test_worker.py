@@ -28,6 +28,8 @@ from divergencesplitter_runtime import (
     BridgeWorkerState,
     InstanceRuntimeState,
     LiveSplitResyncReason,
+    LiveSplitRunInfo,
+    LiveSplitSegmentInfo,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -46,14 +48,28 @@ def snapshot(
     *,
     session_id: int = 1,
     event_sequence: int = 0,
+    run_revision: int = 1,
 ) -> LiveSplitSnapshot:
     return LiveSplitSnapshot(
         session_id=session_id,
         state_revision=event_sequence,
         event_sequence=event_sequence,
+        run_revision=run_revision,
         phase=TimerPhase.RUNNING,
         split_index=0,
         split_count=1,
+    )
+
+
+def run_info(
+    *,
+    session_id: int = 1,
+    run_revision: int = 1,
+) -> LiveSplitRunInfo:
+    return LiveSplitRunInfo(
+        session_id=session_id,
+        run_revision=run_revision,
+        segments=(LiveSplitSegmentInfo(0, "A"),),
     )
 
 
@@ -407,6 +423,11 @@ def test_update_overflow_replaces_pending_updates_with_resync() -> None:
     ):
         thread = start_worker(worker)
         adapter = FakeAdapter.instances[-1]
+        adapter.resync_result = LiveSplitUpdate(
+            LiveSplitUpdateKind.RESYNC,
+            snapshot(event_sequence=99),
+            run_info(run_revision=4),
+        )
         adapter.receives.append(
             LiveSplitUpdate(
                 LiveSplitUpdateKind.TRANSITION,
@@ -419,7 +440,11 @@ def test_update_overflow_replaces_pending_updates_with_resync() -> None:
 
     assert diagnostics.overflow_count == 1
     assert updates == (
-        LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, adapter.resync_result.snapshot),
+        LiveSplitUpdate(
+            LiveSplitUpdateKind.INITIAL,
+            adapter.resync_result.snapshot,
+            run_info(run_revision=4),
+        ),
     )
 
 

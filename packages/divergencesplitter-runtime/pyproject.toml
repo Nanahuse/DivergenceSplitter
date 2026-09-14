@@ -16,7 +16,7 @@ divergencesplitter = "divergencesplitter_runtime.cli:main"
 
 [tool.uv.sources]
 divergencesplitter = { workspace = true }
-livesplit-bridge-client = { git = "https://github.com/Nanahuse/livesplit-bridge-client.git", rev = "e2a5b74f2f0e4bee43a7d30fef847f3aa42c49d5" }
+livesplit-bridge-client = { git = "https://github.com/Nanahuse/livesplit-bridge-client.git", rev = "a8197070cffa86fcdb6be116c713584556b809b3" }
 windows-capture-device-list = { git = "https://github.com/Nanahuse/windows-capture-device-list.git", tag = "v0.2.0" }
 
 [build-system]

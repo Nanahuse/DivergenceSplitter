@@ -13,11 +13,13 @@ from livesplit_bridge import (
 )
 
 from divergencesplitter_runtime.livesplit.mapping import (
+    run_info_from_proto,
     snapshot_from_proto,
     update_from_proto,
 )
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
+    LiveSplitRunInfo,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -128,6 +130,7 @@ class LiveSplitBridgeAdapter:
         )
         self._closed = False
         self._baseline: LiveSplitSnapshot | None = None
+        self._run_info: LiveSplitRunInfo | None = None
 
     def attach(self) -> LiveSplitUpdate:
         response = self._client.attach()
@@ -136,8 +139,9 @@ class LiveSplitBridgeAdapter:
             raise ValueError(
                 "Bridge attach response and snapshot session IDs do not match"
             )
+        run_info = self._sync_run(snapshot, force=True)
         self._set_baseline(snapshot)
-        return LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot)
+        return LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot, run_info)
 
     def snapshot(self) -> LiveSplitSnapshot:
         return snapshot_from_proto(self._client.snapshot())
@@ -189,8 +193,11 @@ class LiveSplitBridgeAdapter:
             return LiveSplitResyncReason.GAP
 
         update = update_from_proto(event)
+        run_info = self._sync_run(update.snapshot, force=False)
         self._set_baseline(update.snapshot)
-        return update
+        if run_info is None:
+            return update
+        return LiveSplitUpdate(update.kind, update.snapshot, run_info)
 
     def reconnect(self) -> LiveSplitUpdate:
         return self._resync(LiveSplitResyncReason.CONNECTION_LOST, reconnect=True)
@@ -212,6 +219,7 @@ class LiveSplitBridgeAdapter:
         snapshot = snapshot_from_proto(proto_snapshot)
         if not reconnect and snapshot.session_id != previous.session_id:
             raise BridgeConnectionLostError("Bridge session changed during resync")
+        run_info = self._sync_run(snapshot, force=True)
         self._set_baseline(snapshot)
         self._diagnostics.resync_completed(
             self._connection,
@@ -219,7 +227,32 @@ class LiveSplitBridgeAdapter:
             previous,
             snapshot,
         )
-        return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, snapshot)
+        return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, snapshot, run_info)
+
+    def _sync_run(
+        self,
+        snapshot: LiveSplitSnapshot,
+        *,
+        force: bool,
+    ) -> LiveSplitRunInfo | None:
+        cached = self._run_info
+        if (
+            not force
+            and cached is not None
+            and snapshot.run_revision <= cached.run_revision
+        ):
+            return None
+        run = run_info_from_proto(self._client.get_run())
+        if run.session_id != snapshot.session_id:
+            raise ValueError(
+                "Bridge TimerSnapshot and RunSnapshot session IDs do not match"
+            )
+        if run.run_revision < snapshot.run_revision:
+            raise ValueError(
+                "Bridge RunSnapshot revision regressed behind TimerSnapshot"
+            )
+        self._run_info = run
+        return run
 
     def _require_baseline(self) -> LiveSplitSnapshot:
         baseline = self._baseline
