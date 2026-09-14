@@ -42,10 +42,15 @@ def test_configuration_displays_runtime_frames_for_both_sources(source_type, tmp
     page = ConfigurationPage(controller, model)
     page._ndi_discovery.refresh = Mock()
     try:
-        renderer = ScreenRenderer()
+        renderer = ScreenRenderer(
+            Mock(image_due=Mock(return_value=True), fps_due=Mock(return_value=False))
+        )
         renderer.build()
         page.build(renderer.CONFIGURATION_PAGE_TAG)
         page._show_source_settings(draft.source.selected_type)
+        diagnostics = Mock(spec=ObservableDiagnostics)
+        diagnostics.detector_tree.return_value = None
+        diagnostics.take_condition_observations.return_value = ()
         for value in (64, 192):
             frame = Frame(
                 np.full((2, 3, 3), value, dtype=np.uint8), MonotonicTime(value)
@@ -60,6 +65,30 @@ def test_configuration_displays_runtime_frames_for_both_sources(source_type, tmp
                 if source_type == "ndi"
                 else page._camera_settings_group
             )
+        # Draft transforms update even without a new frame or Save.
+        dpg.set_value(page._resize_width_tag, 1)
+        dpg.set_value(page._resize_height_tag, 1)
+        page._on_resize_enabled_changed(None, True, None)
+        assert page._preview_signature is not None
+        assert page._preview_signature.width == 1
+        assert page._preview_signature.height == 1
+        page._on_resize_enabled_changed(None, False, None)
+        dpg.set_value(page._crop_left_tag, 1)
+        page._on_crop_enabled_changed(None, True, None)
+        assert page._preview_signature is not None
+        assert page._preview_signature.width == 2
+        assert page._preview_signature.height == 2
+        assert not (tmp_path / "config.json").exists()
+        controller.request_stop.assert_not_called()
+
+        # Source edits wait for release, then rebuild the draft preview.
+        page._populate = Mock()
+        page._input_source_edited()
+        controller.request_stop.assert_called_once()
+        page.tick(SessionState.STOPPING)
+        page._populate.assert_not_called()
+        page.tick(SessionState.STOPPED)
+        page._populate.assert_called_once_with(draft)
         renderer._reset_input_image()
         assert renderer.latest_preview_frame is None
     finally:
