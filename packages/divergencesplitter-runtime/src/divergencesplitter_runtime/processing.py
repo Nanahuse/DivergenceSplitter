@@ -15,6 +15,7 @@ from divergencesplitter_runtime.instance_runtime import (
     InstanceRuntime,
     InstanceRuntimeState,
 )
+from divergencesplitter_runtime.livesplit.models import LiveSplitRunInfo
 
 
 class ProcessingDiagnostics(Protocol):
@@ -35,6 +36,12 @@ class ProcessingDiagnostics(Protocol):
         self,
         scenario_index: int,
         error: Exception,
+    ) -> None: ...
+
+    def instance_run_changed(
+        self,
+        scenario_index: int,
+        run_info: LiveSplitRunInfo | None,
     ) -> None: ...
 
 
@@ -79,8 +86,12 @@ class ProcessingRuntime:
             self._diagnostics.frame_processing_completed(context)
 
     def _apply_bridge_updates(self) -> None:
-        for instance in self._instances:
+        for scenario_index, instance in enumerate(self._instances):
+            previous = instance.run_info
             instance.process_updates()
+            current = instance.run_info
+            if current != previous:
+                self._diagnostics.instance_run_changed(scenario_index, current)
 
     def _evaluate_scenarios(self, context: FrameContext) -> None:
         for scenario_index, instance in enumerate(self._instances):

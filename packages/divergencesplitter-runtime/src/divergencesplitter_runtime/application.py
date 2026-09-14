@@ -191,8 +191,11 @@ class ApplicationRuntime:
                 processing_thread.join()
             for thread in worker_threads:
                 thread.join()
-            for instance in self._instances:
+            for index, instance in enumerate(self._instances):
                 instance.stop()
+                # Drop stale LiveSplit Run info once the Processing thread that
+                # would report the change has already stopped.
+                self._diagnostics.instance_run_changed(index, None)
             # Keep failed outcomes visible after teardown; other instances stopped.
             self._diagnostics.instances_changed(
                 tuple(

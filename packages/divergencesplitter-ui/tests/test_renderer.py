@@ -14,6 +14,13 @@ from divergencesplitter import (
     RuleSequence,
     Scenario,
 )
+from divergencesplitter_runtime import (
+    InstanceRunSnapshot,
+    InstanceRuntimeState,
+    InstanceStatus,
+    LiveSplitRunInfo,
+    LiveSplitSegmentInfo,
+)
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
@@ -21,6 +28,66 @@ from divergencesplitter_runtime.observability import (
     build_detector_tree,
 )
 from divergencesplitter_ui.presentation import ObservableDiagnostics
+
+
+def run_info(*segments: tuple[int, str], revision: int = 1) -> LiveSplitRunInfo:
+    return LiveSplitRunInfo(
+        session_id=1,
+        run_revision=revision,
+        segments=tuple(LiveSplitSegmentInfo(index, name) for index, name in segments),
+    )
+
+
+def scenario_with_splits(
+    split_conditions: tuple[Detected, ...],
+) -> ScenarioInstance:
+    return ScenarioInstance(
+        connection=LiveSplitConnection("rpc", "event"),
+        scenario=Scenario(
+            start_condition=Detected(MeanBrightnessDetector(), -1.0),
+            reset_condition=None,
+            incomplete_condition=None,
+            splits=tuple(
+                (Rule(condition, Action("split")),) for condition in split_conditions
+            ),
+        ),
+    )
+
+
+def make_diagnostics(tree, statuses=None) -> Mock:
+    diagnostics = Mock(spec=ObservableDiagnostics)
+    diagnostics.detector_tree.return_value = tree
+    diagnostics.instance_statuses.return_value = (
+        statuses
+        if statuses is not None
+        else (InstanceStatus(0, InstanceRuntimeState.READY),)
+    )
+    diagnostics.take_latest_processed_frame.return_value = None
+    diagnostics.take_latest_input_frame.return_value = None
+    diagnostics.take_condition_observations.return_value = ()
+    diagnostics.instance_run_infos.return_value = ()
+    diagnostics.metrics_snapshot.return_value = RuntimeMetricsSnapshot(
+        MonotonicTime(0), 1.0, 0.0, 0.0, 0, 0
+    )
+    return diagnostics
+
+
+def split_labels(renderer, scenario_index: int = 0) -> list[str | None]:
+    split_indices = sorted(
+        split_index
+        for scenario, split_index in renderer._split_rows
+        if scenario == scenario_index
+    )
+    return [
+        dpg_label(renderer._split_rows[(scenario_index, split_index)].handle)
+        for split_index in split_indices
+    ]
+
+
+def dpg_label(handle) -> str | None:
+    import dearpygui.dearpygui as _dpg
+
+    return _dpg.get_item_label(handle)
 
 
 @pytest.mark.parametrize("source_type", ["camera", "ndi"])
@@ -122,6 +189,7 @@ def test_scenario_diagnostics_build_update_and_restart() -> None:
     diagnostics.metrics_snapshot.return_value = RuntimeMetricsSnapshot(
         MonotonicTime(0), 1.0, 0.0, 0.0, 0, 0
     )
+    diagnostics.instance_run_infos.return_value = ()
 
     dpg.create_context()
     try:
@@ -225,6 +293,210 @@ def test_active_style_propagates_to_split_rule_and_step_then_clears() -> None:
         dpg.destroy_context()
 
 
+def test_split_labels_show_segment_names_and_fall_back() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    conditions = tuple(Detected(MeanBrightnessDetector(), 0.5) for _ in range(2))
+    tree = build_detector_tree((scenario_with_splits(conditions),))
+    diagnostics = make_diagnostics(tree)
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        renderer.tick("RUNNING", diagnostics)
+        assert split_labels(renderer) == ["Split 0", "Split 1"]
+
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, "A"), (1, "B"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert split_labels(renderer) == ["Split 0 — A", "Split 1 — B"]
+
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, "A2"), (1, "B"), revision=2)),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert split_labels(renderer) == ["Split 0 — A2", "Split 1 — B"]
+
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, ""), (1, "B"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert split_labels(renderer) == ["Split 0", "Split 1 — B"]
+
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((1, "B"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert split_labels(renderer) == ["Split 0", "Split 1 — B"]
+
+        diagnostics.instance_run_infos.return_value = ()
+        renderer.tick("RUNNING", diagnostics)
+        assert split_labels(renderer) == ["Split 0", "Split 1"]
+
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, "A"), (1, "B"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert split_labels(renderer) == ["Split 0 — A", "Split 1 — B"]
+    finally:
+        dpg.destroy_context()
+
+
+def test_split_labels_do_not_mix_multiple_scenarios() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    conditions = tuple(Detected(MeanBrightnessDetector(), 0.5) for _ in range(2))
+    tree = build_detector_tree(
+        tuple(scenario_with_splits((condition,)) for condition in conditions)
+    )
+    diagnostics = make_diagnostics(
+        tree,
+        statuses=(
+            InstanceStatus(0, InstanceRuntimeState.READY),
+            InstanceStatus(1, InstanceRuntimeState.READY),
+        ),
+    )
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        renderer.tick("RUNNING", diagnostics)
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, "A"))),
+            InstanceRunSnapshot(1, run_info((0, "B"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+
+        assert split_labels(renderer, 0) == ["Split 0 — A"]
+        assert split_labels(renderer, 1) == ["Split 0 — B"]
+    finally:
+        dpg.destroy_context()
+
+
+def test_missing_split_segment_index_falls_back_to_position_label() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    conditions = tuple(Detected(MeanBrightnessDetector(), 0.5) for _ in range(3))
+    tree = build_detector_tree((scenario_with_splits(conditions),))
+    diagnostics = make_diagnostics(tree)
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        renderer.tick("RUNNING", diagnostics)
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, "A"), (1, "B"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+
+        assert split_labels(renderer) == ["Split 0 — A", "Split 1 — B", "Split 2"]
+    finally:
+        dpg.destroy_context()
+
+
+def test_active_split_keeps_segment_name_and_observation_does_not_drop_it() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    condition = Detected(MeanBrightnessDetector(), 0.5)
+    tree = build_detector_tree((scenario_with_splits((condition,)),))
+    diagnostics = make_diagnostics(tree)
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        diagnostics.take_condition_observations.return_value = (
+            ConditionObservation(
+                condition, ConditionStatus.TRUE, 0.8, 0.8, active=True
+            ),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        branch = renderer._split_rows[(0, 0)]
+        assert dpg.get_item_label(branch.handle) == "▶ Split 0  ACTIVE"
+
+        diagnostics.take_condition_observations.return_value = ()
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, "A"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert dpg.get_item_label(branch.handle) == "▶ Split 0 — A  ACTIVE"
+
+        diagnostics.take_condition_observations.return_value = (
+            ConditionObservation(
+                condition, ConditionStatus.TRUE, 0.8, 0.8, active=False
+            ),
+        )
+        renderer.tick("RUNNING", diagnostics)
+        assert dpg.get_item_label(branch.handle) == "Split 0 — A"
+    finally:
+        dpg.destroy_context()
+
+
+def test_run_info_is_applied_after_the_tree_becomes_ready() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    condition = Detected(MeanBrightnessDetector(), 0.5)
+    tree = build_detector_tree((scenario_with_splits((condition,)),))
+    diagnostics = make_diagnostics(tree)
+    diagnostics.detector_tree.return_value = None
+    diagnostics.instance_run_infos.return_value = (
+        InstanceRunSnapshot(0, run_info((0, "A"))),
+    )
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        renderer.tick("RUNNING", diagnostics)
+        assert renderer._split_rows == {}
+
+        diagnostics.detector_tree.return_value = tree
+        renderer.tick("RUNNING", diagnostics)
+
+        assert split_labels(renderer) == ["Split 0 — A"]
+    finally:
+        dpg.destroy_context()
+
+
+def test_run_update_does_not_rebuild_tree_or_expansion() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    condition = Detected(MeanBrightnessDetector(), 0.5)
+    tree = build_detector_tree((scenario_with_splits((condition,)),))
+    diagnostics = make_diagnostics(tree)
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer()
+        renderer.build()
+        renderer.tick("RUNNING", diagnostics)
+        scenario_handle = renderer._scenario_nodes[0][0]
+        split_handle = renderer._split_rows[(0, 0)].handle
+        dpg.set_value(scenario_handle, True)
+
+        diagnostics.instance_run_infos.return_value = (
+            InstanceRunSnapshot(0, run_info((0, "A"))),
+        )
+        renderer.tick("RUNNING", diagnostics)
+
+        assert renderer._scenario_nodes[0][0] == scenario_handle
+        assert renderer._split_rows[(0, 0)].handle == split_handle
+        assert dpg.get_value(scenario_handle) is True
+        assert dpg.get_item_label(split_handle) == "Split 0 — A"
+    finally:
+        dpg.destroy_context()
+
+
 def test_instance_status_rows_update_without_rebuilding_tree_or_new_frames() -> None:
     from divergencesplitter_runtime import InstanceRuntimeState, InstanceStatus
 
@@ -257,6 +529,7 @@ def test_instance_status_rows_update_without_rebuilding_tree_or_new_frames() -> 
     diagnostics.metrics_snapshot.return_value = RuntimeMetricsSnapshot(
         MonotonicTime(0), 1.0, 0.0, 0.0, 0, 0
     )
+    diagnostics.instance_run_infos.return_value = ()
 
     dpg.create_context()
     try:

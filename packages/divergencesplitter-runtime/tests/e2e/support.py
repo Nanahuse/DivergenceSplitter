@@ -21,6 +21,7 @@ from divergencesplitter_runtime import (
     ActionSubmission,
     BridgeActionRequest,
     LiveSplitResyncReason,
+    LiveSplitRunInfo,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -348,6 +349,13 @@ class RecordingDiagnostics:
     ) -> None:
         del scenario_index
         self.scenario_errors.append(error)
+
+    def instance_run_changed(
+        self,
+        scenario_index: int,
+        run_info: LiveSplitRunInfo | None,
+    ) -> None:
+        pass
 
     def worker_started(self, connection: LiveSplitConnection) -> None:
         pass

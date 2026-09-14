@@ -19,6 +19,8 @@ from divergencesplitter_runtime import (
     InstanceRuntime,
     InstanceRuntimeState,
     LatestFrameBuffer,
+    LiveSplitRunInfo,
+    LiveSplitSegmentInfo,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
@@ -147,6 +149,26 @@ def instance(scenario: ScenarioRuntime, worker: BridgeWorker) -> InstanceRuntime
     return result
 
 
+def make_run(revision: int = 1, name: str = "A") -> LiveSplitRunInfo:
+    return LiveSplitRunInfo(
+        session_id=1,
+        run_revision=revision,
+        segments=(LiveSplitSegmentInfo(0, name),),
+    )
+
+
+class RunScriptInstance(ProcessingInstance):
+    """Emit a scripted sequence of Runs from successive process_updates calls."""
+
+    def __init__(self, runs: list[LiveSplitRunInfo | None]) -> None:
+        super().__init__(cast(Scenario, None), FakeWorker(()))
+        self.scenario_runtime = FakeScenarioRuntime()
+        self._scripted_runs = runs
+
+    def process_updates(self) -> None:
+        self.run_info = self._scripted_runs.pop(0)
+
+
 class RecordingDiagnostics:
     def __init__(self) -> None:
         self.frames: list[tuple[Frame, MonotonicTime]] = []
@@ -154,6 +176,7 @@ class RecordingDiagnostics:
         self.frame_started = threading.Event()
         self.normalization_errors: list[FrameNormalizationError] = []
         self.normalization_failed = threading.Event()
+        self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
 
     def frame_processing_started(
         self, frame: Frame, processing_started_at: MonotonicTime
@@ -170,6 +193,13 @@ class RecordingDiagnostics:
 
     def scenario_evaluation_failed(self, scenario_index: int, error: Exception) -> None:
         self.errors.append((scenario_index, error))
+
+    def instance_run_changed(
+        self,
+        scenario_index: int,
+        run_info: LiveSplitRunInfo | None,
+    ) -> None:
+        self.run_changes.append((scenario_index, run_info))
 
 
 def process_one_frame(
@@ -314,6 +344,77 @@ def test_normalizes_frame_once_before_scenario_evaluation() -> None:
     assert evaluated.image.shape == (1, 1)
     assert evaluated.captured_at == pending_frame.captured_at
     assert diagnostics.frames == [(pending_frame, MonotonicTime(20))]
+
+
+def run_detection_runtime(
+    instances: tuple[InstanceRuntime, ...],
+) -> tuple[ProcessingRuntime, RecordingDiagnostics]:
+    diagnostics = RecordingDiagnostics()
+    runtime = ProcessingRuntime(
+        instances,
+        LatestFrameBuffer(),
+        FrameNormalizer(),
+        diagnostics=diagnostics,
+        time_provider=FakeTimeProvider(),
+    )
+    return runtime, diagnostics
+
+
+def test_run_info_initial_acquisition_notifies_once() -> None:
+    run = make_run()
+    runtime, diagnostics = run_detection_runtime((RunScriptInstance([run, run]),))
+
+    runtime._apply_bridge_updates()
+    assert diagnostics.run_changes == [(0, run)]
+
+    runtime._apply_bridge_updates()
+    assert diagnostics.run_changes == [(0, run)]
+
+
+def test_run_info_change_notifies_new_revision() -> None:
+    first = make_run(revision=1)
+    second = make_run(revision=2, name="B")
+    runtime, diagnostics = run_detection_runtime((RunScriptInstance([first, second]),))
+
+    runtime._apply_bridge_updates()
+    runtime._apply_bridge_updates()
+
+    assert diagnostics.run_changes == [(0, first), (0, second)]
+
+
+def test_run_info_disconnect_notifies_none() -> None:
+    run = make_run()
+    runtime, diagnostics = run_detection_runtime((RunScriptInstance([run, None]),))
+
+    runtime._apply_bridge_updates()
+    runtime._apply_bridge_updates()
+
+    assert diagnostics.run_changes == [(0, run), (0, None)]
+
+
+def test_run_info_reconnect_notifies_latest_run() -> None:
+    first = make_run(revision=1)
+    reconnected = make_run(revision=5, name="Reconnected")
+    runtime, diagnostics = run_detection_runtime(
+        (RunScriptInstance([first, None, reconnected]),)
+    )
+
+    for _ in range(3):
+        runtime._apply_bridge_updates()
+
+    assert diagnostics.run_changes == [(0, first), (0, None), (0, reconnected)]
+
+
+def test_run_info_notifications_are_scoped_per_scenario() -> None:
+    first = make_run(name="A")
+    second = make_run(name="B")
+    runtime, diagnostics = run_detection_runtime(
+        (RunScriptInstance([first]), RunScriptInstance([second]))
+    )
+
+    runtime._apply_bridge_updates()
+
+    assert diagnostics.run_changes == [(0, first), (1, second)]
 
 
 def test_normalization_error_stops_processing_without_evaluating_scenario() -> None:
