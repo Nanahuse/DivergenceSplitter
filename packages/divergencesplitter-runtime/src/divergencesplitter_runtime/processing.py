@@ -11,7 +11,10 @@ from divergencesplitter.frame.normalizer import (
 )
 
 from divergencesplitter_runtime.capture import LatestFrameBuffer
-from divergencesplitter_runtime.instance_runtime import InstanceRuntime
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntime,
+    InstanceRuntimeState,
+)
 
 
 class ProcessingDiagnostics(Protocol):
@@ -77,14 +80,17 @@ class ProcessingRuntime:
 
     def _apply_bridge_updates(self) -> None:
         for instance in self._instances:
-            for update in instance.worker.drain_updates():
-                instance.scenario_runtime.apply_livesplit_update(update)
+            instance.process_updates()
 
     def _evaluate_scenarios(self, context: FrameContext) -> None:
         for scenario_index, instance in enumerate(self._instances):
             scenario = instance.scenario_runtime
             worker = instance.worker
-            if not worker.is_available:
+            if (
+                instance.state is not InstanceRuntimeState.READY
+                or scenario is None
+                or not worker.is_available
+            ):
                 continue
             try:
                 action = scenario.evaluate(context)
@@ -93,4 +99,4 @@ class ProcessingRuntime:
                 continue
             snapshot = scenario.current_snapshot
             if action is not None and snapshot is not None:
-                worker.submit_action(action, snapshot)
+                worker.submit_action(action, snapshot, generation=instance.generation)

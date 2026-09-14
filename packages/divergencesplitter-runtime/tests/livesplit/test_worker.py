@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from collections.abc import Callable
 from types import TracebackType
 from typing import ClassVar, Self
 from unittest.mock import patch
@@ -24,6 +25,8 @@ from divergencesplitter_runtime import (
     ApplicationRuntime,
     BridgeActionRequest,
     BridgeWorker,
+    BridgeWorkerState,
+    InstanceRuntimeState,
     LiveSplitResyncReason,
     LiveSplitSnapshot,
     LiveSplitUpdate,
@@ -31,8 +34,12 @@ from divergencesplitter_runtime import (
     ScenarioInstance,
     TimerPhase,
 )
-from divergencesplitter_runtime.application import ApplicationStartupValidationError
-from livesplit_bridge import BridgeConnectionLostError
+from divergencesplitter_runtime.livesplit.worker import _ActionSlot
+from livesplit_bridge import (
+    BridgeConnectionLostError,
+    BridgeProtocolError,
+    BridgeResponseTimeoutError,
+)
 
 
 def snapshot(
@@ -327,32 +334,14 @@ def test_worker_constructs_and_closes_adapter_on_worker_thread() -> None:
 
 
 def test_action_slot_is_bounded_and_reset_replaces_pending_normal_action() -> None:
-    FakeAdapter.instances.clear()
-    diagnostics = RecordingDiagnostics()
-    worker = BridgeWorker(LiveSplitConnection("rpc", "event"), diagnostics=diagnostics)
-    expected = snapshot()
-
-    assert worker.submit_action(Action("split"), expected) is ActionSubmission.ACCEPTED
-    assert worker.submit_action(Action("skip"), expected) is ActionSubmission.REJECTED
-    assert (
-        worker.submit_action(Action("reset"), expected)
-        is ActionSubmission.RESET_REPLACED
-    )
-    assert worker.submit_action(Action("split"), expected) is ActionSubmission.REJECTED
-
-    with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
-        FakeAdapter,
-    ):
-        thread = start_worker(worker)
-        adapter = FakeAdapter.instances[-1]
-        worker.drain_updates()
-        deadline = time.monotonic() + 1
-        while not adapter.executed and time.monotonic() < deadline:
-            time.sleep(0.001)
-        stop_worker(worker, thread)
-
-    assert adapter.executed == [(Action("reset"), expected)]
+    slot = _ActionSlot()
+    split = BridgeActionRequest(Action("split"), snapshot())
+    reset = BridgeActionRequest(Action("reset"), snapshot())
+    assert slot.submit(split) is ActionSubmission.ACCEPTED
+    assert slot.submit(split) is ActionSubmission.REJECTED
+    assert slot.submit(reset) is ActionSubmission.RESET_REPLACED
+    assert slot.submit(split) is ActionSubmission.REJECTED
+    assert slot.take() == reset
 
 
 def test_stopped_worker_rejects_new_action() -> None:
@@ -426,10 +415,12 @@ def test_update_overflow_replaces_pending_updates_with_resync() -> None:
         stop_worker(worker, thread)
 
     assert diagnostics.overflow_count == 1
-    assert updates == (adapter.resync_result,)
+    assert updates == (
+        LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, adapter.resync_result.snapshot),
+    )
 
 
-def test_connection_loss_reconnects_and_publishes_resync() -> None:
+def test_connection_loss_uses_fresh_adapter_and_publishes_initial() -> None:
     FakeAdapter.instances.clear()
     diagnostics = RecordingDiagnostics()
     worker = BridgeWorker(
@@ -446,10 +437,9 @@ def test_connection_loss_reconnects_and_publishes_resync() -> None:
         adapter = FakeAdapter.instances[-1]
         worker.drain_updates()
         expected = LiveSplitUpdate(
-            LiveSplitUpdateKind.RESYNC,
-            snapshot(session_id=2),
+            LiveSplitUpdateKind.INITIAL,
+            snapshot(),
         )
-        adapter.reconnect_results.append(expected)
         adapter.receives.append(BridgeConnectionLostError("heartbeat missing"))
         deadline = time.monotonic() + 1
         updates: tuple[LiveSplitUpdate, ...] = ()
@@ -458,6 +448,8 @@ def test_connection_loss_reconnects_and_publishes_resync() -> None:
             time.sleep(0.001)
         stop_worker(worker, thread)
 
+    assert adapter.closed
+    assert len(FakeAdapter.instances) == 2
     assert updates == (expected,)
     assert len(diagnostics.connection_errors) == 1
 
@@ -519,7 +511,7 @@ def scenario(*, split_slots: int = 1) -> ScenarioInstance:
     )
 
 
-def test_application_starts_capture_after_initial_bridge_validation() -> None:
+def test_application_starts_shared_capture() -> None:
     FakeAdapter.instances.clear()
     source = StoppingSource()
     runtime = ApplicationRuntime(
@@ -539,7 +531,7 @@ def test_application_starts_capture_after_initial_bridge_validation() -> None:
     assert FakeAdapter.instances[-1].closed
 
 
-def test_application_does_not_start_capture_when_split_count_is_invalid() -> None:
+def test_application_starts_capture_even_when_split_count_is_invalid() -> None:
     FakeAdapter.instances.clear()
     source = StoppingSource()
     runtime = ApplicationRuntime(
@@ -553,9 +545,189 @@ def test_application_does_not_start_capture_when_split_count_is_invalid() -> Non
             "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
             FakeAdapter,
         ),
-        pytest.raises(ApplicationStartupValidationError, match="more split slots"),
     ):
         runtime.run()
 
-    assert source.prepare_calls == 0
+    assert source.prepare_calls == 1
     assert source.close_calls == 1
+
+
+def wait_for(predicate: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 2
+    while not predicate():
+        assert time.monotonic() < deadline
+        time.sleep(0.001)
+
+
+@pytest.mark.parametrize(
+    "loss", [BridgeConnectionLostError("lost"), LiveSplitResyncReason.SESSION_CHANGED]
+)
+def test_reconnection_drops_queued_actions_and_replaces_adapter(
+    loss: Exception | LiveSplitResyncReason,
+) -> None:
+    FakeAdapter.instances.clear()
+    worker = BridgeWorker(
+        LiveSplitConnection("rpc", "event"),
+        diagnostics=RecordingDiagnostics(),
+        receive_timeout_ms=1,
+        reconnect_delay_seconds=0,
+    )
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        FakeAdapter,
+    ):
+        thread = start_worker(worker)
+        try:
+            old_adapter = FakeAdapter.instances[-1]
+            worker.drain_updates()
+            generation = worker.connection_state[1]
+            old_adapter.receives.append(loss)
+            wait_for(lambda: len(FakeAdapter.instances) == 2)
+            updates: list[LiveSplitUpdate] = []
+
+            def received_initial() -> bool:
+                updates.extend(worker.drain_updates())
+                return bool(updates)
+
+            wait_for(received_initial)
+            assert updates[0].kind is LiveSplitUpdateKind.INITIAL
+            assert old_adapter.closed
+            assert (
+                worker.submit_action(Action("split"), snapshot(), generation=generation)
+                is ActionSubmission.REJECTED
+            )
+            assert FakeAdapter.instances[-1].executed == []
+        finally:
+            stop_worker(worker, thread)
+
+
+def test_initial_attach_retries_fresh_adapters_until_available() -> None:
+    FakeAdapter.instances.clear()
+    available = threading.Event()
+
+    class RetryAdapter(FakeAdapter):
+        def attach(self) -> LiveSplitUpdate:
+            if not available.is_set():
+                raise BridgeResponseTimeoutError("Bridge not running")
+            return super().attach()
+
+    worker = BridgeWorker(
+        LiveSplitConnection("rpc", "event"),
+        diagnostics=RecordingDiagnostics(),
+        reconnect_delay_seconds=0.001,
+    )
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        RetryAdapter,
+    ):
+        thread = threading.Thread(target=worker.run)
+        thread.start()
+        try:
+            wait_for(lambda: len(FakeAdapter.instances) >= 2)
+            assert worker.state is BridgeWorkerState.CONNECTING
+            assert thread.is_alive()
+            assert FakeAdapter.instances[0].closed
+            available.set()
+            worker.wait_until_initialized(2)
+            assert worker.drain_updates()[0].kind is LiveSplitUpdateKind.INITIAL
+            assert worker.state is BridgeWorkerState.READY
+        finally:
+            stop_worker(worker, thread)
+    assert all(adapter.closed for adapter in FakeAdapter.instances)
+
+
+def test_application_starts_and_stops_while_bridge_keeps_retrying() -> None:
+    class OfflineAdapter(FakeAdapter):
+        def attach(self) -> LiveSplitUpdate:
+            raise BridgeResponseTimeoutError("Bridge offline")
+
+    source = StoppingSource()
+    runtime = ApplicationRuntime(
+        (scenario(),), source, diagnostics=RecordingDiagnostics()
+    )
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        OfflineAdapter,
+    ):
+        thread = threading.Thread(target=runtime.run)
+        thread.start()
+        thread.join(2)
+        try:
+            assert not thread.is_alive()
+        finally:
+            runtime.request_stop()
+            thread.join(2)
+    assert source.prepare_calls == source.close_calls == 1
+    assert runtime.instances[0].state is InstanceRuntimeState.STOPPED
+
+
+@pytest.mark.parametrize(
+    "error", [BridgeProtocolError("invalid protocol"), ValueError("bad snapshot")]
+)
+def test_protocol_failure_does_not_retry(error: Exception) -> None:
+    FakeAdapter.instances.clear()
+
+    class InvalidAdapter(FakeAdapter):
+        def attach(self) -> LiveSplitUpdate:
+            raise error
+
+    worker = BridgeWorker(
+        LiveSplitConnection("rpc", "event"), diagnostics=RecordingDiagnostics()
+    )
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        InvalidAdapter,
+    ):
+        thread = threading.Thread(target=worker.run)
+        thread.start()
+        thread.join(2)
+    assert not thread.is_alive()
+    assert worker.state is BridgeWorkerState.FAILED
+    assert len(FakeAdapter.instances) == 1
+    assert FakeAdapter.instances[0].closed
+
+
+def test_draining_initial_during_resync_does_not_enable_actions() -> None:
+    FakeAdapter.instances.clear()
+    entered, release = threading.Event(), threading.Event()
+
+    class BlockingResyncAdapter(FakeAdapter):
+        def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
+            entered.set()
+            assert release.wait(2)
+            return super().resync(reason)
+
+    worker = BridgeWorker(
+        LiveSplitConnection("rpc", "event"),
+        diagnostics=RecordingDiagnostics(),
+        receive_timeout_ms=1,
+    )
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        BlockingResyncAdapter,
+    ):
+        thread = start_worker(worker)
+        try:
+            adapter = FakeAdapter.instances[-1]
+            adapter.receives.append(LiveSplitResyncReason.GAP)
+            assert entered.wait(2)
+            assert worker.drain_updates()[0].kind is LiveSplitUpdateKind.INITIAL
+            assert not worker.is_available
+            assert (
+                worker.submit_action(Action("split"), snapshot())
+                is ActionSubmission.REJECTED
+            )
+            release.set()
+            updates: list[LiveSplitUpdate] = []
+
+            def completed() -> bool:
+                updates.extend(worker.drain_updates())
+                return bool(updates)
+
+            wait_for(completed)
+            assert updates[0].kind is LiveSplitUpdateKind.RESYNC
+            assert worker.is_available
+            assert len(FakeAdapter.instances) == 1
+        finally:
+            release.set()
+            stop_worker(worker, thread)

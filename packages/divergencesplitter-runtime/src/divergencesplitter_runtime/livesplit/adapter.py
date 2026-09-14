@@ -7,6 +7,7 @@ from divergencesplitter import Action, LiveSplitConnection
 from livesplit_bridge import (
     BridgeClient,
     BridgeClientError,
+    BridgeConnectionLostError,
     BridgeRemoteError,
     common_pb2,
 )
@@ -209,6 +210,8 @@ class LiveSplitBridgeAdapter:
             self._client.reconnect() if reconnect else self._client.snapshot()
         )
         snapshot = snapshot_from_proto(proto_snapshot)
+        if not reconnect and snapshot.session_id != previous.session_id:
+            raise BridgeConnectionLostError("Bridge session changed during resync")
         self._set_baseline(snapshot)
         self._diagnostics.resync_completed(
             self._connection,
@@ -234,8 +237,12 @@ class LiveSplitBridgeAdapter:
     ) -> None:
         try:
             actual_snapshot = self.snapshot()
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             self._diagnostics.snapshot_failed(self._connection, action, error)
+            if isinstance(
+                error, (BridgeClientError, BridgeConnectionLostError, ValueError)
+            ):
+                raise
             return
 
         if not self._matches_expected_state(expected_snapshot, actual_snapshot):
@@ -276,7 +283,7 @@ class LiveSplitBridgeAdapter:
             self._diagnostics.action_result_unknown(
                 self._connection, action, actual_snapshot, error
             )
-            return
+            raise
 
         if not response.success:
             self._diagnostics.action_rejected(

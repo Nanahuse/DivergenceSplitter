@@ -14,7 +14,6 @@ from divergencesplitter_runtime.capture import (
 )
 from divergencesplitter_runtime.configuration.validation import (
     validate_instances,
-    validate_split_count,
 )
 from divergencesplitter_runtime.instance_runtime import InstanceRuntime
 from divergencesplitter_runtime.instances import ScenarioInstance
@@ -26,7 +25,6 @@ from divergencesplitter_runtime.processing import (
     ProcessingDiagnostics,
     ProcessingRuntime,
 )
-from divergencesplitter_runtime.scenario import ScenarioRuntime
 
 
 class ApplicationDiagnostics(
@@ -42,7 +40,9 @@ class ApplicationDiagnostics(
         scenario_index: int,
     ) -> logging.Logger | logging.LoggerAdapter: ...
 
-    def runtime_started(self) -> None: ...
+    def runtime_started(self) -> None:
+        """Shared Capture/Processing is starting; instances may still be connecting."""
+        ...
 
 
 class ApplicationStartupValidationError(Exception):
@@ -72,10 +72,8 @@ class ApplicationRuntime:
         self._instances = tuple(
             InstanceRuntime(
                 instance.scenario,
-                ScenarioRuntime(
-                    instance.scenario, logger=diagnostics.scenario_logger(index)
-                ),
                 BridgeWorker(instance.connection, diagnostics=diagnostics),
+                logger=diagnostics.scenario_logger(index),
             )
             for index, instance in enumerate(instances)
         )
@@ -91,6 +89,10 @@ class ApplicationRuntime:
             diagnostics=diagnostics,
         )
         self._stop_requested = threading.Event()
+
+    @property
+    def instances(self) -> tuple[InstanceRuntime, ...]:
+        return self._instances
 
     def request_stop(self) -> None:
         self._stop_requested.set()
@@ -114,7 +116,6 @@ class ApplicationRuntime:
         capture_started = False
         processing_thread: threading.Thread | None = None
         try:
-            self._initialize_scenarios()
             if self._stop_requested.is_set():
                 return
 
@@ -149,29 +150,13 @@ class ApplicationRuntime:
                 processing_thread.join()
             for thread in worker_threads:
                 thread.join()
+            for instance in self._instances:
+                instance.stop()
 
         if capture_error:
             raise capture_error[0]
         if processing_error:
             raise processing_error[0]
-
-    def _initialize_scenarios(self) -> None:
-        for instance in self._instances:
-            instance.worker.wait_until_initialized()
-            if self._stop_requested.is_set():
-                return
-        for instance in self._instances:
-            updates = instance.worker.drain_updates()
-            if not updates:
-                raise RuntimeError("Bridge worker produced no initial update")
-            initial = updates[0]
-            try:
-                validate_split_count(instance.scenario, initial.snapshot)
-            except ValueError as error:
-                raise ApplicationStartupValidationError(error) from error
-            instance.scenario_runtime.apply_livesplit_update(initial)
-            for update in updates[1:]:
-                instance.scenario_runtime.apply_livesplit_update(update)
 
     def _run_recording_errors(
         self,

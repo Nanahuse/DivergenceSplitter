@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,7 +26,14 @@ from divergencesplitter import (
     Then,
     VideoFileSource,
 )
-from divergencesplitter_runtime import ApplicationRuntime, ScenarioInstance, TimerPhase
+from divergencesplitter_runtime import (
+    ApplicationRuntime,
+    InstanceRuntimeState,
+    LiveSplitUpdate,
+    ScenarioInstance,
+    TimerPhase,
+)
+from livesplit_bridge import BridgeResponseTimeoutError
 
 from .support import (
     BlockingDetectedCondition,
@@ -469,4 +477,110 @@ def test_explicit_stop_releases_video_and_all_runtime_threads(tmp_path: Path) ->
             diagnostics,
             script,
             timeout_seconds=2,
+        )
+
+
+def test_independent_instances_keep_one_shared_capture_across_reconnect(
+    tmp_path: Path,
+) -> None:
+    video = tmp_path / "independent.avi"
+    write_recording(video, ((BRIGHT, 600),), fps=60)
+    connections = tuple(LiveSplitConnection(f"rpc-{i}", f"event-{i}") for i in range(3))
+    allow_b = threading.Event()
+
+    class LateBridge(BridgeScript):
+        def attach(self) -> LiveSplitUpdate:
+            if not allow_b.is_set():
+                raise BridgeResponseTimeoutError("not running")
+            return super().attach()
+
+    scripts = (
+        BridgeScript(snapshot()),
+        LateBridge(snapshot()),
+        BridgeScript(snapshot()),
+    )
+    ScriptedBridgeAdapter.scripts = dict(zip(connections, scripts, strict=True))
+
+    def definition(slots: int = 1) -> Scenario:
+        return Scenario(
+            start_condition=impossible_reset_condition(),
+            reset_condition=None,
+            incomplete_condition=None,
+            splits=(None,) * slots,
+        )
+
+    diagnostics = RecordingDiagnostics()
+    source = VideoFileSource(str(video))
+    runtime = ApplicationRuntime(
+        tuple(
+            ScenarioInstance(connection, definition(2 if i == 2 else 1))
+            for i, connection in enumerate(connections)
+        ),
+        source,
+        diagnostics=diagnostics,
+    )
+
+    def wait_for(predicate: Callable[[], bool]) -> None:
+        deadline = time.monotonic() + 2
+        while not predicate():
+            assert time.monotonic() < deadline
+            assert not errors
+            time.sleep(0.005)
+
+    with (
+        patch(
+            "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+            ScriptedBridgeAdapter,
+        ),
+        patch.object(source, "prepare", wraps=source.prepare) as prepare,
+        patch.object(source, "close", wraps=source.close) as close,
+    ):
+        thread, errors = start_runtime(runtime)
+        a, b, c = runtime.instances
+        try:
+            wait_for(
+                lambda: (
+                    a.state is InstanceRuntimeState.READY
+                    and c.state is InstanceRuntimeState.FAILED
+                )
+            )
+            assert b.state is InstanceRuntimeState.CONNECTING
+            a_scenario = a.scenario_runtime
+            assert a_scenario is not None
+            with patch.object(
+                a_scenario, "evaluate", wraps=a_scenario.evaluate
+            ) as evaluate:
+                wait_for(lambda: evaluate.call_count > 0)
+                allow_b.set()
+                wait_for(lambda: b.state is InstanceRuntimeState.READY)
+                old_b = b.scenario_runtime
+                allow_b.clear()
+                scripts[1].inject_connection_loss()
+                wait_for(
+                    lambda: (
+                        b.state is InstanceRuntimeState.CONNECTING
+                        and b.scenario_runtime is None
+                    )
+                )
+                count = evaluate.call_count
+                wait_for(lambda: evaluate.call_count > count)
+                assert a.scenario_runtime is a_scenario
+                allow_b.set()
+                wait_for(lambda: b.state is InstanceRuntimeState.READY)
+                assert b.scenario_runtime is not old_b
+                assert prepare.call_count == 1
+                assert close.call_count == 0
+                # Stop with READY / CONNECTING / FAILED all present.
+                allow_b.clear()
+                scripts[1].inject_connection_loss()
+                wait_for(lambda: b.state is InstanceRuntimeState.CONNECTING)
+        finally:
+            runtime.request_stop()
+            thread.join(3)
+        assert not thread.is_alive()
+        assert errors == []
+        assert prepare.call_count == close.call_count == 1
+        assert all(
+            instance.state is InstanceRuntimeState.STOPPED
+            for instance in runtime.instances
         )
