@@ -1,6 +1,7 @@
 """DivergenceSplitter runtime public API."""
 
 from divergencesplitter_runtime.application import (
+    AllInstancesFailedError,
     ApplicationDiagnostics,
     ApplicationRuntime,
 )
@@ -35,6 +36,7 @@ from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instance_runtime import (
     InstanceRuntime,
     InstanceRuntimeState,
+    InstanceStatus,
 )
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit import (
@@ -71,6 +73,7 @@ from divergencesplitter_runtime.scenario import ScenarioRuntime
 
 __all__ = [
     "ActionSubmission",
+    "AllInstancesFailedError",
     "ApplicationConfiguration",
     "ApplicationDiagnostics",
     "ApplicationRuntime",
@@ -91,6 +94,7 @@ __all__ = [
     "InstanceConfiguration",
     "InstanceRuntime",
     "InstanceRuntimeState",
+    "InstanceStatus",
     "LatestFrameBuffer",
     "LiveSplitBridgeAdapter",
     "LiveSplitBridgeDiagnostics",

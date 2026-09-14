@@ -8,12 +8,17 @@ inside Dear PyGui's render loop.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 import numpy as np
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntimeState,
+    InstanceStatus,
+)
 from divergencesplitter_runtime.observability import (
     ConditionNode,
+    ConditionObservation,
     DetectorNode,
     DetectorTreeSnapshot,
     RuleNode,
@@ -43,6 +48,7 @@ from divergencesplitter_ui.presentation import (
     detector_label,
     format_score,
     has_new_observations,
+    instance_status_label,
     scenario_label,
     view_for,
 )
@@ -93,6 +99,7 @@ class ScreenRenderer:
 
     WINDOW_TAG = "divergence-splitter"
     SCENARIO_GROUP_TAG = "divergence-splitter-scenario"
+    _INSTANCE_STATUS_TAG = "divergence-splitter-instance-statuses"
     _TREE_TAG = "divergence-splitter-tree"
     _STATE_TAG = "divergence-splitter-state"
     _FPS_TAG = "divergence-splitter-fps"
@@ -107,6 +114,11 @@ class ScreenRenderer:
         self._presenter = presenter or ScreenPresenter()
         self._bound_diagnostics: ObservableDiagnostics | None = None
         self._tree: DetectorTreeSnapshot | None = None
+        self._instance_rows: dict[int, int | str] = {}
+        self._scenario_condition_ids: dict[int, set[int]] = {}
+        self._observations: tuple[ConditionObservation, ...] = ()
+        self._scenario_nodes: dict[int, tuple[int | str, ScenarioNode]] = {}
+        self._last_statuses: tuple[InstanceStatus, ...] | None = None
         self._rows: list[_ConditionRow] = []
         self._branches: list[_BranchRow] = []
         self._highlighted: dict[int | str, bool] = {}
@@ -178,6 +190,7 @@ class ScreenRenderer:
                         )
                     with dpg.child_window(width=-1, height=-1, border=True):
                         dpg.add_text("Scenario / Diagnostics")
+                        dpg.add_group(tag=self._INSTANCE_STATUS_TAG)
                         dpg.add_group(tag=self.SCENARIO_GROUP_TAG)
                         dpg.add_separator()
                         dpg.add_tree_node(
@@ -219,6 +232,7 @@ class ScreenRenderer:
         if self._tree is None:
             self._build_tree_if_ready()
 
+        self._apply_instance_statuses(diagnostics.instance_statuses())
         observations = diagnostics.take_condition_observations()
         if has_new_observations(observations):
             self._apply_observations(observations)
@@ -277,17 +291,58 @@ class ScreenRenderer:
             self._release_references(row)
             dpg.delete_item(row.handler_registry_handle)
         dpg.delete_item(self._TREE_TAG, children_only=True)
+        dpg.delete_item(self._INSTANCE_STATUS_TAG, children_only=True)
+        self._instance_rows = {}
+        self._scenario_condition_ids = {}
+        self._observations = ()
+        self._scenario_nodes = {}
+        self._last_statuses = None
         self._rows = []
         self._branches = []
         self._highlighted = {}
         self._reference_rows = []
         self._expansion = ExpansionState()
 
+    def _apply_instance_statuses(self, statuses: tuple[InstanceStatus, ...]) -> None:
+        if statuses == self._last_statuses:
+            return
+        self._last_statuses = statuses
+        indices = {status.scenario_index for status in statuses}
+        for index in set(self._instance_rows) - indices:
+            dpg.delete_item(self._instance_rows.pop(index))
+        colors = {
+            InstanceRuntimeState.READY: (100, 220, 140, 255),
+            InstanceRuntimeState.CONNECTING: (255, 210, 80, 255),
+            InstanceRuntimeState.FAILED: (255, 110, 110, 255),
+            InstanceRuntimeState.STOPPED: (170, 170, 170, 255),
+        }
+        for status in statuses:
+            index = status.scenario_index
+            label = instance_status_label(status)
+            text = f"LiveSplit {index + 1} / Scenario {index}: {label}"
+            handle = self._instance_rows.get(index)
+            if handle is None:
+                handle = dpg.add_text(parent=self._INSTANCE_STATUS_TAG, wrap=450)
+                self._instance_rows[index] = handle
+            dpg.set_value(handle, text)
+            dpg.configure_item(handle, color=colors[status.state])
+            node = self._scenario_nodes.get(index)
+            if node is not None:
+                dpg.configure_item(
+                    node[0], label=f"{scenario_label(node[1])}  [{label}]"
+                )
+
+        if self._observations:
+            self._apply_observations(self._observations)
+
     def _build_scenario(self, scenario: ScenarioNode) -> None:
+        first_row = len(self._rows)
         scenario_node = dpg.add_tree_node(
             parent=self._TREE_TAG,
             label=scenario_label(scenario),
         )
+        self._scenario_nodes[scenario.scenario_index] = (scenario_node, scenario)
+        self._last_statuses = None
         start_node = dpg.add_tree_node(
             parent=scenario_node,
             label="Start condition",
@@ -307,6 +362,9 @@ class ScreenRenderer:
             self._build_condition(incomplete_node, scenario.incomplete_condition)
         for split in scenario.splits:
             self._build_split(scenario_node, split)
+        self._scenario_condition_ids[scenario.scenario_index] = {
+            id(row.node.condition) for row in self._rows[first_row:]
+        }
 
     def _build_split(self, parent: int | str, split: SplitNode) -> None:
         first_row = len(self._rows)
@@ -491,7 +549,20 @@ class ScreenRenderer:
         row.texture_handles = []
 
     def _apply_observations(self, observations) -> None:
-        index = ObservationIndex.build(observations)
+        inactive_ids = set().union(
+            *(
+                self._scenario_condition_ids.get(status.scenario_index, set())
+                for status in (self._last_statuses or ())
+                if status.state is not InstanceRuntimeState.READY
+            )
+        )
+        self._observations = tuple(
+            replace(observation, active=False)
+            if id(observation.condition) in inactive_ids
+            else observation
+            for observation in observations
+        )
+        index = ObservationIndex.build(self._observations)
         for branch in self._branches:
             if not dpg.does_item_exist(branch.handle):
                 continue

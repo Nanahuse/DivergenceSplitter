@@ -19,6 +19,7 @@ from divergencesplitter.frame.models import Frame
 from divergencesplitter.frame.source import FrameSource
 from divergencesplitter.scenario.models import Scenario
 from divergencesplitter_runtime.application import (
+    AllInstancesFailedError,
     ApplicationDiagnostics,
     ApplicationRuntime,
     ApplicationStartupValidationError,
@@ -49,6 +50,10 @@ from divergencesplitter_runtime.configuration.source_builder import (
     resolve_configuration_path,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntimeState,
+    InstanceStatus,
+)
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
@@ -78,6 +83,18 @@ class SessionState(Enum):
     STOPPED = "STOPPED"
 
 
+def aggregate_instance_states(statuses: tuple[InstanceStatus, ...]) -> SessionState:
+    """A usable instance takes precedence over waiting or failed peers."""
+    states = {status.state for status in statuses}
+    if InstanceRuntimeState.READY in states:
+        return SessionState.RUNNING
+    if InstanceRuntimeState.CONNECTING in states:
+        return SessionState.CONNECTING
+    if statuses and states == {InstanceRuntimeState.FAILED}:
+        return SessionState.FAILED
+    return SessionState.CONNECTING
+
+
 class SessionFailureKind(Enum):
     """Boundary at which a session failed."""
 
@@ -88,6 +105,7 @@ class SessionFailureKind(Enum):
     SOURCE_CONFIGURATION = "SOURCE_CONFIGURATION"
     STARTUP_VALIDATION = "STARTUP_VALIDATION"
     RUNTIME = "RUNTIME"
+    INSTANCES = "INSTANCES"
 
 
 _TERMINAL_STATES = frozenset(
@@ -155,6 +173,8 @@ class SessionDiagnostics(ApplicationDiagnostics, Protocol):
     ) -> None: ...
 
     def is_runtime_started(self) -> bool: ...
+
+    def instance_statuses(self) -> tuple[InstanceStatus, ...]: ...
 
     def configuration_failed(self, error: BaseException) -> None: ...
 
@@ -268,14 +288,18 @@ class SessionController:
     def state(self) -> SessionState:
         with self._lock:
             if (
-                self._state is SessionState.CONNECTING
+                self._state in (SessionState.CONNECTING, SessionState.RUNNING)
                 and self._diagnostics is not None
-                and self._diagnostics.is_runtime_started()
             ):
+                aggregate = aggregate_instance_states(
+                    self._diagnostics.instance_statuses()
+                )
+                # ApplicationRuntime closes shared resources on all-instance failure.
+                # Remain active until run() returns its terminal error.
                 self._state = (
                     SessionState.STOPPING
-                    if self._stop_requested.is_set()
-                    else SessionState.RUNNING
+                    if self._stop_requested.is_set() or aggregate is SessionState.FAILED
+                    else aggregate
                 )
             return self._state
 
@@ -292,7 +316,7 @@ class SessionController:
     def start(self, configuration_path: str | Path) -> None:
         path = Path(configuration_path)
         with self._lock:
-            if (
+            if (self._thread is not None and self._thread.is_alive()) or (
                 self._state is not SessionState.IDLE
                 and self._state not in _TERMINAL_STATES
             ):
@@ -486,6 +510,10 @@ class SessionController:
 
         try:
             runtime.run()
+        except AllInstancesFailedError as error:
+            diagnostics.runtime_failed(error)
+            self._fail(SessionFailureKind.INSTANCES, error)
+            return
         except ApplicationStartupValidationError as error:
             diagnostics.startup_validation_failed(error.error)
             self._fail(SessionFailureKind.STARTUP_VALIDATION, error)
