@@ -38,6 +38,13 @@ class ActionSubmission(Enum):
     STOPPED = auto()
 
 
+class BridgeWorkerState(Enum):
+    CONNECTING = auto()
+    READY = auto()
+    FAILED = auto()
+    STOPPED = auto()
+
+
 class BridgeWorkerDiagnostics(LiveSplitBridgeDiagnostics, Protocol):
     def worker_started(self, connection: LiveSplitConnection) -> None: ...
 
@@ -104,6 +111,10 @@ class _ActionSlot:
             self._stopped = True
             self._request = None
 
+    def clear(self) -> None:
+        with self._lock:
+            self._request = None
+
 
 class _UpdateQueue:
     def __init__(self, capacity: int) -> None:
@@ -163,10 +174,21 @@ class BridgeWorker:
         self._available = threading.Event()
         self._terminated = threading.Event()
         self._initial_error: Exception | None = None
+        self._state = BridgeWorkerState.CONNECTING
+        self._state_lock = threading.Lock()
+
+    @property
+    def state(self) -> BridgeWorkerState:
+        with self._state_lock:
+            return self._state
+
+    def _set_state(self, state: BridgeWorkerState) -> None:
+        with self._state_lock:
+            self._state = state
 
     @property
     def is_available(self) -> bool:
-        return self._available.is_set() and not self._terminated.is_set()
+        return self.state is BridgeWorkerState.READY
 
     def submit_action(
         self,
@@ -189,6 +211,7 @@ class BridgeWorker:
             for update in updates
         ):
             self._available.set()
+            self._set_state(BridgeWorkerState.READY)
         return updates
 
     def wait_until_initialized(self, timeout_seconds: float | None = None) -> None:
@@ -200,32 +223,43 @@ class BridgeWorker:
     def request_stop(self) -> None:
         self._stop_requested.set()
         self._actions.stop()
+        self._initialized.set()
 
     def run(self) -> None:
         adapter: LiveSplitBridgeAdapter | None = None
         try:
-            adapter = LiveSplitBridgeAdapter(
-                self._connection,
-                diagnostics=self._diagnostics,
-                rpc_timeout_ms=self._rpc_timeout_ms,
-                heartbeat_timeout_ms=self._heartbeat_timeout_ms,
-            )
-            initial = adapter.attach()
-            self._updates.put(initial)
-            self._initialized.set()
             self._diagnostics.worker_started(self._connection)
-            self._run_loop(adapter)
-        except Exception as error:  # noqa: BLE001
-            if not self._initialized.is_set():
-                self._initial_error = error
+            while not self._stop_requested.is_set():
+                adapter = LiveSplitBridgeAdapter(
+                    self._connection,
+                    diagnostics=self._diagnostics,
+                    rpc_timeout_ms=self._rpc_timeout_ms,
+                    heartbeat_timeout_ms=self._heartbeat_timeout_ms,
+                )
+                try:
+                    initial = adapter.attach()
+                except (BridgeClientError, BridgeConnectionLostError) as error:
+                    self._diagnostics.initial_sync_failed(self._connection, error)
+                    adapter.close()
+                    adapter = None
+                    self._stop_requested.wait(self._reconnect_delay_seconds)
+                    continue
+                except (ValueError, RuntimeError) as error:
+                    self._initial_error = error
+                    self._set_state(BridgeWorkerState.FAILED)
+                    self._initialized.set()
+                    self._diagnostics.initial_sync_failed(self._connection, error)
+                    return
+                self._updates.put(initial)
                 self._initialized.set()
-                self._diagnostics.initial_sync_failed(self._connection, error)
-            else:
-                self._diagnostics.connection_lost(self._connection, error)
+                self._run_loop(adapter)
+                return
         finally:
             self._terminated.set()
             self._available.clear()
-            self._actions.stop()
+            if self._stop_requested.is_set():
+                self._set_state(BridgeWorkerState.STOPPED)
+                self._actions.stop()
             if adapter is not None:
                 adapter.close()
             self._diagnostics.worker_stopped(self._connection)
@@ -240,10 +274,14 @@ class BridgeWorker:
                 else:
                     update = received
             except BridgeConnectionLostError as error:
+                self._set_state(BridgeWorkerState.CONNECTING)
+                self._actions.clear()
                 self._diagnostics.connection_lost(self._connection, error)
                 self._reconnect(adapter)
                 continue
             except (BridgeClientError, ValueError) as error:
+                self._set_state(BridgeWorkerState.CONNECTING)
+                self._actions.clear()
                 self._diagnostics.connection_lost(self._connection, error)
                 self._reconnect(adapter)
                 continue
@@ -277,6 +315,8 @@ class BridgeWorker:
 
     def _reconnect(self, adapter: LiveSplitBridgeAdapter) -> None:
         self._available.clear()
+        self._set_state(BridgeWorkerState.CONNECTING)
+        self._actions.clear()
         while not self._stop_requested.is_set():
             try:
                 update = adapter.reconnect()
