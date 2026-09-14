@@ -1,4 +1,5 @@
 import threading
+from typing import cast
 
 import numpy as np
 from divergencesplitter import (
@@ -14,6 +15,7 @@ from divergencesplitter import (
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter_runtime import (
     ActionSubmission,
+    InstanceRuntime,
     LatestFrameBuffer,
     LiveSplitSnapshot,
     LiveSplitUpdate,
@@ -22,6 +24,7 @@ from divergencesplitter_runtime import (
     ScenarioRuntime,
     TimerPhase,
 )
+from divergencesplitter.scenario.models import Scenario
 from divergencesplitter_runtime.livesplit import BridgeWorker
 
 
@@ -119,6 +122,10 @@ class RecordingNormalizer(FrameNormalizer):
         return super().normalize(frame)
 
 
+def instance(scenario: ScenarioRuntime, worker: BridgeWorker) -> InstanceRuntime:
+    return InstanceRuntime(cast(Scenario, None), scenario, worker)
+
+
 class RecordingDiagnostics:
     def __init__(self) -> None:
         self.frames: list[tuple[Frame, MonotonicTime]] = []
@@ -166,8 +173,7 @@ def test_applies_updates_before_evaluation_and_submits_action_with_snapshot() ->
     clock = FakeTimeProvider()
     diagnostics = RecordingDiagnostics()
     runtime = ProcessingRuntime(
-        (scenario,),
-        (worker,),
+        (instance(scenario, worker),),
         buffer,
         FrameNormalizer(),
         diagnostics=diagnostics,
@@ -193,8 +199,7 @@ def test_all_scenarios_share_one_context_and_one_clock_read() -> None:
     clock = FakeTimeProvider()
     diagnostics = RecordingDiagnostics()
     runtime = ProcessingRuntime(
-        (first, second),
-        (first_worker, second_worker),
+        (instance(first, first_worker), instance(second, second_worker)),
         buffer,
         FrameNormalizer(),
         diagnostics=diagnostics,
@@ -216,8 +221,7 @@ def test_unavailable_worker_applies_updates_but_skips_evaluation() -> None:
     buffer.publish(frame())
     diagnostics = RecordingDiagnostics()
     runtime = ProcessingRuntime(
-        (scenario,),
-        (worker,),
+        (instance(scenario, worker),),
         buffer,
         FrameNormalizer(),
         diagnostics=diagnostics,
@@ -238,8 +242,7 @@ def test_waits_for_each_frame_without_a_fixed_polling_period() -> None:
     buffer = SignalingBuffer()
     diagnostics = RecordingDiagnostics()
     runtime = ProcessingRuntime(
-        (scenario,),
-        (worker,),
+        (instance(scenario, worker),),
         buffer,
         FrameNormalizer(),
         diagnostics=diagnostics,
@@ -276,8 +279,7 @@ def test_normalizes_frame_once_before_scenario_evaluation() -> None:
         output_size=OutputSize(width=1, height=1),
     )
     runtime = ProcessingRuntime(
-        (scenario,),
-        (worker,),
+        (instance(scenario, worker),),
         buffer,
         normalizer,
         diagnostics=diagnostics,
@@ -301,8 +303,7 @@ def test_normalization_error_stops_processing_without_evaluating_scenario() -> N
     buffer.publish(frame())
     diagnostics = RecordingDiagnostics()
     runtime = ProcessingRuntime(
-        (scenario,),
-        (worker,),
+        (instance(scenario, worker),),
         buffer,
         FrameNormalizer(clip_region=ClipRegion(x=0, y=0, width=2, height=2)),
         diagnostics=diagnostics,

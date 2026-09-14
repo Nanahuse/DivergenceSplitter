@@ -17,6 +17,7 @@ from divergencesplitter_runtime.configuration.validation import (
     validate_split_count,
 )
 from divergencesplitter_runtime.instances import ScenarioInstance
+from divergencesplitter_runtime.instance_runtime import InstanceRuntime
 from divergencesplitter_runtime.livesplit.worker import (
     BridgeWorker,
     BridgeWorkerDiagnostics,
@@ -68,14 +69,13 @@ class ApplicationRuntime:
         self._diagnostics = diagnostics
         self._frame_source = frame_source
         self._frame_buffer = LatestFrameBuffer()
-        scenarios = tuple(instance.scenario for instance in instances)
-        self._scenario_runtimes = tuple(
-            ScenarioRuntime(scenario, logger=diagnostics.scenario_logger(index))
-            for index, scenario in enumerate(scenarios)
-        )
-        self._workers = tuple(
-            BridgeWorker(instance.connection, diagnostics=diagnostics)
-            for instance in instances
+        self._instances = tuple(
+            InstanceRuntime(
+                instance.scenario,
+                ScenarioRuntime(instance.scenario, logger=diagnostics.scenario_logger(index)),
+                BridgeWorker(instance.connection, diagnostics=diagnostics),
+            )
+            for index, instance in enumerate(instances)
         )
         self._capture = CaptureStateMachine(
             frame_source,
@@ -83,26 +83,25 @@ class ApplicationRuntime:
             diagnostics=diagnostics,
         )
         self._processing = ProcessingRuntime(
-            self._scenario_runtimes,
-            self._workers,
+            self._instances,
             self._frame_buffer,
             frame_source.normalizer,
             diagnostics=diagnostics,
         )
-        self._scenarios = scenarios
         self._stop_requested = threading.Event()
 
     def request_stop(self) -> None:
         self._stop_requested.set()
         self._capture.request_stop()
         self._processing.request_stop()
-        for worker in self._workers:
-            worker.request_stop()
+        for instance in self._instances:
+            instance.worker.request_stop()
 
     def run(self) -> None:
         worker_threads = tuple(
             threading.Thread(target=worker.run, name=f"bridge-worker-{index}")
-            for index, worker in enumerate(self._workers)
+            for index, instance in enumerate(self._instances)
+            for worker in (instance.worker,)
         )
         for thread in worker_threads:
             thread.start()
@@ -155,25 +154,20 @@ class ApplicationRuntime:
             raise processing_error[0]
 
     def _initialize_scenarios(self) -> None:
-        for worker in self._workers:
-            worker.wait_until_initialized()
-        for scenario, runtime, worker in zip(
-            self._scenarios,
-            self._scenario_runtimes,
-            self._workers,
-            strict=True,
-        ):
-            updates = worker.drain_updates()
+        for instance in self._instances:
+            instance.worker.wait_until_initialized()
+        for instance in self._instances:
+            updates = instance.worker.drain_updates()
             if not updates:
                 raise RuntimeError("Bridge worker produced no initial update")
             initial = updates[0]
             try:
-                validate_split_count(scenario, initial.snapshot)
+                validate_split_count(instance.scenario, initial.snapshot)
             except ValueError as error:
                 raise ApplicationStartupValidationError(error) from error
-            runtime.apply_livesplit_update(initial)
+            instance.scenario_runtime.apply_livesplit_update(initial)
             for update in updates[1:]:
-                runtime.apply_livesplit_update(update)
+                instance.scenario_runtime.apply_livesplit_update(update)
 
     def _run_recording_errors(
         self,

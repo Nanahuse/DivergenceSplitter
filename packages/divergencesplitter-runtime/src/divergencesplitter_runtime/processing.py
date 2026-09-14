@@ -11,8 +11,7 @@ from divergencesplitter.frame.normalizer import (
 )
 
 from divergencesplitter_runtime.capture import LatestFrameBuffer
-from divergencesplitter_runtime.livesplit.worker import BridgeWorker
-from divergencesplitter_runtime.scenario import ScenarioRuntime
+from divergencesplitter_runtime.instance_runtime import InstanceRuntime
 
 
 class ProcessingDiagnostics(Protocol):
@@ -41,18 +40,14 @@ class ProcessingRuntime:
 
     def __init__(
         self,
-        scenarios: tuple[ScenarioRuntime, ...],
-        workers: tuple[BridgeWorker, ...],
+        instances: tuple[InstanceRuntime, ...],
         frame_buffer: LatestFrameBuffer,
         normalizer: FrameNormalizer,
         *,
         diagnostics: ProcessingDiagnostics,
         time_provider: TimeProvider | None = None,
     ) -> None:
-        if len(scenarios) != len(workers):
-            raise ValueError("each scenario runtime must have one Bridge worker")
-        self._scenarios = scenarios
-        self._workers = workers
+        self._instances = instances
         self._frame_buffer = frame_buffer
         self._normalizer = normalizer
         self._diagnostics = diagnostics
@@ -81,14 +76,14 @@ class ProcessingRuntime:
             self._diagnostics.frame_processing_completed(context)
 
     def _apply_bridge_updates(self) -> None:
-        for scenario, worker in zip(self._scenarios, self._workers, strict=True):
-            for update in worker.drain_updates():
-                scenario.apply_livesplit_update(update)
+        for instance in self._instances:
+            for update in instance.worker.drain_updates():
+                instance.scenario_runtime.apply_livesplit_update(update)
 
     def _evaluate_scenarios(self, context: FrameContext) -> None:
-        for scenario_index, (scenario, worker) in enumerate(
-            zip(self._scenarios, self._workers, strict=True)
-        ):
+        for scenario_index, instance in enumerate(self._instances):
+            scenario = instance.scenario_runtime
+            worker = instance.worker
             if not worker.is_available:
                 continue
             try:
