@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import threading
+import time
 from dataclasses import dataclass
 from types import ModuleType, TracebackType
 from typing import Protocol, Self
@@ -41,6 +42,7 @@ from divergencesplitter.frame.source import (
 NDI_MODULE_NAME = "NDIlib"
 DEFAULT_RECEIVE_TIMEOUT_MS = 100
 DEFAULT_FINDER_TIMEOUT_MS = 1000
+DEFAULT_DISCOVERY_TIMEOUT_MS = 5000
 
 
 @dataclass(frozen=True)
@@ -168,7 +170,7 @@ def detect_ndi_support() -> NdiSupport:
 
 
 def discover_ndi_sources(
-    timeout_ms: int = DEFAULT_FINDER_TIMEOUT_MS,
+    timeout_ms: int = DEFAULT_DISCOVERY_TIMEOUT_MS,
 ) -> tuple[str, ...]:
     """Return the names of the NDI sources currently advertised.
 
@@ -184,11 +186,18 @@ def discover_ndi_sources(
         if finder is None:
             raise NdiInitializationError("cannot create an NDI source finder")
         try:
-            module.find_wait_for_sources(finder, timeout_ms)
-            sources = module.find_get_current_sources(finder)
+            # A change notification can arrive before all senders are found.
+            # Keep the finder alive for the complete discovery window.
+            deadline = time.monotonic() + timeout_ms / 1000
+            while True:
+                sources = module.find_get_current_sources(finder)
+                names = tuple(str(source.ndi_name) for source in sources)
+                remaining_ms = int((deadline - time.monotonic()) * 1000)
+                if remaining_ms <= 0:
+                    return names
+                module.find_wait_for_sources(finder, remaining_ms)
         finally:
             module.find_destroy(finder)
-        return tuple(str(source.ndi_name) for source in sources)
     finally:
         _runtime.release()
 

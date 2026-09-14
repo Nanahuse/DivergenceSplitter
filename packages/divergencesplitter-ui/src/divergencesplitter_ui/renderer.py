@@ -116,6 +116,12 @@ class ScreenRenderer:
         self._input_texture_tag: int | str | None = None
         self._input_image_tag: int | str | None = None
         self._input_signature = None
+        self._latest_preview_frame = None
+
+    @property
+    def latest_preview_frame(self):
+        """The latest unprocessed input, for previewing unsaved transforms."""
+        return self._latest_preview_frame
 
     def build(self) -> None:
         """Create the static widget structure once, before the render loop."""
@@ -218,6 +224,9 @@ class ScreenRenderer:
             self._apply_observations(observations)
 
         if self._presenter.image_due():
+            raw_frame = diagnostics.take_latest_input_frame()
+            if raw_frame is not None:
+                self._latest_preview_frame = raw_frame
             frame = diagnostics.take_latest_processed_frame()
             if frame is not None:
                 self._apply_image(frame)
@@ -551,6 +560,7 @@ class ScreenRenderer:
             )
 
     def _reset_input_image(self) -> None:
+        self._latest_preview_frame = None
         if self._input_image_tag is not None:
             dpg.delete_item(self._input_image_tag)
         if self._input_texture_tag is not None:

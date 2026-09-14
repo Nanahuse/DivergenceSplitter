@@ -16,18 +16,20 @@ jobs:
         with:
           python-version: "3.14"
       - name: Sync locked environment
-        run: uv sync --locked --all-packages --group build
+        run: uv sync --locked --all-packages --group build --extra ndi
       - name: Check license inventory
-        run: uv run python tools/generate_ui_license_inventory.py --check
+        run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
       - name: Build UI directory distribution
         run: >-
-          uv run pyinstaller
+          uv run --no-sync pyinstaller
           --onedir
           --windowed
           --clean
           --name DivergenceSplitter
           --collect-all dearpygui
           --collect-all windows_capture_device_list
+          --collect-all NDIlib
+          --copy-metadata ndi-python
           --collect-data divergencesplitter_ui
           --copy-metadata divergencesplitter-ui
           --distpath dist/windows
@@ -36,7 +38,7 @@ jobs:
           tools/ui_entry.py
       - name: Build converter directory distribution
         run: >-
-          uv run pyinstaller
+          uv run --no-sync pyinstaller
           --onedir
           --windowed
           --clean

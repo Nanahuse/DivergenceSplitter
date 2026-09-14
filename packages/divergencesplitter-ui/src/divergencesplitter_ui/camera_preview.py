@@ -1,4 +1,4 @@
-"""Independent camera preview lifecycle for the Configuration page.
+"""Independent camera and NDI preview lifecycle for the Configuration page.
 
 The preview owns a camera source separately from the scenario runtime. This
 allows a configured camera to be opened and displayed while scenario fields
@@ -12,14 +12,16 @@ from pathlib import Path
 
 from divergencesplitter.frame.camera import CameraCaptureSettings, OpenCvCameraSource
 from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.ndi import NdiSource
 from divergencesplitter.frame.normalizer import (
     FrameNormalizationError,
     FrameNormalizer,
     ResizeInterpolation,
 )
-from divergencesplitter.frame.source import FrameSourceError
+from divergencesplitter.frame.source import ErrorAction, FrameSourceError
 from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
+    NdiSourceConfiguration,
     SourceTransformConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
@@ -28,7 +30,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
 
 
 class CameraPreview:
-    """Read the latest camera frame without involving scenario execution."""
+    """Read the latest camera or NDI frame without scenario execution."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -52,7 +54,9 @@ class CameraPreview:
             return self._source.capture_settings
 
     def start(
-        self, configuration: CameraSourceConfiguration, base_directory: Path
+        self,
+        configuration: CameraSourceConfiguration | NdiSourceConfiguration,
+        base_directory: Path,
     ) -> None:
         self.stop()
         source = build_frame_source(configuration, base_directory=base_directory)
@@ -92,14 +96,20 @@ class CameraPreview:
             self._latest = None
             return frame
 
+    def normalize_frame(self, frame: Frame) -> Frame | FrameNormalizationError:
+        """Apply the current draft transform to an unprocessed input frame."""
+        with self._lock:
+            normalizer = self._normalizer
+        return normalizer.normalize(frame)
+
     def stop(self) -> None:
         self._stop.set()
         source = self._source
-        if source is not None:
+        if source is not None and not isinstance(source, NdiSource):
             source.close()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=1.0)
+            thread.join(timeout=2.0)
         with self._lock:
             self._source = None
             self._thread = None
@@ -127,18 +137,29 @@ class CameraPreview:
             self._error = None
 
     def _run(self, source) -> None:
-        error = source.prepare()
-        if error is not None:
-            self._set_error(error)
-            source.close()
-            return
         try:
             while not self._stop.is_set():
+                error = source.prepare()
+                if error is not None:
+                    self._set_error(error)
+                    if (
+                        isinstance(source, NdiSource)
+                        and source.handle_error(error) is ErrorAction.RETRY
+                    ):
+                        self._stop.wait(0.1)
+                        continue
+                    return
                 frame = source.read()
                 if frame is None:
                     continue
                 if isinstance(frame, FrameSourceError):
                     self._set_error(frame)
+                    if (
+                        isinstance(source, NdiSource)
+                        and source.handle_error(frame) is ErrorAction.RETRY
+                    ):
+                        self._stop.wait(0.1)
+                        continue
                     return
                 with self._lock:
                     normalizer = self._normalizer
@@ -149,6 +170,9 @@ class CameraPreview:
                 with self._lock:
                     self._error = None
                     self._latest = frame
+        except Exception as error:  # noqa: BLE001
+            with self._lock:
+                self._error = str(error)
         finally:
             source.close()
 

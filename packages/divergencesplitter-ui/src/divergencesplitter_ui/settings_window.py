@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from divergencesplitter.frame.models import Frame
+from divergencesplitter.frame.normalizer import FrameNormalizationError
 from divergencesplitter_runtime.configuration.json_file import (
     ConfigurationFileError,
     ConfigurationValidationError,
@@ -24,6 +26,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     CropConfiguration,
+    NdiSourceConfiguration,
     ResizeConfiguration,
     ResizeInterpolation,
     SourceTransformConfiguration,
@@ -108,6 +111,10 @@ class ConfigurationPage:
         self._ndi_sources_applied: tuple[str, ...] | None = None
         self._ndi_configured_applied: str | None = None
         self._ndi_item_names: dict[str, str] = {}
+        self._ndi_preview_name: str | None = None
+        self._runtime_preview_frame: Frame | None = None
+        self._preview_was_active = False
+        self._restart_preview_requested = False
 
     def build(self, parent: int | str | None = None) -> None:
         with dpg.group(parent=parent):
@@ -162,7 +169,9 @@ class ConfigurationPage:
                 callback=self._on_request_60_fps_changed,
                 parent=self._camera_settings_group,
             )
-            dpg.add_text("Camera preview", parent=self._camera_settings_group)
+            self._preview_label_tag = dpg.add_text(
+                "Input preview", parent=self._camera_settings_group
+            )
             dpg.add_texture_registry(
                 tag="divergence-splitter-camera-preview-textures",
             )
@@ -323,7 +332,7 @@ class ConfigurationPage:
             return
         self._set_status(f"started {path.name}")
 
-    def tick(self, state: SessionState) -> None:
+    def tick(self, state: SessionState, *, runtime_frame: Frame | None = None) -> None:
         if self._pending_reload_path is not None and not is_active(state):
             path = self._pending_reload_path
             self._pending_reload_path = None
@@ -331,7 +340,23 @@ class ConfigurationPage:
             state = self._controller.state
         if is_active(state):
             self._camera_preview.stop()
+            self._ndi_preview_name = None
+            self._preview_was_active = True
+            if (
+                not self._restart_preview_requested
+                and runtime_frame is not None
+                and runtime_frame is not self._runtime_preview_frame
+            ):
+                self._runtime_preview_frame = runtime_frame
+                self._apply_runtime_preview()
         else:
+            self._runtime_preview_frame = None
+            if self._preview_was_active or self._restart_preview_requested:
+                self._preview_was_active = False
+                self._restart_preview_requested = False
+                if self._model.draft is not None:
+                    self._populate(self._model.draft)
+            self._ensure_ndi_preview()
             frame = self._camera_preview.take_latest()
             if frame is not None:
                 dpg.set_value(self._preview_status_tag, "")
@@ -339,7 +364,7 @@ class ConfigurationPage:
             if self._camera_preview.error is not None:
                 dpg.set_value(
                     self._preview_status_tag,
-                    f"camera preview: {self._camera_preview.error}",
+                    f"input preview: {self._camera_preview.error}",
                 )
         settings = self._camera_preview.capture_settings
         if settings is None:
@@ -466,6 +491,7 @@ class ConfigurationPage:
             self._resize_height_tag, resize.height if resize is not None else 360
         )
         self._show_source_settings(draft.source.selected_type)
+        self._update_camera_preview_transform()
         camera = camera_source(draft)
         if camera is None:
             self._camera_preview.stop()
@@ -733,6 +759,7 @@ class ConfigurationPage:
         self._model.set_camera_device(
             _camera_backend(device.backend), device.name, device.index
         )
+        self._input_source_edited()
         self._refresh_modes(device, None)
 
     def _source_type_display_label(self, source_type: SourceType) -> str:
@@ -794,17 +821,63 @@ class ConfigurationPage:
             return
         name = self._ndi_item_names.get(app_data, app_data)
         self._model.set_ndi_source_name(name)
+        self._input_source_edited()
+
+    def _input_source_edited(self) -> None:
+        """Release the runtime source before opening the draft preview."""
+        self._restart_preview_requested = True
+        self._runtime_preview_frame = None
+        if is_active(self._controller.state):
+            self._controller.request_stop()
+            self._set_status("Input changed; preview will update. Save to restart.")
+
+    def _ensure_ndi_preview(self) -> None:
+        draft = self._model.draft
+        if draft is None:
+            return
+        source = ndi_source(draft)
+        if source is None or not source.name or not self._ndi_support_applied:
+            return
+        if self._ndi_preview_name == source.name:
+            return
+        self._ndi_preview_name = source.name
+        if self._preview_image_tag is not None:
+            dpg.delete_item(self._preview_image_tag)
+            self._preview_image_tag = None
+        if self._preview_texture_tag is not None:
+            dpg.delete_item(self._preview_texture_tag)
+            self._preview_texture_tag = None
+        self._preview_signature = None
+        dpg.set_value(self._preview_status_tag, "Waiting for NDI video...")
+        try:
+            self._camera_preview.start(
+                NdiSourceConfiguration(source.name), draft.configuration_path.parent
+            )
+            self._update_camera_preview_transform()
+        except Exception as error:  # noqa: BLE001
+            dpg.set_value(self._preview_status_tag, f"NDI preview: {error}")
 
     def _on_refresh_ndi(self) -> None:
+        self._ndi_preview_name = None
         dpg.set_value(self._ndi_status_tag, "Refreshing NDI sources...")
         self._ndi_discovery.refresh()
 
     def _show_source_settings(self, source_type: SourceType) -> None:
+        self._ndi_preview_name = None
         camera = source_type is SourceType.CAMERA
         ndi = source_type is SourceType.NDI
         dpg.configure_item(self._camera_settings_group, show=camera)
         dpg.configure_item(self._video_settings_group, show=not camera and not ndi)
         dpg.configure_item(self._ndi_settings_group, show=ndi)
+        preview_parent = (
+            self._ndi_settings_group if ndi else self._camera_settings_group
+        )
+        for tag in (
+            self._preview_label_tag,
+            self._preview_group_tag,
+            self._preview_status_tag,
+        ):
+            dpg.move_item(tag, parent=preview_parent)
         if not camera:
             self._camera_preview.stop()
 
@@ -817,6 +890,7 @@ class ConfigurationPage:
             and self._model.set_source_type(source_type) is not None
         ):
             self._show_source_settings(source_type)
+            self._input_source_edited()
             if source_type is SourceType.NDI:
                 self._ndi_discovery.refresh()
 
@@ -905,6 +979,16 @@ class ConfigurationPage:
             return
         self._model.set_resize_references(bool(app_data))
 
+    def _apply_runtime_preview(self) -> None:
+        if self._runtime_preview_frame is None:
+            return
+        frame = self._camera_preview.normalize_frame(self._runtime_preview_frame)
+        if isinstance(frame, FrameNormalizationError):
+            dpg.set_value(self._preview_status_tag, str(frame))
+            return
+        self._apply_preview_frame(frame)
+        dpg.set_value(self._preview_status_tag, "")
+
     def _update_camera_preview_transform(self) -> None:
         draft = self._model.draft
         if draft is None:
@@ -931,6 +1015,7 @@ class ConfigurationPage:
                     ),
                 )
             )
+            self._apply_runtime_preview()
         except (TypeError, ValueError) as error:
             dpg.set_value(self._preview_status_tag, str(error))
 
@@ -945,6 +1030,7 @@ class ConfigurationPage:
                 mode.width, mode.height, mode.fps, mode.subtype_guid
             )
         )
+        self._input_source_edited()
         self._start_camera_preview(selected_device=self._selected_camera(), mode=mode)
 
     def _on_request_60_fps_changed(self, sender, app_data, user_data) -> None:
@@ -953,6 +1039,7 @@ class ConfigurationPage:
         draft = self._model.set_request_60_fps(bool(app_data))
         if draft is None:
             return
+        self._input_source_edited()
         camera = camera_source(draft)
         if camera is None or camera.mode is None:
             self._camera_preview.stop()

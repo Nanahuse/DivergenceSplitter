@@ -75,6 +75,21 @@ def ui_distribution(*, requires: Iterable[str] = ()) -> FakeDistribution:
 
 
 class TestReleaseClosure:
+    def test_includes_explicitly_bundled_optional_backend(self) -> None:
+        ndi = FakeDistribution("ndi-python", "6.3.2.4", requires=["numpy"])
+        numpy = FakeDistribution("numpy", "2.5.2")
+        closure = invgen.release_closure(
+            installed(ui_distribution(), ndi, numpy),
+            additional_roots=("ndi-python",),
+        )
+        assert set(closure) == {"divergencesplitter-ui", "ndi-python", "numpy"}
+
+    def test_missing_explicit_backend_fails(self) -> None:
+        with pytest.raises(RuntimeError, match="ndi-python.*not installed"):
+            invgen.release_closure(
+                installed(ui_distribution()), additional_roots=("ndi-python",)
+            )
+
     def test_traces_transitive_dependencies(self) -> None:
         runtime = FakeDistribution(
             "divergencesplitter-runtime",
@@ -168,6 +183,21 @@ class TestReleaseClosure:
 
 
 class TestLicenseText:
+    def test_ndi_includes_runtime_notices_outside_dist_info(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        dist = FakeDistribution(
+            "ndi-python", "6.3.2.4", license_files={"LICENSE": "binding MIT text"}
+        )
+        notice = tmp_path / "NDIlib" / "Processing.NDI.Lib.Licenses.txt"
+        notice.parent.mkdir()
+        notice.write_text("NDI runtime notices", encoding="utf-8")
+        monkeypatch.setattr(dist, "locate_file", lambda path: tmp_path / path)
+
+        text = invgen.license_text(dist)
+        assert "binding MIT text" in text
+        assert "NDI runtime notices" in text
+
     def test_declared_license_files_are_bundled(self) -> None:
         dist = FakeDistribution(
             "mine",
