@@ -17,6 +17,8 @@ from divergencesplitter_runtime.instance_runtime import (
 )
 from divergencesplitter_runtime.livesplit.models import LiveSplitRunInfo
 
+DEFAULT_FRAME_WAIT_SECONDS = 0.05
+
 
 class ProcessingDiagnostics(Protocol):
     def frame_processing_started(
@@ -70,10 +72,15 @@ class ProcessingRuntime:
 
     def run(self) -> None:
         while not self._stop_requested.is_set():
-            frame = self._frame_buffer.take()
-            if frame is None or self._stop_requested.is_set():
+            frame = self._frame_buffer.take(DEFAULT_FRAME_WAIT_SECONDS)
+            if self._stop_requested.is_set():
                 return
+            # Drain Bridge updates even when the source produces no frame, so a
+            # connected instance can validate its scenario and publish its
+            # lifecycle status and Run info while capture is idle.
             self._apply_bridge_updates()
+            if frame is None:
+                continue
             now = self._time_provider.now()
             self._diagnostics.frame_processing_started(frame, now)
             normalized = self._normalizer.normalize(frame)

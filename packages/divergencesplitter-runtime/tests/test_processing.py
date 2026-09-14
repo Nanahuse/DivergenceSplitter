@@ -1,4 +1,6 @@
 import threading
+import time
+from collections.abc import Callable
 from typing import cast
 
 import numpy as np
@@ -110,9 +112,9 @@ class SignalingBuffer(LatestFrameBuffer):
         super().__init__()
         self.take_started = threading.Event()
 
-    def take(self) -> Frame | None:
+    def take(self, timeout_seconds: float | None = None) -> Frame | None:
         self.take_started.set()
-        return super().take()
+        return super().take(timeout_seconds)
 
 
 class RecordingNormalizer(FrameNormalizer):
@@ -286,7 +288,14 @@ def test_unavailable_worker_applies_updates_but_skips_evaluation() -> None:
     assert worker.requests == []
 
 
-def test_waits_for_each_frame_without_a_fixed_polling_period() -> None:
+def wait_for(predicate: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 2
+    while not predicate():
+        assert time.monotonic() < deadline
+        time.sleep(0.001)
+
+
+def test_applies_bridge_updates_while_waiting_for_frames() -> None:
     initial = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot())
     scenario = FakeScenarioRuntime()
     worker = FakeWorker((initial,))
@@ -303,7 +312,10 @@ def test_waits_for_each_frame_without_a_fixed_polling_period() -> None:
     thread.start()
     assert buffer.take_started.wait(1)
 
-    assert scenario.updates == []
+    # Bridge updates are drained even while no frame is available, but the
+    # scenario is not evaluated until one arrives.
+    wait_for(lambda: scenario.updates == [initial])
+    assert scenario.contexts == []
 
     buffer.publish(frame())
     assert diagnostics.frame_started.wait(1)
@@ -312,6 +324,7 @@ def test_waits_for_each_frame_without_a_fixed_polling_period() -> None:
 
     assert not thread.is_alive()
     assert scenario.updates == [initial]
+    assert len(scenario.contexts) == 1
 
 
 def test_normalizes_frame_once_before_scenario_evaluation() -> None:
