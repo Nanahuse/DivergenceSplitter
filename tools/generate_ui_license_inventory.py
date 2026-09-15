@@ -13,9 +13,13 @@ including the NDI runtime notices stored outside its distribution metadata.
 For each inventoried component the generator also bundles the full license
 text files shipped by the installed distribution, so the license screen can
 reproduce the actual license texts (not just SPDX identifiers) that are
-redistributed inside the executable. The application's own GPL-3.0 text from
-the repository ``LICENSE`` is included as the ``application`` section, which
-is required when conveying a GPL-3.0 program.
+redistributed inside the executable. Some releases declare an SPDX expression
+in metadata but omit every license file from the wheel (``flet`` is one such
+distribution); for those a canonical text vendored under ``tools/licenses`` is
+used so the inventory still reproduces the license rather than failing. The
+application's own GPL-3.0 text from the repository ``LICENSE`` is included as
+the ``application`` section, which is required when conveying a GPL-3.0
+program.
 
 Generation is deterministic: packages are emitted sorted by their normalized
 name, license files are sorted by their normalized sub-path, and every run
@@ -46,6 +50,7 @@ from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+TOOLS_ROOT = Path(__file__).resolve().parent
 UI_MODULE_ROOT = (
     REPO_ROOT / "packages" / "divergencesplitter-ui" / "src" / "divergencesplitter_ui"
 )
@@ -59,6 +64,14 @@ NOTO_SANS_JP_NAME = "Noto Sans JP"
 NOTO_SANS_JP_LICENSE = "SIL Open Font License 1.1"
 NOTO_SANS_JP_LICENSE_PATH = UI_MODULE_ROOT / "assets" / "fonts" / "OFL.txt"
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
+
+# Canonical license texts vendored for distributions that declare an SPDX
+# expression but ship no license file in their wheel, keyed by that expression.
+# They are read like any bundled text so the emitted inventory stays
+# deterministic across platforms.
+SPDX_LICENSE_TEXTS: dict[str, Path] = {
+    "Apache-2.0": TOOLS_ROOT / "licenses" / "Apache-2.0.txt",
+}
 
 EXCLUDED_DISTRIBUTIONS: dict[str, str] = {
     "divergencesplitter": "own package, not a third-party license",
@@ -280,6 +293,21 @@ def _scanned_license_files(
     return sorted(scanned.items())
 
 
+def _vendored_license_text(dist: metadata.Distribution) -> str | None:
+    """Return a vendored canonical text for a wheel that ships no license file.
+
+    The text is selected by the distribution's resolved SPDX expression when
+    that expression has a canonical file under ``tools/licenses``. Returns
+    ``None`` when no vendored text applies, so the caller can fail loudly.
+    """
+
+    path = SPDX_LICENSE_TEXTS.get(resolve_license(dist))
+    if path is None:
+        return None
+    relative = path.relative_to(REPO_ROOT).as_posix()
+    return f"=== {relative} ===\n{path.read_text(encoding='utf-8')}"
+
+
 def license_text(dist: metadata.Distribution) -> str:
     """Collect every license text shipped by the installed distribution."""
 
@@ -294,6 +322,9 @@ def license_text(dist: metadata.Distribution) -> str:
             encoding="utf-8"
         )
     if not entries:
+        vendored = _vendored_license_text(dist)
+        if vendored is not None:
+            return vendored
         raise RuntimeError(
             f"cannot collect any license text for {dist.metadata['Name']!r}"
         )
