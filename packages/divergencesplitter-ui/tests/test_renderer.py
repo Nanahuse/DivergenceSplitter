@@ -574,10 +574,10 @@ def test_instance_status_rows_update_without_rebuilding_tree_or_new_frames() -> 
 
 
 def test_evaluation_metrics_render_per_scenario_without_rebuilding_tree() -> None:
+    dpg = pytest.importorskip("dearpygui.dearpygui")
     from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
     from divergencesplitter_ui.renderer import ScreenRenderer
 
-    dpg = pytest.importorskip("dearpygui.dearpygui")
     conditions = tuple(Detected(MeanBrightnessDetector(), 0.5) for _ in range(2))
     tree = build_detector_tree(
         tuple(scenario_with_splits((condition,)) for condition in conditions)
