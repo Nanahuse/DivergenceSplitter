@@ -817,7 +817,7 @@ class ActionExecutionTest(unittest.TestCase):
         self.make_adapter(client, diagnostics).execute_action(action, expected)
 
         client.split.assert_called_once_with()
-        actual = domain_snapshot()
+        actual = domain_snapshot(event_sequence=99)
         self.assertEqual(
             diagnostics.events,
             [
