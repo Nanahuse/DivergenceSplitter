@@ -8,29 +8,20 @@ re-implements capture, processing, or Bridge communication.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from typing import TextIO
 
 from divergencesplitter_ui._dpg import dpg
 from divergencesplitter_ui.about_window import AboutPage
+from divergencesplitter_ui.bootstrap import build_desktop_controller
 from divergencesplitter_ui.error_window import ErrorWindow
 from divergencesplitter_ui.fonts import configure_default_font
 from divergencesplitter_ui.license_window import LicensePage
-from divergencesplitter_ui.logs import log_file_path
 from divergencesplitter_ui.presentation import (
     ObservableDiagnostics,
     ScreenPresenter,
 )
 from divergencesplitter_ui.renderer import ScreenRenderer
-from divergencesplitter_ui.session import (
-    ApplicationRuntimeFactory,
-    DefaultConfigurationLoader,
-    DefaultScenarioLoader,
-    DefaultSourceBuilder,
-    OperationalDiagnosticsFactory,
-    SessionController,
-)
+from divergencesplitter_ui.session import SessionController
 from divergencesplitter_ui.settings import SettingsModel, WindowsCameraEnumerator
 from divergencesplitter_ui.settings_window import ConfigurationPage
 
@@ -102,26 +93,11 @@ class DesktopApplication:
             dpg.destroy_context()
 
 
-def build_controller(
-    *, stream: TextIO | None, log_path: Path | None = None
-) -> SessionController:
-    """Construct a session pipeline identical to the command line's."""
-
-    return SessionController(
-        configuration_loader=DefaultConfigurationLoader(),
-        scenario_loader=DefaultScenarioLoader(),
-        source_builder=DefaultSourceBuilder(),
-        runtime_factory=ApplicationRuntimeFactory(),
-        diagnostics_factory=OperationalDiagnosticsFactory(stream, log_path=log_path),
-    )
-
-
 def run_configuration(configuration: Path | None = None) -> None:
     """Run the UI and optionally open one configuration on startup."""
 
-    controller = build_controller(stream=sys.stderr, log_path=log_file_path())
     application = DesktopApplication(
-        controller,
+        build_desktop_controller(),
         initial_configuration=configuration,
     )
     application.run()

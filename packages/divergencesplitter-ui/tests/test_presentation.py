@@ -14,13 +14,17 @@ from divergencesplitter import (
 )
 from divergencesplitter_runtime import LiveSplitRunInfo, LiveSplitSegmentInfo
 from divergencesplitter_runtime.instances import ScenarioInstance
-from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
+from divergencesplitter_runtime.metrics import (
+    InstanceEvaluationMetrics,
+    RuntimeMetricsSnapshot,
+)
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     _collect_condition_observations,
     build_detector_tree,
 )
 from divergencesplitter_ui.presentation import (
+    UNMEASURED_FPS,
     UNOBSERVED_LABEL,
     ExpansionEvent,
     ExpansionState,
@@ -31,12 +35,14 @@ from divergencesplitter_ui.presentation import (
     evaluation_latency_label,
     format_latency_ms,
     format_score,
+    global_status_text,
     has_new_observations,
     scenario_label,
     split_label,
     status_label,
     view_for,
 )
+from divergencesplitter_ui.session import SessionState
 
 
 class FakeClock:
@@ -314,3 +320,28 @@ def test_evaluation_latency_label_is_isolated_per_scenario() -> None:
     assert "Max 8.9 ms" in second
     assert "Ave —" in unmeasured
     assert "Max —" in unmeasured
+
+
+class TestGlobalStatusText:
+    def test_reports_state_and_throughput(self) -> None:
+        snapshot = RuntimeMetricsSnapshot(
+            sampled_at=MonotonicTime(0),
+            window_seconds=1.0,
+            input_fps=59.94,
+            processing_fps=20.0,
+            input_frames_total=0,
+            processed_frames_total=0,
+        )
+
+        status = global_status_text(SessionState.RUNNING, snapshot)
+
+        assert status.state == "RUNNING"
+        assert status.input_fps == "59.9 fps"
+        assert status.processing_fps == "20.0 fps"
+
+    def test_unmeasured_before_metrics_arrive(self) -> None:
+        status = global_status_text(SessionState.IDLE, None)
+
+        assert status.state == "IDLE"
+        assert status.input_fps == UNMEASURED_FPS
+        assert status.processing_fps == UNMEASURED_FPS

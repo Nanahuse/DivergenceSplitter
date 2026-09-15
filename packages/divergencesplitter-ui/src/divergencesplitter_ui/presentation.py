@@ -112,6 +112,46 @@ def evaluation_latency_label(metrics: InstanceEvaluationMetrics) -> str:
     )
 
 
+UNMEASURED_FPS = "— fps"
+
+
+@dataclass(frozen=True)
+class GlobalStatusText:
+    """Transfer-only display values for the Global Status panel."""
+
+    state: str
+    input_fps: str
+    processing_fps: str
+
+
+def format_fps(value: float) -> str:
+    """Format one throughput value in frames per second."""
+
+    return f"{value:.1f} fps"
+
+
+def global_status_text(
+    state: object,
+    snapshot: RuntimeMetricsSnapshot | None,
+) -> GlobalStatusText:
+    """Format the session state and throughput metrics for the Global Status.
+
+    ``state`` is any object exposing a ``name`` (the ``SessionState`` enum);
+    ``snapshot`` is ``None`` before a session publishes metrics, which renders
+    as an unmeasured placeholder rather than a stale value.
+    """
+
+    return GlobalStatusText(
+        state=getattr(state, "name", str(state)),
+        input_fps=(
+            UNMEASURED_FPS if snapshot is None else format_fps(snapshot.input_fps)
+        ),
+        processing_fps=(
+            UNMEASURED_FPS if snapshot is None else format_fps(snapshot.processing_fps)
+        ),
+    )
+
+
 def has_new_observations(observations: tuple[ConditionObservation, ...]) -> bool:
     """Return whether ``observations`` carries a fresh snapshot to apply.
 
