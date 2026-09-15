@@ -293,6 +293,14 @@ class ConfigurationPage:
                 default_value="DEBUG",
                 callback=self._on_log_level_changed,
             )
+            self._reaction_time_tag = dpg.add_input_int(
+                label="Reaction time (ms)",
+                default_value=0,
+                min_value=0,
+                min_clamped=True,
+                step=1,
+                callback=self._on_reaction_time_changed,
+            )
 
             dpg.add_text(f"DEBUG log: {log_file_path()}", wrap=650)
             dpg.add_separator()
@@ -445,6 +453,11 @@ class ConfigurationPage:
             self._log_level_tag,
             enabled=draft is not None and permission.log_level,
         )
+        dpg.configure_item(
+            self._reaction_time_tag,
+            enabled=draft is not None and permission.reaction_time,
+            min_value=0,
+        )
         if draft is not None:
             for index, row in self._instance_rows.items():
                 if index >= len(draft.instances):
@@ -465,6 +478,7 @@ class ConfigurationPage:
         dpg.set_value(self._config_path_tag, path_text)
         self._rebuild_instance_editors(draft)
         dpg.set_value(self._log_level_tag, draft.log_level)
+        dpg.set_value(self._reaction_time_tag, draft.reaction_time_ms)
         dpg.set_value(
             self._source_type_tag,
             self._source_type_display_label(draft.source.selected_type),
@@ -1081,6 +1095,11 @@ class ConfigurationPage:
     def _on_log_level_changed(self, sender, app_data, user_data) -> None:
         self._model.set_log_level(app_data)
         self._controller.set_log_level(app_data)
+
+    def _on_reaction_time_changed(self, sender, app_data, user_data) -> None:
+        # Only the draft changes; a running session keeps its loaded value
+        # until Save reloads the configuration.
+        self._model.set_reaction_time_ms(int(app_data))
 
     def close(self) -> None:
         self._camera_preview.stop()

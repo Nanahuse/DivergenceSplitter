@@ -764,3 +764,46 @@ class TestSettingsDecisions:
             SessionState.STOPPED,
         ):
             assert not is_active(state)
+
+
+class TestReactionTime:
+    def test_reaction_time_edit_marks_dirty_and_projects(self) -> None:
+        model = make_model()
+        assert model.draft is not None
+        assert model.draft.reaction_time_ms == 0
+        model.mark_saved()
+        assert not model.is_dirty
+
+        model.set_reaction_time_ms(30)
+
+        assert model.is_dirty
+        assert model.draft.reaction_time_ms == 30
+        configuration = model.configuration()
+        assert configuration is not None
+        assert configuration.runtime.reaction_time_ms == 30
+
+    @pytest.mark.parametrize("value", [-1, True, 1.5])
+    def test_reaction_time_rejects_invalid_value(self, value: object) -> None:
+        model = make_model()
+
+        with pytest.raises(ValueError):
+            model.set_reaction_time_ms(cast(int, value))
+
+    def test_reaction_time_round_trips_through_json(self, tmp_path: Path) -> None:
+        model = make_model()
+        model.set_reaction_time_ms(30)
+        configuration = model.configuration()
+        assert configuration is not None
+
+        path = tmp_path / "config.json"
+        save_configuration(path, configuration)
+        reloaded = load_configuration(path)
+
+        assert reloaded.runtime.reaction_time_ms == 30
+        draft = draft_from_configuration(reloaded, path)
+        assert draft.reaction_time_ms == 30
+
+    def test_running_session_keeps_reaction_time_editable(self) -> None:
+        permission = edit_permission(SessionState.RUNNING)
+
+        assert permission.reaction_time

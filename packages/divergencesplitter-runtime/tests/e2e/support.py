@@ -426,6 +426,24 @@ class RecordingDiagnostics:
     def instance_reset(self, scenario_index: int) -> None:
         pass
 
+    def reaction_measured(
+        self,
+        scenario_index: int,
+        action: Action,
+        target_ns: int,
+        actual_ns: int,
+        lateness_ns: int,
+    ) -> None:
+        pass
+
+    def action_cancelled(
+        self,
+        scenario_index: int,
+        action: Action,
+        reason: str,
+    ) -> None:
+        pass
+
     def worker_stopped(self, connection: LiveSplitConnection) -> None:
         self.worker_stopped_event.set()
 

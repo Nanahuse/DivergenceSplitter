@@ -87,7 +87,10 @@ def _as_dict(configuration: ApplicationConfiguration) -> dict[str, object]:
         "version": configuration.version,
         "source": _source_dict(configuration.source),
         "instances": [_instance_dict(instance) for instance in configuration.instances],
-        "runtime": {"log_level": configuration.runtime.log_level},
+        "runtime": {
+            "log_level": configuration.runtime.log_level,
+            "reaction_time_ms": configuration.runtime.reaction_time_ms,
+        },
     }
 
 
@@ -212,8 +215,13 @@ def _connection(value: object, path: str) -> LiveSplitConnection:
 
 def _runtime(value: object) -> RuntimeConfiguration:
     runtime = _object(value, "runtime")
-    _keys(runtime, required={"log_level"})
-    return RuntimeConfiguration(_string(runtime["log_level"], "runtime.log_level"))
+    _keys(runtime, required={"log_level"}, optional={"reaction_time_ms"})
+    return RuntimeConfiguration(
+        _string(runtime["log_level"], "runtime.log_level"),
+        _integer(runtime["reaction_time_ms"], "runtime.reaction_time_ms")
+        if "reaction_time_ms" in runtime
+        else 0,
+    )
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
