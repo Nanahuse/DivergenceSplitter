@@ -1,16 +1,16 @@
 """Cache-aware evaluation and shared image preprocessing.
 
-``preprocessed`` memoizes image computations per ``FrameContext`` so several
-detectors sharing a computation run it once. ``evaluate`` caches one complete
-``DetectionResult`` per detector definition, reusing it across equivalent
-instances. Exceptions and non-``DetectionResult`` values are never cached.
+``preprocessed`` memoizes image computations on a frame's shared cache so
+several detectors and scenario contexts sharing a computation run it once.
+``evaluate`` caches one complete ``DetectionResult`` per detector definition,
+reusing it across equivalent instances. Exceptions and non-``DetectionResult``
+values are never cached.
 
 References inside detector configuration (for example ``MeanAbsoluteSimilarityDetector``)
 must be hashable (use tuples) so the detectors stay usable as cache keys.
 """
 
 from collections.abc import Callable
-from typing import cast
 
 import cv2
 import numpy as np
@@ -53,29 +53,29 @@ def preprocessed[T](context: FrameContext, key: object, compute: Callable[[], T]
     """Return the value for ``key``, computing and caching it on the first use.
 
     Cache membership is decided by key presence so ``None`` is a valid cached
-    value and is not recomputed.
+    value and is not recomputed. The cache is shared by every ``FrameContext``
+    created from the same ``SharedFrameEvaluation``, and concurrent requests for
+    the same key run ``compute`` only once.
     """
-    if key in context.preprocessing_cache:
-        return cast(T, context.preprocessing_cache[key])
-    value = compute()
-    context.preprocessing_cache[key] = value
-    return value
+    return context.cache.preprocessing(key, compute)
 
 
 def evaluate(context: FrameContext, detector: ImageDetector) -> DetectionResult:
     """Return ``detector``'s result, evaluated at most once per frame.
 
-    Equivalent detectors share the cached result within one ``FrameContext``.
-    The result is only cached when it is a complete ``DetectionResult``.
+    Equivalent detectors share the cached result across every context of the
+    frame. The result is only cached when it is a complete ``DetectionResult``.
     """
-    cached = context.detection_cache.get(detector)
-    if isinstance(cached, DetectionResult):
-        return cached
-    result = detector.detect(context)
-    if not isinstance(result, DetectionResult):
-        raise TypeError(f"detector returned a non-DetectionResult value: {result!r}")
-    context.detection_cache[detector] = result
-    return result
+
+    def compute() -> DetectionResult:
+        result = detector.detect(context)
+        if not isinstance(result, DetectionResult):
+            raise TypeError(
+                f"detector returned a non-DetectionResult value: {result!r}"
+            )
+        return result
+
+    return context.cache.detection(detector, compute)
 
 
 def frame_mean(context: FrameContext) -> float:

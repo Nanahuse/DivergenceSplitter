@@ -395,10 +395,10 @@ class OperationalDiagnostics:
             "processing_duration_ns": (
                 completed_at.nanoseconds - context.now.nanoseconds
             ),
-            "detector_count": len(context.detection_cache),
-            "preprocessing_cache_entries": len(context.preprocessing_cache),
+            "detector_count": context.cache.detection_count(),
+            "preprocessing_cache_entries": context.cache.preprocessing_count(),
         }
-        for index, (detector, result) in enumerate(context.detection_cache.items()):
+        for index, (detector, result) in enumerate(context.cache.detection_items()):
             for name, value in _detector_fields(detector, result).items():
                 fields[f"detector.{index}.{name}"] = value
         self._emit(logging.DEBUG, "processing.frame_completed", **fields)

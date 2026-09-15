@@ -1,5 +1,14 @@
+from divergencesplitter.frame.cache import (
+    RecursiveFrameComputationError,
+    SharedFrameCache,
+)
 from divergencesplitter.frame.camera import OpenCvCameraSource
-from divergencesplitter.frame.models import Frame, FrameContext, ImageArray
+from divergencesplitter.frame.models import (
+    Frame,
+    FrameContext,
+    ImageArray,
+    SharedFrameEvaluation,
+)
 from divergencesplitter.frame.ndi import (
     NdiError,
     NdiInitializationError,
@@ -58,7 +67,10 @@ __all__ = [
     "NdiUnavailableError",
     "OpenCvCameraSource",
     "OutputSize",
+    "RecursiveFrameComputationError",
     "ResizeInterpolation",
+    "SharedFrameCache",
+    "SharedFrameEvaluation",
     "VideoFileSource",
     "detect_ndi_support",
     "discover_ndi_sources",

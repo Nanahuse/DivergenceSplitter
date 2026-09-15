@@ -57,5 +57,5 @@ class MeanAbsoluteSimilarityDetector(ConfiguredDetector[MeanAbsoluteSimilarityCo
                 self.config.roi,
             )
         )
-        context.preprocessing_cache.setdefault(key, diff)
+        context.cache.store_preprocessing(key, diff)
         return DetectionResult(score=_clamp_unit_score(1.0 - diff / 255.0))

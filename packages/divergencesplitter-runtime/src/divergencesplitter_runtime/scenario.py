@@ -541,7 +541,7 @@ def _rule_evaluation_fields(
         fields.update(
             detector_type=type(rule.condition.detector).__name__,
             detector_minimum_score=rule.condition.minimum_score,
-            detector_cache_hit=rule.condition.detector in context.detection_cache,
+            detector_cache_hit=context.cache.has_detection(rule.condition.detector),
         )
     return fields
 
@@ -552,7 +552,7 @@ def _rule_evaluation_result_fields(
 ) -> _RuleEvaluationFields:
     if rule is None or not isinstance(rule.condition, Detected):
         return {}
-    result = context.detection_cache.get(rule.condition.detector)
+    result = context.cache.cached_detection(rule.condition.detector)
     return {
         "detector_score": result.score if isinstance(result, DetectionResult) else None
     }

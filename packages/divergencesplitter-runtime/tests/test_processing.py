@@ -7,12 +7,14 @@ import numpy as np
 from divergencesplitter import (
     Action,
     ClipRegion,
+    DetectionResult,
     Frame,
     FrameContext,
     FrameNormalizationError,
     FrameNormalizer,
     MonotonicTime,
     OutputSize,
+    evaluate,
 )
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter.scenario.models import Scenario
@@ -79,6 +81,36 @@ class FakeScenarioRuntime(ScenarioRuntime):
     def evaluate(self, context: FrameContext) -> Action | None:
         self.contexts.append(context)
         return self.action
+
+
+class CountingDetector:
+    def __init__(self) -> None:
+        self.detections = 0
+
+    @property
+    def reference_images(self) -> tuple:
+        return ()
+
+    def detect(self, context: FrameContext) -> DetectionResult:
+        self.detections += 1
+        return DetectionResult(score=0.0)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, CountingDetector)
+
+    def __hash__(self) -> int:
+        return hash("CountingDetector")
+
+
+class DetectingScenarioRuntime(FakeScenarioRuntime):
+    def __init__(self, detector: CountingDetector) -> None:
+        super().__init__()
+        self.detector = detector
+
+    def evaluate(self, context: FrameContext) -> Action | None:
+        self.contexts.append(context)
+        evaluate(context, self.detector)
+        return None
 
 
 class FakeWorker(BridgeWorker):
@@ -241,7 +273,7 @@ def test_applies_updates_before_evaluation_and_submits_action_with_snapshot() ->
     assert diagnostics.frames == [(pending_frame, MonotonicTime(20))]
 
 
-def test_all_scenarios_share_one_context_and_one_clock_read() -> None:
+def test_all_scenarios_share_one_frame_evaluation_and_one_clock_read() -> None:
     initial = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot())
     first = FakeScenarioRuntime()
     second = FakeScenarioRuntime()
@@ -261,8 +293,41 @@ def test_all_scenarios_share_one_context_and_one_clock_read() -> None:
 
     process_one_frame(runtime, diagnostics)
 
-    assert first.contexts[0] is second.contexts[0]
+    first_context = first.contexts[0]
+    second_context = second.contexts[0]
+    assert first_context is not second_context
+    assert first_context.shared is second_context.shared
+    assert first_context.frame is second_context.frame
+    assert first_context.now == second_context.now
+    assert first_context.evaluated_condition_ids is not (
+        second_context.evaluated_condition_ids
+    )
     assert clock.calls == 1
+
+
+def test_equivalent_detectors_are_evaluated_once_across_scenarios() -> None:
+    initial = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot())
+    first_detector = CountingDetector()
+    second_detector = CountingDetector()
+    first = DetectingScenarioRuntime(first_detector)
+    second = DetectingScenarioRuntime(second_detector)
+    buffer = LatestFrameBuffer()
+    buffer.publish(frame())
+    diagnostics = RecordingDiagnostics()
+    runtime = ProcessingRuntime(
+        (
+            instance(first, FakeWorker((initial,))),
+            instance(second, FakeWorker((initial,))),
+        ),
+        buffer,
+        FrameNormalizer(),
+        diagnostics=diagnostics,
+        time_provider=FakeTimeProvider(),
+    )
+
+    process_one_frame(runtime, diagnostics)
+
+    assert first_detector.detections + second_detector.detections == 1
 
 
 def test_unavailable_worker_applies_updates_but_skips_evaluation() -> None:

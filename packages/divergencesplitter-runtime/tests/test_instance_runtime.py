@@ -139,7 +139,7 @@ def test_independent_start_late_attach_disconnect_and_reconnect() -> None:
     a_scenario = a.scenario_runtime
     assert a_scenario is not None
     with patch.object(a_scenario, "evaluate", wraps=a_scenario.evaluate) as evaluate:
-        runtime._evaluate_scenarios(context())
+        runtime._evaluate_scenarios(context().shared)
         assert evaluate.call_count == 1
         b_worker.initial(session_id=2)
         runtime._apply_bridge_updates()
@@ -151,7 +151,7 @@ def test_independent_start_late_attach_disconnect_and_reconnect() -> None:
         assert b.state is InstanceRuntimeState.CONNECTING
         runtime._apply_bridge_updates()
         assert b.scenario_runtime is None
-        runtime._evaluate_scenarios(context(now=1))
+        runtime._evaluate_scenarios(context(now=1).shared)
         assert evaluate.call_count == 2
         b_worker.initial(session_id=3)
         runtime._apply_bridge_updates()
@@ -180,7 +180,7 @@ def test_failure_is_isolated_and_terminal(failure: str) -> None:
     a_scenario = a.scenario_runtime
     assert a_scenario is not None
     with patch.object(a_scenario, "evaluate", wraps=a_scenario.evaluate) as evaluate:
-        runtime._evaluate_scenarios(context())
+        runtime._evaluate_scenarios(context().shared)
         assert evaluate.call_count == 1
     b_worker.initial(split_count=3)
     runtime._apply_bridge_updates()
