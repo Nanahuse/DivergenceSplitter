@@ -158,6 +158,7 @@ class OperationalDiagnostics:
         self._processed_frames_total = 0
         self._evaluation_indices: tuple[int, ...] = ()
         self._instance_latency: dict[int, _LatencyWindow] = {}
+        self._instance_run_identity: dict[int, tuple[int, int]] = {}
         self._observable_lock = threading.Lock()
         self._latest_input_frame: Frame | None = None
         self._latest_processed_frame: Frame | None = None
@@ -209,6 +210,7 @@ class OperationalDiagnostics:
         with self._metrics_lock:
             self._evaluation_indices = tuple(range(len(instances)))
             self._instance_latency = {}
+            self._instance_run_identity = {}
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]:
         """Copy the latest lifecycle outcomes, independently of logging level."""
@@ -222,14 +224,14 @@ class OperationalDiagnostics:
             }
             self._instance_statuses = statuses
         with self._metrics_lock:
-            # A non-READY instance holds no valid evaluation sample: drop the
-            # window so a reconnect or failure never shows a stale latency.
+            # A non-READY instance has no current-window average, but the
+            # sticky evaluation Max is kept until the next Run starts.
             for status in statuses:
                 if status.state is InstanceRuntimeState.READY:
                     continue
                 window = self._instance_latency.get(status.scenario_index)
                 if window is not None:
-                    window.reset()
+                    window.reset_average()
         for status in statuses:
             if previous.get(status.scenario_index) == status:
                 continue
@@ -251,12 +253,26 @@ class OperationalDiagnostics:
         scenario_index: int,
         run_info: LiveSplitRunInfo | None,
     ) -> None:
-        """Record the current Run for one scenario, or clear it on ``None``."""
+        """Record the current Run for one scenario, or clear it on ``None``.
+
+        Starting a new Run resets the sticky evaluation Max for that instance so
+        the displayed Max belongs to the current Run.
+        """
         with self._observable_lock:
             if run_info is None:
                 self._instance_runs.pop(scenario_index, None)
             else:
                 self._instance_runs[scenario_index] = run_info
+        if run_info is None:
+            return
+        identity = (run_info.session_id, run_info.run_revision)
+        with self._metrics_lock:
+            if self._instance_run_identity.get(scenario_index) == identity:
+                return
+            self._instance_run_identity[scenario_index] = identity
+            window = self._instance_latency.get(scenario_index)
+            if window is not None:
+                window.reset_max()
 
     def instance_run_infos(self) -> tuple[InstanceRunSnapshot, ...]:
         """Copy the current Run per scenario in stable scenario-index order."""
@@ -814,13 +830,17 @@ class OperationalDiagnostics:
 
 
 class _LatencyWindow:
-    """Fixed-memory per-instance evaluation latency over the latest window."""
+    """Per-instance evaluation latency: windowed average and sticky maximum.
+
+    The average is computed over the latest ~1s window, while the maximum is
+    kept across windows until the instance starts a new Run (or is rebound).
+    """
 
     def __init__(self) -> None:
         self._bucket_ids = [-1] * _METRICS_BUCKET_COUNT
         self._counts = [0] * _METRICS_BUCKET_COUNT
         self._sums = [0] * _METRICS_BUCKET_COUNT
-        self._maxs = [0] * _METRICS_BUCKET_COUNT
+        self._max: int | None = None
 
     def record(self, occurred_at_ns: int, latency_ns: int) -> None:
         bucket_id = occurred_at_ns // _METRICS_BUCKET_NANOSECONDS
@@ -829,10 +849,10 @@ class _LatencyWindow:
             self._bucket_ids[index] = bucket_id
             self._counts[index] = 0
             self._sums[index] = 0
-            self._maxs[index] = 0
         self._counts[index] += 1
         self._sums[index] += latency_ns
-        self._maxs[index] = max(self._maxs[index], latency_ns)
+        if self._max is None or latency_ns > self._max:
+            self._max = latency_ns
 
     def average_and_max(self, sampled_at_ns: int) -> tuple[int | None, int | None]:
         cutoff = sampled_at_ns - _METRICS_WINDOW_NANOSECONDS
@@ -840,28 +860,30 @@ class _LatencyWindow:
         newest_bucket_id = sampled_at_ns // _METRICS_BUCKET_NANOSECONDS
         count = 0
         total = 0
-        maximum = 0
-        for bucket_id, bucket_count, bucket_sum, bucket_max in zip(
+        for bucket_id, bucket_count, bucket_sum in zip(
             self._bucket_ids,
             self._counts,
             self._sums,
-            self._maxs,
             strict=True,
         ):
             if not oldest_bucket_id <= bucket_id <= newest_bucket_id:
                 continue
             count += bucket_count
             total += bucket_sum
-            maximum = max(maximum, bucket_max)
-        if count == 0:
-            return None, None
-        return total // count, maximum
+        average = None if count == 0 else total // count
+        return average, self._max
 
-    def reset(self) -> None:
+    def reset_average(self) -> None:
         self._bucket_ids = [-1] * _METRICS_BUCKET_COUNT
         self._counts = [0] * _METRICS_BUCKET_COUNT
         self._sums = [0] * _METRICS_BUCKET_COUNT
-        self._maxs = [0] * _METRICS_BUCKET_COUNT
+
+    def reset_max(self) -> None:
+        self._max = None
+
+    def reset(self) -> None:
+        self.reset_average()
+        self.reset_max()
 
 
 class _TimeBucketRate:

@@ -552,7 +552,7 @@ def test_evaluation_latency_is_isolated_per_instance() -> None:
     )
 
 
-def test_evaluation_latency_window_expires_without_samples() -> None:
+def test_evaluation_average_expires_while_max_is_kept() -> None:
     clock = MutableTimeProvider(5_000_000)
     diagnostics = OperationalDiagnostics(StringIO(), time_provider=clock)
     diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
@@ -566,11 +566,11 @@ def test_evaluation_latency_window_expires_without_samples() -> None:
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
     assert metrics.average_latency_ns is None
-    assert metrics.max_latency_ns is None
+    assert metrics.max_latency_ns == 5_000_000
 
 
 @pytest.mark.parametrize("state", ["CONNECTING", "FAILED", "STOPPED"])
-def test_evaluation_latency_clears_when_instance_leaves_ready(state: str) -> None:
+def test_evaluation_average_clears_and_max_survives_not_ready(state: str) -> None:
     from divergencesplitter_runtime import InstanceRuntimeState, InstanceStatus
 
     diagnostics = OperationalDiagnostics(
@@ -587,4 +587,39 @@ def test_evaluation_latency_clears_when_instance_leaves_ready(state: str) -> Non
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
     assert metrics.average_latency_ns is None
-    assert metrics.max_latency_ns is None
+    assert metrics.max_latency_ns == 3_000_000
+
+
+def test_sticky_max_resets_only_when_a_new_run_starts() -> None:
+    from divergencesplitter_runtime import LiveSplitRunInfo, LiveSplitSegmentInfo
+
+    def run_info(revision: int) -> LiveSplitRunInfo:
+        return LiveSplitRunInfo(
+            session_id=1,
+            run_revision=revision,
+            segments=(LiveSplitSegmentInfo(0, "A"),),
+        )
+
+    diagnostics = OperationalDiagnostics(
+        StringIO(), time_provider=MutableTimeProvider(6_000_000)
+    )
+    diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
+
+    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(5_000_000))
+    diagnostics.instance_run_changed(0, run_info(1))
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns is None
+
+    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(3_000_000))
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+        3_000_000
+    )
+
+    # Repeating the same Run keeps the sticky Max.
+    diagnostics.instance_run_changed(0, run_info(1))
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+        3_000_000
+    )
+
+    # A new Run resets it.
+    diagnostics.instance_run_changed(0, run_info(2))
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns is None
