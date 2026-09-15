@@ -115,6 +115,22 @@ class _Attempt(Enum):
     STOPPED = auto()
 
 
+class BridgeEventReceiverLike(Protocol):
+    """Receive-side transport contract owned by the instance thread."""
+
+    def start(self) -> None: ...
+
+    def wait_until_started(self) -> None: ...
+
+    def drain(
+        self,
+    ) -> tuple[BridgeEventConnectionLost | BridgeEventReceived, ...]: ...
+
+    def take_overflow(self) -> bool: ...
+
+    def stop(self) -> None: ...
+
+
 class InstanceRuntime:
     """Own one scenario's Bridge connection, rules, and evaluation thread."""
 
@@ -133,6 +149,9 @@ class InstanceRuntime:
         heartbeat_timeout_ms: int = 3000,
         subscriber_factory: Callable[[], BridgeEventSubscriberLike] | None = None,
         adapter_factory: Callable[[], LiveSplitBridgeAdapter] | None = None,
+        receiver_factory: (
+            Callable[[threading.Event], BridgeEventReceiverLike] | None
+        ) = None,
     ) -> None:
         if receive_timeout_ms < 0:
             raise ValueError("receive_timeout_ms must be non-negative")
@@ -152,6 +171,7 @@ class InstanceRuntime:
         self._heartbeat_timeout_ms = heartbeat_timeout_ms
         self._subscriber_factory = subscriber_factory or self._create_subscriber
         self._adapter_factory = adapter_factory or self._create_adapter
+        self._receiver_factory = receiver_factory or self._create_receiver
 
         self._state_lock = threading.RLock()
         self._state = InstanceRuntimeState.CONNECTING
@@ -169,7 +189,7 @@ class InstanceRuntime:
         # Owned exclusively by the instance thread.
         self._scenario_runtime: ScenarioRuntime | None = None
         self._adapter: LiveSplitBridgeAdapter | None = None
-        self._receiver: BridgeEventReceiver | None = None
+        self._receiver: BridgeEventReceiverLike | None = None
 
         self._log("instance.connecting")
 
@@ -253,17 +273,17 @@ class InstanceRuntime:
             rpc_timeout_ms=self._rpc_timeout_ms,
         )
 
-    def _create_receiver(self) -> BridgeEventReceiver:
+    def _create_receiver(self, wakeup: threading.Event) -> BridgeEventReceiver:
         return BridgeEventReceiver(
             subscriber_factory=self._subscriber_factory,
-            wakeup=self._wakeup,
+            wakeup=wakeup,
             receive_timeout_ms=self._receive_timeout_ms,
             capacity=self._event_capacity,
         )
 
     def _run_connection(self) -> _Attempt:
         try:
-            receiver = self._create_receiver()
+            receiver = self._receiver_factory(self._wakeup)
             receiver.start()
             receiver.wait_until_started()
             self._receiver = receiver
@@ -391,7 +411,7 @@ class InstanceRuntime:
     def _drain_late_events(
         self,
         adapter: LiveSplitBridgeAdapter,
-        receiver: BridgeEventReceiver,
+        receiver: BridgeEventReceiverLike,
     ) -> _Attempt | None:
         messages = receiver.drain()
         overflowed = receiver.take_overflow()

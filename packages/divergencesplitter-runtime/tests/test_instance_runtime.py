@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import deque
 from collections.abc import Callable
 from typing import cast
 
@@ -24,6 +23,8 @@ from divergencesplitter import (
 from divergencesplitter.frame.models import SharedFrameEvaluation
 from divergencesplitter_runtime import (
     ActionExecution,
+    BridgeEventConnectionLost,
+    BridgeEventReceived,
     InstanceRuntime,
     InstanceRuntimeState,
     LiveSplitBridgeAdapter,
@@ -40,36 +41,37 @@ from livesplit_bridge import BridgeConnectionLostError, common_pb2
 # -- Deterministic test doubles ------------------------------------------------
 
 
-class ScriptedSubscriber:
-    """Blocking subscriber double consumed by the real BridgeEventReceiver."""
+class ControlledReceiver:
+    """Deterministic receiver double; the test controls drain timing."""
 
-    def __init__(self) -> None:
-        self._condition = threading.Condition()
-        self._items: deque[object] = deque()
-        self.closed = False
+    def __init__(self, wakeup: threading.Event) -> None:
+        self._wakeup = wakeup
+        self._messages: list[BridgeEventConnectionLost | BridgeEventReceived] = []
+        self.started = False
+        self.stopped = False
 
-    def push(self, item: object) -> None:
-        with self._condition:
-            self._items.append(item)
-            self._condition.notify_all()
+    def start(self) -> None:
+        self.started = True
 
-    def receive(
-        self, *, timeout_ms: int | None = None
-    ) -> common_pb2.BridgeEvent | None:
-        with self._condition:
-            if not self._items:
-                self._condition.wait(None if timeout_ms is None else timeout_ms / 1000)
-            if not self._items:
-                return None
-            item = self._items.popleft()
-        if isinstance(item, Exception):
-            raise item
-        return cast(common_pb2.BridgeEvent, item)
+    def wait_until_started(self) -> None:
+        pass
 
-    def close(self) -> None:
-        with self._condition:
-            self.closed = True
-            self._condition.notify_all()
+    def push(self, message: BridgeEventConnectionLost | BridgeEventReceived) -> None:
+        self._messages.append(message)
+
+    def wake(self) -> None:
+        self._wakeup.set()
+
+    def drain(self) -> tuple[BridgeEventConnectionLost | BridgeEventReceived, ...]:
+        messages = tuple(self._messages)
+        self._messages.clear()
+        return messages
+
+    def take_overflow(self) -> bool:
+        return False
+
+    def stop(self) -> None:
+        self.stopped = True
 
 
 class ScriptedAdapter:
@@ -334,7 +336,7 @@ class Harness:
         self.initial = initial if initial is not None else initial_update()
         self.execute_result = execute_result
         self.diagnostics = diagnostics or RecordingDiagnostics()
-        self.subscribers: list[ScriptedSubscriber] = []
+        self.receivers: list[ControlledReceiver] = []
         self.adapters: list[ScriptedAdapter] = []
         self._fixed_adapter = adapter
         self._log = log
@@ -345,15 +347,15 @@ class Harness:
             diagnostics=self.diagnostics,
             reconnect_delay_seconds=0.001,
             receive_timeout_ms=1,
-            subscriber_factory=self._new_subscriber,
             adapter_factory=self._new_adapter,
+            receiver_factory=self._new_receiver,
         )
         self._thread: threading.Thread | None = None
 
-    def _new_subscriber(self) -> ScriptedSubscriber:
-        subscriber = ScriptedSubscriber()
-        self.subscribers.append(subscriber)
-        return subscriber
+    def _new_receiver(self, wakeup: threading.Event) -> ControlledReceiver:
+        receiver = ControlledReceiver(wakeup)
+        self.receivers.append(receiver)
+        return receiver
 
     def _new_adapter(self) -> LiveSplitBridgeAdapter:
         adapter = self._fixed_adapter or ScriptedAdapter(
@@ -365,12 +367,18 @@ class Harness:
         return cast(LiveSplitBridgeAdapter, adapter)
 
     @property
-    def subscriber(self) -> ScriptedSubscriber:
-        return self.subscribers[-1]
+    def receiver(self) -> ControlledReceiver:
+        return self.receivers[-1]
 
     @property
     def adapter(self) -> ScriptedAdapter:
         return self.adapters[-1]
+
+    def push_event(self, update: LiveSplitUpdate) -> None:
+        self.receiver.push(BridgeEventReceived(cast(common_pb2.BridgeEvent, update)))
+
+    def push_loss(self, error: Exception) -> None:
+        self.receiver.push(BridgeEventConnectionLost(error))
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self.instance.run)
@@ -417,7 +425,7 @@ def test_instance_owns_thread_reaches_ready_and_stops_cleanly() -> None:
 
     assert harness.instance.state is InstanceRuntimeState.STOPPED
     assert harness.adapter.closed
-    assert harness.subscriber.closed
+    assert harness.receiver.stopped
     assert harness.diagnostics.stopped
 
 
@@ -567,7 +575,7 @@ def test_bridge_event_is_applied_before_frame_evaluation() -> None:
     harness.start()
     try:
         harness.wait_ready()
-        harness.subscriber.push(
+        harness.push_event(
             LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1))
         )
         harness.instance.publish_frame(shared_frame(1))
@@ -596,11 +604,12 @@ def test_bridge_events_are_applied_in_receive_order() -> None:
     try:
         harness.wait_ready()
         for sequence in (1, 2, 3):
-            harness.subscriber.push(
+            harness.push_event(
                 LiveSplitUpdate(
                     LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=sequence)
                 )
             )
+        harness.instance.publish_frame(shared_frame(1))
         wait_for(lambda: len(handled) == 3)
     finally:
         harness.stop()
@@ -624,7 +633,7 @@ def test_late_event_rejects_stale_action_without_rpc() -> None:
         harness.wait_ready()
         harness.instance.publish_frame(shared_frame(1))
         assert entered.wait(3)
-        harness.subscriber.push(
+        harness.push_event(
             LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1))
         )
         release.set()
@@ -692,7 +701,8 @@ def test_connection_loss_rebuilds_transport_and_scenario() -> None:
     try:
         harness.wait_ready()
         generation = harness.instance.generation
-        harness.subscriber.push(BridgeConnectionLostError("lost"))
+        harness.push_loss(BridgeConnectionLostError("lost"))
+        harness.receiver.wake()
         wait_for(lambda: harness.instance.generation == generation + 1)
         wait_for(lambda: len(harness.adapters) >= 2)
         harness.wait_ready()
