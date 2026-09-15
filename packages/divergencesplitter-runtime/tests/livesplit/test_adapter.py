@@ -732,7 +732,12 @@ class ActionExecutionTest(unittest.TestCase):
                     split_count=split_count,
                 )
                 getattr(client, operation).return_value = common_pb2.OperationResponse(
-                    success=True
+                    success=True,
+                    snapshot=proto_snapshot(
+                        phase=phase,
+                        split_index=split_index,
+                        split_count=split_count,
+                    ),
                 )
                 diagnostics = RecordingDiagnostics()
                 action = Action(operation=operation)
@@ -803,7 +808,9 @@ class ActionExecutionTest(unittest.TestCase):
 
         client = create_autospec(BridgeClient, instance=True)
         client.snapshot.return_value = proto_snapshot(event_sequence=99)
-        client.split.return_value = common_pb2.OperationResponse(success=True)
+        client.split.return_value = common_pb2.OperationResponse(
+            success=True, snapshot=proto_snapshot(event_sequence=99)
+        )
         diagnostics = RecordingDiagnostics()
         action = Action(operation="split")
 
