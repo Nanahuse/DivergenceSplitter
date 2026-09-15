@@ -8,6 +8,7 @@ from livesplit_bridge import (
     BridgeClient,
     BridgeClientError,
     BridgeConnectionLostError,
+    BridgeProtocolError,
     BridgeRemoteError,
     common_pb2,
 )
@@ -268,15 +269,7 @@ class LiveSplitBridgeAdapter:
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
     ) -> None:
-        try:
-            actual_snapshot = self.snapshot()
-        except Exception as error:
-            self._diagnostics.snapshot_failed(self._connection, action, error)
-            if isinstance(
-                error, (BridgeClientError, BridgeConnectionLostError, ValueError)
-            ):
-                raise
-            return
+        actual_snapshot = self._require_baseline()
 
         if not self._matches_expected_state(expected_snapshot, actual_snapshot):
             self._diagnostics.snapshot_mismatched(
@@ -327,7 +320,12 @@ class LiveSplitBridgeAdapter:
                 response.message,
             )
             return
-        self._diagnostics.action_succeeded(self._connection, action, actual_snapshot)
+        if not response.HasField("snapshot"):
+            raise BridgeProtocolError(
+                "successful timer operation response did not contain a snapshot"
+            )
+        result_snapshot = snapshot_from_proto(response.snapshot)
+        self._diagnostics.action_succeeded(self._connection, action, result_snapshot)
 
     @staticmethod
     def _matches_expected_state(
