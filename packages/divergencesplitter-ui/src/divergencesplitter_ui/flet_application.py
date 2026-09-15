@@ -15,14 +15,14 @@ from pathlib import Path
 
 import flet as ft
 
+from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
 from divergencesplitter_ui.monitor.page import Monitor
-from divergencesplitter_ui.presentation import global_status_text
 from divergencesplitter_ui.session import SessionController
 
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 900
 WINDOW_TITLE = "DivergenceSplitter"
-STATUS_INTERVAL_SECONDS = 1.0
+MONITOR_INTERVAL_SECONDS = 0.1
 _MAIN_POLL_SECONDS = 0.1
 
 
@@ -34,9 +34,11 @@ class FletApplication:
         controller: SessionController,
         *,
         initial_configuration: Path | None = None,
+        coordinator: MonitorUpdateCoordinator | None = None,
     ) -> None:
         self._controller = controller
         self._initial_configuration = initial_configuration
+        self._coordinator = coordinator or MonitorUpdateCoordinator(controller)
         self._page: ft.Page | None = None
         self._monitor: Monitor | None = None
         self._tasks: list[asyncio.Task] = []
@@ -76,7 +78,7 @@ class FletApplication:
         self.start_session()
 
         self._tasks = [
-            asyncio.create_task(self._status_loop()),
+            asyncio.create_task(self._monitor_loop()),
             asyncio.create_task(self._preview_loop()),
         ]
         try:
@@ -92,22 +94,18 @@ class FletApplication:
         if event.type == ft.WindowEventType.CLOSE:
             self._stopping = True
 
-    async def _status_loop(self) -> None:
-        await self._apply_status()
+    async def _monitor_loop(self) -> None:
+        await self._apply_monitor()
         while not self._stopping:
-            await asyncio.sleep(STATUS_INTERVAL_SECONDS)
-            await self._apply_status()
+            await asyncio.sleep(MONITOR_INTERVAL_SECONDS)
+            await self._apply_monitor()
 
-    async def _apply_status(self) -> None:
+    async def _apply_monitor(self) -> None:
         monitor = self._monitor
         if monitor is None:
             return
-        diagnostics = self._controller.diagnostics
-        snapshot = None if diagnostics is None else diagnostics.metrics_snapshot()
-        monitor.global_status.apply(
-            global_status_text(self._controller.state, snapshot)
-        )
-        if self._page is not None:
+        snapshot = self._coordinator.snapshot()
+        if monitor.apply(snapshot) and self._page is not None:
             self._page.update()
 
     async def _preview_loop(self) -> None:

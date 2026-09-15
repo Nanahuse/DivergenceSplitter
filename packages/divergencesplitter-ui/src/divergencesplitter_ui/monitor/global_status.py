@@ -50,9 +50,20 @@ class GlobalStatusPanel:
 
         return self._control
 
-    def apply(self, status: GlobalStatusText) -> None:
-        """Write one formatted status onto the widgets."""
+    def apply(self, status: GlobalStatusText) -> bool:
+        """Write one formatted status onto the widgets.
 
-        self._state.value = status.state
-        self._input_fps.value = status.input_fps
-        self._processing_fps.value = status.processing_fps
+        Returns whether any displayed value changed, so the Monitor only asks
+        the page to repaint when something actually differs.
+        """
+
+        changed = False
+        for text, value in (
+            (self._state, status.state),
+            (self._input_fps, status.input_fps),
+            (self._processing_fps, status.processing_fps),
+        ):
+            if text.value != value:
+                text.value = value
+                changed = True
+        return changed

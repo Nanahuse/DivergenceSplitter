@@ -257,13 +257,66 @@ def condition_label(view: ConditionView) -> str:
     return f"{marker}{view.condition_type} [{view.status_label}]{progress}{active}"
 
 
+_INSTANCE_STATE_LABELS = {
+    InstanceRuntimeState.CONNECTING: "Connecting...",
+    InstanceRuntimeState.READY: "Connected",
+    InstanceRuntimeState.FAILED: "Failed",
+    InstanceRuntimeState.STOPPED: "Stopped",
+}
+
+
+def instance_state_label(state: InstanceRuntimeState) -> str:
+    """Return the short display label for one instance lifecycle state."""
+
+    return _INSTANCE_STATE_LABELS[state]
+
+
+def _format_seconds(value_nanoseconds: float | None) -> str:
+    if value_nanoseconds is None:
+        return "—"
+    return f"{value_nanoseconds / 1_000_000_000:.3f} s"
+
+
+def _format_progress_value(value: float | None) -> str:
+    return "—" if value is None else str(value)
+
+
+def condition_progress_label(view: ConditionView) -> str:
+    """Format one condition's current progress for the Scenario Overview.
+
+    Detected conditions render ``current / threshold   Max: max`` and prefix
+    ``ERROR`` when evaluation failed. Elapsed and Hold render seconds, Nth a
+    count, and Then a step. Conditions without progress render an empty string.
+    """
+
+    if view.progress_unit == "score":
+        detail = (
+            f"{format_score(view.latest_score)} / {format_score(view.minimum_score)}"
+            f"   Max: {format_score(view.max_score)}"
+        )
+        if view.status_label == "ERROR":
+            return f"ERROR   {detail}"
+        return detail
+    if view.progress_unit == "nanoseconds":
+        return (
+            f"{_format_seconds(view.progress_current)} / "
+            f"{_format_seconds(view.progress_target)}"
+        )
+    if view.progress_unit == "count":
+        return (
+            f"{_format_progress_value(view.progress_current)} / "
+            f"{_format_progress_value(view.progress_target)}"
+        )
+    if view.progress_unit == "step":
+        return (
+            f"step {_format_progress_value(view.progress_current)} / "
+            f"{_format_progress_value(view.progress_target)}"
+        )
+    return ""
+
+
 def instance_status_label(status: InstanceStatus) -> str:
-    label = {
-        InstanceRuntimeState.CONNECTING: "Connecting...",
-        InstanceRuntimeState.READY: "Connected",
-        InstanceRuntimeState.FAILED: "Failed",
-        InstanceRuntimeState.STOPPED: "Stopped",
-    }[status.state]
+    label = instance_state_label(status.state)
     return f"{label} — {status.error}" if status.error else label
 
 
