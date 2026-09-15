@@ -110,6 +110,8 @@ class InstanceDiagnostics(LiveSplitBridgeDiagnostics, Protocol):
         completed_at: MonotonicTime,
     ) -> None: ...
 
+    def instance_reset(self, scenario_index: int) -> None: ...
+
 
 class _Attempt(Enum):
     CONNECTION_LOST = auto()
@@ -387,6 +389,9 @@ class InstanceRuntime:
         # action validity check, late event drain, or RPC.
         completed_at = self._time_provider.now()
         self._publish_observations(context, completed_at)
+        if action is not None and action.operation in ("start", "reset"):
+            # A new Start/Reset decision begins a fresh evaluation period.
+            self._publish_reset()
         if action is None:
             return None
         return self._dispatch_action(adapter, runtime, action)
@@ -504,6 +509,13 @@ class InstanceRuntime:
             self._diagnostics.instance_evaluated(
                 self.scenario_index, context, completed_at
             )
+        except Exception:  # noqa: BLE001, S110
+            # Diagnostics must never break the evaluation cycle.
+            pass
+
+    def _publish_reset(self) -> None:
+        try:
+            self._diagnostics.instance_reset(self.scenario_index)
         except Exception:  # noqa: BLE001, S110
             # Diagnostics must never break the evaluation cycle.
             pass

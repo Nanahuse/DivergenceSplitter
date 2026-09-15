@@ -158,7 +158,6 @@ class OperationalDiagnostics:
         self._processed_frames_total = 0
         self._evaluation_indices: tuple[int, ...] = ()
         self._instance_latency: dict[int, _LatencyWindow] = {}
-        self._instance_run_identity: dict[int, tuple[int, int]] = {}
         self._observable_lock = threading.Lock()
         self._latest_input_frame: Frame | None = None
         self._latest_processed_frame: Frame | None = None
@@ -210,7 +209,6 @@ class OperationalDiagnostics:
         with self._metrics_lock:
             self._evaluation_indices = tuple(range(len(instances)))
             self._instance_latency = {}
-            self._instance_run_identity = {}
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]:
         """Copy the latest lifecycle outcomes, independently of logging level."""
@@ -253,26 +251,12 @@ class OperationalDiagnostics:
         scenario_index: int,
         run_info: LiveSplitRunInfo | None,
     ) -> None:
-        """Record the current Run for one scenario, or clear it on ``None``.
-
-        Starting a new Run resets the sticky evaluation Max for that instance so
-        the displayed Max belongs to the current Run.
-        """
+        """Record the current Run for one scenario, or clear it on ``None``."""
         with self._observable_lock:
             if run_info is None:
                 self._instance_runs.pop(scenario_index, None)
             else:
                 self._instance_runs[scenario_index] = run_info
-        if run_info is None:
-            return
-        identity = (run_info.session_id, run_info.run_revision)
-        with self._metrics_lock:
-            if self._instance_run_identity.get(scenario_index) == identity:
-                return
-            self._instance_run_identity[scenario_index] = identity
-            window = self._instance_latency.get(scenario_index)
-            if window is not None:
-                window.reset_max()
 
     def instance_run_infos(self) -> tuple[InstanceRunSnapshot, ...]:
         """Copy the current Run per scenario in stable scenario-index order."""
@@ -465,6 +449,13 @@ class OperationalDiagnostics:
                 window = _LatencyWindow()
                 self._instance_latency[scenario_index] = window
             window.record(completed_at.nanoseconds, latency_ns)
+
+    def instance_reset(self, scenario_index: int) -> None:
+        """Clear one instance's latency window on a new Start/Reset decision."""
+        with self._metrics_lock:
+            window = self._instance_latency.get(scenario_index)
+            if window is not None:
+                window.reset()
 
     def take_latest_input_frame(self) -> Frame | None:
         """Return the newest captured input Frame and clear the slot.

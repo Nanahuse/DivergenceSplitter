@@ -168,6 +168,7 @@ class RecordingDiagnostics:
         self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
         self.evaluated: list[int] = []
         self.completions: list[int] = []
+        self.resets: list[int] = []
 
     def worker_started(self, connection: LiveSplitConnection) -> None:
         self.started.append(connection)
@@ -201,6 +202,9 @@ class RecordingDiagnostics:
     ) -> None:
         self.evaluated.append(scenario_index)
         self.completions.append(completed_at.nanoseconds)
+
+    def instance_reset(self, scenario_index: int) -> None:
+        self.resets.append(scenario_index)
 
     def snapshot_failed(
         self, connection: LiveSplitConnection, action: Action, error: Exception
@@ -689,6 +693,27 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
         harness.stop()
 
     assert [action for action, _ in harness.adapter.attempts] == [Action("split")]
+    assert harness.diagnostics.resets == []
+
+
+def test_start_or_reset_decision_resets_evaluation_metrics() -> None:
+    reset_condition = RecordingCondition(True)
+    scenario = Scenario(
+        start_condition=RecordingCondition(False),
+        reset_condition=reset_condition,
+        incomplete_condition=None,
+        splits=((Rule(RecordingCondition(True), Action("split")),),),
+    )
+    harness = Harness(scenario)
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: bool(harness.diagnostics.resets))
+    finally:
+        harness.stop()
+
+    assert harness.diagnostics.resets == [0]
 
 
 def test_evaluation_latency_ends_at_evaluate_return() -> None:

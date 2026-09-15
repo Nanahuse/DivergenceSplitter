@@ -423,6 +423,9 @@ class RecordingDiagnostics:
     ) -> None:
         self.evaluated[scenario_index] = self.evaluated.get(scenario_index, 0) + 1
 
+    def instance_reset(self, scenario_index: int) -> None:
+        pass
+
     def worker_stopped(self, connection: LiveSplitConnection) -> None:
         self.worker_stopped_event.set()
 
