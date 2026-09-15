@@ -40,6 +40,25 @@ class InputPreviewPanel:
 
         return self._control
 
+    async def render_latest(self, diagnostics: ObservableDiagnostics | None) -> bool:
+        """Render the newest processed frame; return whether one was rendered.
+
+        Window teardown can make ``RawImage.render`` fail with a normal
+        ``RuntimeError``/``TimeoutError``; those are ignored so the Monitor
+        preview can pause and resume. Other exceptions propagate.
+        """
+
+        if diagnostics is None:
+            return False
+        frame = diagnostics.take_latest_processed_frame()
+        if frame is None:
+            return False
+        try:
+            await self._image.render(prepare_preview(frame.image))
+        except RuntimeError, TimeoutError:
+            return False
+        return True
+
     async def stream(
         self,
         diagnostics_provider: _DiagnosticsProvider,
@@ -47,20 +66,8 @@ class InputPreviewPanel:
         *,
         interval_seconds: float = PREVIEW_INTERVAL_SECONDS,
     ) -> None:
-        """Render the latest processed frame until ``should_stop`` is true.
-
-        Window teardown can make ``RawImage.render`` fail with a normal
-        ``RuntimeError``/``TimeoutError``; those end the loop quietly. Other
-        exceptions propagate so real defects are not swallowed.
-        """
+        """Render the latest processed frame until ``should_stop`` is true."""
 
         while not should_stop():
-            diagnostics = diagnostics_provider()
-            if diagnostics is not None:
-                frame = diagnostics.take_latest_processed_frame()
-                if frame is not None:
-                    try:
-                        await self._image.render(prepare_preview(frame.image))
-                    except RuntimeError, TimeoutError:
-                        return
+            await self.render_latest(diagnostics_provider())
             await asyncio.sleep(interval_seconds)
