@@ -683,7 +683,11 @@ class ActionExecutionTest(unittest.TestCase):
             diagnostics=diagnostics,
             client=client,
         )
-        adapter._set_baseline(domain_snapshot())
+        snapshot = client.snapshot.return_value
+        if isinstance(snapshot, common_pb2.TimerSnapshot):
+            adapter._set_baseline(snapshot_from_proto(snapshot))
+        else:
+            adapter._set_baseline(domain_snapshot())
         for operation in ("start", "split", "skip", "undo", "reset", "pause", "resume"):
             getattr(client, operation).return_value = common_pb2.OperationResponse(
                 success=True, snapshot=proto_snapshot()
@@ -856,7 +860,7 @@ class ActionExecutionTest(unittest.TestCase):
 
         self.make_adapter(client, diagnostics).execute_action(action, domain_snapshot())
 
-        self.assert_no_operation(client)
+        client.split.assert_called_once_with()
         client.snapshot.assert_not_called()
 
     def test_reports_operation_rejection_without_retry(self) -> None:
