@@ -689,9 +689,11 @@ class ActionExecutionTest(unittest.TestCase):
         else:
             adapter._set_baseline(domain_snapshot())
         for operation in ("start", "split", "skip", "undo", "reset", "pause", "resume"):
-            getattr(client, operation).return_value = common_pb2.OperationResponse(
-                success=True, snapshot=proto_snapshot()
-            )
+            operation_client = getattr(client, operation)
+            if not isinstance(operation_client.return_value, common_pb2.OperationResponse):
+                operation_client.return_value = common_pb2.OperationResponse(
+                    success=True, snapshot=snapshot if isinstance(snapshot, common_pb2.TimerSnapshot) else proto_snapshot()
+                )
         return adapter
 
     def assert_no_operation(self, client: BridgeClient) -> None:
