@@ -1,27 +1,29 @@
-"""Processing loop that coordinates frames, scenarios, and Bridge workers."""
+"""Frame dispatcher that normalizes frames and hands them to each instance.
+
+Scenario evaluation no longer happens here. Each :class:`InstanceRuntime`
+evaluates the shared frame on its own thread; the dispatcher only owns the
+capture-to-frame pipeline and the latest-only frame slot handoff.
+"""
 
 import threading
 from typing import Protocol
 
 from divergencesplitter.clock import MonotonicTime, TimeProvider
-from divergencesplitter.frame.models import (
-    Frame,
-    FrameContext,
-    SharedFrameEvaluation,
-)
+from divergencesplitter.frame.models import Frame, FrameContext, SharedFrameEvaluation
 from divergencesplitter.frame.normalizer import (
     FrameNormalizationError,
     FrameNormalizer,
 )
 
 from divergencesplitter_runtime.capture import LatestFrameBuffer
-from divergencesplitter_runtime.instance_runtime import (
-    InstanceRuntime,
-    InstanceRuntimeState,
-)
-from divergencesplitter_runtime.livesplit.models import LiveSplitRunInfo
 
 DEFAULT_FRAME_WAIT_SECONDS = 0.05
+
+
+class FrameSink(Protocol):
+    """Receives the newest shared frame; implemented by InstanceRuntime."""
+
+    def publish_frame(self, shared: SharedFrameEvaluation) -> None: ...
 
 
 class ProcessingDiagnostics(Protocol):
@@ -38,25 +40,13 @@ class ProcessingDiagnostics(Protocol):
 
     def frame_processing_completed(self, context: FrameContext) -> None: ...
 
-    def scenario_evaluation_failed(
-        self,
-        scenario_index: int,
-        error: Exception,
-    ) -> None: ...
-
-    def instance_run_changed(
-        self,
-        scenario_index: int,
-        run_info: LiveSplitRunInfo | None,
-    ) -> None: ...
-
 
 class ProcessingRuntime:
-    """Apply Bridge updates and evaluate all scenarios against each latest frame."""
+    """Normalize captured frames and publish the shared evaluation to instances."""
 
     def __init__(
         self,
-        instances: tuple[InstanceRuntime, ...],
+        instances: tuple[FrameSink, ...],
         frame_buffer: LatestFrameBuffer,
         normalizer: FrameNormalizer,
         *,
@@ -79,10 +69,6 @@ class ProcessingRuntime:
             frame = self._frame_buffer.take(DEFAULT_FRAME_WAIT_SECONDS)
             if self._stop_requested.is_set():
                 return
-            # Drain Bridge updates even when the source produces no frame, so a
-            # connected instance can validate its scenario and publish its
-            # lifecycle status and Run info while capture is idle.
-            self._apply_bridge_updates()
             if frame is None:
                 continue
             now = self._time_provider.now()
@@ -93,43 +79,6 @@ class ProcessingRuntime:
                 self.request_stop()
                 return
             shared = SharedFrameEvaluation(frame=normalized, now=now)
-            evaluated_condition_ids = self._evaluate_scenarios(shared)
-            context = FrameContext(
-                shared=shared,
-                evaluated_condition_ids=evaluated_condition_ids,
-            )
-            self._diagnostics.frame_processing_completed(context)
-
-    def _apply_bridge_updates(self) -> None:
-        for scenario_index, instance in enumerate(self._instances):
-            previous = instance.run_info
-            instance.process_updates()
-            current = instance.run_info
-            if current != previous:
-                self._diagnostics.instance_run_changed(scenario_index, current)
-
-    def _evaluate_scenarios(self, shared: SharedFrameEvaluation) -> set[int]:
-        evaluated_condition_ids: set[int] = set()
-        for scenario_index, instance in enumerate(self._instances):
-            scenario = instance.scenario_runtime
-            worker = instance.worker
-            if (
-                instance.state is not InstanceRuntimeState.READY
-                or scenario is None
-                or not worker.is_available
-            ):
-                continue
-            # Each scenario gets its own context, but all contexts of a frame
-            # share the preprocessing and detection caches.
-            context = FrameContext(shared=shared)
-            try:
-                action = scenario.evaluate(context)
-            except Exception as error:  # noqa: BLE001
-                self._diagnostics.scenario_evaluation_failed(scenario_index, error)
-                continue
-            finally:
-                evaluated_condition_ids |= context.evaluated_condition_ids
-            snapshot = scenario.current_snapshot
-            if action is not None and snapshot is not None:
-                worker.submit_action(action, snapshot, generation=instance.generation)
-        return evaluated_condition_ids
+            for instance in self._instances:
+                instance.publish_frame(shared)
+            self._diagnostics.frame_processing_completed(FrameContext(shared=shared))

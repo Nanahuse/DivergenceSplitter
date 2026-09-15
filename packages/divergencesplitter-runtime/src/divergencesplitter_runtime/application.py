@@ -1,4 +1,4 @@
-"""Top-level lifecycle for Capture, Processing, and Bridge workers."""
+"""Top-level lifecycle for capture, frame dispatch, and instance threads."""
 
 import logging
 import threading
@@ -16,15 +16,12 @@ from divergencesplitter_runtime.configuration.validation import (
     validate_instances,
 )
 from divergencesplitter_runtime.instance_runtime import (
+    InstanceDiagnostics,
     InstanceRuntime,
     InstanceRuntimeState,
     InstanceStatus,
 )
 from divergencesplitter_runtime.instances import ScenarioInstance
-from divergencesplitter_runtime.livesplit.worker import (
-    BridgeWorker,
-    BridgeWorkerDiagnostics,
-)
 from divergencesplitter_runtime.processing import (
     ProcessingDiagnostics,
     ProcessingRuntime,
@@ -34,7 +31,7 @@ from divergencesplitter_runtime.processing import (
 class ApplicationDiagnostics(
     CaptureDiagnostics,
     ProcessingDiagnostics,
-    BridgeWorkerDiagnostics,
+    InstanceDiagnostics,
     Protocol,
 ):
     """Combined typed diagnostics consumed by the application components."""
@@ -47,7 +44,7 @@ class ApplicationDiagnostics(
     def instances_changed(self, statuses: tuple[InstanceStatus, ...]) -> None: ...
 
     def runtime_started(self) -> None:
-        """Shared Capture/Processing is starting; instances may still be connecting."""
+        """Shared capture/dispatch is starting; instances may still be connecting."""
         ...
 
 
@@ -89,8 +86,10 @@ class ApplicationRuntime:
         self._frame_buffer = LatestFrameBuffer()
         self._instances = tuple(
             InstanceRuntime(
+                index,
+                instance.connection,
                 instance.scenario,
-                BridgeWorker(instance.connection, diagnostics=diagnostics),
+                diagnostics=diagnostics,
                 logger=diagnostics.scenario_logger(index),
             )
             for index, instance in enumerate(instances)
@@ -114,24 +113,21 @@ class ApplicationRuntime:
         return self._instances
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]:
-        return tuple(
-            instance.status(index) for index, instance in enumerate(self._instances)
-        )
+        return tuple(instance.status() for instance in self._instances)
 
     def request_stop(self) -> None:
         self._stop_requested.set()
         self._capture.request_stop()
         self._processing.request_stop()
         for instance in self._instances:
-            instance.worker.request_stop()
+            instance.request_stop()
 
     def run(self) -> None:
-        worker_threads = tuple(
-            threading.Thread(target=worker.run, name=f"bridge-worker-{index}")
+        instance_threads = tuple(
+            threading.Thread(target=instance.run, name=f"instance-{index}")
             for index, instance in enumerate(self._instances)
-            for worker in (instance.worker,)
         )
-        for thread in worker_threads:
+        for thread in instance_threads:
             thread.start()
 
         instance_failure: AllInstancesFailedError | None = None
@@ -189,12 +185,10 @@ class ApplicationRuntime:
                 self._diagnostics.stopped()
             if processing_thread is not None:
                 processing_thread.join()
-            for thread in worker_threads:
+            for thread in instance_threads:
                 thread.join()
             for index, instance in enumerate(self._instances):
                 instance.stop()
-                # Drop stale LiveSplit Run info once the Processing thread that
-                # would report the change has already stopped.
                 self._diagnostics.instance_run_changed(index, None)
             # Keep failed outcomes visible after teardown; other instances stopped.
             self._diagnostics.instances_changed(

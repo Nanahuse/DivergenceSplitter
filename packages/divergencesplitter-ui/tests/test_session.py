@@ -649,10 +649,10 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
     )
     with (
         patch(
-            "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter"
+            "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter"
         ) as adapter,
         patch(
-            "divergencesplitter_runtime.livesplit.worker.BridgeEventSubscriber",
+            "divergencesplitter_runtime.instance_runtime.BridgeEventSubscriber",
             IdleSubscriber,
         ),
     ):

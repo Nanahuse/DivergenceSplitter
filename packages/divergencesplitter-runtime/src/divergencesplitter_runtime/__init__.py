@@ -34,20 +34,17 @@ from divergencesplitter_runtime.configuration import (
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instance_runtime import (
+    InstanceDiagnostics,
     InstanceRuntime,
     InstanceRuntimeState,
     InstanceStatus,
 )
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit import (
-    ActionSubmission,
-    BridgeActionRequest,
+    ActionExecution,
     BridgeEventConnectionLost,
     BridgeEventReceived,
     BridgeEventReceiver,
-    BridgeWorker,
-    BridgeWorkerDiagnostics,
-    BridgeWorkerState,
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
     LiveSplitResyncReason,
@@ -78,18 +75,14 @@ from divergencesplitter_runtime.processing import (
 from divergencesplitter_runtime.scenario import ScenarioRuntime
 
 __all__ = [
-    "ActionSubmission",
+    "ActionExecution",
     "AllInstancesFailedError",
     "ApplicationConfiguration",
     "ApplicationDiagnostics",
     "ApplicationRuntime",
-    "BridgeActionRequest",
     "BridgeEventConnectionLost",
     "BridgeEventReceived",
     "BridgeEventReceiver",
-    "BridgeWorker",
-    "BridgeWorkerDiagnostics",
-    "BridgeWorkerState",
     "CameraBackend",
     "CameraDeviceConfiguration",
     "CameraModeConfiguration",
@@ -101,6 +94,7 @@ __all__ = [
     "DetectorNode",
     "DetectorTreeSnapshot",
     "InstanceConfiguration",
+    "InstanceDiagnostics",
     "InstanceRunSnapshot",
     "InstanceRuntime",
     "InstanceRuntimeState",

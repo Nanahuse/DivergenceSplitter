@@ -241,6 +241,20 @@ class ScenarioRuntime:
             self._start_action(action, context)
         return action
 
+    def action_not_dispatched(self, action: Action) -> None:
+        """Release a pending action that was never sent to LiveSplit.
+
+        Called when a locally rejected (stale or precondition-failing) action
+        leaves ``evaluate`` with a pending action set. The rule progress the
+        action advanced is reset so the next frame can decide again.
+        """
+        if self._pending_action is None:
+            return
+        snapshot = self._snapshot
+        if snapshot is not None:
+            self._reset_pending_action(snapshot)
+        self._clear_pending_action()
+
     def _reset_pending_action(self, snapshot: LiveSplitSnapshot) -> None:
         action = self._pending_action
         if action is None:

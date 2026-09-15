@@ -315,7 +315,7 @@ class TestConditionObservations:
         diagnostics.bind_runtime((make_instance(scenario),), make_frame_source())
         diagnostics.take_condition_observations()
         assert condition.evaluate(context) is False
-        diagnostics.frame_processing_completed(context)
+        diagnostics.instance_evaluated(0, context)
 
         observations = {
             item.condition: item for item in diagnostics.take_condition_observations()
@@ -343,7 +343,7 @@ class TestConditionObservations:
             context = make_context()
             if current is not None:
                 current.evaluate(context)
-            diagnostics.frame_processing_completed(context)
+            diagnostics.instance_evaluated(0, context)
             observations = diagnostics.take_condition_observations()
             assert {id(item.condition) for item in observations if item.active} == (
                 {id(current)} if current is not None else set()

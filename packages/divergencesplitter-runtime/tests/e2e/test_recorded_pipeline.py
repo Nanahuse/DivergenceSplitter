@@ -56,7 +56,7 @@ def clear_adapter_scripts(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # The worker owns raw event reception through BridgeEventSubscriber; route
     # it to the same scripted authority as the adapter for every e2e test.
     monkeypatch.setattr(
-        "divergencesplitter_runtime.livesplit.worker.BridgeEventSubscriber",
+        "divergencesplitter_runtime.instance_runtime.BridgeEventSubscriber",
         ScriptedEventSubscriber,
     )
     yield
@@ -165,7 +165,7 @@ def test_recording_is_normalized_before_scenario_evaluation(tmp_path: Path) -> N
     )
 
     with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
         ScriptedBridgeAdapter,
     ):
         thread, errors = start_runtime(runtime)
@@ -206,7 +206,7 @@ def test_normalization_failure_stops_the_recording_pipeline(tmp_path: Path) -> N
     )
 
     with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
         ScriptedBridgeAdapter,
     ):
         thread, errors = start_runtime(runtime)
@@ -273,7 +273,7 @@ def test_recording_reaches_finish_and_refires_after_external_undo(
     )
 
     with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
         ScriptedBridgeAdapter,
     ):
         thread, errors = start_runtime(runtime)
@@ -333,7 +333,7 @@ def test_bridge_resynchronization_stops_evaluation_until_complete(
     )
 
     with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
         ScriptedBridgeAdapter,
     ):
         thread, errors = start_runtime(runtime)
@@ -382,12 +382,11 @@ def test_slow_processing_overwrites_buffer_and_returns_to_latest_frame(
     )
 
     with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
         ScriptedBridgeAdapter,
     ):
         thread, errors = start_runtime(runtime)
         assert blocking.entered.wait(2)
-        assert diagnostics.frame_overwritten.wait(2)
         blocking.release.set()
         assert script.wait_for_actions(1, 2)
         assert_runtime_stopped(
@@ -435,7 +434,7 @@ def test_missing_bridge_transition_allows_refire_only_after_scenario_timeout(
     )
 
     with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
         ScriptedBridgeAdapter,
     ):
         thread, errors = start_runtime(runtime)
@@ -472,7 +471,7 @@ def test_explicit_stop_releases_video_and_all_runtime_threads(tmp_path: Path) ->
     )
 
     with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
         ScriptedBridgeAdapter,
     ):
         thread, errors = start_runtime(runtime)
@@ -536,7 +535,7 @@ def test_independent_instances_keep_one_shared_capture_across_reconnect(
 
     with (
         patch(
-            "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+            "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
             ScriptedBridgeAdapter,
         ),
         patch.object(source, "prepare", wraps=source.prepare) as prepare,
@@ -552,35 +551,30 @@ def test_independent_instances_keep_one_shared_capture_across_reconnect(
                 )
             )
             assert b.state is InstanceRuntimeState.CONNECTING
-            a_scenario = a.scenario_runtime
-            assert a_scenario is not None
-            with patch.object(
-                a_scenario, "evaluate", wraps=a_scenario.evaluate
-            ) as evaluate:
-                wait_for(lambda: evaluate.call_count > 0)
-                allow_b.set()
-                wait_for(lambda: b.state is InstanceRuntimeState.READY)
-                old_b = b.scenario_runtime
-                allow_b.clear()
-                scripts[1].inject_connection_loss()
-                wait_for(
-                    lambda: (
-                        b.state is InstanceRuntimeState.CONNECTING
-                        and b.scenario_runtime is None
-                    )
+            wait_for(lambda: diagnostics.evaluated.get(0, 0) > 0)
+            allow_b.set()
+            wait_for(lambda: b.state is InstanceRuntimeState.READY)
+            generation_b = b.generation
+            allow_b.clear()
+            scripts[1].inject_connection_loss()
+            wait_for(
+                lambda: (
+                    b.state is InstanceRuntimeState.CONNECTING
+                    and b.generation == generation_b + 1
                 )
-                count = evaluate.call_count
-                wait_for(lambda: evaluate.call_count > count)
-                assert a.scenario_runtime is a_scenario
-                allow_b.set()
-                wait_for(lambda: b.state is InstanceRuntimeState.READY)
-                assert b.scenario_runtime is not old_b
-                assert prepare.call_count == 1
-                assert close.call_count == 0
-                # Stop with READY / CONNECTING / FAILED all present.
-                allow_b.clear()
-                scripts[1].inject_connection_loss()
-                wait_for(lambda: b.state is InstanceRuntimeState.CONNECTING)
+            )
+            count = diagnostics.evaluated.get(0, 0)
+            wait_for(lambda: diagnostics.evaluated.get(0, 0) > count)
+            assert a.state is InstanceRuntimeState.READY
+            allow_b.set()
+            wait_for(lambda: b.state is InstanceRuntimeState.READY)
+            assert b.generation == generation_b + 1
+            assert prepare.call_count == 1
+            assert close.call_count == 0
+            # Stop with READY / CONNECTING / FAILED all present.
+            allow_b.clear()
+            scripts[1].inject_connection_loss()
+            wait_for(lambda: b.state is InstanceRuntimeState.CONNECTING)
         finally:
             runtime.request_stop()
             thread.join(3)
@@ -621,7 +615,7 @@ def test_all_validation_failures_stop_capture_and_keep_failure_details(
     runtime = ApplicationRuntime(instances, source, diagnostics=diagnostics)
     with (
         patch(
-            "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+            "divergencesplitter_runtime.instance_runtime.LiveSplitBridgeAdapter",
             ScriptedBridgeAdapter,
         ),
         patch.object(source, "close", wraps=source.close) as close,

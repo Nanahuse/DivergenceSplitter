@@ -4,6 +4,7 @@ from unittest.mock import create_autospec, patch
 
 from divergencesplitter import Action, LiveSplitConnection
 from divergencesplitter_runtime import (
+    ActionExecution,
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
     LiveSplitResyncReason,
@@ -710,7 +711,7 @@ class ActionExecutionTest(unittest.TestCase):
                     snapshot_from_proto(client.snapshot.return_value),
                 )
 
-                self.assertIsNone(result)
+                self.assertIs(result, ActionExecution.DISPATCHED)
                 client.snapshot.assert_not_called()
                 getattr(client, operation).assert_called_once_with()
                 expected = snapshot_from_proto(client.snapshot.return_value)
@@ -878,36 +879,47 @@ class ActionExecutionTest(unittest.TestCase):
                     ],
                 )
 
-    def test_reports_unknown_operation_result_without_retry(self) -> None:
-        for error in (
-            BridgeResponseTimeoutError("operation timed out"),
-            BridgeProtocolError("invalid response"),
-        ):
-            with self.subTest(error=error):
-                client = create_autospec(BridgeRpcClient, instance=True)
-                client.snapshot.return_value = proto_snapshot()
-                client.split.side_effect = error
-                diagnostics = RecordingDiagnostics()
-                action = Action(operation="split")
+    def test_timeout_is_reported_as_unknown_without_retry(self) -> None:
+        error = BridgeResponseTimeoutError("operation timed out")
+        client = create_autospec(BridgeRpcClient, instance=True)
+        client.snapshot.return_value = proto_snapshot()
+        client.split.side_effect = error
+        diagnostics = RecordingDiagnostics()
+        action = Action(operation="split")
 
-                with self.assertRaises(type(error)):
-                    self.make_adapter(client, diagnostics).execute_action(
-                        action, domain_snapshot()
-                    )
+        result = self.make_adapter(client, diagnostics).execute_action(
+            action, domain_snapshot()
+        )
 
-                client.split.assert_called_once_with()
-                self.assertEqual(
-                    diagnostics.events,
-                    [
-                        (
-                            "action_result_unknown",
-                            LiveSplitConnection("rpc", "event"),
-                            action,
-                            domain_snapshot(),
-                            error,
-                        )
-                    ],
+        self.assertIs(result, ActionExecution.UNKNOWN)
+        client.split.assert_called_once_with()
+        self.assertEqual(
+            diagnostics.events,
+            [
+                (
+                    "action_result_unknown",
+                    LiveSplitConnection("rpc", "event"),
+                    action,
+                    domain_snapshot(),
+                    error,
                 )
+            ],
+        )
+
+    def test_protocol_failure_is_not_swallowed(self) -> None:
+        error = BridgeProtocolError("invalid response")
+        client = create_autospec(BridgeRpcClient, instance=True)
+        client.snapshot.return_value = proto_snapshot()
+        client.split.side_effect = error
+        diagnostics = RecordingDiagnostics()
+        action = Action(operation="split")
+
+        with self.assertRaises(BridgeProtocolError):
+            self.make_adapter(client, diagnostics).execute_action(
+                action, domain_snapshot()
+            )
+
+        client.split.assert_called_once_with()
 
     def test_maps_the_operation_response_snapshot(self) -> None:
         client = create_autospec(BridgeRpcClient, instance=True)
