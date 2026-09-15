@@ -683,7 +683,7 @@ class ActionExecutionTest(unittest.TestCase):
             diagnostics=diagnostics,
             client=client,
         )
-        snapshot = client.snapshot.return_value
+        snapshot = getattr(client.snapshot, "return_value", None)
         if isinstance(snapshot, common_pb2.TimerSnapshot):
             adapter._set_baseline(snapshot_from_proto(snapshot))
         else:
