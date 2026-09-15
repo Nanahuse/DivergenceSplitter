@@ -690,9 +690,14 @@ class ActionExecutionTest(unittest.TestCase):
             adapter._set_baseline(domain_snapshot())
         for operation in ("start", "split", "skip", "undo", "reset", "pause", "resume"):
             operation_client = getattr(client, operation)
-            if not isinstance(operation_client.return_value, common_pb2.OperationResponse):
+            if not isinstance(
+                operation_client.return_value, common_pb2.OperationResponse
+            ):
                 operation_client.return_value = common_pb2.OperationResponse(
-                    success=True, snapshot=snapshot if isinstance(snapshot, common_pb2.TimerSnapshot) else proto_snapshot()
+                    success=True,
+                    snapshot=snapshot
+                    if isinstance(snapshot, common_pb2.TimerSnapshot)
+                    else proto_snapshot(),
                 )
         return adapter
 
