@@ -4,6 +4,11 @@ from divergencesplitter_runtime.livesplit.adapter import (
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
 )
+from divergencesplitter_runtime.livesplit.event_receiver import (
+    BridgeEventConnectionLost,
+    BridgeEventReceived,
+    BridgeEventReceiver,
+)
 from divergencesplitter_runtime.livesplit.mapping import (
     run_info_from_proto,
     snapshot_from_proto,
@@ -29,6 +34,9 @@ from divergencesplitter_runtime.livesplit.worker import (
 __all__ = [
     "ActionSubmission",
     "BridgeActionRequest",
+    "BridgeEventConnectionLost",
+    "BridgeEventReceived",
+    "BridgeEventReceiver",
     "BridgeWorker",
     "BridgeWorkerDiagnostics",
     "BridgeWorkerState",

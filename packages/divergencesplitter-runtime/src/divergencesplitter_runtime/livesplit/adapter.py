@@ -1,15 +1,21 @@
-"""Runtime boundary for the official LiveSplit.Bridge client."""
+"""Runtime boundary for the official LiveSplit.Bridge client.
+
+This adapter owns only the RPC side of the connection. Raw SUB event reception
+is performed by :mod:`divergencesplitter_runtime.livesplit.event_receiver` on a
+dedicated thread; :meth:`LiveSplitBridgeAdapter.handle_event` applies the
+baseline/session/sequence validation to one received event.
+"""
 
 from collections.abc import Callable
 from typing import Protocol, Self
 
 from divergencesplitter import Action, LiveSplitConnection
 from livesplit_bridge import (
-    BridgeClient,
     BridgeClientError,
     BridgeConnectionLostError,
     BridgeProtocolError,
     BridgeRemoteError,
+    BridgeRpcClient,
     common_pb2,
 )
 
@@ -113,20 +119,17 @@ class LiveSplitBridgeAdapter:
         connection: LiveSplitConnection,
         *,
         diagnostics: LiveSplitBridgeDiagnostics,
-        client: BridgeClient | None = None,
+        rpc: BridgeRpcClient | None = None,
         rpc_timeout_ms: int = 3000,
-        heartbeat_timeout_ms: int = 3000,
     ) -> None:
         self._connection = connection
         self._diagnostics = diagnostics
-        self._client = (
-            client
-            if client is not None
-            else BridgeClient(
+        self._rpc = (
+            rpc
+            if rpc is not None
+            else BridgeRpcClient(
                 connection.rpc_endpoint,
-                connection.event_endpoint,
                 response_timeout_ms=rpc_timeout_ms,
-                heartbeat_timeout_ms=heartbeat_timeout_ms,
             )
         )
         self._closed = False
@@ -134,7 +137,7 @@ class LiveSplitBridgeAdapter:
         self._run_info: LiveSplitRunInfo | None = None
 
     def attach(self) -> LiveSplitUpdate:
-        response = self._client.attach()
+        response = self._rpc.attach()
         snapshot = snapshot_from_proto(response.snapshot)
         if response.session_id != snapshot.session_id:
             raise ValueError(
@@ -145,17 +148,13 @@ class LiveSplitBridgeAdapter:
         return LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot, run_info)
 
     def snapshot(self) -> LiveSplitSnapshot:
-        return snapshot_from_proto(self._client.snapshot())
+        return snapshot_from_proto(self._rpc.snapshot())
 
-    def receive(
+    def handle_event(
         self,
-        *,
-        timeout_ms: int | None = None,
+        event: common_pb2.BridgeEvent,
     ) -> LiveSplitUpdate | LiveSplitResyncReason | None:
-        event = self._client.receive(timeout_ms=timeout_ms)
-        if event is None:
-            return None
-
+        """Validate one raw event against the baseline and convert it."""
         baseline = self._baseline
         if baseline is None:
             raise RuntimeError("attach must complete before receiving Bridge events")
@@ -200,25 +199,11 @@ class LiveSplitBridgeAdapter:
             return update
         return LiveSplitUpdate(update.kind, update.snapshot, run_info)
 
-    def reconnect(self) -> LiveSplitUpdate:
-        return self._resync(LiveSplitResyncReason.CONNECTION_LOST, reconnect=True)
-
     def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
-        return self._resync(reason, reconnect=False)
-
-    def _resync(
-        self,
-        reason: LiveSplitResyncReason,
-        *,
-        reconnect: bool,
-    ) -> LiveSplitUpdate:
         previous = self._require_baseline()
         self._diagnostics.resync_started(self._connection, reason)
-        proto_snapshot = (
-            self._client.reconnect() if reconnect else self._client.snapshot()
-        )
-        snapshot = snapshot_from_proto(proto_snapshot)
-        if not reconnect and snapshot.session_id != previous.session_id:
+        snapshot = snapshot_from_proto(self._rpc.snapshot())
+        if snapshot.session_id != previous.session_id:
             raise BridgeConnectionLostError("Bridge session changed during resync")
         run_info = self._sync_run(snapshot, force=True)
         self._set_baseline(snapshot)
@@ -243,7 +228,7 @@ class LiveSplitBridgeAdapter:
             and snapshot.run_revision <= cached.run_revision
         ):
             return None
-        run = run_info_from_proto(self._client.get_run())
+        run = run_info_from_proto(self._rpc.get_run())
         if run.session_id != snapshot.session_id:
             raise ValueError(
                 "Bridge TimerSnapshot and RunSnapshot session IDs do not match"
@@ -286,13 +271,13 @@ class LiveSplitBridgeAdapter:
             return
 
         operation: Callable[[], common_pb2.OperationResponse] = {
-            "start": self._client.start,
-            "split": self._client.split,
-            "skip": self._client.skip,
-            "undo": self._client.undo,
-            "reset": self._client.reset,
-            "pause": self._client.pause,
-            "resume": self._client.resume,
+            "start": self._rpc.start,
+            "split": self._rpc.split,
+            "skip": self._rpc.skip,
+            "undo": self._rpc.undo,
+            "reset": self._rpc.reset,
+            "pause": self._rpc.pause,
+            "resume": self._rpc.resume,
         }[action.operation]
         try:
             response = operation()
@@ -373,7 +358,7 @@ class LiveSplitBridgeAdapter:
         if self._closed:
             return
         self._closed = True
-        self._client.close()
+        self._rpc.close()
 
     def __enter__(self) -> Self:
         return self

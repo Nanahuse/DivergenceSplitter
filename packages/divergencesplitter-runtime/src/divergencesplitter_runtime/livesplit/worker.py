@@ -1,7 +1,14 @@
-"""Single-thread owner for one integrated LiveSplit Bridge client."""
+"""Single-thread owner for one integrated LiveSplit Bridge connection.
+
+The worker owns the RPC client and all protocol state (baseline, session and
+sequence validation, resynchronization, and action execution). Raw SUB events
+arrive through a :class:`BridgeEventReceiver` running on its own thread, so the
+worker never blocks on a SUB receive.
+"""
 
 import threading
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Protocol
@@ -10,13 +17,23 @@ from divergencesplitter import Action, LiveSplitConnection
 from livesplit_bridge import (
     BridgeClientError,
     BridgeConnectionLostError,
+    BridgeEventSubscriber,
     BridgeProtocolError,
     BridgeRemoteError,
+    common_pb2,
 )
 
 from divergencesplitter_runtime.livesplit.adapter import (
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
+)
+from divergencesplitter_runtime.livesplit.event_receiver import (
+    DEFAULT_EVENT_CAPACITY,
+    DEFAULT_EVENT_RECEIVE_TIMEOUT_MS,
+    BridgeEventConnectionLost,
+    BridgeEventReceived,
+    BridgeEventReceiver,
+    BridgeEventSubscriberLike,
 )
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
@@ -25,7 +42,6 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitUpdateKind,
 )
 
-DEFAULT_RECEIVE_TIMEOUT_MS = 50
 DEFAULT_RECONNECT_DELAY_SECONDS = 0.1
 DEFAULT_UPDATE_CAPACITY = 16
 
@@ -84,8 +100,9 @@ class BridgeWorkerDiagnostics(LiveSplitBridgeDiagnostics, Protocol):
 
 
 class _ActionSlot:
-    def __init__(self) -> None:
+    def __init__(self, wakeup: threading.Event | None = None) -> None:
         self._lock = threading.Lock()
+        self._wakeup = wakeup
         self._request: BridgeActionRequest | None = None
         self._stopped = False
 
@@ -96,14 +113,18 @@ class _ActionSlot:
             current = self._request
             if current is None:
                 self._request = request
-                return ActionSubmission.ACCEPTED
-            if (
+                result = ActionSubmission.ACCEPTED
+            elif (
                 request.action.operation == "reset"
                 and current.action.operation != "reset"
             ):
                 self._request = request
-                return ActionSubmission.RESET_REPLACED
-            return ActionSubmission.REJECTED
+                result = ActionSubmission.RESET_REPLACED
+            else:
+                result = ActionSubmission.REJECTED
+        if result is not ActionSubmission.REJECTED and self._wakeup is not None:
+            self._wakeup.set()
+        return result
 
     def take(self) -> BridgeActionRequest | None:
         with self._lock:
@@ -156,23 +177,34 @@ class BridgeWorker:
         connection: LiveSplitConnection,
         *,
         diagnostics: BridgeWorkerDiagnostics,
-        receive_timeout_ms: int = DEFAULT_RECEIVE_TIMEOUT_MS,
+        receive_timeout_ms: int = DEFAULT_EVENT_RECEIVE_TIMEOUT_MS,
         reconnect_delay_seconds: float = DEFAULT_RECONNECT_DELAY_SECONDS,
         update_capacity: int = DEFAULT_UPDATE_CAPACITY,
+        event_capacity: int = DEFAULT_EVENT_CAPACITY,
         rpc_timeout_ms: int = 3000,
         heartbeat_timeout_ms: int = 3000,
+        subscriber_factory: Callable[[], BridgeEventSubscriberLike] | None = None,
     ) -> None:
         if receive_timeout_ms < 0:
             raise ValueError("receive_timeout_ms must be non-negative")
         if reconnect_delay_seconds < 0:
             raise ValueError("reconnect_delay_seconds must be non-negative")
+        if event_capacity <= 0:
+            raise ValueError("event capacity must be positive")
         self._connection = connection
         self._diagnostics = diagnostics
         self._receive_timeout_ms = receive_timeout_ms
         self._reconnect_delay_seconds = reconnect_delay_seconds
         self._rpc_timeout_ms = rpc_timeout_ms
         self._heartbeat_timeout_ms = heartbeat_timeout_ms
-        self._actions = _ActionSlot()
+        self._event_capacity = event_capacity
+        self._subscriber_factory = (
+            subscriber_factory
+            if subscriber_factory is not None
+            else self._create_subscriber
+        )
+        self._wakeup = threading.Event()
+        self._actions = _ActionSlot(self._wakeup)
         self._updates = _UpdateQueue(update_capacity)
         self._stop_requested = threading.Event()
         self._initialized = threading.Event()
@@ -255,27 +287,36 @@ class BridgeWorker:
     def request_stop(self) -> None:
         self._stop_requested.set()
         self._actions.stop()
+        self._wakeup.set()
         self._initialized.set()
 
     def run(self) -> None:
         adapter: LiveSplitBridgeAdapter | None = None
+        receiver: BridgeEventReceiver | None = None
         try:
             self._diagnostics.worker_started(self._connection)
             while not self._stop_requested.is_set():
                 try:
+                    receiver = self._create_receiver()
+                    receiver.start()
+                    receiver.wait_until_started()
+                    if self._stop_requested.is_set():
+                        return
                     adapter = LiveSplitBridgeAdapter(
                         self._connection,
                         diagnostics=self._diagnostics,
                         rpc_timeout_ms=self._rpc_timeout_ms,
-                        heartbeat_timeout_ms=self._heartbeat_timeout_ms,
                     )
+                    # Attach establishes the baseline after SUB reception has
+                    # already started, so queued events can be validated against
+                    # it without an avoidable gap.
                     initial = adapter.attach()
                     with self._state_lock:
                         if self._stop_requested.is_set():
                             return
                         self._updates.replace(initial)
                     self._initialized.set()
-                    self._run_loop(adapter)
+                    self._run_loop(adapter, receiver)
                     return
                 except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
                     self._fail(error)
@@ -289,6 +330,9 @@ class BridgeWorker:
                     self._fail(error)
                     return
                 finally:
+                    if receiver is not None:
+                        receiver.stop()
+                        receiver = None
                     if adapter is not None:
                         adapter.close()
                         adapter = None
@@ -302,6 +346,20 @@ class BridgeWorker:
                 self._actions.stop()
             self._initialized.set()
             self._diagnostics.worker_stopped(self._connection)
+
+    def _create_subscriber(self) -> BridgeEventSubscriber:
+        return BridgeEventSubscriber(
+            self._connection.event_endpoint,
+            heartbeat_timeout_ms=self._heartbeat_timeout_ms,
+        )
+
+    def _create_receiver(self) -> BridgeEventReceiver:
+        return BridgeEventReceiver(
+            subscriber_factory=self._subscriber_factory,
+            wakeup=self._wakeup,
+            receive_timeout_ms=self._receive_timeout_ms,
+            capacity=self._event_capacity,
+        )
 
     def _fail(self, error: Exception) -> None:
         self._initial_error = error
@@ -323,27 +381,68 @@ class BridgeWorker:
             self._updates.drain()
         self._diagnostics.connection_lost(self._connection, error)
 
-    def _run_loop(self, adapter: LiveSplitBridgeAdapter) -> None:
-        while not self._stop_requested.is_set():
-            received = adapter.receive(timeout_ms=self._receive_timeout_ms)
-            if received is LiveSplitResyncReason.SESSION_CHANGED:
-                raise BridgeConnectionLostError("Bridge session changed")
-            if isinstance(received, LiveSplitResyncReason):
-                with self._state_lock:
-                    self._available.clear()
-                    self._actions.clear()
-                    self._sync_in_progress = True
-                update = adapter.resync(received)
-            else:
-                update = received
+    def _begin_resync(self) -> None:
+        with self._state_lock:
+            self._available.clear()
+            self._actions.clear()
+            self._sync_in_progress = True
 
-            if update is not None:
-                self._publish(update, adapter)
-            if not self.is_available:
-                continue
-            request = self._actions.take()
-            if request is not None:
-                adapter.execute_action(request.action, request.expected_snapshot)
+    def _run_loop(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+        receiver: BridgeEventReceiver,
+    ) -> None:
+        while not self._stop_requested.is_set():
+            self._wakeup.clear()
+            self._process_pending(adapter, receiver)
+            if self._stop_requested.is_set():
+                return
+            self._wakeup.wait()
+
+    def _process_pending(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+        receiver: BridgeEventReceiver,
+    ) -> None:
+        messages = receiver.drain()
+        overflowed = receiver.take_overflow()
+        for message in messages:
+            if isinstance(message, BridgeEventConnectionLost):
+                raise message.error
+        if overflowed:
+            # Dropped events make the stream non-contiguous: resynchronize
+            # instead of pretending the remaining events are authoritative.
+            self._begin_resync()
+            update = adapter.resync(LiveSplitResyncReason.EVENT_INBOX_OVERFLOW)
+            self._publish(update, adapter)
+            return
+        # Apply every already-received authoritative event before validating a
+        # pending action, so an action planned against an older revision is
+        # rejected rather than sent.
+        for message in messages:
+            if isinstance(message, BridgeEventReceived):
+                self._apply_event(adapter, message.event)
+        if not self.is_available:
+            return
+        request = self._actions.take()
+        if request is not None:
+            adapter.execute_action(request.action, request.expected_snapshot)
+
+    def _apply_event(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+        event: common_pb2.BridgeEvent,
+    ) -> None:
+        received = adapter.handle_event(event)
+        if received is LiveSplitResyncReason.SESSION_CHANGED:
+            raise BridgeConnectionLostError("Bridge session changed")
+        if isinstance(received, LiveSplitResyncReason):
+            self._begin_resync()
+            update = adapter.resync(received)
+        else:
+            update = received
+        if update is not None:
+            self._publish(update, adapter)
 
     def _publish(
         self,
