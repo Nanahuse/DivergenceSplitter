@@ -25,7 +25,10 @@ from divergencesplitter_runtime.instance_runtime import (
     InstanceStatus,
 )
 from divergencesplitter_runtime.livesplit.models import LiveSplitRunInfo
-from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
+from divergencesplitter_runtime.metrics import (
+    InstanceEvaluationMetrics,
+    RuntimeMetricsSnapshot,
+)
 from divergencesplitter_runtime.observability import (
     ConditionNode,
     ConditionObservation,
@@ -89,6 +92,24 @@ def format_score(value: float | None) -> str:
     if value is None:
         return "—"
     return f"{value:.4f}"
+
+
+def format_latency_ms(value_ns: int | None) -> str:
+    """Format an evaluation latency in milliseconds, or ``—`` when unmeasured."""
+
+    if value_ns is None:
+        return "—"
+    return f"{value_ns / 1_000_000:.1f} ms"
+
+
+def evaluation_latency_label(metrics: InstanceEvaluationMetrics) -> str:
+    """Format one scenario's evaluation Ave / Max display line."""
+
+    return (
+        f"Scenario {metrics.scenario_index + 1}:  "
+        f"Ave {format_latency_ms(metrics.average_latency_ns)}  "
+        f"Max {format_latency_ms(metrics.max_latency_ns)}"
+    )
 
 
 def has_new_observations(observations: tuple[ConditionObservation, ...]) -> bool:

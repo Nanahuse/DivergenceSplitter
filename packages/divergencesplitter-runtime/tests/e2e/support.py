@@ -419,6 +419,7 @@ class RecordingDiagnostics:
         self,
         scenario_index: int,
         context: FrameContext,
+        completed_at: MonotonicTime,
     ) -> None:
         self.evaluated[scenario_index] = self.evaluated.get(scenario_index, 0) + 1
 

@@ -50,7 +50,10 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitRunInfo,
     LiveSplitSnapshot,
 )
-from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
+from divergencesplitter_runtime.metrics import (
+    InstanceEvaluationMetrics,
+    RuntimeMetricsSnapshot,
+)
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     DetectorTreeSnapshot,
@@ -153,6 +156,8 @@ class OperationalDiagnostics:
         self._processing_rate = _TimeBucketRate()
         self._input_frames_total = 0
         self._processed_frames_total = 0
+        self._evaluation_indices: tuple[int, ...] = ()
+        self._instance_latency: dict[int, _LatencyWindow] = {}
         self._observable_lock = threading.Lock()
         self._latest_input_frame: Frame | None = None
         self._latest_processed_frame: Frame | None = None
@@ -201,6 +206,9 @@ class OperationalDiagnostics:
             except Exception:  # noqa: BLE001
                 self._detector_tree = None
                 self._instance_observations = {}
+        with self._metrics_lock:
+            self._evaluation_indices = tuple(range(len(instances)))
+            self._instance_latency = {}
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]:
         """Copy the latest lifecycle outcomes, independently of logging level."""
@@ -213,6 +221,15 @@ class OperationalDiagnostics:
                 status.scenario_index: status for status in self._instance_statuses
             }
             self._instance_statuses = statuses
+        with self._metrics_lock:
+            # A non-READY instance holds no valid evaluation sample: drop the
+            # window so a reconnect or failure never shows a stale latency.
+            for status in statuses:
+                if status.state is InstanceRuntimeState.READY:
+                    continue
+                window = self._instance_latency.get(status.scenario_index)
+                if window is not None:
+                    window.reset()
         for status in statuses:
             if previous.get(status.scenario_index) == status:
                 continue
@@ -401,8 +418,10 @@ class OperationalDiagnostics:
         self,
         scenario_index: int,
         context: FrameContext,
+        completed_at: MonotonicTime,
     ) -> None:
-        """Publish one instance's condition activity after it evaluated a frame."""
+        """Record one instance's evaluation latency and condition activity."""
+        self._record_evaluation_latency(scenario_index, context, completed_at)
         with self._observable_lock:
             if scenario_index >= len(self._instances):
                 return
@@ -416,6 +435,20 @@ class OperationalDiagnostics:
             return
         with self._observable_lock:
             self._instance_observations[scenario_index] = observations
+
+    def _record_evaluation_latency(
+        self,
+        scenario_index: int,
+        context: FrameContext,
+        completed_at: MonotonicTime,
+    ) -> None:
+        latency_ns = completed_at.nanoseconds - context.frame.captured_at.nanoseconds
+        with self._metrics_lock:
+            window = self._instance_latency.get(scenario_index)
+            if window is None:
+                window = _LatencyWindow()
+                self._instance_latency[scenario_index] = window
+            window.record(completed_at.nanoseconds, latency_ns)
 
     def take_latest_input_frame(self) -> Frame | None:
         """Return the newest captured input Frame and clear the slot.
@@ -471,7 +504,22 @@ class OperationalDiagnostics:
                 processing_fps=self._processing_rate.rate(sampled_at),
                 input_frames_total=self._input_frames_total,
                 processed_frames_total=self._processed_frames_total,
+                instance_evaluations=tuple(
+                    self._evaluation_snapshot(index, sampled_at.nanoseconds)
+                    for index in self._evaluation_indices
+                ),
             )
+
+    def _evaluation_snapshot(
+        self,
+        scenario_index: int,
+        sampled_at_ns: int,
+    ) -> InstanceEvaluationMetrics:
+        window = self._instance_latency.get(scenario_index)
+        if window is None:
+            return InstanceEvaluationMetrics(scenario_index, None, None)
+        average, maximum = window.average_and_max(sampled_at_ns)
+        return InstanceEvaluationMetrics(scenario_index, average, maximum)
 
     def runtime_fps(self, snapshot: RuntimeMetricsSnapshot) -> None:
         self._emit(
@@ -763,6 +811,57 @@ class OperationalDiagnostics:
             )
         except Exception:  # noqa: BLE001
             return
+
+
+class _LatencyWindow:
+    """Fixed-memory per-instance evaluation latency over the latest window."""
+
+    def __init__(self) -> None:
+        self._bucket_ids = [-1] * _METRICS_BUCKET_COUNT
+        self._counts = [0] * _METRICS_BUCKET_COUNT
+        self._sums = [0] * _METRICS_BUCKET_COUNT
+        self._maxs = [0] * _METRICS_BUCKET_COUNT
+
+    def record(self, occurred_at_ns: int, latency_ns: int) -> None:
+        bucket_id = occurred_at_ns // _METRICS_BUCKET_NANOSECONDS
+        index = bucket_id % _METRICS_BUCKET_COUNT
+        if self._bucket_ids[index] != bucket_id:
+            self._bucket_ids[index] = bucket_id
+            self._counts[index] = 0
+            self._sums[index] = 0
+            self._maxs[index] = 0
+        self._counts[index] += 1
+        self._sums[index] += latency_ns
+        self._maxs[index] = max(self._maxs[index], latency_ns)
+
+    def average_and_max(self, sampled_at_ns: int) -> tuple[int | None, int | None]:
+        cutoff = sampled_at_ns - _METRICS_WINDOW_NANOSECONDS
+        oldest_bucket_id = cutoff // _METRICS_BUCKET_NANOSECONDS
+        newest_bucket_id = sampled_at_ns // _METRICS_BUCKET_NANOSECONDS
+        count = 0
+        total = 0
+        maximum = 0
+        for bucket_id, bucket_count, bucket_sum, bucket_max in zip(
+            self._bucket_ids,
+            self._counts,
+            self._sums,
+            self._maxs,
+            strict=True,
+        ):
+            if not oldest_bucket_id <= bucket_id <= newest_bucket_id:
+                continue
+            count += bucket_count
+            total += bucket_sum
+            maximum = max(maximum, bucket_max)
+        if count == 0:
+            return None, None
+        return total // count, maximum
+
+    def reset(self) -> None:
+        self._bucket_ids = [-1] * _METRICS_BUCKET_COUNT
+        self._counts = [0] * _METRICS_BUCKET_COUNT
+        self._sums = [0] * _METRICS_BUCKET_COUNT
+        self._maxs = [0] * _METRICS_BUCKET_COUNT
 
 
 class _TimeBucketRate:

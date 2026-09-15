@@ -571,3 +571,72 @@ def test_instance_status_rows_update_without_rebuilding_tree_or_new_frames() -> 
         assert renderer._instance_rows == {}
     finally:
         dpg.destroy_context()
+
+
+def test_evaluation_metrics_render_per_scenario_without_rebuilding_tree() -> None:
+    from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
+    from divergencesplitter_ui.renderer import ScreenRenderer
+
+    dpg = pytest.importorskip("dearpygui.dearpygui")
+    conditions = tuple(Detected(MeanBrightnessDetector(), 0.5) for _ in range(2))
+    tree = build_detector_tree(
+        tuple(scenario_with_splits((condition,)) for condition in conditions)
+    )
+    diagnostics = make_diagnostics(
+        tree,
+        statuses=(
+            InstanceStatus(0, InstanceRuntimeState.READY),
+            InstanceStatus(1, InstanceRuntimeState.READY),
+        ),
+    )
+    diagnostics.metrics_snapshot.return_value = RuntimeMetricsSnapshot(
+        MonotonicTime(0),
+        1.0,
+        0.0,
+        0.0,
+        0,
+        0,
+        (
+            InstanceEvaluationMetrics(0, 3_100_000, 6_800_000),
+            InstanceEvaluationMetrics(1, None, None),
+        ),
+    )
+
+    dpg.create_context()
+    try:
+        renderer = ScreenRenderer(
+            Mock(image_due=Mock(return_value=False), fps_due=Mock(return_value=True))
+        )
+        renderer.build()
+        renderer.tick("RUNNING", diagnostics)
+        scenario_handle = renderer._scenario_nodes[0][0]
+        split_handle = renderer._split_rows[(0, 0)].handle
+
+        first = dpg.get_value(renderer._evaluation_rows[0])
+        second = dpg.get_value(renderer._evaluation_rows[1])
+        assert "Scenario 1" in first
+        assert "Ave 3.1 ms" in first
+        assert "Max 6.8 ms" in first
+        assert "Scenario 2" in second
+        assert "Ave —" in second
+        assert "Max —" in second
+
+        diagnostics.metrics_snapshot.return_value = RuntimeMetricsSnapshot(
+            MonotonicTime(0),
+            1.0,
+            0.0,
+            0.0,
+            0,
+            0,
+            (
+                InstanceEvaluationMetrics(0, 5_000_000, 9_000_000),
+                InstanceEvaluationMetrics(1, None, None),
+            ),
+        )
+        renderer.tick("RUNNING", diagnostics)
+
+        assert "Ave 5.0 ms" in dpg.get_value(renderer._evaluation_rows[0])
+        assert renderer._scenario_nodes[0][0] == scenario_handle
+        assert renderer._split_rows[(0, 0)].handle == split_handle
+    finally:
+        dpg.destroy_context()

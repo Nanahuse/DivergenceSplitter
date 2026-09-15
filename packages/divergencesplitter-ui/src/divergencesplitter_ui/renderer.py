@@ -16,6 +16,7 @@ from divergencesplitter_runtime.instance_runtime import (
     InstanceRuntimeState,
     InstanceStatus,
 )
+from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
 from divergencesplitter_runtime.observability import (
     ConditionNode,
     ConditionObservation,
@@ -47,6 +48,7 @@ from divergencesplitter_ui.presentation import (
     ScreenPresenter,
     condition_label,
     detector_label,
+    evaluation_latency_label,
     format_score,
     has_new_observations,
     instance_status_label,
@@ -105,6 +107,7 @@ class ScreenRenderer:
     _TREE_TAG = "divergence-splitter-tree"
     _STATE_TAG = "divergence-splitter-state"
     _FPS_TAG = "divergence-splitter-fps"
+    _EVALUATION_TAG = "divergence-splitter-evaluation"
     _IMAGE_GROUP_TAG = "divergence-splitter-image-group"
     _TEXTURE_REGISTRY_TAG = "divergence-splitter-textures"
     MONITOR_PAGE_TAG = "divergence-splitter-monitor-page"
@@ -117,6 +120,7 @@ class ScreenRenderer:
         self._bound_diagnostics: ObservableDiagnostics | None = None
         self._tree: DetectorTreeSnapshot | None = None
         self._instance_rows: dict[int, int | str] = {}
+        self._evaluation_rows: dict[int, int | str] = {}
         self._scenario_condition_ids: dict[int, set[int]] = {}
         self._observations: tuple[ConditionObservation, ...] = ()
         self._scenario_nodes: dict[int, tuple[int | str, ScenarioNode]] = {}
@@ -181,6 +185,7 @@ class ScreenRenderer:
                 with dpg.group(horizontal=True):
                     dpg.add_text("State: —", tag=self._STATE_TAG)
                     dpg.add_text("input: — fps | processing: — fps", tag=self._FPS_TAG)
+                dpg.add_group(tag=self._EVALUATION_TAG)
                 with dpg.group(horizontal=True):
                     with dpg.child_window(
                         width=self._PREVIEW_PANEL_WIDTH, height=-1, border=True
@@ -264,11 +269,31 @@ class ScreenRenderer:
                     f"processing: {snapshot.processing_fps:.1f} fps"
                 ),
             )
+            self._apply_evaluation_metrics(snapshot.instance_evaluations)
+
+    def _apply_evaluation_metrics(
+        self,
+        metrics: tuple[InstanceEvaluationMetrics, ...],
+    ) -> None:
+        indices = {item.scenario_index for item in metrics}
+        for index in set(self._evaluation_rows) - indices:
+            dpg.delete_item(self._evaluation_rows.pop(index))
+        for item in metrics:
+            handle = self._evaluation_rows.get(item.scenario_index)
+            if handle is None:
+                handle = dpg.add_text(parent=self._EVALUATION_TAG)
+                self._evaluation_rows[item.scenario_index] = handle
+            dpg.set_value(handle, evaluation_latency_label(item))
+
+    def _reset_evaluation_rows(self) -> None:
+        dpg.delete_item(self._EVALUATION_TAG, children_only=True)
+        self._evaluation_rows = {}
 
     def _bind(self, diagnostics: ObservableDiagnostics) -> None:
         self._bound_diagnostics = diagnostics
         self._reset_tree()
         self._reset_input_image()
+        self._reset_evaluation_rows()
         dpg.set_value(self._FPS_TAG, "input: — fps | processing: — fps")
         self._tree = None
         self._build_tree_if_ready()
@@ -277,6 +302,7 @@ class ScreenRenderer:
         self._bound_diagnostics = None
         self._reset_tree()
         self._reset_input_image()
+        self._reset_evaluation_rows()
         dpg.set_value(self._FPS_TAG, "input: — fps | processing: — fps")
         self._tree = None
 

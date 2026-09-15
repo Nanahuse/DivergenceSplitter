@@ -19,6 +19,7 @@ from divergencesplitter import (
     ReferenceImage,
     Rule,
     Scenario,
+    TimeProvider,
 )
 from divergencesplitter.frame.models import SharedFrameEvaluation
 from divergencesplitter_runtime import (
@@ -166,6 +167,7 @@ class RecordingDiagnostics:
         self.evaluation_errors: list[Exception] = []
         self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
         self.evaluated: list[int] = []
+        self.completions: list[int] = []
 
     def worker_started(self, connection: LiveSplitConnection) -> None:
         self.started.append(connection)
@@ -191,8 +193,14 @@ class RecordingDiagnostics:
     ) -> None:
         self.run_changes.append((scenario_index, run_info))
 
-    def instance_evaluated(self, scenario_index: int, context: FrameContext) -> None:
+    def instance_evaluated(
+        self,
+        scenario_index: int,
+        context: FrameContext,
+        completed_at: MonotonicTime,
+    ) -> None:
         self.evaluated.append(scenario_index)
+        self.completions.append(completed_at.nanoseconds)
 
     def snapshot_failed(
         self, connection: LiveSplitConnection, action: Action, error: Exception
@@ -322,6 +330,14 @@ def wait_for(predicate: Callable[[], bool], timeout: float = 3) -> None:
         time.sleep(0.001)
 
 
+class ManualClock(TimeProvider):
+    def __init__(self, nanoseconds: int = 0) -> None:
+        self.nanoseconds = nanoseconds
+
+    def now(self) -> MonotonicTime:
+        return MonotonicTime(self.nanoseconds)
+
+
 class Harness:
     def __init__(
         self,
@@ -332,6 +348,7 @@ class Harness:
         adapter: ScriptedAdapter | None = None,
         diagnostics: RecordingDiagnostics | None = None,
         log: list[str] | None = None,
+        time_provider: TimeProvider | None = None,
     ) -> None:
         self.initial = initial if initial is not None else initial_update()
         self.execute_result = execute_result
@@ -347,6 +364,7 @@ class Harness:
             diagnostics=self.diagnostics,
             reconnect_delay_seconds=0.001,
             receive_timeout_ms=1,
+            time_provider=time_provider,
             adapter_factory=self._new_adapter,
             receiver_factory=self._new_receiver,
         )
@@ -671,6 +689,46 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
         harness.stop()
 
     assert [action for action, _ in harness.adapter.attempts] == [Action("split")]
+
+
+def test_evaluation_latency_ends_at_evaluate_return() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(3)
+
+    clock = ManualClock(0)
+
+    class SlowActionAdapter(ScriptedAdapter):
+        def execute_action(
+            self, action: Action, expected_snapshot: LiveSplitSnapshot
+        ) -> ActionExecution:
+            # Action/RPC time must never be added to the evaluation latency.
+            clock.nanoseconds = 999_999_999
+            return super().execute_action(action, expected_snapshot)
+
+    condition = RecordingCondition(True, on_evaluate=on_evaluate)
+    harness = Harness(
+        make_scenario(condition),
+        adapter=SlowActionAdapter(initial_update()),
+        time_provider=clock,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(100))
+        assert entered.wait(3)
+        clock.nanoseconds = 250
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.completions))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.completions == [250]
 
 
 def test_unknown_rpc_result_recovers_without_resend() -> None:
