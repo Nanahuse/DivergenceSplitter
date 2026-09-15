@@ -18,8 +18,7 @@ from divergencesplitter import (
     MonotonicTime,
 )
 from divergencesplitter_runtime import (
-    ActionSubmission,
-    BridgeActionRequest,
+    ActionExecution,
     LiveSplitResyncReason,
     LiveSplitRunInfo,
     LiveSplitSnapshot,
@@ -116,7 +115,7 @@ class BridgeScript:
         self,
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
-    ) -> None:
+    ) -> ActionExecution:
         with self._condition:
             actual = self._snapshot
             self.actions.append((action, expected_snapshot))
@@ -124,10 +123,11 @@ class BridgeScript:
             if expected_snapshot != actual:
                 self.snapshot_mismatches.append((expected_snapshot, actual))
                 self._condition.notify_all()
-                return
+                return ActionExecution.NOT_DISPATCHED
             if self._apply_actions:
                 self._apply_action_locked(action)
             self._condition.notify_all()
+        return ActionExecution.DISPATCHED
 
     def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
         del reason
@@ -272,8 +272,8 @@ class ScriptedBridgeAdapter:
         self,
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
-    ) -> None:
-        self._script.execute_action(action, expected_snapshot)
+    ) -> ActionExecution:
+        return self._script.execute_action(action, expected_snapshot)
 
     def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
         return self._script.resync(reason)
@@ -318,6 +318,7 @@ class RecordingDiagnostics:
         self.scenario_errors: list[Exception] = []
         self.normalization_errors: list[FrameNormalizationError] = []
         self.connection_errors: list[Exception] = []
+        self.evaluated: dict[int, int] = {}
         self.first_frame_started = threading.Event()
         self.bright_frame_started = threading.Event()
         self.frame_overwritten = threading.Event()
@@ -414,16 +415,12 @@ class RecordingDiagnostics:
     ) -> None:
         self.connection_errors.append(error)
 
-    def update_queue_overflowed(self, connection: LiveSplitConnection) -> None:
-        pass
-
-    def action_submitted(
+    def instance_evaluated(
         self,
-        connection: LiveSplitConnection,
-        request: BridgeActionRequest,
-        result: ActionSubmission,
+        scenario_index: int,
+        context: FrameContext,
     ) -> None:
-        pass
+        self.evaluated[scenario_index] = self.evaluated.get(scenario_index, 0) + 1
 
     def worker_stopped(self, connection: LiveSplitConnection) -> None:
         self.worker_stopped_event.set()

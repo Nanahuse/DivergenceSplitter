@@ -145,6 +145,25 @@ class ModelValidationTest(unittest.TestCase):
 
 
 class ScenarioRuntimeEvaluationTest(unittest.TestCase):
+    def test_action_not_dispatched_clears_pending_and_allows_refire(self) -> None:
+        condition = RecordingCondition(True)
+        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
+
+        self.assertEqual(runtime.evaluate(context(10)), Action("split"))
+        self.assertIsNone(runtime.evaluate(context(20)))  # Waiting for dispatch.
+        runtime.action_not_dispatched(Action("split"))
+        self.assertEqual(runtime.evaluate(context(30)), Action("split"))
+
+    def test_action_not_dispatched_is_noop_without_pending_action(self) -> None:
+        condition = RecordingCondition(False)
+        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
+
+        runtime.action_not_dispatched(Action("split"))
+
+        self.assertIsNone(runtime.evaluate(context(10)))
+
     def test_not_running_evaluates_start_only(self) -> None:
         start = RecordingCondition(True)
         reset = RecordingCondition(True)

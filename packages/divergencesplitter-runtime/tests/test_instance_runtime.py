@@ -1,399 +1,712 @@
-import logging
-from unittest.mock import patch
+"""Instance thread ownership: frames, events, actions, reconnect, isolation."""
+
+from __future__ import annotations
+
+import threading
+import time
+from collections.abc import Callable
+from typing import cast
 
 import numpy as np
-import pytest
 from divergencesplitter import (
     Action,
     Detected,
+    DetectionResult,
     Frame,
     FrameContext,
-    FrameNormalizer,
-    Hold,
     LiveSplitConnection,
-    MeanBrightnessDetector,
     MonotonicTime,
-    RisingEdge,
+    ReferenceImage,
     Rule,
-    RuleSequence,
     Scenario,
 )
+from divergencesplitter.frame.models import SharedFrameEvaluation
 from divergencesplitter_runtime import (
-    ActionSubmission,
-    BridgeWorker,
-    BridgeWorkerState,
+    ActionExecution,
+    BridgeEventConnectionLost,
+    BridgeEventReceived,
     InstanceRuntime,
     InstanceRuntimeState,
-    LatestFrameBuffer,
+    LiveSplitBridgeAdapter,
+    LiveSplitResyncReason,
     LiveSplitRunInfo,
     LiveSplitSegmentInfo,
+    LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
-    ProcessingRuntime,
+    TimerPhase,
 )
-from e2e.support import RecordingDiagnostics, snapshot
+from livesplit_bridge import BridgeConnectionLostError, common_pb2
+
+# -- Deterministic test doubles ------------------------------------------------
 
 
-def run_info(
+class ControlledReceiver:
+    """Deterministic receiver double; the test controls drain timing."""
+
+    def __init__(self, wakeup: threading.Event) -> None:
+        self._wakeup = wakeup
+        self._messages: list[BridgeEventConnectionLost | BridgeEventReceived] = []
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def wait_until_started(self) -> None:
+        pass
+
+    def push(self, message: BridgeEventConnectionLost | BridgeEventReceived) -> None:
+        self._messages.append(message)
+
+    def wake(self) -> None:
+        self._wakeup.set()
+
+    def drain(self) -> tuple[BridgeEventConnectionLost | BridgeEventReceived, ...]:
+        messages = tuple(self._messages)
+        self._messages.clear()
+        return messages
+
+    def take_overflow(self) -> bool:
+        return False
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+class ScriptedAdapter:
+    """Adapter double handling domain updates supplied by the subscriber."""
+
+    def __init__(
+        self,
+        initial: LiveSplitUpdate,
+        *,
+        execute_result: ActionExecution = ActionExecution.DISPATCHED,
+        log: list[str] | None = None,
+    ) -> None:
+        self.initial = initial
+        self.baseline = initial.snapshot
+        self.execute_result = execute_result
+        self.handled: list[object] = []
+        self.resynced: list[LiveSplitResyncReason] = []
+        self.attempts: list[tuple[Action, LiveSplitSnapshot]] = []
+        self.closed = False
+        self.attached = 0
+        self._log = log
+
+    def attach(self) -> LiveSplitUpdate:
+        self.attached += 1
+        self.baseline = self.initial.snapshot
+        return self.initial
+
+    def handle_event(self, event: object) -> object:
+        if self._log is not None:
+            self._log.append("event")
+        self.handled.append(event)
+        if isinstance(event, Exception):
+            raise event
+        if isinstance(event, LiveSplitUpdate):
+            self.baseline = event.snapshot
+        return event
+
+    def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
+        self.resynced.append(reason)
+        return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, self.baseline)
+
+    def execute_action(
+        self, action: Action, expected_snapshot: LiveSplitSnapshot
+    ) -> ActionExecution:
+        self.attempts.append((action, expected_snapshot))
+        if (
+            self.execute_result is ActionExecution.DISPATCHED
+            and expected_snapshot != self.baseline
+        ):
+            return ActionExecution.NOT_DISPATCHED
+        return self.execute_result
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class RecordingCondition:
+    def __init__(
+        self,
+        result: bool,
+        *,
+        on_evaluate: Callable[[FrameContext], None] | None = None,
+    ) -> None:
+        self.result = result
+        self._on_evaluate = on_evaluate
+        self.calls = 0
+        self.captured_at: list[int] = []
+
+    @property
+    def children(self) -> tuple:
+        return ()
+
+    def evaluate(
+        self, context: FrameContext, *, is_short_circuited: bool = False
+    ) -> bool:
+        self.calls += 1
+        self.captured_at.append(context.frame.captured_at.nanoseconds)
+        if self._on_evaluate is not None:
+            self._on_evaluate(context)
+        return self.result
+
+    def reset(self) -> None:
+        pass
+
+
+class RecordingDiagnostics:
+    def __init__(self) -> None:
+        self.started: list[LiveSplitConnection] = []
+        self.stopped: list[LiveSplitConnection] = []
+        self.connection_errors: list[Exception] = []
+        self.initial_errors: list[Exception] = []
+        self.evaluation_errors: list[Exception] = []
+        self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
+        self.evaluated: list[int] = []
+
+    def worker_started(self, connection: LiveSplitConnection) -> None:
+        self.started.append(connection)
+
+    def initial_sync_failed(
+        self, connection: LiveSplitConnection, error: Exception
+    ) -> None:
+        self.initial_errors.append(error)
+
+    def connection_lost(
+        self, connection: LiveSplitConnection, error: Exception
+    ) -> None:
+        self.connection_errors.append(error)
+
+    def worker_stopped(self, connection: LiveSplitConnection) -> None:
+        self.stopped.append(connection)
+
+    def scenario_evaluation_failed(self, scenario_index: int, error: Exception) -> None:
+        self.evaluation_errors.append(error)
+
+    def instance_run_changed(
+        self, scenario_index: int, run_info: LiveSplitRunInfo | None
+    ) -> None:
+        self.run_changes.append((scenario_index, run_info))
+
+    def instance_evaluated(self, scenario_index: int, context: FrameContext) -> None:
+        self.evaluated.append(scenario_index)
+
+    def snapshot_failed(
+        self, connection: LiveSplitConnection, action: Action, error: Exception
+    ) -> None: ...
+
+    def snapshot_mismatched(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        expected: LiveSplitSnapshot,
+        actual: LiveSplitSnapshot,
+    ) -> None: ...
+
+    def action_precondition_failed(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+    ) -> None: ...
+
+    def action_succeeded(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+    ) -> None: ...
+
+    def action_rejected(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+        code: int | None,
+        message: str,
+    ) -> None: ...
+
+    def action_result_unknown(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+        error: Exception,
+    ) -> None: ...
+
+    def gap_detected(
+        self,
+        connection: LiveSplitConnection,
+        baseline: LiveSplitSnapshot,
+        received_session_id: int,
+        received_event_sequence: int,
+    ) -> None: ...
+
+    def heartbeat_received(
+        self,
+        connection: LiveSplitConnection,
+        session_id: int,
+        event_sequence: int,
+    ) -> None: ...
+
+    def resync_started(
+        self,
+        connection: LiveSplitConnection,
+        reason: LiveSplitResyncReason,
+    ) -> None: ...
+
+    def resync_completed(
+        self,
+        connection: LiveSplitConnection,
+        reason: LiveSplitResyncReason,
+        previous: LiveSplitSnapshot,
+        current: LiveSplitSnapshot,
+    ) -> None: ...
+
+
+def snapshot(
     *,
     session_id: int = 1,
+    event_sequence: int = 0,
     run_revision: int = 1,
-    name: str = "A",
-) -> LiveSplitRunInfo:
-    return LiveSplitRunInfo(
+    phase: TimerPhase = TimerPhase.RUNNING,
+    split_index: int = 0,
+    split_count: int = 1,
+) -> LiveSplitSnapshot:
+    return LiveSplitSnapshot(
         session_id=session_id,
+        state_revision=event_sequence,
+        event_sequence=event_sequence,
         run_revision=run_revision,
-        segments=(LiveSplitSegmentInfo(0, name),),
+        phase=phase,
+        split_index=split_index,
+        split_count=split_count,
     )
 
 
-class ControlledWorker(BridgeWorker):
-    """Drive the real worker queue without scheduling a transport thread."""
+def run_info(revision: int = 1) -> LiveSplitRunInfo:
+    return LiveSplitRunInfo(
+        session_id=1,
+        run_revision=revision,
+        segments=(LiveSplitSegmentInfo(0, "A"),),
+    )
 
-    def __init__(self) -> None:
-        super().__init__(
-            LiveSplitConnection("rpc", "event"), diagnostics=RecordingDiagnostics()
-        )
 
-    def initial(
+def initial_update(
+    *, split_count: int = 1, run: LiveSplitRunInfo | None = None
+) -> LiveSplitUpdate:
+    return LiveSplitUpdate(
+        LiveSplitUpdateKind.INITIAL,
+        snapshot(split_count=split_count),
+        run,
+    )
+
+
+def shared_frame(captured_at: int) -> SharedFrameEvaluation:
+    return SharedFrameEvaluation(
+        frame=Frame(
+            image=np.zeros((1, 1), dtype=np.uint8),
+            captured_at=MonotonicTime(captured_at),
+        ),
+        now=MonotonicTime(captured_at),
+    )
+
+
+def wait_for(predicate: Callable[[], bool], timeout: float = 3) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "condition was not reached"
+        time.sleep(0.001)
+
+
+class Harness:
+    def __init__(
         self,
+        scenario: Scenario,
         *,
-        session_id: int = 1,
-        split_count: int = 1,
-        run: LiveSplitRunInfo | None = None,
+        initial: LiveSplitUpdate | None = None,
+        execute_result: ActionExecution = ActionExecution.DISPATCHED,
+        adapter: ScriptedAdapter | None = None,
+        diagnostics: RecordingDiagnostics | None = None,
+        log: list[str] | None = None,
     ) -> None:
-        self._updates.replace(
-            LiveSplitUpdate(
-                LiveSplitUpdateKind.INITIAL,
-                snapshot(session_id=session_id, split_count=split_count),
-                run,
-            )
+        self.initial = initial if initial is not None else initial_update()
+        self.execute_result = execute_result
+        self.diagnostics = diagnostics or RecordingDiagnostics()
+        self.receivers: list[ControlledReceiver] = []
+        self.adapters: list[ScriptedAdapter] = []
+        self._fixed_adapter = adapter
+        self._log = log
+        self.instance = InstanceRuntime(
+            0,
+            LiveSplitConnection("rpc", "event"),
+            scenario,
+            diagnostics=self.diagnostics,
+            reconnect_delay_seconds=0.001,
+            receive_timeout_ms=1,
+            adapter_factory=self._new_adapter,
+            receiver_factory=self._new_receiver,
         )
+        self._thread: threading.Thread | None = None
 
-    def transition(
-        self,
-        *,
-        session_id: int = 1,
-        run: LiveSplitRunInfo | None = None,
-    ) -> None:
-        self._updates.replace(
-            LiveSplitUpdate(
-                LiveSplitUpdateKind.TRANSITION,
-                snapshot(session_id=session_id),
-                run,
-            )
+    def _new_receiver(self, wakeup: threading.Event) -> ControlledReceiver:
+        receiver = ControlledReceiver(wakeup)
+        self.receivers.append(receiver)
+        return receiver
+
+    def _new_adapter(self) -> LiveSplitBridgeAdapter:
+        adapter = self._fixed_adapter or ScriptedAdapter(
+            self.initial,
+            execute_result=self.execute_result,
+            log=self._log,
         )
+        self.adapters.append(adapter)
+        return cast(LiveSplitBridgeAdapter, adapter)
 
-    def resync(self) -> None:
-        self._updates.replace(LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, snapshot()))
+    @property
+    def receiver(self) -> ControlledReceiver:
+        return self.receivers[-1]
 
-    def disconnect(self) -> None:
-        self._connection_lost(RuntimeError("disconnected"))
+    @property
+    def adapter(self) -> ScriptedAdapter:
+        return self.adapters[-1]
 
-    def fail(self) -> None:
-        self._fail(ValueError("invalid protocol"))
+    def push_event(self, update: LiveSplitUpdate) -> None:
+        self.receiver.push(BridgeEventReceived(cast(common_pb2.BridgeEvent, update)))
+
+    def push_loss(self, error: Exception) -> None:
+        self.receiver.push(BridgeEventConnectionLost(error))
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self.instance.run)
+        self._thread.start()
+
+    def wait_ready(self) -> None:
+        wait_for(lambda: self.instance.state is InstanceRuntimeState.READY)
+
+    def thread_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def join(self, timeout: float = 3) -> None:
+        if self._thread is not None:
+            self._thread.join(timeout)
+
+    def stop(self) -> None:
+        self.instance.request_stop()
+        self.join()
+        assert not self.thread_alive()
 
 
-def detected() -> Detected:
-    return Detected(MeanBrightnessDetector(), 0.5)
-
-
-def scenario(*rules: Rule | RuleSequence, slots: int = 1) -> Scenario:
+def make_scenario(condition: RecordingCondition) -> Scenario:
     return Scenario(
-        start_condition=detected(),
+        start_condition=condition,
         reset_condition=None,
         incomplete_condition=None,
-        splits=(tuple(rules),) + (None,) * (slots - 1),
+        splits=((Rule(condition, Action("split")),),),
     )
 
 
-def context(bright: bool = False, now: int = 0) -> FrameContext:
-    return FrameContext(
-        frame=Frame(
-            np.full((2, 2, 3), 255 if bright else 0, dtype=np.uint8),
-            MonotonicTime(now),
-        ),
-        now=MonotonicTime(now),
+# -- Lifecycle -----------------------------------------------------------------
+
+
+def test_instance_owns_thread_reaches_ready_and_stops_cleanly() -> None:
+    harness = Harness(make_scenario(RecordingCondition(False)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        assert harness.adapter.attached == 1
+        assert harness.instance.run_info == harness.initial.run_info
+        assert harness.diagnostics.started
+    finally:
+        harness.stop()
+
+    assert harness.instance.state is InstanceRuntimeState.STOPPED
+    assert harness.adapter.closed
+    assert harness.receiver.stopped
+    assert harness.diagnostics.stopped
+
+
+def test_validation_failure_is_terminal_and_isolated() -> None:
+    scenario = Scenario(
+        start_condition=RecordingCondition(False),
+        reset_condition=None,
+        incomplete_condition=None,
+        splits=(None, None, None),
     )
+    harness = Harness(scenario, initial=initial_update(split_count=1))
+    harness.start()
+    try:
+        wait_for(lambda: harness.instance.state is InstanceRuntimeState.FAILED)
+        wait_for(lambda: not harness.thread_alive())
+    finally:
+        harness.instance.request_stop()
+        harness.join(2)
+
+    assert harness.instance.state is InstanceRuntimeState.FAILED
+    assert isinstance(harness.instance.error, ValueError)
 
 
-def processing(*instances: InstanceRuntime) -> ProcessingRuntime:
-    return ProcessingRuntime(
-        instances,
-        LatestFrameBuffer(),
-        FrameNormalizer(),
-        diagnostics=RecordingDiagnostics(),
-    )
+# -- Frame latest-only ---------------------------------------------------------
 
 
-def test_independent_start_late_attach_disconnect_and_reconnect() -> None:
-    a_worker, b_worker = ControlledWorker(), ControlledWorker()
-    a = InstanceRuntime(scenario(), a_worker)
-    b = InstanceRuntime(scenario(), b_worker)
-    runtime = processing(a, b)
-    assert a.scenario_runtime is b.scenario_runtime is None
-    a_worker.initial()
-    runtime._apply_bridge_updates()
-    assert a.state is InstanceRuntimeState.READY
-    assert b.state is InstanceRuntimeState.CONNECTING
-    a_scenario = a.scenario_runtime
-    assert a_scenario is not None
-    with patch.object(a_scenario, "evaluate", wraps=a_scenario.evaluate) as evaluate:
-        runtime._evaluate_scenarios(context().shared)
-        assert evaluate.call_count == 1
-        b_worker.initial(session_id=2)
-        runtime._apply_bridge_updates()
-        old_b = b.scenario_runtime
-        assert old_b is not None
-        assert old_b.current_snapshot == snapshot(session_id=2)
-        assert a.scenario_runtime is a_scenario
-        b_worker.disconnect()
-        assert b.state is InstanceRuntimeState.CONNECTING
-        runtime._apply_bridge_updates()
-        assert b.scenario_runtime is None
-        runtime._evaluate_scenarios(context(now=1).shared)
-        assert evaluate.call_count == 2
-        b_worker.initial(session_id=3)
-        runtime._apply_bridge_updates()
-        assert b.state is InstanceRuntimeState.READY
-        assert b.scenario_runtime is not old_b
-        assert a.scenario_runtime is a_scenario
+def test_frame_latest_only_skips_superseded_frames() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def block(context: FrameContext) -> None:
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(3)
+
+    condition = RecordingCondition(False, on_evaluate=block)
+    harness = Harness(make_scenario(condition))
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        assert entered.wait(3)
+        harness.instance.publish_frame(shared_frame(2))
+        harness.instance.publish_frame(shared_frame(3))
+        harness.instance.publish_frame(shared_frame(4))
+        release.set()
+
+        wait_for(lambda: len(condition.captured_at) >= 2)
+        wait_for(lambda: condition.captured_at[-1] == 4)
+    finally:
+        release.set()
+        harness.stop()
+
+    assert condition.captured_at == [1, 4]
 
 
-@pytest.mark.parametrize("failure", ["validation", "protocol"])
-def test_failure_is_isolated_and_terminal(failure: str) -> None:
-    a_worker, b_worker = ControlledWorker(), ControlledWorker()
-    a = InstanceRuntime(scenario(), a_worker)
-    b = InstanceRuntime(scenario(slots=2), b_worker)
-    runtime = processing(a, b)
-    a_worker.initial()
-    if failure == "validation":
-        b_worker.initial()
-    else:
-        b_worker.fail()
-    runtime._apply_bridge_updates()
-    assert a.state is InstanceRuntimeState.READY
-    assert b.state is InstanceRuntimeState.FAILED
-    assert b.scenario_runtime is None
-    if failure == "validation":
-        assert isinstance(b.error, ValueError)
-    a_scenario = a.scenario_runtime
-    assert a_scenario is not None
-    with patch.object(a_scenario, "evaluate", wraps=a_scenario.evaluate) as evaluate:
-        runtime._evaluate_scenarios(context().shared)
-        assert evaluate.call_count == 1
-    b_worker.initial(split_count=3)
-    runtime._apply_bridge_updates()
-    assert b.state is InstanceRuntimeState.FAILED
+# -- Independence and shared cache --------------------------------------------
 
 
-def test_reconnect_clears_pending_action_sequence_progress_and_old_snapshot() -> None:
-    sequence = RuleSequence(
-        Rule(detected(), Action("pause")),
-        Rule(detected(), Action("split")),
-    )
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(sequence), worker)
-    worker.initial()
-    instance.process_updates()
-    old = instance.scenario_runtime
-    assert old is not None
-    assert old.evaluate(context(True)) == Action("pause")
-    assert sequence.active_rule_index == 1
-    assert old.evaluate(context(True, 1)) is None  # Waiting for the old action.
-    worker.disconnect()
-    instance.process_updates()
-    worker.initial(session_id=2)
-    instance.process_updates()
-    fresh = instance.scenario_runtime
-    assert fresh is not None and fresh is not old
-    assert fresh.current_snapshot == snapshot(session_id=2)
-    assert sequence.active_rule_index == 0
-    assert fresh.evaluate(context(True, 2)) == Action("pause")
+def test_blocked_instance_does_not_block_another_instance() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def block(context: FrameContext) -> None:
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(3)
+
+    slow = Harness(make_scenario(RecordingCondition(False, on_evaluate=block)))
+    fast_condition = RecordingCondition(False)
+    fast = Harness(make_scenario(fast_condition))
+    slow.start()
+    fast.start()
+    try:
+        slow.wait_ready()
+        fast.wait_ready()
+        shared = shared_frame(1)
+        slow.instance.publish_frame(shared)
+        fast.instance.publish_frame(shared)
+        assert entered.wait(3)
+        wait_for(lambda: fast_condition.calls >= 1)
+        assert not release.is_set()
+    finally:
+        release.set()
+        slow.stop()
+        fast.stop()
 
 
-def test_reconnect_clears_condition_edge_and_hold_history() -> None:
-    edge = RisingEdge(detected())
-    hold = Hold(detected(), 10)
-    worker = ControlledWorker()
-    instance = InstanceRuntime(
-        scenario(Rule(edge, Action("split")), Rule(hold, Action("pause"))), worker
-    )
-    worker.initial()
-    instance.process_updates()
-    old = instance.scenario_runtime
-    assert old is not None
-    assert old.evaluate(context(False)) is None  # Arms the old rising edge.
-    # Exercise Hold's history independently, without firing a pending action.
-    assert hold.evaluate(context(True, 1)) is False
-    worker.disconnect()
-    instance.process_updates()
-    worker.initial()
-    instance.process_updates()
-    fresh = instance.scenario_runtime
-    assert fresh is not None
-    assert hold.elapsed_nanoseconds is None
-    assert fresh.evaluate(context(True, 20)) is None  # Neither old edge nor hold fires.
-    assert fresh.evaluate(context(True, 30)) == Action("pause")
+def test_shared_cache_detects_once_across_instances() -> None:
+    calls: list[int] = []
 
+    class CountingDetector:
+        @property
+        def reference_images(self) -> tuple[ReferenceImage, ...]:
+            return ()
 
-def test_same_session_resync_keeps_runtime_and_generation() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial()
-    instance.process_updates()
-    original = instance.scenario_runtime
-    worker.resync()
-    instance.process_updates()
-    assert instance.state is InstanceRuntimeState.READY
-    assert instance.scenario_runtime is original
-    assert instance.generation == 0
+        def detect(self, context: FrameContext) -> DetectionResult:
+            calls.append(1)
+            return DetectionResult(score=1.0)
 
+        def __eq__(self, other: object) -> bool:
+            return isinstance(other, CountingDetector)
 
-def test_fast_reconnect_rejects_action_from_previous_generation() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial()
-    instance.process_updates()
-    generation = instance.generation
-    worker.disconnect()
-    worker.initial()  # Same Bridge session/snapshot, but a new execution session.
-    instance.process_updates()
-    assert (
-        worker.submit_action(Action("split"), snapshot(), generation=generation)
-        is ActionSubmission.REJECTED
-    )
-    assert (
-        worker.submit_action(
-            Action("split"), snapshot(), generation=instance.generation
+        def __hash__(self) -> int:
+            return hash("CountingDetector")
+
+    def scenario() -> Scenario:
+        condition = Detected(CountingDetector(), 0.5)
+        return Scenario(
+            start_condition=condition,
+            reset_condition=None,
+            incomplete_condition=None,
+            splits=((Rule(condition, Action("split")),),),
         )
-        is ActionSubmission.ACCEPTED
+
+    first = Harness(scenario())
+    second = Harness(scenario())
+    first.start()
+    second.start()
+    try:
+        first.wait_ready()
+        second.wait_ready()
+        shared = shared_frame(1)
+        first.instance.publish_frame(shared)
+        second.instance.publish_frame(shared)
+        wait_for(
+            lambda: (
+                bool(first.diagnostics.evaluated) and bool(second.diagnostics.evaluated)
+            )
+        )
+    finally:
+        first.stop()
+        second.stop()
+
+    assert calls == [1]
+
+
+# -- Event ordering and Action semantics --------------------------------------
+
+
+def test_bridge_event_is_applied_before_frame_evaluation() -> None:
+    log: list[str] = []
+    condition = RecordingCondition(
+        False, on_evaluate=lambda context: log.append("eval")
     )
+    harness = Harness(make_scenario(condition), log=log)
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.push_event(
+            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1))
+        )
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: "eval" in log)
+    finally:
+        harness.stop()
+
+    assert log.index("event") < log.index("eval")
 
 
-def test_initial_is_validated_before_ready_and_lifecycle_is_logged(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    worker = ControlledWorker()
-    with caplog.at_level(logging.INFO):
-        instance = InstanceRuntime(scenario(), worker)
-        worker.initial()
-        assert instance.state is InstanceRuntimeState.CONNECTING
-        instance.process_updates()
-        assert instance.state is InstanceRuntimeState.READY
-        assert instance.scenario_runtime is not None
-        assert instance.scenario_runtime.current_snapshot == snapshot()
-        worker.disconnect()
-        instance.process_updates()
-        worker.initial()
-        instance.process_updates()
-    events = [record.message for record in caplog.records]
-    for event in (
-        "instance.connecting",
-        "instance.ready",
-        "instance.connection_lost",
-        "instance.reinitialized",
-    ):
-        assert event in events
-    instance.stop()
-    assert instance.state is InstanceRuntimeState.STOPPED
-    assert instance.scenario_runtime is None
+def test_bridge_events_are_applied_in_receive_order() -> None:
+    handled: list[int] = []
+
+    class OrderAdapter(ScriptedAdapter):
+        def handle_event(self, event: object) -> object:
+            result = super().handle_event(event)
+            if isinstance(event, LiveSplitUpdate):
+                handled.append(event.snapshot.event_sequence)
+            return result
+
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        adapter=OrderAdapter(initial_update()),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        for sequence in (1, 2, 3):
+            harness.push_event(
+                LiveSplitUpdate(
+                    LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=sequence)
+                )
+            )
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: len(handled) == 3)
+    finally:
+        harness.stop()
+
+    assert handled == [1, 2, 3]
 
 
-def test_initial_establishes_current_run_info() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    expected = run_info(run_revision=3)
+def test_late_event_rejects_stale_action_without_rpc() -> None:
+    entered = threading.Event()
+    release = threading.Event()
 
-    worker.initial(run=expected)
-    instance.process_updates()
+    def on_evaluate(context: FrameContext) -> None:
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(3)
 
-    assert instance.state is InstanceRuntimeState.READY
-    assert instance.run_info == expected
+    condition = RecordingCondition(True, on_evaluate=on_evaluate)
+    harness = Harness(make_scenario(condition))
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        assert entered.wait(3)
+        harness.push_event(
+            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1))
+        )
+        release.set()
+        wait_for(lambda: bool(harness.adapter.attempts))
+    finally:
+        release.set()
+        harness.stop()
 
-
-def test_transition_replaces_current_run_info() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial(run=run_info(run_revision=1))
-    instance.process_updates()
-
-    worker.transition(run=run_info(run_revision=2, name="B"))
-    instance.process_updates()
-
-    assert instance.run_info == run_info(run_revision=2, name="B")
-
-
-def test_transition_without_run_info_keeps_current_run_info() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial(run=run_info(run_revision=1))
-    instance.process_updates()
-
-    worker.transition()
-    instance.process_updates()
-
-    assert instance.run_info == run_info(run_revision=1)
+    action, expected = harness.adapter.attempts[0]
+    assert action == Action("split")
+    assert expected != harness.adapter.baseline
 
 
-def test_generation_change_discards_run_info() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial(run=run_info(run_revision=1))
-    instance.process_updates()
+def test_action_is_dispatched_in_the_same_cycle() -> None:
+    dispatched = threading.Event()
 
-    worker.disconnect()
-    instance.process_updates()
+    class SignalingAdapter(ScriptedAdapter):
+        def execute_action(
+            self, action: Action, expected_snapshot: LiveSplitSnapshot
+        ) -> ActionExecution:
+            result = super().execute_action(action, expected_snapshot)
+            dispatched.set()
+            return result
 
-    assert instance.run_info is None
+    harness = Harness(
+        make_scenario(RecordingCondition(True)),
+        adapter=SignalingAdapter(initial_update()),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        assert dispatched.wait(3)
+    finally:
+        harness.stop()
 
-
-def test_worker_failure_discards_run_info() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial(run=run_info(run_revision=1))
-    instance.process_updates()
-
-    worker.fail()
-    instance.process_updates()
-
-    assert instance.state is InstanceRuntimeState.FAILED
-    assert instance.run_info is None
-
-
-def test_stop_discards_run_info() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial(run=run_info(run_revision=1))
-    instance.process_updates()
-
-    instance.stop()
-
-    assert instance.run_info is None
-    assert instance.state is InstanceRuntimeState.STOPPED
+    assert [action for action, _ in harness.adapter.attempts] == [Action("split")]
 
 
-def test_run_info_change_does_not_change_lifecycle_status() -> None:
-    worker = ControlledWorker()
-    instance = InstanceRuntime(scenario(), worker)
-    worker.initial(run=run_info(run_revision=1))
-    instance.process_updates()
-    before = instance.status(0)
+def test_unknown_rpc_result_recovers_without_resend() -> None:
+    harness = Harness(
+        make_scenario(RecordingCondition(True)),
+        execute_result=ActionExecution.UNKNOWN,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
 
-    worker.transition(run=run_info(run_revision=2))
-    instance.process_updates()
-
-    assert instance.run_info == run_info(run_revision=2)
-    assert instance.status(0) == before
+    assert harness.adapters[0].attempts
+    assert harness.adapters[1].attempts == []
+    assert harness.instance.generation == 1
 
 
-def test_drain_cannot_revive_a_failed_or_disconnected_worker() -> None:
-    worker = ControlledWorker()
-    worker.initial()
-    worker.disconnect()
-    assert worker.drain_updates() == ()
-    assert worker.state is BridgeWorkerState.CONNECTING
-    worker.initial()
-    worker.fail()
-    assert worker.drain_updates() == ()
-    assert worker.state is BridgeWorkerState.FAILED
+# -- Reconnect -----------------------------------------------------------------
+
+
+def test_connection_loss_rebuilds_transport_and_scenario() -> None:
+    harness = Harness(make_scenario(RecordingCondition(False)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        generation = harness.instance.generation
+        harness.push_loss(BridgeConnectionLostError("lost"))
+        harness.receiver.wake()
+        wait_for(lambda: harness.instance.generation == generation + 1)
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+        assert harness.diagnostics.connection_errors
+    finally:
+        harness.stop()
+    assert harness.adapters[0].closed

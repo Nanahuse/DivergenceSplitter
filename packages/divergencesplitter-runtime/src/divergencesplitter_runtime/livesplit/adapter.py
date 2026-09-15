@@ -7,6 +7,7 @@ baseline/session/sequence validation to one received event.
 """
 
 from collections.abc import Callable
+from enum import Enum, auto
 from typing import Protocol, Self
 
 from divergencesplitter import Action, LiveSplitConnection
@@ -111,6 +112,17 @@ class LiveSplitBridgeDiagnostics(Protocol):
         previous: LiveSplitSnapshot,
         current: LiveSplitSnapshot,
     ) -> None: ...
+
+
+class ActionExecution(Enum):
+    """How far one action attempt progressed against the local baseline."""
+
+    # Rejected locally before any timer RPC was sent.
+    NOT_DISPATCHED = auto()
+    # A timer RPC completed and its response was interpreted.
+    DISPATCHED = auto()
+    # The timer RPC outcome is unknown (timeout / transport failure).
+    UNKNOWN = auto()
 
 
 class LiveSplitBridgeAdapter:
@@ -253,7 +265,7 @@ class LiveSplitBridgeAdapter:
         self,
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
-    ) -> None:
+    ) -> ActionExecution:
         actual_snapshot = self._require_baseline()
 
         if not self._matches_expected_state(expected_snapshot, actual_snapshot):
@@ -263,12 +275,12 @@ class LiveSplitBridgeAdapter:
                 expected_snapshot,
                 actual_snapshot,
             )
-            return
+            return ActionExecution.NOT_DISPATCHED
         if not self._meets_action_precondition(action, actual_snapshot):
             self._diagnostics.action_precondition_failed(
                 self._connection, action, actual_snapshot
             )
-            return
+            return ActionExecution.NOT_DISPATCHED
 
         operation: Callable[[], common_pb2.OperationResponse] = {
             "start": self._rpc.start,
@@ -289,12 +301,14 @@ class LiveSplitBridgeAdapter:
                 error.code,
                 error.message,
             )
-            return
+            return ActionExecution.DISPATCHED
+        except BridgeProtocolError:
+            raise
         except BridgeClientError as error:
             self._diagnostics.action_result_unknown(
                 self._connection, action, actual_snapshot, error
             )
-            raise
+            return ActionExecution.UNKNOWN
 
         if not response.success:
             self._diagnostics.action_rejected(
@@ -304,13 +318,14 @@ class LiveSplitBridgeAdapter:
                 None,
                 response.message,
             )
-            return
+            return ActionExecution.DISPATCHED
         if not response.HasField("snapshot"):
             raise BridgeProtocolError(
                 "successful timer operation response did not contain a snapshot"
             )
         result_snapshot = snapshot_from_proto(response.snapshot)
         self._diagnostics.action_succeeded(self._connection, action, result_snapshot)
+        return ActionExecution.DISPATCHED
 
     @staticmethod
     def _matches_expected_state(

@@ -1,6 +1,7 @@
 """LiveSplit.Bridge runtime integration."""
 
 from divergencesplitter_runtime.livesplit.adapter import (
+    ActionExecution,
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
 )
@@ -23,23 +24,12 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitUpdateKind,
     TimerPhase,
 )
-from divergencesplitter_runtime.livesplit.worker import (
-    ActionSubmission,
-    BridgeActionRequest,
-    BridgeWorker,
-    BridgeWorkerDiagnostics,
-    BridgeWorkerState,
-)
 
 __all__ = [
-    "ActionSubmission",
-    "BridgeActionRequest",
+    "ActionExecution",
     "BridgeEventConnectionLost",
     "BridgeEventReceived",
     "BridgeEventReceiver",
-    "BridgeWorker",
-    "BridgeWorkerDiagnostics",
-    "BridgeWorkerState",
     "LiveSplitBridgeAdapter",
     "LiveSplitBridgeDiagnostics",
     "LiveSplitResyncReason",

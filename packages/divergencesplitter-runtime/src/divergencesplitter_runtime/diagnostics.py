@@ -50,10 +50,6 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitRunInfo,
     LiveSplitSnapshot,
 )
-from divergencesplitter_runtime.livesplit.worker import (
-    ActionSubmission,
-    BridgeActionRequest,
-)
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
@@ -161,7 +157,7 @@ class OperationalDiagnostics:
         self._latest_input_frame: Frame | None = None
         self._latest_processed_frame: Frame | None = None
         self._instances: tuple[ScenarioInstance, ...] = ()
-        self._condition_observations: tuple[ConditionObservation, ...] = ()
+        self._instance_observations: dict[int, tuple[ConditionObservation, ...]] = {}
         self._detector_tree: DetectorTreeSnapshot | None = None
         self._runtime_started = threading.Event()
         self._instance_statuses: tuple[InstanceStatus, ...] = ()
@@ -198,12 +194,13 @@ class OperationalDiagnostics:
                 self._instances = instances
                 self._latest_processed_frame = None
                 self._detector_tree = build_detector_tree(instances)
-                self._condition_observations = _collect_condition_observations(
-                    instances
-                )
+                self._instance_observations = {
+                    index: _collect_condition_observations((instance,))
+                    for index, instance in enumerate(instances)
+                }
             except Exception:  # noqa: BLE001
                 self._detector_tree = None
-                self._condition_observations = ()
+                self._instance_observations = {}
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]:
         """Copy the latest lifecycle outcomes, independently of logging level."""
@@ -378,15 +375,12 @@ class OperationalDiagnostics:
         )
 
     def frame_processing_completed(self, context: FrameContext) -> None:
+        """Record one frame after normalization and dispatch to all instances."""
         completed_at = self._time_provider.now()
-        observations = _collect_condition_observations(
-            self._instances, evaluated_condition_ids=context.evaluated_condition_ids
-        )
         with self._metrics_lock:
             self._processing_rate.record(completed_at)
             self._processed_frames_total += 1
         with self._observable_lock:
-            self._condition_observations = observations
             self._latest_processed_frame = context.frame
         fields: dict[str, object] = {
             **_frame_fields(context.frame),
@@ -402,6 +396,26 @@ class OperationalDiagnostics:
             for name, value in _detector_fields(detector, result).items():
                 fields[f"detector.{index}.{name}"] = value
         self._emit(logging.DEBUG, "processing.frame_completed", **fields)
+
+    def instance_evaluated(
+        self,
+        scenario_index: int,
+        context: FrameContext,
+    ) -> None:
+        """Publish one instance's condition activity after it evaluated a frame."""
+        with self._observable_lock:
+            if scenario_index >= len(self._instances):
+                return
+            instance = self._instances[scenario_index]
+        try:
+            observations = _collect_condition_observations(
+                (instance,),
+                evaluated_condition_ids=context.evaluated_condition_ids,
+            )
+        except Exception:  # noqa: BLE001
+            return
+        with self._observable_lock:
+            self._instance_observations[scenario_index] = observations
 
     def take_latest_input_frame(self) -> Frame | None:
         """Return the newest captured input Frame and clear the slot.
@@ -422,10 +436,14 @@ class OperationalDiagnostics:
             return frame
 
     def take_condition_observations(self) -> tuple[ConditionObservation, ...]:
-        """Return the latest condition values and clear the pending snapshot."""
+        """Return the latest per-instance condition values and clear them."""
         with self._observable_lock:
-            observations = self._condition_observations
-            self._condition_observations = ()
+            observations = tuple(
+                observation
+                for index in sorted(self._instance_observations)
+                for observation in self._instance_observations[index]
+            )
+            self._instance_observations = {}
             return observations
 
     def detector_tree(self) -> DetectorTreeSnapshot | None:
@@ -524,26 +542,6 @@ class OperationalDiagnostics:
             "bridge.reconnect_failed",
             connection,
             error_type=type(error).__name__,
-        )
-
-    def update_queue_overflowed(self, connection: LiveSplitConnection) -> None:
-        self._emit_connection(
-            logging.WARNING, "bridge.update_queue_overflowed", connection
-        )
-
-    def action_submitted(
-        self,
-        connection: LiveSplitConnection,
-        request: BridgeActionRequest,
-        result: ActionSubmission,
-    ) -> None:
-        self._emit_connection(
-            logging.DEBUG if result is ActionSubmission.ACCEPTED else logging.WARNING,
-            "bridge.action_submitted",
-            connection,
-            action=request.action.operation,
-            submission=result.name,
-            **_snapshot_fields("expected", request.expected_snapshot),
         )
 
     def worker_stopped(self, connection: LiveSplitConnection) -> None:
