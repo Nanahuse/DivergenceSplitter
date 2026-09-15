@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from io import StringIO
 
 import numpy as np
+import pytest
 from divergencesplitter import (
     Action,
     ColorRangeConfig,
@@ -475,3 +476,133 @@ def test_instance_snapshots_are_consistent_across_threads() -> None:
         assert diagnostics.instance_statuses() in (ready, waiting)
     writer.join(1)
     assert not writer.is_alive()
+
+
+def _latency_instance() -> ScenarioInstance:
+    condition = Detected(MeanBrightnessDetector(), 300.0)
+    return ScenarioInstance(
+        LiveSplitConnection("rpc", "event"),
+        Scenario(condition, condition, None, ()),
+    )
+
+
+def _latency_context(captured_ns: int) -> FrameContext:
+    return FrameContext(
+        frame=Frame(
+            np.zeros((1, 1), dtype=np.uint8),
+            MonotonicTime(captured_ns),
+        ),
+        now=MonotonicTime(captured_ns),
+    )
+
+
+def test_evaluation_latency_is_capture_to_evaluate_completion() -> None:
+    from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
+
+    diagnostics = OperationalDiagnostics(
+        StringIO(), time_provider=MutableTimeProvider(250)
+    )
+    diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
+
+    diagnostics.instance_evaluated(0, _latency_context(100), MonotonicTime(250))
+
+    metrics = diagnostics.metrics_snapshot().instance_evaluations
+    assert metrics == (InstanceEvaluationMetrics(0, 150, 150),)
+
+
+def test_evaluation_latency_averages_and_maxes_every_frame() -> None:
+    diagnostics = OperationalDiagnostics(
+        StringIO(), time_provider=MutableTimeProvider(6_000_000)
+    )
+    diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
+
+    for completed in (2_000_000, 4_000_000, 6_000_000):
+        diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(completed))
+
+    metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
+    assert metrics.average_latency_ns == 4_000_000
+    assert metrics.max_latency_ns == 6_000_000
+
+
+def test_evaluation_latency_is_isolated_per_instance() -> None:
+    from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
+
+    diagnostics = OperationalDiagnostics(
+        StringIO(), time_provider=MutableTimeProvider(10_000_000)
+    )
+    diagnostics.bind_runtime(
+        (_latency_instance(), _latency_instance()),
+        VideoFileSource("recording.mp4"),
+    )
+
+    for index, completed in (
+        (0, 2_000_000),
+        (0, 4_000_000),
+        (1, 8_000_000),
+        (1, 10_000_000),
+    ):
+        diagnostics.instance_evaluated(
+            index, _latency_context(0), MonotonicTime(completed)
+        )
+
+    metrics = diagnostics.metrics_snapshot().instance_evaluations
+    assert metrics == (
+        InstanceEvaluationMetrics(0, 3_000_000, 4_000_000),
+        InstanceEvaluationMetrics(1, 9_000_000, 10_000_000),
+    )
+
+
+def test_evaluation_average_expires_while_max_is_kept() -> None:
+    clock = MutableTimeProvider(5_000_000)
+    diagnostics = OperationalDiagnostics(StringIO(), time_provider=clock)
+    diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
+
+    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(5_000_000))
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+        5_000_000
+    )
+
+    clock.nanoseconds = 2_000_000_000
+
+    metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
+    assert metrics.average_latency_ns is None
+    assert metrics.max_latency_ns == 5_000_000
+
+
+@pytest.mark.parametrize("state", ["CONNECTING", "FAILED", "STOPPED"])
+def test_evaluation_average_clears_and_max_survives_not_ready(state: str) -> None:
+    from divergencesplitter_runtime import InstanceRuntimeState, InstanceStatus
+
+    diagnostics = OperationalDiagnostics(
+        StringIO(), time_provider=MutableTimeProvider(3_000_000)
+    )
+    diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
+    diagnostics.instances_changed(((InstanceStatus(0, InstanceRuntimeState.READY)),))
+    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(3_000_000))
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+        3_000_000
+    )
+
+    diagnostics.instances_changed((InstanceStatus(0, InstanceRuntimeState[state]),))
+
+    metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
+    assert metrics.average_latency_ns is None
+    assert metrics.max_latency_ns == 3_000_000
+
+
+def test_instance_reset_clears_average_and_sticky_max() -> None:
+    diagnostics = OperationalDiagnostics(
+        StringIO(), time_provider=MutableTimeProvider(6_000_000)
+    )
+    diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
+
+    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(5_000_000))
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+        5_000_000
+    )
+
+    diagnostics.instance_reset(0)
+
+    metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
+    assert metrics.average_latency_ns is None
+    assert metrics.max_latency_ns is None

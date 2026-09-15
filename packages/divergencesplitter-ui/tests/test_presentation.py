@@ -14,6 +14,7 @@ from divergencesplitter import (
 )
 from divergencesplitter_runtime import LiveSplitRunInfo, LiveSplitSegmentInfo
 from divergencesplitter_runtime.instances import ScenarioInstance
+from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     _collect_condition_observations,
@@ -27,6 +28,8 @@ from divergencesplitter_ui.presentation import (
     ScreenPresenter,
     condition_label,
     detector_label,
+    evaluation_latency_label,
+    format_latency_ms,
     format_score,
     has_new_observations,
     scenario_label,
@@ -288,3 +291,26 @@ def test_elapsed_progress_from_condition_through_observation_to_label() -> None:
         assert ("ACTIVE" in label(context)) is not short
     elapsed.reset()
     assert label() == "Elapsed [UNOBSERVED]  — / 2.000 s"
+
+
+def test_latency_formatting_uses_milliseconds_with_one_decimal() -> None:
+    assert format_latency_ms(3_100_000) == "3.1 ms"
+    assert format_latency_ms(6_800_000) == "6.8 ms"
+    assert format_latency_ms(None) == "—"
+
+
+def test_evaluation_latency_label_is_isolated_per_scenario() -> None:
+    first = evaluation_latency_label(InstanceEvaluationMetrics(0, 3_100_000, 6_800_000))
+    second = evaluation_latency_label(
+        InstanceEvaluationMetrics(1, 4_200_000, 8_900_000)
+    )
+    unmeasured = evaluation_latency_label(InstanceEvaluationMetrics(0, None, None))
+
+    assert "Scenario 1" in first
+    assert "Ave 3.1 ms" in first
+    assert "Max 6.8 ms" in first
+    assert "Scenario 2" in second
+    assert "Ave 4.2 ms" in second
+    assert "Max 8.9 ms" in second
+    assert "Ave —" in unmeasured
+    assert "Max —" in unmeasured

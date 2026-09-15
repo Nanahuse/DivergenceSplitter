@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Protocol
 
-from divergencesplitter import Action, LiveSplitConnection
+from divergencesplitter import Action, LiveSplitConnection, MonotonicTime
+from divergencesplitter.clock import TimeProvider
 from divergencesplitter.frame.models import FrameContext, SharedFrameEvaluation
 from divergencesplitter.scenario.models import Scenario
 from livesplit_bridge import (
@@ -106,7 +107,10 @@ class InstanceDiagnostics(LiveSplitBridgeDiagnostics, Protocol):
         self,
         scenario_index: int,
         context: FrameContext,
+        completed_at: MonotonicTime,
     ) -> None: ...
+
+    def instance_reset(self, scenario_index: int) -> None: ...
 
 
 class _Attempt(Enum):
@@ -147,6 +151,7 @@ class InstanceRuntime:
         event_capacity: int = DEFAULT_EVENT_CAPACITY,
         rpc_timeout_ms: int = 3000,
         heartbeat_timeout_ms: int = 3000,
+        time_provider: TimeProvider | None = None,
         subscriber_factory: Callable[[], BridgeEventSubscriberLike] | None = None,
         adapter_factory: Callable[[], LiveSplitBridgeAdapter] | None = None,
         receiver_factory: (
@@ -169,6 +174,7 @@ class InstanceRuntime:
         self._event_capacity = event_capacity
         self._rpc_timeout_ms = rpc_timeout_ms
         self._heartbeat_timeout_ms = heartbeat_timeout_ms
+        self._time_provider = time_provider or TimeProvider()
         self._subscriber_factory = subscriber_factory or self._create_subscriber
         self._adapter_factory = adapter_factory or self._create_adapter
         self._receiver_factory = receiver_factory or self._create_receiver
@@ -379,7 +385,13 @@ class InstanceRuntime:
         except Exception as error:  # noqa: BLE001
             self._diagnostics.scenario_evaluation_failed(self.scenario_index, error)
             return None
-        self._publish_observations(context)
+        # Evaluation latency ends the moment evaluate() returned, before any
+        # action validity check, late event drain, or RPC.
+        completed_at = self._time_provider.now()
+        self._publish_observations(context, completed_at)
+        if action is not None and action.operation in ("start", "reset"):
+            # A new Start/Reset decision begins a fresh evaluation period.
+            self._publish_reset()
         if action is None:
             return None
         return self._dispatch_action(adapter, runtime, action)
@@ -488,9 +500,22 @@ class InstanceRuntime:
             self._pending_frame = None
             return shared
 
-    def _publish_observations(self, context: FrameContext) -> None:
+    def _publish_observations(
+        self,
+        context: FrameContext,
+        completed_at: MonotonicTime,
+    ) -> None:
         try:
-            self._diagnostics.instance_evaluated(self.scenario_index, context)
+            self._diagnostics.instance_evaluated(
+                self.scenario_index, context, completed_at
+            )
+        except Exception:  # noqa: BLE001, S110
+            # Diagnostics must never break the evaluation cycle.
+            pass
+
+    def _publish_reset(self) -> None:
+        try:
+            self._diagnostics.instance_reset(self.scenario_index)
         except Exception:  # noqa: BLE001, S110
             # Diagnostics must never break the evaluation cycle.
             pass
