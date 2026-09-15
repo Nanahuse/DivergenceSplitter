@@ -83,6 +83,7 @@ class LiveSplitResyncReason(Enum):
     SESSION_CHANGED = auto()
     CONNECTION_LOST = auto()
     UPDATE_QUEUE_OVERFLOW = auto()
+    EVENT_INBOX_OVERFLOW = auto()
 
 
 @dataclass(frozen=True)

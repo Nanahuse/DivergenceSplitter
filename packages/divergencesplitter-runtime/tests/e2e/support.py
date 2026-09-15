@@ -240,7 +240,12 @@ class BridgeScript:
 
 
 class ScriptedBridgeAdapter:
-    """Adapter-shaped test double selected by LiveSplitConnection."""
+    """Adapter-shaped test double selected by LiveSplitConnection.
+
+    Only the RPC-side protocol handling is represented here. Raw event
+    reception is provided by :class:`ScriptedEventSubscriber`, which feeds the
+    same :class:`BridgeScript` authority.
+    """
 
     scripts: ClassVar[dict[LiveSplitConnection, BridgeScript]] = {}
 
@@ -255,12 +260,13 @@ class ScriptedBridgeAdapter:
     def attach(self) -> LiveSplitUpdate:
         return self._script.attach()
 
-    def receive(
+    def handle_event(
         self,
-        *,
-        timeout_ms: int | None = None,
+        event: LiveSplitUpdate | LiveSplitResyncReason | Exception | None,
     ) -> LiveSplitUpdate | LiveSplitResyncReason | None:
-        return self._script.receive(timeout_ms=timeout_ms)
+        if isinstance(event, Exception):
+            raise event
+        return event
 
     def execute_action(
         self,
@@ -272,11 +278,38 @@ class ScriptedBridgeAdapter:
     def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
         return self._script.resync(reason)
 
-    def reconnect(self) -> LiveSplitUpdate:
-        return self._script.reconnect()
-
     def close(self) -> None:
         self._script.close()
+
+
+class ScriptedEventSubscriber:
+    """Subscriber-shaped test double selected by event endpoint.
+
+    Shares the :class:`BridgeScript` used by :class:`ScriptedBridgeAdapter` so
+    the script's ordered event stream reaches the worker through the real event
+    receiver.
+    """
+
+    def __init__(
+        self,
+        event_endpoint: str = "",
+        **_: object,
+    ) -> None:
+        self._script = next(
+            script
+            for connection, script in ScriptedBridgeAdapter.scripts.items()
+            if connection.event_endpoint == event_endpoint
+        )
+
+    def receive(
+        self,
+        *,
+        timeout_ms: int | None = None,
+    ) -> LiveSplitUpdate | LiveSplitResyncReason | None:
+        return self._script.receive(timeout_ms=timeout_ms)
+
+    def close(self) -> None:
+        pass
 
 
 class RecordingDiagnostics:

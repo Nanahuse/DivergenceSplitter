@@ -40,6 +40,7 @@ from .support import (
     BridgeScript,
     RecordingDiagnostics,
     ScriptedBridgeAdapter,
+    ScriptedEventSubscriber,
     snapshot,
 )
 
@@ -50,8 +51,14 @@ FRAME_SIZE = (16, 16)
 
 
 @pytest.fixture(autouse=True)
-def clear_adapter_scripts() -> Iterator[None]:
+def clear_adapter_scripts(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     ScriptedBridgeAdapter.scripts = {}
+    # The worker owns raw event reception through BridgeEventSubscriber; route
+    # it to the same scripted authority as the adapter for every e2e test.
+    monkeypatch.setattr(
+        "divergencesplitter_runtime.livesplit.worker.BridgeEventSubscriber",
+        ScriptedEventSubscriber,
+    )
     yield
     ScriptedBridgeAdapter.scripts = {}
 

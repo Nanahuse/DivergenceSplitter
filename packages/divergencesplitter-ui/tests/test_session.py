@@ -624,6 +624,16 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
             self.close_calls += 1
             super().close()
 
+    class IdleSubscriber:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def receive(self, *, timeout_ms: int | None = None) -> None:
+            return None
+
+        def close(self) -> None:
+            pass
+
     class WaitingSourceBuilder:
         def __init__(self) -> None:
             self.sources: list[WaitingSource] = []
@@ -637,9 +647,15 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
     controller, _, diagnostics_factory = make_controller(
         source_builder=source_builder, runtime_factory=ApplicationRuntimeFactory()
     )
-    with patch(
-        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter"
-    ) as adapter:
+    with (
+        patch(
+            "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter"
+        ) as adapter,
+        patch(
+            "divergencesplitter_runtime.livesplit.worker.BridgeEventSubscriber",
+            IdleSubscriber,
+        ),
+    ):
         adapter.return_value.attach.side_effect = BridgeProtocolError(
             "incompatible protocol"
         )
