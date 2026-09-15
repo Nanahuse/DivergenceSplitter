@@ -322,13 +322,17 @@ class ConfigurationPage:
         return diagnostics.take_latest_input_frame()
 
     def _on_input_changed(self) -> None:
-        if is_active(self._controller.state):
-            self._preview_controller.stop()
-            self._started_preview_key = None
-            self._controller.request_stop()
-            self._actions.set_status(
-                "Input changed; preview will update. Save to restart."
-            )
+        """Record an unsaved source edit without touching the running runtime.
+
+        Editing the draft only changes the draft and synchronizes the preview;
+        it never stops or restarts the session. While a session runs, the
+        Configuration preview keeps showing its raw input frame, so the draft
+        change is deferred until Save. Only ``ConfigurationActions`` reloads the
+        controlled runtime, and only after a successful save.
+        """
+
+        self._sync_preview_now()
+        self._actions.set_status("Input changed; save to apply.")
 
     async def _on_new(self, event: ft.Event[ft.OutlinedButton]) -> None:
         await self._run_action(self._actions.new)
@@ -353,10 +357,16 @@ class ConfigurationPage:
         self._request_update()
 
     def _on_log_level(self, event: ft.Event[ft.Dropdown]) -> None:
-        self._model.set_log_level(self._log_level.value or "DEBUG")
-        self._controller.set_log_level(self._log_level.value or "DEBUG")
+        # Log level preserves the existing Dear PyGui semantics: it is applied
+        # to the running diagnostics immediately (live) while the draft keeps it
+        # for the next save. Applying it never restarts the session.
+        level = self._log_level.value or "DEBUG"
+        self._model.set_log_level(level)
+        self._controller.set_log_level(level)
 
     def _on_reaction_time(self, event: ft.Event[ft.TextField]) -> None:
+        # Reaction time follows the draft like every other runtime option; a
+        # running session keeps its loaded value until Save reloads it.
         try:
             value = int((self._reaction_time.value or "").strip())
         except ValueError:

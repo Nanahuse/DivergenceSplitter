@@ -65,6 +65,7 @@ class FakeController:
         self.started: list[Path] = []
         self.request_stop_calls = 0
         self.join_calls = 0
+        self.log_levels: list[str] = []
 
     def start(self, path) -> None:
         if self.state in {
@@ -85,7 +86,7 @@ class FakeController:
         return True
 
     def set_log_level(self, level: str) -> None:
-        return None
+        self.log_levels.append(level)
 
 
 class FakeDialogs:
@@ -446,15 +447,129 @@ class TestPreviewSync:
 
         assert preview.started == []
 
-    def test_editing_source_requests_stop_but_not_restart(self) -> None:
-        controller = FakeController()
+
+class TestUnsavedEditsDoNotStopRuntime:
+    def _running_page(self, **kwargs):
+        controller = kwargs.pop("controller", None) or FakeController()
         controller.state = SessionState.RUNNING
-        page = make_page(controller=controller)
+        page = make_page(controller=controller, **kwargs)
+        page.populate()
+        page.tick(SessionState.RUNNING, visible=True)
+        return page, controller
+
+    def _assert_runtime_untouched(self, controller) -> None:
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+        assert controller.state is SessionState.RUNNING
+
+    def test_camera_edits_do_not_stop_runtime(self) -> None:
+        page, controller = self._running_page()
+        source = page._source
+
+        device_label = source._device.options[0].key
+        source._device.value = device_label
+        fire(source._on_device_selected, source._device)
+        mode_label = source._mode.options[0].key
+        source._mode.value = mode_label
+        fire(source._on_mode_selected, source._mode)
+        source._request_60_fps.value = True
+        fire(source._on_request_60_fps_changed, source._request_60_fps)
+
+        self._assert_runtime_untouched(controller)
+        assert page._model.is_dirty
+
+    def test_source_type_change_does_not_stop_runtime(self) -> None:
+        page, controller = self._running_page()
+        source = page._source
+
+        source._source_type.value = "Video File"
+        fire(source._on_source_type_selected, source._source_type)
+
+        self._assert_runtime_untouched(controller)
+        assert page._model.draft is not None
+        assert page._model.draft.source.selected_type is SourceType.VIDEO
+
+    def test_ndi_change_does_not_stop_runtime(self) -> None:
+        page, controller = self._running_page(
+            ndi=FakeNdiDiscovery(available=True, sources=("OBS",))
+        )
+        source = page._source
+
+        source._source_type.value = "NDI"
+        fire(source._on_source_type_selected, source._source_type)
+        source._ndi_source.value = "OBS"
+        fire(source._on_ndi_source_selected, source._ndi_source)
+
+        self._assert_runtime_untouched(controller)
+        assert page._model.draft is not None
+        assert page._model.draft.source.ndi.name == "OBS"
+
+    def test_crop_and_resize_do_not_stop_runtime(self) -> None:
+        page, controller = self._running_page()
+        section = page._frame_processing
+
+        section._crop_enabled.value = True
+        fire(section._on_crop_enabled_changed, section._crop_enabled, data=True)
+        section._resize_enabled.value = True
+        fire(section._on_resize_enabled_changed, section._resize_enabled, data=True)
+        section._resize_interpolation.value = "Cubic"
+        fire(
+            section._on_resize_interpolation_changed,
+            section._resize_interpolation,
+        )
+
+        self._assert_runtime_untouched(controller)
+
+    def test_instance_edits_do_not_stop_runtime(self) -> None:
+        page, controller = self._running_page()
+        section = page._instances
+
+        section._rows[0].scenario.value = "next.py"
+        fire(section._rows[0].scenario.on_change, section._rows[0].scenario)
+        section._rows[0].rpc.value = "tcp://127.0.0.1:54000"
+        fire(section._rows[0].rpc.on_change, section._rows[0].rpc)
+        fire(section._on_add, section._control)
+        section._on_remove(0)
+
+        self._assert_runtime_untouched(controller)
+        assert page._model.is_dirty
+
+    def test_status_reports_unsaved_input_change(self) -> None:
+        page, _ = self._running_page()
 
         page._on_input_changed()
 
-        assert controller.request_stop_calls == 1
-        assert controller.started == []
+        assert page._actions.status == "Input changed; save to apply."
+
+    def test_log_level_applies_live_without_restart(self) -> None:
+        page, controller = self._running_page()
+
+        page._log_level.value = "OFF"
+        fire(page._on_log_level, page._log_level)
+
+        assert page._model.draft is not None
+        assert page._model.draft.log_level == "OFF"
+        assert controller.log_levels == ["OFF"]
+        self._assert_runtime_untouched(controller)
+
+    def test_reaction_time_edits_draft_only(self) -> None:
+        page, controller = self._running_page()
+
+        page._reaction_time.value = "30"
+        fire(page._on_reaction_time, page._reaction_time)
+
+        assert page._model.draft is not None
+        assert page._model.draft.reaction_time_ms == 30
+        self._assert_runtime_untouched(controller)
+        assert page._model.is_dirty
+
+    def test_draft_change_does_not_transition_session_state(self) -> None:
+        page, controller = self._running_page()
+
+        page._on_input_changed()
+
+        assert controller.state is not SessionState.STOPPING
+        assert controller.state is SessionState.RUNNING
 
 
 class TestTeardown:
