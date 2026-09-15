@@ -301,6 +301,7 @@ class TestReloadTiming:
         model.set_log_level("OFF")
 
         assert controller.started == []
+        assert controller.request_stop_calls == 0
         assert model.is_dirty
 
     def test_save_while_running_defers_until_stopped(self, tmp_path: Path) -> None:
@@ -334,6 +335,85 @@ class TestReloadTiming:
         assert controller.request_stop_calls == 1
         assert controller.started == []
         assert actions.status == "Reloading configuration..."
+
+
+class TestSaveFailureWhileRunning:
+    def test_failed_save_keeps_running_runtime_and_dirty(self, tmp_path: Path) -> None:
+        directory = tmp_path / "a-directory"
+        directory.mkdir()
+        model = make_model(directory)
+        model.set_log_level("OFF")
+        controller = FakeController()
+        controller.state = SessionState.RUNNING
+        actions, _, _, _ = make_actions(model=model, controller=controller)
+
+        result = asyncio.run(actions.save(SessionState.RUNNING))
+
+        assert result is False
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+        assert model.is_dirty
+
+
+class TestNewWhileRunning:
+    def test_new_defers_runtime_change_until_save(self, tmp_path: Path) -> None:
+        target = tmp_path / "new.json"
+        controller = FakeController()
+        controller.state = SessionState.RUNNING
+        actions, _, model, _ = make_actions(
+            controller=controller, dialogs=FakeDialogs(save_results=(target,))
+        )
+
+        result = asyncio.run(actions.new(SessionState.RUNNING))
+
+        assert result is True
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+        assert model.draft is not None
+        assert model.draft.configuration_path == target
+
+
+class TestOpenWhileRunning:
+    def test_cancelled_open_leaves_runtime(self) -> None:
+        controller = FakeController()
+        controller.state = SessionState.RUNNING
+        actions, _, _, _ = make_actions(
+            controller=controller, dialogs=FakeDialogs(open_result=None)
+        )
+
+        assert asyncio.run(actions.open(SessionState.RUNNING)) is False
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+
+    def test_invalid_open_leaves_runtime(self, tmp_path: Path) -> None:
+        path = tmp_path / "broken.json"
+        path.write_text("{ not valid", encoding="utf-8")
+        controller = FakeController()
+        controller.state = SessionState.RUNNING
+        actions, _, _, _ = make_actions(
+            controller=controller, dialogs=FakeDialogs(open_result=path)
+        )
+
+        assert asyncio.run(actions.open(SessionState.RUNNING)) is False
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+
+    def test_valid_open_defers_reload_until_stopped(self, tmp_path: Path) -> None:
+        path = tmp_path / "config.json"
+        save_configuration(path, video_configuration())
+        controller = FakeController()
+        controller.state = SessionState.RUNNING
+        actions, _, _, _ = make_actions(
+            controller=controller, dialogs=FakeDialogs(open_result=path)
+        )
+
+        assert asyncio.run(actions.open(SessionState.RUNNING)) is True
+        assert controller.request_stop_calls == 1
+        assert controller.started == []
+
+        controller.state = SessionState.STOPPED
+        assert actions.advance(controller.state) is True
+        assert controller.started == [path]
 
 
 class TestPermissions:
