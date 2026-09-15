@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 from typing import cast
 
+import flet as ft
 from divergencesplitter_ui.flet_application import FletApplication
 from divergencesplitter_ui.session import SessionController, SessionState
 
@@ -85,3 +86,30 @@ class TestShutdown:
 
         assert fake.request_stop_calls == 1
         assert len(fake.join_calls) == 1
+
+
+class TestNavigation:
+    def test_switching_to_configuration_does_not_stop_runtime(self) -> None:
+        application, fake = make_application()
+        application._monitor_view = ft.Container()
+        application._configuration_view = ft.Container(visible=False)
+        rail = ft.NavigationRail(selected_index=1)
+
+        application._on_navigate(ft.Event("change", rail))
+
+        assert fake.request_stop_calls == 0
+        assert application.active_view == "configuration"
+        assert application._configuration_view.visible is True
+        assert application._monitor_view.visible is False
+
+    def test_switching_back_to_monitor_restores_visibility(self) -> None:
+        application, _ = make_application()
+        application._monitor_view = ft.Container(visible=False)
+        application._configuration_view = ft.Container()
+        rail = ft.NavigationRail(selected_index=0)
+
+        application._on_navigate(ft.Event("change", rail))
+
+        assert application.active_view == "monitor"
+        assert application._monitor_view.visible is True
+        assert application._configuration_view.visible is False
