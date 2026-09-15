@@ -4,7 +4,11 @@ import threading
 from typing import Protocol
 
 from divergencesplitter.clock import MonotonicTime, TimeProvider
-from divergencesplitter.frame.models import Frame, FrameContext
+from divergencesplitter.frame.models import (
+    Frame,
+    FrameContext,
+    SharedFrameEvaluation,
+)
 from divergencesplitter.frame.normalizer import (
     FrameNormalizationError,
     FrameNormalizer,
@@ -88,8 +92,12 @@ class ProcessingRuntime:
                 self._diagnostics.frame_normalization_failed(normalized)
                 self.request_stop()
                 return
-            context = FrameContext(frame=normalized, now=now)
-            self._evaluate_scenarios(context)
+            shared = SharedFrameEvaluation(frame=normalized, now=now)
+            evaluated_condition_ids = self._evaluate_scenarios(shared)
+            context = FrameContext(
+                shared=shared,
+                evaluated_condition_ids=evaluated_condition_ids,
+            )
             self._diagnostics.frame_processing_completed(context)
 
     def _apply_bridge_updates(self) -> None:
@@ -100,7 +108,8 @@ class ProcessingRuntime:
             if current != previous:
                 self._diagnostics.instance_run_changed(scenario_index, current)
 
-    def _evaluate_scenarios(self, context: FrameContext) -> None:
+    def _evaluate_scenarios(self, shared: SharedFrameEvaluation) -> set[int]:
+        evaluated_condition_ids: set[int] = set()
         for scenario_index, instance in enumerate(self._instances):
             scenario = instance.scenario_runtime
             worker = instance.worker
@@ -110,11 +119,17 @@ class ProcessingRuntime:
                 or not worker.is_available
             ):
                 continue
+            # Each scenario gets its own context, but all contexts of a frame
+            # share the preprocessing and detection caches.
+            context = FrameContext(shared=shared)
             try:
                 action = scenario.evaluate(context)
             except Exception as error:  # noqa: BLE001
                 self._diagnostics.scenario_evaluation_failed(scenario_index, error)
                 continue
+            finally:
+                evaluated_condition_ids |= context.evaluated_condition_ids
             snapshot = scenario.current_snapshot
             if action is not None and snapshot is not None:
                 worker.submit_action(action, snapshot, generation=instance.generation)
+        return evaluated_condition_ids
