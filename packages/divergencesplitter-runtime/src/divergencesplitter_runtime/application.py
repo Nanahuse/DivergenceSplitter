@@ -77,6 +77,7 @@ class ApplicationRuntime:
         frame_source: FrameSource,
         *,
         diagnostics: ApplicationDiagnostics,
+        reaction_time_ms: int = 0,
     ) -> None:
         validate_instances(
             tuple((instance.connection, instance.scenario) for instance in instances)
@@ -91,6 +92,7 @@ class ApplicationRuntime:
                 instance.scenario,
                 diagnostics=diagnostics,
                 logger=diagnostics.scenario_logger(index),
+                reaction_time_ms=reaction_time_ms,
             )
             for index, instance in enumerate(instances)
         )

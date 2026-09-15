@@ -81,10 +81,12 @@ class FakeRuntime:
         frame_source: object,
         *,
         diagnostics: ApplicationDiagnostics,
+        reaction_time_ms: int = 0,
     ) -> None:
         self.loaded_instances = instances
         self.frame_source = frame_source
         self.diagnostics = diagnostics
+        self.reaction_time_ms = reaction_time_ms
         self.stop_requests = 0
         FakeRuntime.instances.append(self)
 
@@ -484,3 +486,38 @@ def test_cli_load_resizes_references(monkeypatch, tmp_path) -> None:
     loaded = _load_instances(configuration, tmp_path)[0].scenario.start_condition
     assert isinstance(loaded, Detected)
     assert loaded.detector.reference_images[0].image == ((0,),)
+
+
+def test_reaction_time_is_forwarded_to_the_runtime() -> None:
+    configuration = ApplicationConfiguration(
+        1,
+        VideoSourceConfiguration("run.mp4"),
+        (
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"),
+                "./scenario.py",
+            ),
+        ),
+        RuntimeConfiguration("INFO", 30),
+    )
+    with (
+        patch(
+            "divergencesplitter_runtime.cli.load_configuration",
+            return_value=configuration,
+        ),
+        patch(
+            "divergencesplitter_runtime.cli.load_scenario",
+            return_value=empty_scenario(),
+        ),
+        patch(
+            "divergencesplitter_runtime.cli.build_frame_source",
+            return_value=object(),
+        ),
+        patch("divergencesplitter_runtime.cli.ApplicationRuntime", FakeRuntime),
+        patch("divergencesplitter_runtime.cli._StatusReporter", FakeStatusReporter),
+        patch("sys.stderr", StringIO()),
+    ):
+        result = main(["config.json"])
+
+    assert result == EXIT_COMPLETED
+    assert FakeRuntime.instances[0].reaction_time_ms == 30

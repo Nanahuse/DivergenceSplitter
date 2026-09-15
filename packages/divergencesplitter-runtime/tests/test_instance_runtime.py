@@ -84,6 +84,7 @@ class ScriptedAdapter:
         *,
         execute_result: ActionExecution = ActionExecution.DISPATCHED,
         log: list[str] | None = None,
+        clock: ManualClock | None = None,
     ) -> None:
         self.initial = initial
         self.baseline = initial.snapshot
@@ -91,9 +92,11 @@ class ScriptedAdapter:
         self.handled: list[object] = []
         self.resynced: list[LiveSplitResyncReason] = []
         self.attempts: list[tuple[Action, LiveSplitSnapshot]] = []
+        self.dispatch_times: list[int] = []
         self.closed = False
         self.attached = 0
         self._log = log
+        self._clock = clock
 
     def attach(self) -> LiveSplitUpdate:
         self.attached += 1
@@ -118,6 +121,8 @@ class ScriptedAdapter:
         self, action: Action, expected_snapshot: LiveSplitSnapshot
     ) -> ActionExecution:
         self.attempts.append((action, expected_snapshot))
+        if self._clock is not None:
+            self.dispatch_times.append(self._clock.nanoseconds)
         if (
             self.execute_result is ActionExecution.DISPATCHED
             and expected_snapshot != self.baseline
@@ -169,6 +174,8 @@ class RecordingDiagnostics:
         self.evaluated: list[int] = []
         self.completions: list[int] = []
         self.resets: list[int] = []
+        self.reactions: list[tuple[int, Action, int, int, int]] = []
+        self.cancellations: list[tuple[int, Action, str]] = []
 
     def worker_started(self, connection: LiveSplitConnection) -> None:
         self.started.append(connection)
@@ -205,6 +212,26 @@ class RecordingDiagnostics:
 
     def instance_reset(self, scenario_index: int) -> None:
         self.resets.append(scenario_index)
+
+    def reaction_measured(
+        self,
+        scenario_index: int,
+        action: Action,
+        target_ns: int,
+        actual_ns: int,
+        lateness_ns: int,
+    ) -> None:
+        self.reactions.append(
+            (scenario_index, action, target_ns, actual_ns, lateness_ns)
+        )
+
+    def action_cancelled(
+        self,
+        scenario_index: int,
+        action: Action,
+        reason: str,
+    ) -> None:
+        self.cancellations.append((scenario_index, action, reason))
 
     def snapshot_failed(
         self, connection: LiveSplitConnection, action: Action, error: Exception
@@ -353,6 +380,8 @@ class Harness:
         diagnostics: RecordingDiagnostics | None = None,
         log: list[str] | None = None,
         time_provider: TimeProvider | None = None,
+        reaction_time_ms: int = 0,
+        reaction_wait: Callable[[int], None] | None = None,
     ) -> None:
         self.initial = initial if initial is not None else initial_update()
         self.execute_result = execute_result
@@ -368,7 +397,9 @@ class Harness:
             diagnostics=self.diagnostics,
             reconnect_delay_seconds=0.001,
             receive_timeout_ms=1,
+            reaction_time_ms=reaction_time_ms,
             time_provider=time_provider,
+            reaction_wait=reaction_wait,
             adapter_factory=self._new_adapter,
             receiver_factory=self._new_receiver,
         )
@@ -793,3 +824,345 @@ def test_connection_loss_rebuilds_transport_and_scenario() -> None:
     finally:
         harness.stop()
     assert harness.adapters[0].closed
+
+
+# -- Reaction time -------------------------------------------------------------
+
+
+def _block_first(entered: threading.Event, release: threading.Event):
+    def on_evaluate(context: FrameContext) -> None:
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(3)
+
+    return on_evaluate
+
+
+def _advance_to_deadline(clock: ManualClock):
+    def wait(timeout_ns: int) -> None:
+        clock.nanoseconds += timeout_ns
+
+    return wait
+
+
+def test_reaction_deadline_delays_action_until_due() -> None:
+    clock = ManualClock(0)
+    entered, release = threading.Event(), threading.Event()
+    condition = RecordingCondition(True, on_evaluate=_block_first(entered, release))
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=_advance_to_deadline(clock),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        clock.nanoseconds = 7_000_000
+        release.set()
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert adapter.dispatch_times == [30_000_000]
+    assert harness.diagnostics.reactions == [
+        (0, Action("split"), 30_000_000, 30_000_000, 0)
+    ]
+
+
+def test_reaction_already_late_dispatches_without_waiting() -> None:
+    clock = ManualClock(0)
+    waits: list[int] = []
+    entered, release = threading.Event(), threading.Event()
+    condition = RecordingCondition(True, on_evaluate=_block_first(entered, release))
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=waits.append,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        clock.nanoseconds = 35_000_000
+        release.set()
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert waits == []
+    assert adapter.dispatch_times == [35_000_000]
+    assert harness.diagnostics.reactions == [
+        (0, Action("split"), 30_000_000, 35_000_000, 5_000_000)
+    ]
+
+
+def test_zero_reaction_time_dispatches_immediately_without_waiting() -> None:
+    clock = ManualClock(0)
+    waits: list[int] = []
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+    harness = Harness(
+        make_scenario(RecordingCondition(True)),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=0,
+        reaction_wait=waits.append,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        harness.stop()
+
+    assert waits == []
+    assert adapter.dispatch_times == [0]
+    assert harness.diagnostics.reactions == [(0, Action("split"), 0, 0, 0)]
+
+
+def test_frames_during_reaction_wait_are_latest_only() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    adapter = ScriptedAdapter(
+        initial_update(), execute_result=ActionExecution.NOT_DISPATCHED, clock=clock
+    )
+    published = threading.Event()
+
+    def wait(timeout_ns: int) -> None:
+        if not published.is_set():
+            published.set()
+            for captured_at in (2, 3, 4):
+                harness.instance.publish_frame(shared_frame(captured_at))
+        clock.nanoseconds += timeout_ns
+
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: condition.captured_at == [1, 4])
+    finally:
+        harness.stop()
+
+    assert condition.captured_at == [1, 4]
+
+
+def test_periodic_update_during_reaction_follows_expected_snapshot() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+    periodic = LiveSplitUpdate(LiveSplitUpdateKind.PERIODIC, snapshot(event_sequence=1))
+
+    def wait(timeout_ns: int) -> None:
+        harness.receiver.push(
+            BridgeEventReceived(cast(common_pb2.BridgeEvent, periodic))
+        )
+        clock.nanoseconds += timeout_ns
+
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        harness.stop()
+
+    assert adapter.attempts[0][1] == periodic.snapshot
+    assert harness.diagnostics.cancellations == []
+
+
+def test_transition_during_reaction_cancels_action() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+    transition = LiveSplitUpdate(
+        LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1)
+    )
+
+    def wait(timeout_ns: int) -> None:
+        harness.receiver.push(
+            BridgeEventReceived(cast(common_pb2.BridgeEvent, transition))
+        )
+        clock.nanoseconds += timeout_ns
+
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: bool(harness.diagnostics.cancellations))
+    finally:
+        harness.stop()
+
+    assert adapter.attempts == []
+    assert harness.diagnostics.cancellations == [(0, Action("split"), "event")]
+
+
+def test_resync_during_reaction_cancels_action() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+
+    def wait(timeout_ns: int) -> None:
+        harness.receiver.push(
+            BridgeEventReceived(cast(common_pb2.BridgeEvent, LiveSplitResyncReason.GAP))
+        )
+        clock.nanoseconds += timeout_ns
+
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: bool(adapter.resynced))
+    finally:
+        harness.stop()
+
+    assert adapter.attempts == []
+    assert adapter.resynced == [LiveSplitResyncReason.GAP]
+    assert harness.diagnostics.cancellations
+
+
+def test_connection_loss_during_reaction_cancels_action() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+
+    def wait(timeout_ns: int) -> None:
+        harness.receiver.push(
+            BridgeEventConnectionLost(BridgeConnectionLostError("lost"))
+        )
+        clock.nanoseconds += timeout_ns
+
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: bool(harness.diagnostics.connection_errors))
+        wait_for(lambda: len(harness.adapters) >= 2)
+    finally:
+        harness.stop()
+
+    assert adapter.attempts == []
+    assert harness.instance.generation == 1
+
+
+def test_stop_during_reaction_ends_thread_without_waiting() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+
+    def wait(timeout_ns: int) -> None:
+        harness.instance.request_stop()
+
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: not harness.thread_alive())
+    finally:
+        harness.instance.request_stop()
+        harness.join(2)
+
+    assert adapter.attempts == []
+    assert harness.diagnostics.cancellations == [(0, Action("split"), "stop")]
+
+
+def test_not_dispatched_after_reaction_releases_pending_action() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    adapter = ScriptedAdapter(
+        initial_update(), execute_result=ActionExecution.NOT_DISPATCHED, clock=clock
+    )
+    harness = Harness(
+        make_scenario(condition),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=_advance_to_deadline(clock),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: bool(adapter.attempts))
+        harness.instance.publish_frame(shared_frame(2))
+        wait_for(lambda: condition.calls >= 2)
+    finally:
+        harness.stop()
+
+    assert condition.calls >= 2
+
+
+def test_unknown_after_reaction_recovers_without_resend() -> None:
+    clock = ManualClock(0)
+    condition = RecordingCondition(True)
+    harness = Harness(
+        make_scenario(condition),
+        execute_result=ActionExecution.UNKNOWN,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=_advance_to_deadline(clock),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    assert harness.adapters[0].attempts
+    assert harness.adapters[1].attempts == []
+    assert harness.instance.generation == 1

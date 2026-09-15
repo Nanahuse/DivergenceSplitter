@@ -166,6 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             instances,
             frame_source,
             diagnostics=diagnostics,
+            reaction_time_ms=configuration.runtime.reaction_time_ms,
         )
     except KeyboardInterrupt:
         diagnostics.interrupted()

@@ -578,3 +578,63 @@ def _write_configuration(tmp_path: Path, value: object) -> Path:
     path = tmp_path / "config.json"
     write_configuration(path, value)
     return path
+
+
+# -- Reaction time configuration ----------------------------------------------
+
+
+def test_reaction_time_defaults_to_zero_when_absent(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    write_configuration(path, camera_configuration())
+
+    configuration = load_configuration(path)
+
+    assert configuration.runtime.reaction_time_ms == 0
+
+
+def test_loads_reaction_time_ms(tmp_path: Path) -> None:
+    value = camera_configuration()
+    value["runtime"] = {"log_level": "INFO", "reaction_time_ms": 30}
+    path = tmp_path / "config.json"
+    write_configuration(path, value)
+
+    configuration = load_configuration(path)
+
+    assert configuration.runtime.reaction_time_ms == 30
+
+
+@pytest.mark.parametrize("reaction", [-1, True, 1.5, "30", None])
+def test_rejects_invalid_reaction_time(tmp_path: Path, reaction: object) -> None:
+    value = camera_configuration()
+    value["runtime"] = {"log_level": "INFO", "reaction_time_ms": reaction}
+    path = tmp_path / "config.json"
+    write_configuration(path, value)
+
+    with pytest.raises(ConfigurationValidationError):
+        load_configuration(path)
+
+
+def test_reaction_time_round_trips_through_save_and_load(tmp_path: Path) -> None:
+    value = camera_configuration()
+    value["runtime"] = {"log_level": "INFO", "reaction_time_ms": 30}
+    source = tmp_path / "config.json"
+    write_configuration(source, value)
+    configuration = load_configuration(source)
+
+    saved = tmp_path / "saved.json"
+    save_configuration(saved, configuration)
+
+    reloaded = load_configuration(saved)
+    assert reloaded == configuration
+    assert reloaded.runtime.reaction_time_ms == 30
+    assert '"reaction_time_ms": 30' in saved.read_text(encoding="utf-8")
+
+
+def test_runtime_configuration_validates_reaction_time() -> None:
+    from divergencesplitter_runtime.configuration.models import RuntimeConfiguration
+
+    assert RuntimeConfiguration("INFO", 0).reaction_time_ms == 0
+    assert RuntimeConfiguration("INFO", 30).reaction_time_ms == 30
+    for invalid in (-1, True, 1.5):
+        with pytest.raises(ValueError):
+            RuntimeConfiguration("INFO", cast(int, invalid))

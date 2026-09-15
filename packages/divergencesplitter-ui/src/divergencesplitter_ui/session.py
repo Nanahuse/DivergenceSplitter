@@ -217,6 +217,7 @@ class RuntimeFactory(Protocol):
         frame_source: FrameSource,
         *,
         diagnostics: ApplicationDiagnostics,
+        reaction_time_ms: int = 0,
     ) -> Runtime: ...
 
 
@@ -258,8 +259,14 @@ class ApplicationRuntimeFactory:
         frame_source: FrameSource,
         *,
         diagnostics: ApplicationDiagnostics,
+        reaction_time_ms: int = 0,
     ) -> Runtime:
-        return ApplicationRuntime(instances, frame_source, diagnostics=diagnostics)
+        return ApplicationRuntime(
+            instances,
+            frame_source,
+            diagnostics=diagnostics,
+            reaction_time_ms=reaction_time_ms,
+        )
 
 
 class SessionController:
@@ -487,6 +494,7 @@ class SessionController:
                 instances,
                 frame_source,
                 diagnostics=diagnostics,
+                reaction_time_ms=configuration.runtime.reaction_time_ms,
             )
         except ExceptionGroup as error:
             frame_source.close()

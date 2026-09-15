@@ -156,6 +156,7 @@ class EditableApplicationConfiguration:
     source: EditableSourceSettings
     instances: tuple[EditableInstanceConfiguration, ...]
     log_level: str
+    reaction_time_ms: int = 0
 
 
 def editable_from_configuration(
@@ -201,6 +202,7 @@ def editable_from_configuration(
             for i in configuration.instances
         ),
         "OFF" if configuration.runtime.log_level == "OFF" else "DEBUG",
+        configuration.runtime.reaction_time_ms,
     )
 
 
@@ -348,7 +350,7 @@ def configuration_from_editable(
             )
             for i in editable.instances
         ),
-        runtime=RuntimeConfiguration(editable.log_level),
+        runtime=RuntimeConfiguration(editable.log_level, editable.reaction_time_ms),
     )
 
 
@@ -357,6 +359,7 @@ class EditPermission:
     source: bool
     instances: bool
     log_level: bool
+    reaction_time: bool
 
 
 def edit_permission(state: SessionState) -> EditPermission:
@@ -365,7 +368,7 @@ def edit_permission(state: SessionState) -> EditPermission:
         SessionState.CONNECTING,
         SessionState.STOPPING,
     }
-    return EditPermission(editable, editable, editable)
+    return EditPermission(editable, editable, editable, editable)
 
 
 class SettingsModel:
@@ -620,6 +623,17 @@ class SettingsModel:
             return None
         self._changed(self._editable.log_level, level)
         self._editable.log_level = level
+        return self._editable
+
+    def set_reaction_time_ms(
+        self, value: int
+    ) -> EditableApplicationConfiguration | None:
+        if type(value) is not int or value < 0:
+            raise ValueError("reaction time must be a non-negative integer")
+        if self._editable is None:
+            return None
+        self._changed(self._editable.reaction_time_ms, value)
+        self._editable.reaction_time_ms = value
         return self._editable
 
     def configuration(self) -> ApplicationConfiguration | None:

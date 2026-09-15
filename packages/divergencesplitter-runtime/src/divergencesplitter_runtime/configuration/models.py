@@ -138,10 +138,13 @@ class InstanceConfiguration:
 @dataclass(frozen=True)
 class RuntimeConfiguration:
     log_level: str
+    reaction_time_ms: int = 0
 
     def __post_init__(self) -> None:
         if self.log_level not in {"OFF", "DEBUG", "INFO", "WARNING", "ERROR"}:
             raise ValueError(f"unsupported log level: {self.log_level!r}")
+        if type(self.reaction_time_ms) is not int or self.reaction_time_ms < 0:
+            raise ValueError("reaction_time_ms must be a non-negative integer")
 
 
 @dataclass(frozen=True)

@@ -461,6 +461,40 @@ class OperationalDiagnostics:
             if window is not None:
                 window.reset()
 
+    def reaction_measured(
+        self,
+        scenario_index: int,
+        action: Action,
+        target_ns: int,
+        actual_ns: int,
+        lateness_ns: int,
+    ) -> None:
+        """Report one dispatched action's reaction timing at DEBUG level."""
+        self._emit(
+            logging.DEBUG,
+            "processing.reaction_measured",
+            scenario_index=scenario_index,
+            action=action.operation,
+            reaction_target_ns=target_ns,
+            reaction_actual_ns=actual_ns,
+            reaction_lateness_ns=lateness_ns,
+        )
+
+    def action_cancelled(
+        self,
+        scenario_index: int,
+        action: Action,
+        reason: str,
+    ) -> None:
+        """Report one reaction-cancelled action at DEBUG level."""
+        self._emit(
+            logging.DEBUG,
+            "processing.reaction_cancelled",
+            scenario_index=scenario_index,
+            action=action.operation,
+            cancel_reason=reason,
+        )
+
     def take_latest_input_frame(self) -> Frame | None:
         """Return the newest captured input Frame and clear the slot.
 

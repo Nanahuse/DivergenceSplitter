@@ -215,9 +215,12 @@ class FakeRuntimeFactory:
         self.runtime_error: BaseException | None = None
         self.call_runtime_started = True
 
-    def create(self, instances, frame_source, *, diagnostics) -> FakeRuntime:
+    def create(
+        self, instances, frame_source, *, diagnostics, reaction_time_ms=0
+    ) -> FakeRuntime:
         if self.create_error is not None:
             raise self.create_error
+        self.reaction_time_ms = reaction_time_ms
         runtime = FakeRuntime(
             diagnostics,
             call_runtime_started=self.call_runtime_started,
@@ -675,3 +678,25 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
                 controller.request_stop()
                 controller.join(3)
         assert adapter.return_value.close.call_count == 2
+
+
+def test_reaction_time_is_forwarded_to_the_runtime_factory() -> None:
+    configuration = ApplicationConfiguration(
+        version=1,
+        source=VideoSourceConfiguration("recording.mp4"),
+        instances=(
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"),
+                "./scenario.py",
+            ),
+        ),
+        runtime=RuntimeConfiguration("INFO", 30),
+    )
+    controller, runtime_factory, _ = make_controller(
+        configuration_loader=FakeConfigurationLoader(configuration=configuration),
+    )
+
+    controller.start(Path("config.json"))
+    controller.join()
+
+    assert runtime_factory.reaction_time_ms == 30
