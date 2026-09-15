@@ -352,6 +352,114 @@ class TestConditionObservations:
             assert observations[0].max_score == 0.0
 
 
+def make_condition_scenario(condition) -> Scenario:
+    return Scenario(
+        start_condition=condition,
+        reset_condition=None,
+        incomplete_condition=None,
+        splits=(),
+    )
+
+
+class TestMultiScenarioObservations:
+    def _bind_two_scenarios(self):
+        first = Detected(MeanBrightnessDetector(), -1.0)
+        second = Detected(MeanBrightnessDetector(), -1.0)
+        diagnostics = OperationalDiagnostics(StringIO())
+        diagnostics.bind_runtime(
+            (
+                make_instance(make_condition_scenario(first)),
+                make_instance(make_condition_scenario(second)),
+            ),
+            make_frame_source(),
+        )
+        return diagnostics, first, second
+
+    def test_initial_snapshot_covers_every_scenario_then_consumes(self) -> None:
+        diagnostics, first, second = self._bind_two_scenarios()
+
+        observations = diagnostics.take_condition_observations()
+
+        assert [item.condition for item in observations] == [first, second]
+        assert diagnostics.take_condition_observations() == ()
+
+    def test_updating_one_scenario_keeps_the_other_latest_observation(self) -> None:
+        diagnostics, first, second = self._bind_two_scenarios()
+        diagnostics.take_condition_observations()
+
+        context = make_context()
+        first.evaluate(context)
+        diagnostics.instance_evaluated(0, context, MonotonicTime(150))
+
+        observations = {
+            item.condition: item for item in diagnostics.take_condition_observations()
+        }
+        assert set(observations) == {first, second}
+        assert observations[first].active
+        assert observations[second].status is None
+        assert not observations[second].active
+
+        context = make_context()
+        second.evaluate(context)
+        diagnostics.instance_evaluated(1, context, MonotonicTime(160))
+
+        observations = {
+            item.condition: item for item in diagnostics.take_condition_observations()
+        }
+        assert set(observations) == {first, second}
+        assert observations[second].active
+        assert observations[first].active
+
+    def test_scenario_becoming_inactive_leaves_other_scenarios_untouched(self) -> None:
+        diagnostics, first, second = self._bind_two_scenarios()
+        diagnostics.take_condition_observations()
+
+        context = make_context()
+        first.evaluate(context)
+        diagnostics.instance_evaluated(0, context, MonotonicTime(150))
+
+        context = make_context()
+        second.evaluate(context)
+        diagnostics.instance_evaluated(1, context, MonotonicTime(160))
+
+        diagnostics.instance_evaluated(0, make_context(), MonotonicTime(170))
+
+        observations = {
+            item.condition: item for item in diagnostics.take_condition_observations()
+        }
+        assert set(observations) == {first, second}
+        assert not observations[first].active
+        assert observations[first].status is ConditionStatus.TRUE
+        assert observations[second].active
+
+    def test_no_update_yields_empty_until_the_next_publish(self) -> None:
+        diagnostics, first, second = self._bind_two_scenarios()
+        diagnostics.take_condition_observations()
+
+        assert diagnostics.take_condition_observations() == ()
+
+        context = make_context()
+        second.evaluate(context)
+        diagnostics.instance_evaluated(1, context, MonotonicTime(160))
+
+        observations = diagnostics.take_condition_observations()
+        assert {item.condition for item in observations} == {first, second}
+        assert diagnostics.take_condition_observations() == ()
+
+    def test_rebind_drops_previous_scenario_observations(self) -> None:
+        diagnostics, _, _ = self._bind_two_scenarios()
+        diagnostics.take_condition_observations()
+
+        replacement = Detected(MeanBrightnessDetector(), -1.0)
+        diagnostics.bind_runtime(
+            (make_instance(make_condition_scenario(replacement)),),
+            make_frame_source(),
+        )
+
+        observations = diagnostics.take_condition_observations()
+        assert [item.condition for item in observations] == [replacement]
+
+
 class TestObservabilityBoundary:
     def test_runtime_started_is_logged_at_info(self) -> None:
         stream = StringIO()

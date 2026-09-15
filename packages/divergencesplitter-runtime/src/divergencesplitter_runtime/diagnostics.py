@@ -163,6 +163,7 @@ class OperationalDiagnostics:
         self._latest_processed_frame: Frame | None = None
         self._instances: tuple[ScenarioInstance, ...] = ()
         self._instance_observations: dict[int, tuple[ConditionObservation, ...]] = {}
+        self._observations_dirty = False
         self._detector_tree: DetectorTreeSnapshot | None = None
         self._runtime_started = threading.Event()
         self._instance_statuses: tuple[InstanceStatus, ...] = ()
@@ -203,9 +204,11 @@ class OperationalDiagnostics:
                     index: _collect_condition_observations((instance,))
                     for index, instance in enumerate(instances)
                 }
+                self._observations_dirty = True
             except Exception:  # noqa: BLE001
                 self._detector_tree = None
                 self._instance_observations = {}
+                self._observations_dirty = False
         with self._metrics_lock:
             self._evaluation_indices = tuple(range(len(instances)))
             self._instance_latency = {}
@@ -435,6 +438,7 @@ class OperationalDiagnostics:
             return
         with self._observable_lock:
             self._instance_observations[scenario_index] = observations
+            self._observations_dirty = True
 
     def _record_evaluation_latency(
         self,
@@ -476,14 +480,26 @@ class OperationalDiagnostics:
             return frame
 
     def take_condition_observations(self) -> tuple[ConditionObservation, ...]:
-        """Return the latest per-instance condition values and clear them."""
+        """Return a fresh all-scenario condition snapshot, or ``()`` when idle.
+
+        Each scenario's most recently published observations are retained, so a
+        scenario that has not evaluated lately is never dropped from the display
+        when another scenario updates. This method consumes only the change
+        notification: once at least one instance has published since the previous
+        call it returns the combined latest observations of every scenario in
+        scenario-index order, and an empty tuple otherwise. The retained latest
+        observations themselves are never cleared, so the next update again
+        yields a complete snapshot.
+        """
         with self._observable_lock:
+            if not self._observations_dirty:
+                return ()
             observations = tuple(
                 observation
                 for index in sorted(self._instance_observations)
                 for observation in self._instance_observations[index]
             )
-            self._instance_observations = {}
+            self._observations_dirty = False
             return observations
 
     def detector_tree(self) -> DetectorTreeSnapshot | None:
