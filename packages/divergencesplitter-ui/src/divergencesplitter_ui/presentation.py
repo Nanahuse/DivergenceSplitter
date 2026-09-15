@@ -24,11 +24,13 @@ from divergencesplitter_runtime.instance_runtime import (
     InstanceRuntimeState,
     InstanceStatus,
 )
+from divergencesplitter_runtime.livesplit.models import LiveSplitRunInfo
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
     ConditionNode,
     ConditionObservation,
     DetectorTreeSnapshot,
+    InstanceRunSnapshot,
     ScenarioNode,
 )
 
@@ -54,6 +56,8 @@ class ObservableDiagnostics(Protocol):
     def detector_tree(self) -> DetectorTreeSnapshot | None: ...
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]: ...
+
+    def instance_run_infos(self) -> tuple[InstanceRunSnapshot, ...]: ...
 
     def metrics_snapshot(self) -> RuntimeMetricsSnapshot: ...
 
@@ -200,6 +204,26 @@ def instance_status_label(status: InstanceStatus) -> str:
         InstanceRuntimeState.STOPPED: "Stopped",
     }[status.state]
     return f"{label} — {status.error}" if status.error else label
+
+
+def split_label(split_index: int, run_info: LiveSplitRunInfo | None) -> str:
+    """Format a Split node base label with the LiveSplit Segment name.
+
+    The Segment is matched by its authoritative ``index`` field, so a Run whose
+    segment order differs from the scenario still resolves correctly. A missing
+    Segment, an empty name, or no Run at all all fall back to ``Split N``.
+    """
+
+    base = f"Split {split_index}"
+    if run_info is None:
+        return base
+    name = next(
+        (segment.name for segment in run_info.segments if segment.index == split_index),
+        None,
+    )
+    if not name:
+        return base
+    return f"{base} — {name}"
 
 
 def scenario_label(node: ScenarioNode) -> str:

@@ -47,6 +47,7 @@ from divergencesplitter_runtime.instance_runtime import (
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
+    LiveSplitRunInfo,
     LiveSplitSnapshot,
 )
 from divergencesplitter_runtime.livesplit.worker import (
@@ -57,6 +58,7 @@ from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     DetectorTreeSnapshot,
+    InstanceRunSnapshot,
     _collect_condition_observations,
     build_detector_tree,
 )
@@ -163,6 +165,7 @@ class OperationalDiagnostics:
         self._detector_tree: DetectorTreeSnapshot | None = None
         self._runtime_started = threading.Event()
         self._instance_statuses: tuple[InstanceStatus, ...] = ()
+        self._instance_runs: dict[int, LiveSplitRunInfo] = {}
 
     def set_level(self, level: int) -> None:
         self._logger.setLevel(level)
@@ -191,6 +194,7 @@ class OperationalDiagnostics:
                 self._source_fields = {"source_type": type(frame_source).__name__}
         with self._observable_lock:
             try:
+                self._instance_runs = {}
                 self._instances = instances
                 self._latest_processed_frame = None
                 self._detector_tree = build_detector_tree(instances)
@@ -226,6 +230,26 @@ class OperationalDiagnostics:
                 scenario_index=status.scenario_index,
                 instance_state=status.state.name,
                 error=status.error,
+            )
+
+    def instance_run_changed(
+        self,
+        scenario_index: int,
+        run_info: LiveSplitRunInfo | None,
+    ) -> None:
+        """Record the current Run for one scenario, or clear it on ``None``."""
+        with self._observable_lock:
+            if run_info is None:
+                self._instance_runs.pop(scenario_index, None)
+            else:
+                self._instance_runs[scenario_index] = run_info
+
+    def instance_run_infos(self) -> tuple[InstanceRunSnapshot, ...]:
+        """Copy the current Run per scenario in stable scenario-index order."""
+        with self._observable_lock:
+            return tuple(
+                InstanceRunSnapshot(index, run_info)
+                for index, run_info in sorted(self._instance_runs.items())
             )
 
     def scenario_logger(

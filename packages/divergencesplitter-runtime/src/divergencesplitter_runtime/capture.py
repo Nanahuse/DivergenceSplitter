@@ -72,13 +72,27 @@ class LatestFrameBuffer:
             self._condition.notify_all()
             return result
 
-    def take(self) -> Frame | None:
-        """Wait for and consume the newest frame, or return ``None`` on stop."""
+    def take(self, timeout_seconds: float | None = None) -> Frame | None:
+        """Wait for and consume the newest frame.
+
+        Returns ``None`` on stop. With ``timeout_seconds`` set, also returns
+        ``None`` when no frame arrived in time so callers can do periodic work
+        while an idle source produces no frames; a pending frame is still
+        delivered once even after stop.
+        """
         with self._condition:
-            while self._frame is None:
-                if self._stopped:
-                    return None
-                self._condition.wait()
+            if timeout_seconds is None:
+                while self._frame is None:
+                    if self._stopped:
+                        return None
+                    self._condition.wait()
+            else:
+                self._condition.wait_for(
+                    lambda: self._frame is not None or self._stopped,
+                    timeout_seconds,
+                )
+            if self._frame is None:
+                return None
             frame = self._frame
             self._frame = None
             return frame

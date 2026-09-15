@@ -15,6 +15,9 @@ from divergencesplitter_runtime.instance_runtime import (
     InstanceRuntime,
     InstanceRuntimeState,
 )
+from divergencesplitter_runtime.livesplit.models import LiveSplitRunInfo
+
+DEFAULT_FRAME_WAIT_SECONDS = 0.05
 
 
 class ProcessingDiagnostics(Protocol):
@@ -35,6 +38,12 @@ class ProcessingDiagnostics(Protocol):
         self,
         scenario_index: int,
         error: Exception,
+    ) -> None: ...
+
+    def instance_run_changed(
+        self,
+        scenario_index: int,
+        run_info: LiveSplitRunInfo | None,
     ) -> None: ...
 
 
@@ -63,10 +72,15 @@ class ProcessingRuntime:
 
     def run(self) -> None:
         while not self._stop_requested.is_set():
-            frame = self._frame_buffer.take()
-            if frame is None or self._stop_requested.is_set():
+            frame = self._frame_buffer.take(DEFAULT_FRAME_WAIT_SECONDS)
+            if self._stop_requested.is_set():
                 return
+            # Drain Bridge updates even when the source produces no frame, so a
+            # connected instance can validate its scenario and publish its
+            # lifecycle status and Run info while capture is idle.
             self._apply_bridge_updates()
+            if frame is None:
+                continue
             now = self._time_provider.now()
             self._diagnostics.frame_processing_started(frame, now)
             normalized = self._normalizer.normalize(frame)
@@ -79,8 +93,12 @@ class ProcessingRuntime:
             self._diagnostics.frame_processing_completed(context)
 
     def _apply_bridge_updates(self) -> None:
-        for instance in self._instances:
+        for scenario_index, instance in enumerate(self._instances):
+            previous = instance.run_info
             instance.process_updates()
+            current = instance.run_info
+            if current != previous:
+                self._diagnostics.instance_run_changed(scenario_index, current)
 
     def _evaluate_scenarios(self, context: FrameContext) -> None:
         for scenario_index, instance in enumerate(self._instances):

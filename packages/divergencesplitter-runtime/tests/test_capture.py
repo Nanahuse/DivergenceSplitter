@@ -225,6 +225,15 @@ class TestLatestFrameBuffer:
         assert buffer.take() is None
         assert buffer.publish(make_frame(2)) is PublishResult.STOPPED
 
+    def test_timeout_returns_none_without_stopping(self) -> None:
+        buffer = LatestFrameBuffer()
+
+        assert buffer.take(timeout_seconds=0.01) is None
+
+        pending = make_frame(1)
+        assert buffer.publish(pending) is PublishResult.PUBLISHED
+        assert buffer.take(timeout_seconds=0.01) is pending
+
 
 class TestCaptureStateMachine:
     def test_stops_source_when_processing_has_stopped_buffer(self) -> None:

@@ -12,6 +12,7 @@ from divergencesplitter import (
     MonotonicTime,
     Scenario,
 )
+from divergencesplitter_runtime import LiveSplitRunInfo, LiveSplitSegmentInfo
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
@@ -29,6 +30,7 @@ from divergencesplitter_ui.presentation import (
     format_score,
     has_new_observations,
     scenario_label,
+    split_label,
     status_label,
     view_for,
 )
@@ -77,6 +79,41 @@ class TestStatusAndScoreFormatting:
         node = build_detector_tree((scenario,)).scenarios[0]
 
         assert scenario_label(node) == "Scenario 0  rpc=rpc  event=event"
+
+
+class TestSplitLabel:
+    def _run_info(self, *segments: tuple[int, str]) -> LiveSplitRunInfo:
+        return LiveSplitRunInfo(
+            session_id=1,
+            run_revision=1,
+            segments=tuple(
+                LiveSplitSegmentInfo(index, name) for index, name in segments
+            ),
+        )
+
+    def test_no_run_info_falls_back(self) -> None:
+        assert split_label(0, None) == "Split 0"
+
+    def test_segment_name_is_appended(self) -> None:
+        run_info = self._run_info((0, "Yoshi's Island 1"))
+
+        assert split_label(0, run_info) == "Split 0 — Yoshi's Island 1"
+
+    def test_missing_index_falls_back(self) -> None:
+        run_info = self._run_info((0, "A"))
+
+        assert split_label(2, run_info) == "Split 2"
+
+    def test_empty_segment_name_falls_back(self) -> None:
+        run_info = self._run_info((0, ""))
+
+        assert split_label(0, run_info) == "Split 0"
+
+    def test_segment_order_does_not_matter(self) -> None:
+        run_info = self._run_info((1, "B"), (0, "A"))
+
+        assert split_label(0, run_info) == "Split 0 — A"
+        assert split_label(1, run_info) == "Split 1 — B"
 
 
 class TestObservationIdentity:

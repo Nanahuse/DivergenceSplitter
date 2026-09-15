@@ -26,6 +26,15 @@ from divergencesplitter import (
 )
 
 from divergencesplitter_runtime.instances import ScenarioInstance
+from divergencesplitter_runtime.livesplit.models import LiveSplitRunInfo
+
+
+@dataclass(frozen=True)
+class InstanceRunSnapshot:
+    """The current LiveSplit Run for one scenario, keyed by scenario index."""
+
+    scenario_index: int
+    run_info: LiveSplitRunInfo
 
 
 @dataclass(frozen=True)

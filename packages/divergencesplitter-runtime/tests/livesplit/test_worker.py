@@ -79,6 +79,7 @@ class RecordingDiagnostics:
         self.connection_errors: list[Exception] = []
         self.reconnect_errors: list[Exception] = []
         self.overflow_count = 0
+        self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
 
     def worker_started(self, connection: LiveSplitConnection) -> None:
         pass
@@ -171,6 +172,13 @@ class RecordingDiagnostics:
         error: Exception,
     ) -> None:
         pass
+
+    def instance_run_changed(
+        self,
+        scenario_index: int,
+        run_info: LiveSplitRunInfo | None,
+    ) -> None:
+        self.run_changes.append((scenario_index, run_info))
 
     def snapshot_failed(
         self,
@@ -557,6 +565,21 @@ def test_application_starts_shared_capture() -> None:
     assert source.prepare_calls == 1
     assert source.close_calls == 1
     assert FakeAdapter.instances[-1].closed
+
+
+def test_application_shutdown_clears_instance_runs() -> None:
+    FakeAdapter.instances.clear()
+    source = StoppingSource()
+    diagnostics = RecordingDiagnostics()
+    runtime = ApplicationRuntime((scenario(),), source, diagnostics=diagnostics)
+
+    with patch(
+        "divergencesplitter_runtime.livesplit.worker.LiveSplitBridgeAdapter",
+        FakeAdapter,
+    ):
+        runtime.run()
+
+    assert diagnostics.run_changes == [(0, None)]
 
 
 def test_application_starts_capture_even_when_split_count_is_invalid() -> None:

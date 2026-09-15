@@ -21,6 +21,7 @@ from divergencesplitter_runtime.observability import (
     ConditionObservation,
     DetectorNode,
     DetectorTreeSnapshot,
+    InstanceRunSnapshot,
     RuleNode,
     RuleSequenceNode,
     ScenarioNode,
@@ -50,6 +51,7 @@ from divergencesplitter_ui.presentation import (
     has_new_observations,
     instance_status_label,
     scenario_label,
+    split_label,
     view_for,
 )
 
@@ -121,9 +123,11 @@ class ScreenRenderer:
         self._last_statuses: tuple[InstanceStatus, ...] | None = None
         self._rows: list[_ConditionRow] = []
         self._branches: list[_BranchRow] = []
+        self._split_rows: dict[tuple[int, int], _BranchRow] = {}
         self._highlighted: dict[int | str, bool] = {}
         self._reference_rows: list[_ReferenceRow] = []
         self._expansion = ExpansionState()
+        self._last_run_infos: tuple[InstanceRunSnapshot, ...] | None = None
 
         self._input_texture_tag: int | str | None = None
         self._input_image_tag: int | str | None = None
@@ -233,6 +237,7 @@ class ScreenRenderer:
             self._build_tree_if_ready()
 
         self._apply_instance_statuses(diagnostics.instance_statuses())
+        self._apply_instance_runs(diagnostics.instance_run_infos())
         observations = diagnostics.take_condition_observations()
         if has_new_observations(observations):
             self._apply_observations(observations)
@@ -285,6 +290,9 @@ class ScreenRenderer:
         self._tree = tree
         for scenario in tree.scenarios:
             self._build_scenario(scenario)
+        # Re-apply the current Run snapshot to the rows that were just created
+        # if it was already observed on an earlier tick.
+        self._last_run_infos = None
 
     def _reset_tree(self) -> None:
         for row in self._reference_rows:
@@ -299,9 +307,11 @@ class ScreenRenderer:
         self._last_statuses = None
         self._rows = []
         self._branches = []
+        self._split_rows = {}
         self._highlighted = {}
         self._reference_rows = []
         self._expansion = ExpansionState()
+        self._last_run_infos = None
 
     def _apply_instance_statuses(self, statuses: tuple[InstanceStatus, ...]) -> None:
         if statuses == self._last_statuses:
@@ -335,6 +345,27 @@ class ScreenRenderer:
         if self._observations:
             self._apply_observations(self._observations)
 
+    def _apply_instance_runs(
+        self,
+        snapshots: tuple[InstanceRunSnapshot, ...],
+    ) -> None:
+        if snapshots == self._last_run_infos:
+            return
+        self._last_run_infos = snapshots
+        by_scenario = {
+            snapshot.scenario_index: snapshot.run_info for snapshot in snapshots
+        }
+        for (scenario_index, split_index), branch in self._split_rows.items():
+            branch.label = split_label(split_index, by_scenario.get(scenario_index))
+            self._render_branch_label(branch)
+
+    def _render_branch_label(self, branch: _BranchRow) -> None:
+        if not dpg.does_item_exist(branch.handle):
+            return
+        active = self._highlighted.get(branch.handle, False)
+        label = f"▶ {branch.label}  ACTIVE" if active else branch.label
+        dpg.configure_item(branch.handle, label=label)
+
     def _build_scenario(self, scenario: ScenarioNode) -> None:
         first_row = len(self._rows)
         scenario_node = dpg.add_tree_node(
@@ -361,12 +392,17 @@ class ScreenRenderer:
             )
             self._build_condition(incomplete_node, scenario.incomplete_condition)
         for split in scenario.splits:
-            self._build_split(scenario_node, split)
+            self._build_split(scenario_node, scenario.scenario_index, split)
         self._scenario_condition_ids[scenario.scenario_index] = {
             id(row.node.condition) for row in self._rows[first_row:]
         }
 
-    def _build_split(self, parent: int | str, split: SplitNode) -> None:
+    def _build_split(
+        self,
+        parent: int | str,
+        scenario_index: int,
+        split: SplitNode,
+    ) -> None:
         first_row = len(self._rows)
         split_node = dpg.add_tree_node(
             parent=parent,
@@ -377,7 +413,8 @@ class ScreenRenderer:
                 self._build_rule_sequence(split_node, rule)
             else:
                 self._build_rule(split_node, rule)
-        self._track_branch(split_node, first_row)
+        branch = self._track_branch(split_node, first_row)
+        self._split_rows[(scenario_index, split.split_index)] = branch
 
     def _build_rule(self, parent: int | str, rule: RuleNode) -> None:
         first_row = len(self._rows)
@@ -406,14 +443,14 @@ class ScreenRenderer:
             self._track_branch(step_node, step_first_row)
         self._track_branch(sequence_node, first_row)
 
-    def _track_branch(self, handle: int | str, first_row: int) -> None:
-        self._branches.append(
-            _BranchRow(
-                handle,
-                dpg.get_item_label(handle) or "",
-                tuple(row.node for row in self._rows[first_row:]),
-            )
+    def _track_branch(self, handle: int | str, first_row: int) -> _BranchRow:
+        row = _BranchRow(
+            handle,
+            dpg.get_item_label(handle) or "",
+            tuple(row.node for row in self._rows[first_row:]),
         )
+        self._branches.append(row)
+        return row
 
     def _highlight(self, handle: int | str, active: bool) -> None:
         if self._highlighted.get(handle) == active:
@@ -568,8 +605,7 @@ class ScreenRenderer:
                 continue
             active = any(view_for(node, index).active for node in branch.conditions)
             self._highlight(branch.handle, active)
-            label = f"▶ {branch.label}  ACTIVE" if active else branch.label
-            dpg.configure_item(branch.handle, label=label)
+            self._render_branch_label(branch)
         for row in self._rows:
             if not dpg.does_item_exist(row.condition_handle):
                 continue

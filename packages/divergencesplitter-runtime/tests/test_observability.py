@@ -22,7 +22,15 @@ from divergencesplitter import (
 from divergencesplitter_runtime.capture import PublishResult
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instances import ScenarioInstance
-from divergencesplitter_runtime.observability import RuleNode, build_detector_tree
+from divergencesplitter_runtime.livesplit.models import (
+    LiveSplitRunInfo,
+    LiveSplitSegmentInfo,
+)
+from divergencesplitter_runtime.observability import (
+    InstanceRunSnapshot,
+    RuleNode,
+    build_detector_tree,
+)
 
 
 def make_frame(captured_at: int = 100) -> Frame:
@@ -157,6 +165,70 @@ class TestDetectorTree:
         scenario = Scenario(Elapsed(0), None, None, ())
         tree = build_detector_tree((make_instance(scenario),))
         assert tree.scenarios[0].reset_condition is None
+
+
+def make_run(
+    revision: int = 1,
+    name: str = "A",
+) -> LiveSplitRunInfo:
+    return LiveSplitRunInfo(
+        session_id=1,
+        run_revision=revision,
+        segments=(LiveSplitSegmentInfo(0, name),),
+    )
+
+
+class TestInstanceRuns:
+    def test_stores_current_run_per_scenario(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+
+        diagnostics.instance_run_changed(0, make_run())
+
+        assert diagnostics.instance_run_infos() == (InstanceRunSnapshot(0, make_run()),)
+
+    def test_snapshot_is_non_consuming(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+        diagnostics.instance_run_changed(0, make_run())
+
+        assert diagnostics.instance_run_infos() == diagnostics.instance_run_infos()
+        assert diagnostics.instance_run_infos() == (InstanceRunSnapshot(0, make_run()),)
+
+    def test_update_replaces_the_previous_run(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+        diagnostics.instance_run_changed(0, make_run(revision=1))
+        diagnostics.instance_run_changed(0, make_run(revision=2, name="B"))
+
+        assert diagnostics.instance_run_infos() == (
+            InstanceRunSnapshot(0, make_run(revision=2, name="B")),
+        )
+
+    def test_none_clears_the_scenario_run(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+        diagnostics.instance_run_changed(0, make_run())
+        diagnostics.instance_run_changed(0, None)
+
+        assert diagnostics.instance_run_infos() == ()
+
+    def test_multiple_scenarios_are_ordered_and_isolated(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+        diagnostics.instance_run_changed(1, make_run(name="B"))
+        diagnostics.instance_run_changed(0, make_run(name="A"))
+
+        assert diagnostics.instance_run_infos() == (
+            InstanceRunSnapshot(0, make_run(name="A")),
+            InstanceRunSnapshot(1, make_run(name="B")),
+        )
+
+    def test_bind_resets_previous_session_runs(self) -> None:
+        diagnostics = OperationalDiagnostics(StringIO())
+        diagnostics.instance_run_changed(0, make_run())
+
+        diagnostics.bind_runtime(
+            (make_instance(make_scenario(MeanBrightnessDetector())),),
+            make_frame_source(),
+        )
+
+        assert diagnostics.instance_run_infos() == ()
 
 
 class TestObservableFrameSlot:

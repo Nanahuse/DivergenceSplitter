@@ -59,6 +59,7 @@ from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     DetectorTreeSnapshot,
+    InstanceRunSnapshot,
 )
 
 _LOG_LEVELS = {
@@ -175,6 +176,8 @@ class SessionDiagnostics(ApplicationDiagnostics, Protocol):
     def is_runtime_started(self) -> bool: ...
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]: ...
+
+    def instance_run_infos(self) -> tuple[InstanceRunSnapshot, ...]: ...
 
     def configuration_failed(self, error: BaseException) -> None: ...
 
