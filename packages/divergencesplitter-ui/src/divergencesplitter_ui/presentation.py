@@ -1,9 +1,9 @@
 """Pure presentation and update logic for the main screen.
 
-Nothing in this module imports Dear PyGui. It decides *what* to update from
-session state, observation snapshots, and a monotonic clock, leaving *how* to
-reach the widgets to the renderer. The decision points below are the units
-covered by behavior tests:
+This module is GUI-independent. It decides *what* to update from session state,
+observation snapshots, and a monotonic clock, leaving *how* to reach the widgets
+to the GUI layer. The decision points below are the units covered by behavior
+tests:
 
 * state re-rendering only on change,
 * observation re-rendering only when a new snapshot arrives,

@@ -453,10 +453,10 @@ class TestCheckInventory:
             },
             "packages": [
                 {
-                    "name": "dearpygui",
+                    "name": "sample-package",
                     "version": "2.3.1",
                     "license": "MIT",
-                    "license_text": "dearpygui text",
+                    "license_text": "sample package text",
                 },
                 {
                     "name": "numpy",

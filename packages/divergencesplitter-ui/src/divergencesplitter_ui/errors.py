@@ -1,7 +1,7 @@
 """Pure error presentation for one terminal session failure.
 
-Nothing in this module imports Dear PyGui. It converts the controller's
-``SessionResult`` into a transfer-only ``ErrorView`` using the existing
+This module is GUI-independent. It converts the controller's ``SessionResult``
+into a transfer-only ``ErrorView`` using the existing
 ``SessionFailureKind`` boundaries as the display authority, and it decides
 when a failure should be shown at all. All of these decisions are covered by
 behavior tests.

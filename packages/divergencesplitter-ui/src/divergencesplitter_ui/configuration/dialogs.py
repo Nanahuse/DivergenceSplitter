@@ -15,11 +15,17 @@ from typing import Protocol
 
 import flet as ft
 
-from divergencesplitter_ui.windows_file_dialog import normalize_selected_path
-
 CONFIGURATION_EXTENSIONS = ("json",)
 SCENARIO_EXTENSIONS = ("py", "yaml", "yml")
 VIDEO_EXTENSIONS = ("mp4", "mkv", "avi", "mov", "webm", "m4v")
+
+
+def normalize_selected_path(value: str | None) -> Path | None:
+    """Return the absolute path chosen in a dialog, or ``None`` on cancel."""
+
+    if not value:
+        return None
+    return Path(value).expanduser().resolve()
 
 
 class FileDialogs(Protocol):

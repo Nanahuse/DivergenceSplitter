@@ -1,12 +1,10 @@
 """Pure sizing and pixel preparation for the input preview region.
 
 Nothing in this module imports a GUI framework, so the pixel work can be
-exercised in tests that run without a GPU or a window. :func:`fit_preview` is
-the Dear PyGui path, which fits an image into the region measured by the
-renderer. :func:`preview_size` and :func:`prepare_preview` are the Flet path:
-they bound the preview to a fixed maximum while never upscaling, and return the
-downscaled, channel-swapped ``uint8`` array that ``flet.RawImage.render``
-requires.
+exercised in tests that run without a GPU or a window. :func:`preview_size`
+bounds the preview to a fixed maximum while never upscaling, and
+:func:`prepare_preview` returns the downscaled, channel-swapped ``uint8`` array
+that ``flet.RawImage.render`` requires.
 """
 
 from __future__ import annotations
@@ -27,22 +25,6 @@ class PreviewSize:
     scale: float
 
 
-def fit_preview(
-    frame_width: int,
-    frame_height: int,
-    available_width: int,
-    available_height: int,
-) -> PreviewSize:
-    if min(frame_width, frame_height, available_width, available_height) <= 0:
-        return PreviewSize(0, 0, 0.0)
-    scale = min(available_width / frame_width, available_height / frame_height)
-    return PreviewSize(
-        max(1, round(frame_width * scale)),
-        max(1, round(frame_height * scale)),
-        scale,
-    )
-
-
 def preview_size(
     frame_width: int,
     frame_height: int,
@@ -52,9 +34,9 @@ def preview_size(
 ) -> PreviewSize:
     """Fit a frame into the preview maximum, preserving aspect ratio.
 
-    Unlike :func:`fit_preview`, the scale is capped at ``1.0`` so a frame
-    smaller than the maximum is never upscaled, and both maximum dimensions are
-    respected independently so an extreme aspect ratio is still bounded.
+    The scale is capped at ``1.0`` so a frame smaller than the maximum is never
+    upscaled, and both maximum dimensions are respected independently so an
+    extreme aspect ratio is still bounded.
     """
 
     if min(frame_width, frame_height, max_width, max_height) <= 0:

@@ -1,9 +1,8 @@
 """GUI-independent construction of one configured session pipeline.
 
-Both the Dear PyGui and Flet front ends build the same ``SessionController``
-here so their runtime wiring can never diverge. This module must stay free of
-any GUI framework import; only the session and runtime construction path is
-owned here.
+The Flet front end builds its ``SessionController`` here so the runtime wiring
+stays in one place. This module must stay free of any GUI framework import;
+only the session and runtime construction path is owned here.
 """
 
 from __future__ import annotations
