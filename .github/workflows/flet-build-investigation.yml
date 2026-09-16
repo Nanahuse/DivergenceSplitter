@@ -55,7 +55,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@ae62891fecbb2e8d6c99fc78c9fec3a63790f8d # v10.0.0
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with: { python-version: "3.14" }
       - name: Prepare and build workspace packages
         shell: pwsh
@@ -81,7 +81,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@ae62891fecbb2e8d6c99fc78c9fec3a63790f8d # v10.0.0
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with: { python-version: "3.14" }
       - name: Prepare and build all local packages
         shell: pwsh
