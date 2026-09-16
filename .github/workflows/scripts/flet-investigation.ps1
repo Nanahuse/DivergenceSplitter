@@ -18,6 +18,9 @@ if ($Approach -eq 'all-dev-packages') {
   New-Item -ItemType Directory -Force .flet-dev-packages | Out-Null
   git clone --depth 1 --branch v0.2.0 https://github.com/Nanahuse/livesplit-bridge-client.git .flet-dev-packages/livesplit-bridge-client
   git clone --depth 1 --branch v0.2.0 https://github.com/Nanahuse/windows-capture-device-list.git .flet-dev-packages/windows-capture-device-list
+  foreach ($package in @('livesplit-bridge-client','windows-capture-device-list')) {
+    "repository=$(git -C ".flet-dev-packages/$package" remote get-url origin)`ntag=v0.2.0`ncommit=$(git -C ".flet-dev-packages/$package" rev-parse HEAD)`npath=$(Resolve-Path ".flet-dev-packages/$package")" | Out-File (Join-Path $out "$package-source.txt") -Encoding utf8
+  }
 }
 Copy-Item packages/divergencesplitter-ui/pyproject.toml $out/ui-pyproject.toml
 Copy-Item packages/divergencesplitter-runtime/pyproject.toml $out/runtime-pyproject.toml
@@ -32,9 +35,9 @@ $log = if (Test-Path "$out/flet-build.log") { Get-Content -Raw "$out/flet-build.
 if ($log -match 'TOMLDecodeError|Invalid initial character|Invalid value') { $stage = 'toml-parse' }
 elseif ($log -match 'Flutter.*(failed|error|exception)|Unable to install Flutter|Flutter SDK.*not found') { $stage = 'flutter-sdk-setup' }
 elseif ($log -match 'main\.py not found|No Python app|project.*(discover|path)') { $stage = 'entry-point' }
-elseif ($log -match 'livesplit-bridge-client|windows-capture-device-list|git\+') { $stage = 'git-dependency' }
-elseif ($log -match 'ndi-python|NDIlib') { $stage = 'ndi-dependency' }
-elseif ($log -match 'dependency|resolve|package') { $stage = 'python-dependency-packaging' }
+elseif ($log -match '(?i)(clone|checkout|git install|git dependency).{0,120}(failed|error|fatal)|fatal:.*(repository|reference)') { $stage = 'git-dependency' }
+elseif ($log -match '(?i)(Could not find a version|No matching distribution|Failed to build|ERROR:.*install).{0,160}(ndi-python|NDIlib)|(ndi-python|NDIlib).{0,160}(Could not find|No matching|Failed|ERROR:)') { $stage = 'ndi-dependency' }
+elseif ($log -match '(?i)(Could not find a version|No matching distribution|serious_python|pip install|dependency resolution)') { $stage = 'python-dependency-packaging' }
 elseif ($log -match 'Flutter project|Generating.*project') { $stage = 'flutter-project-generation' }
 elseif ($log -match 'flutter.*build') { $stage = 'flutter-build' }
 Save-Text failure-stage.txt ($(if ($code -eq 0) { '—' } else { $stage }))
