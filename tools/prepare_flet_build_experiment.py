@@ -16,10 +16,6 @@ GIT_DEPENDENCIES = {
     "windows-capture-device-list": "windows-capture-device-list @ git+https://github.com/Nanahuse/windows-capture-device-list.git@v0.2.0",
 }
 DEV_PACKAGES = {
-    "workspace-dev-packages": {
-        "divergencesplitter-runtime": "../divergencesplitter-runtime",
-        "divergencesplitter": "../divergencesplitter",
-    },
     "pep508-git": {
         "divergencesplitter-runtime": "../divergencesplitter-runtime",
         "divergencesplitter": "../divergencesplitter",
@@ -32,7 +28,6 @@ DEV_PACKAGES = {
     },
 }
 WINDOWS_DEPENDENCIES = {
-    "workspace-dev-packages": ["divergencesplitter"],
     "pep508-git": ["divergencesplitter", "ndi-python>=6.3.2.4"],
     "all-dev-packages": [
         "divergencesplitter",

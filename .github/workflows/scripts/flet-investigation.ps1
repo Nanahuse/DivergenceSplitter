@@ -1,17 +1,26 @@
-param([Parameter(Mandatory=$true)][ValidateSet('workspace-dev-packages','pep508-git','all-dev-packages')][string]$Approach)
+param([Parameter(Mandatory=$true)][ValidateSet('pep508-git','all-dev-packages')][string]$Approach)
 $ErrorActionPreference = 'Stop'
 $out = Join-Path $PWD "artifacts/flet-build-investigation/$Approach"
 $buildOutput = Join-Path $PWD "artifacts/flet-build-output/$Approach"
 New-Item -ItemType Directory -Force $out | Out-Null
 function Save-Text([string]$name, [string]$value) { $value | Out-File (Join-Path $out $name) -Encoding utf8 }
-$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $exeFound = 'NO'; $cli = 'NOT RUN'; $invalid = 'NOT RUN'; $gui = 'NOT RUN'; $stage = 'unknown'
+$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $encoding = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $exeFound = 'NO'; $cli = 'NOT RUN'; $invalid = 'NOT RUN'; $gui = 'NOT RUN'; $stage = 'unknown'
 $infraFailure = $false
 git rev-parse HEAD | Tee-Object (Join-Path $out commit.txt)
 uv --version | Tee-Object (Join-Path $out environment.txt)
 uv run python --version | Tee-Object -Append (Join-Path $out environment.txt)
-uv run flet --version | Tee-Object -Append (Join-Path $out environment.txt)
 uv sync --locked --all-packages --group build --extra ndi
 if ($LASTEXITCODE -ne 0) { throw "uv sync failed with exit code $LASTEXITCODE" }
+$env:FLET_CLI_NO_RICH_OUTPUT = '1'
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
+@"
+FLET_CLI_NO_RICH_OUTPUT=$env:FLET_CLI_NO_RICH_OUTPUT
+PYTHONUTF8=$env:PYTHONUTF8
+PYTHONIOENCODING=$env:PYTHONIOENCODING
+"@ | Out-File (Join-Path $out environment.txt) -Append -Encoding utf8
+uv run flet --version | Tee-Object -Append (Join-Path $out environment.txt)
+if ($LASTEXITCODE -ne 0) { throw "flet --version failed with exit code $LASTEXITCODE" }
 
 try {
   if ($Approach -eq 'all-dev-packages') {
@@ -41,13 +50,11 @@ runtime = tomllib.loads(Path('packages/divergencesplitter-runtime/pyproject.toml
 mode = '$Approach'
 assert ui['tool']['flet']['app'] == {'path': 'src', 'module': 'main'}
 expected_dev = {
- 'workspace-dev-packages': {'divergencesplitter-runtime','divergencesplitter'},
  'pep508-git': {'divergencesplitter-runtime','divergencesplitter'},
  'all-dev-packages': {'divergencesplitter-runtime','divergencesplitter','livesplit-bridge-client','windows-capture-device-list'},
 }[mode]
 assert set(ui['tool']['flet']['dev_packages']) == expected_dev
 expected_win = {
- 'workspace-dev-packages': ['divergencesplitter'],
  'pep508-git': ['divergencesplitter','ndi-python>=6.3.2.4'],
  'all-dev-packages': ['divergencesplitter','livesplit-bridge-client','windows-capture-device-list','ndi-python>=6.3.2.4'],
 }[mode]
@@ -98,6 +105,16 @@ Path('artifacts/flet-build-investigation/$Approach/dependency-preflight-requirem
 }
 
 if ($preflight -eq 'PASS') {
+  $encodingCommand = "import sys; print('stdout encoding: ' + str(sys.stdout.encoding)); print('√'); from rich.console import Console; Console().print('√')"
+  uv run python -c $encodingCommand 2>&1 | Tee-Object (Join-Path $out encoding-preflight.txt)
+  $encodingCode = $LASTEXITCODE
+  $encodingLog = Get-Content -Raw (Join-Path $out encoding-preflight.txt)
+  Get-Content (Join-Path $out encoding-preflight.txt) | Out-File (Join-Path $out environment.txt) -Append -Encoding utf8
+  if ($encodingCode -eq 0 -and ([regex]::Matches($encodingLog, '√').Count -ge 2)) { $encoding = 'PASS' }
+  else { $encoding = 'FAIL'; $stage = 'encoding-preflight' }
+}
+
+if ($encoding -eq 'PASS') {
   if (Test-Path $buildOutput) { Remove-Item -LiteralPath $buildOutput -Recurse -Force }
   New-Item -ItemType Directory -Force (Split-Path $buildOutput) | Out-Null
   uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --verbose --output $buildOutput *>&1 | Tee-Object (Join-Path $out flet-build.log)
@@ -107,29 +124,41 @@ if ($preflight -eq 'PASS') {
   Save-Text build_exit_code.txt "$buildCode"
   $log = Get-Content -Raw (Join-Path $out flet-build.log)
   if ($buildCode -ne 0) {
-    if ($log -match 'Could not find a version|No matching distribution|serious_python') { $stage = 'python-dependency-packaging' }
+    if ($log -match '(?i)UnicodeEncodeError|charmap codec can.t encode|cp1252') { $stage = 'encoding-output' }
     elseif ($log -match '(?i)(clone|checkout|git install).{0,120}(failed|error|fatal)|fatal:') { $stage = 'git-dependency' }
     elseif ($log -match '(?i)(Could not find a version|No matching distribution|Failed to build).{0,160}(ndi-python|NDIlib)|(ndi-python|NDIlib).{0,160}(Could not find|No matching|Failed|ERROR:)') { $stage = 'ndi-dependency' }
-    elseif ($log -match 'Flutter.*(failed|error|exception)|Unable to install Flutter') { $stage = 'flutter-sdk-setup' }
-    elseif ($log -match 'Flutter project|Generating.*project') { $stage = 'flutter-project-generation' }
-    elseif ($log -match 'flutter.*build') { $stage = 'flutter-build' }
+    elseif ($log -match '(?i)Could not find a version|No matching distribution|serious_python|pip install.*(failed|error)') { $stage = 'python-dependency-packaging' }
+    elseif ($log -match '(?i)Flutter.{0,100}(failed|error|exception)|Unable to install Flutter') { $stage = 'flutter-sdk-setup' }
+    elseif ($log -match '(?i)Flutter project.{0,80}(failed|error)|Generating.{0,80}(failed|error)') { $stage = 'flutter-project-generation' }
+    elseif ($log -match '(?i)FAILURE: Build failed|flutter build.{0,100}(failed|error)|Error:.*build') { $stage = 'flutter-build' }
   }
-} else { Save-Text build_exit_code.txt 'NOT RUN' }
+} else { Save-Text build_exit_code.txt 'NOT RUN'; if ($encoding -eq 'NOT RUN' -and $stage -eq 'unknown') { $stage = 'dependency-preflight' } }
 
 if (Test-Path $buildOutput) { Get-ChildItem $buildOutput -Recurse -File | Select-Object FullName,Length | Out-File (Join-Path $out output-manifest.txt) -Encoding utf8 } else { Save-Text output-manifest.txt 'build output directory not created' }
 $exe = if (Test-Path $buildOutput) { Get-ChildItem $buildOutput -Recurse -Filter DivergenceSplitter.exe -File | Select-Object -First 1 } else { $null }
 if ($exe) {
   $exeFound = 'YES'; & $exe.FullName --help *> (Join-Path $out cli-help.log); $cliCode = $LASTEXITCODE; $cli = if ($cliCode -eq 0) {'PASS'} else {"FAIL ($cliCode)"}
+  Save-Text cli-help-result.txt "exit_code=$cliCode"
   & $exe.FullName --definitely-invalid-option *> (Join-Path $out cli-invalid.log); $invalidCode = $LASTEXITCODE; Save-Text cli-invalid-result.txt "exit_code=$invalidCode"
-  $proc = Start-Process -FilePath $exe.FullName -PassThru; Start-Sleep -Seconds 3; $gui = if ($proc.HasExited) {'EXITED'} else {'ALIVE'}; if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force }
-} elseif ($build -eq 'NOT RUN') { $stage = if ($stage -eq 'unknown') {'dependency-preflight'} else {$stage} }
+  $invalid = if ($invalidCode -eq 2) {'PASS'} else {"FAIL ($invalidCode)"}
+  try {
+    $proc = Start-Process -FilePath $exe.FullName -PassThru
+    Start-Sleep -Seconds 3
+    $gui = if ($proc.HasExited) {'EXITED'} else {'ALIVE'}
+    if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+    Save-Text gui-startup.txt $gui
+  } catch { $gui = 'ERROR'; Save-Text gui-startup.txt $_.Exception.Message }
+} elseif ($build -eq 'NOT RUN' -and $stage -eq 'unknown') { $stage = if ($encoding -eq 'FAIL') {'encoding-preflight'} else {'dependency-preflight'} }
 
 if ($build -eq 'PASS') {
   $needles = @('divergencesplitter','divergencesplitter-runtime','livesplit-bridge-client','windows-capture-device-list','ndi-python','numpy','opencv-contrib-python')
   foreach ($needle in $needles) { $found = $log -match [regex]::Escape($needle); "$needle`: $(if ($found) {'LOG MATCH'} else {'NO LOG MATCH'})" | Out-File (Join-Path $out packaged-dependencies.txt) -Append -Encoding utf8 }
+  $nativeMatches = Get-ChildItem $buildOutput -Recurse -File | Where-Object FullName -Match '(?i)NDIlib|(^|[\\/])ndi([\\/]|\.)|windows_capture_device_list'
+  if ($nativeMatches) { $nativeMatches | Select-Object FullName,Length | Out-File (Join-Path $out native-content-check.txt) -Encoding utf8 }
+  else { Save-Text native-content-check.txt 'No matching NDI/camera native content filenames found in output tree' }
 }
 Save-Text failure-stage.txt $stage
-Save-Text result.txt "Approach: $Approach`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nBuild result: $build`nBuild exit code: $buildCode`nEXE found: $exeFound`nCLI smoke result: $cli`nInvalid CLI result: $invalid`nGUI smoke result: $gui`nFailure stage: $stage`nOutput directory: $buildOutput"
+Save-Text result.txt "Approach: $Approach`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nEncoding preflight result: $encoding`nBuild result: $build`nBuild exit code: $buildCode`nEXE found: $exeFound`nCLI smoke result: $cli`nInvalid CLI result: $invalid`nGUI smoke result: $gui`nFailure stage: $stage`nOutput directory: $buildOutput"
 Get-Content (Join-Path $out result.txt) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 if ($infraFailure) { exit 1 }
 exit 0

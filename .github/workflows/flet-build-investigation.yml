@@ -8,25 +8,6 @@ permissions:
   contents: read
 
 jobs:
-  workspace-dev-packages:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
-        with: { python-version: "3.14" }
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/flutter/3.44.8
-            ~/.flet/cache
-          key: flet-build-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
-      - name: Prepare, preflight, and build
-        shell: pwsh
-        run: .github/workflows/scripts/flet-investigation.ps1 workspace-dev-packages
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with: { name: flet-build-investigation-workspace-dev-packages, path: artifacts/flet-build-investigation/workspace-dev-packages, retention-days: 5, if-no-files-found: error }
-
   pep508-git:
     runs-on: windows-latest
     steps:
@@ -45,6 +26,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-pep508-git, path: artifacts/flet-build-investigation/pep508-git, retention-days: 5, if-no-files-found: error }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-output-pep508-git, path: artifacts/flet-build-output/pep508-git, retention-days: 5, if-no-files-found: ignore }
 
   all-dev-packages:
     runs-on: windows-latest
@@ -64,10 +48,13 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-all-dev-packages, path: artifacts/flet-build-investigation/all-dev-packages, retention-days: 5, if-no-files-found: error }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-output-all-dev-packages, path: artifacts/flet-build-output/all-dev-packages, retention-days: 5, if-no-files-found: ignore }
 
   summary:
     if: always()
-    needs: [workspace-dev-packages, pep508-git, all-dev-packages]
+    needs: [pep508-git, all-dev-packages]
     runs-on: windows-latest
     steps:
       - uses: actions/download-artifact@v7
@@ -79,13 +66,13 @@ jobs:
         shell: pwsh
         run: |
           "## Flet build investigation" >> $env:GITHUB_STEP_SUMMARY
-          "| Approach | Prepare | Metadata | Preflight | Build | EXE | Failure stage |" >> $env:GITHUB_STEP_SUMMARY
-          "|---|---|---|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
-          foreach ($name in @('workspace-dev-packages','pep508-git','all-dev-packages')) {
+          "| Approach | Prepare | Metadata | Preflight | Encoding | Build | EXE | CLI | GUI | Failure stage |" >> $env:GITHUB_STEP_SUMMARY
+          "|---|---|---|---|---|---|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
+          foreach ($name in @('pep508-git','all-dev-packages')) {
             $resultFile = Get-ChildItem artifacts/flet-build-investigation -Directory | Where-Object Name -Match $name | ForEach-Object { Join-Path $_.FullName result.txt } | Select-Object -First 1
             if ($resultFile -and (Test-Path $resultFile)) {
               $values = @{}
               Get-Content $resultFile | ForEach-Object { if ($_ -match '^([^:]+):\s*(.*)$') { $values[$matches[1]] = $matches[2] } }
-              "| $name | $($values['Preparation result']) | $($values['Metadata validation result']) | $($values['Dependency preflight result']) | $($values['Build result']) | $($values['EXE found']) | $($values['Failure stage']) |" >> $env:GITHUB_STEP_SUMMARY
-            } else { "| $name | NO RESULT | NO RESULT | NO RESULT | JOB FAILED BEFORE RESULT | — | unknown |" >> $env:GITHUB_STEP_SUMMARY }
+              "| $name | $($values['Preparation result']) | $($values['Metadata validation result']) | $($values['Dependency preflight result']) | $($values['Encoding preflight result']) | $($values['Build result']) | $($values['EXE found']) | $($values['CLI smoke result']) | $($values['GUI smoke result']) | $($values['Failure stage']) |" >> $env:GITHUB_STEP_SUMMARY
+            } else { "| $name | NO RESULT | NO RESULT | NO RESULT | NO RESULT | JOB FAILED BEFORE RESULT | — | — | — | unknown |" >> $env:GITHUB_STEP_SUMMARY }
           }
