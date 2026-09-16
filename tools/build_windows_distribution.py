@@ -10,7 +10,7 @@ Order of work:
 1. Build the Flet Windows application.
 2. Build the AutoSplit converter with PyInstaller.
 3. Validate the UI and converter output trees.
-4. Smoke test the UI executable.
+4. Smoke test the UI executable (bounded GUI launch).
 5. Create and verify the 7z distribution archive.
 
 The workflow generates the UI version module (``tools/generate_ui_version.py``)
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -37,7 +38,8 @@ DIST_ROOT = Path("dist") / "windows"
 ARCHIVE_PATH = Path("dist") / "DivergenceSplitter-windows-x64.7z"
 
 SITE_PACKAGES = "site-packages"
-INVALID_OPTION_EXIT_CODE = 2
+APPLICATION_STARTUP_SECONDS = 5.0
+PROCESS_STOP_TIMEOUT_SECONDS = 10.0
 
 
 def run_command(
@@ -191,23 +193,44 @@ def verify_converter_distribution(converter_dir: Path) -> None:
     require_nonempty_file(converter_dir / f"{CONVERTER_ARTIFACT}.exe")
 
 
-def smoke_test_cli(executable: Path) -> None:
-    """Run the packaged application CLI contracts."""
+def smoke_test_application(
+    executable: Path,
+    *,
+    args: Sequence[str] = (),
+    lifetime_seconds: float = APPLICATION_STARTUP_SECONDS,
+) -> None:
+    """Launch the windowed application and confirm it survives startup.
 
-    help_result = run_command([str(executable), "--help"], check=False)
-    if help_result.returncode != 0:
-        raise RuntimeError(
-            f"{executable} --help failed with exit code {help_result.returncode}"
-        )
+    The Flet Windows executable is a GUI-subsystem binary that does not forward
+    command-line arguments to the Python entry point, so a CLI contract cannot
+    be exercised. The process is started, allowed a short lifetime, and then
+    terminated; an early exit is reported as a startup failure.
+    """
 
-    invalid_result = run_command(
-        [str(executable), "--definitely-invalid-option"], check=False
+    process = subprocess.Popen(
+        [str(executable), *args],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
-    if invalid_result.returncode != INVALID_OPTION_EXIT_CODE:
-        raise RuntimeError(
-            f"{executable} --definitely-invalid-option exited with "
-            f"{invalid_result.returncode}, expected {INVALID_OPTION_EXIT_CODE}"
-        )
+    try:
+        time.sleep(lifetime_seconds)
+        returncode = process.poll()
+        if returncode is not None:
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            detail = f": {stderr.strip()}" if stderr and stderr.strip() else ""
+            raise RuntimeError(
+                f"{executable} exited during startup with code {returncode}{detail}"
+            )
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=PROCESS_STOP_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
 
 def build_windows_distribution(root: Path = REPO_ROOT) -> None:
@@ -221,7 +244,7 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     verify_ui_distribution(ui_dir)
     verify_converter_distribution(converter_dir)
 
-    smoke_test_cli(ui_dir / f"{UI_ARTIFACT}.exe")
+    smoke_test_application(ui_dir / f"{UI_ARTIFACT}.exe")
 
     archive = root / ARCHIVE_PATH
     run_command(archive_create_command(archive), cwd=root / DIST_ROOT)

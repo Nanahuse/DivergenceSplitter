@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -53,10 +54,6 @@ class RecordingRunner:
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         self.calls.append((list(args), cwd, env))
-        if "--help" in args:
-            return subprocess.CompletedProcess(list(args), 0)
-        if "--definitely-invalid-option" in args:
-            return subprocess.CompletedProcess(list(args), bwd.INVALID_OPTION_EXIT_CODE)
         return subprocess.CompletedProcess(list(args), 0)
 
 
@@ -151,23 +148,20 @@ class TestVerification:
 
 
 class TestSmokeTest:
-    def test_accepts_expected_exit_codes(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        monkeypatch.setattr(bwd, "run_command", RecordingRunner())
+    def test_accepts_a_process_that_stays_alive(self) -> None:
+        bwd.smoke_test_application(
+            Path(sys.executable),
+            args=("-c", "import time; time.sleep(30)"),
+            lifetime_seconds=0.3,
+        )
 
-        bwd.smoke_test_cli(tmp_path / "app.exe")
-
-    def test_rejects_unexpected_help_exit_code(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        def runner(args, *, cwd=None, env=None, check=True):
-            return subprocess.CompletedProcess(list(args), 7)
-
-        monkeypatch.setattr(bwd, "run_command", runner)
-
-        with pytest.raises(RuntimeError, match="--help"):
-            bwd.smoke_test_cli(tmp_path / "app.exe")
+    def test_rejects_a_process_that_exits_early(self) -> None:
+        with pytest.raises(RuntimeError, match="exited during startup"):
+            bwd.smoke_test_application(
+                Path(sys.executable),
+                args=("-c", "import sys; sys.exit(3)"),
+                lifetime_seconds=0.3,
+            )
 
 
 class TestOrchestration:
@@ -177,6 +171,7 @@ class TestOrchestration:
         make_tree(tmp_path)
         runner = RecordingRunner()
         monkeypatch.setattr(bwd, "run_command", runner)
+        monkeypatch.setattr(bwd, "smoke_test_application", lambda *args, **kwargs: None)
 
         bwd.build_windows_distribution(tmp_path)
 
