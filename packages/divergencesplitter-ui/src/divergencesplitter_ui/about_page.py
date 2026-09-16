@@ -1,8 +1,9 @@
-"""Flet About view with its nested Licenses sub-view.
+"""Flet About view with the embedded Licenses list.
 
 The application name and version come from the existing pure ``about_info()``
 (authority: the generated ``_version`` module), so no version is hardcoded here.
-Licenses is reached from About and returns to About, all inside the same window.
+The bundled license inventory is part of the page itself: opening About shows
+the license tree directly instead of switching to a separate view.
 """
 
 from __future__ import annotations
@@ -14,30 +15,18 @@ from divergencesplitter_ui.license_page import LicenseView
 
 
 class AboutView:
-    """Show application identity and open the nested Licenses view."""
+    """Show application identity together with the bundled license tree."""
 
     def __init__(self) -> None:
         info = about_info()
-        self._about_section = ft.Column(
+        self._license_view = LicenseView()
+        self._control = ft.Column(
             controls=[
                 ft.Text(info.application_name, size=22),
                 ft.Text(f"Version: {info.version}"),
                 ft.Divider(),
-                ft.OutlinedButton(
-                    content="Licenses...",
-                    on_click=self._show_licenses,
-                ),
+                self._license_view.control,
             ],
-            spacing=8,
-        )
-        self._license_view = LicenseView(on_back=self.show_about)
-        self._license_section = ft.Container(
-            content=self._license_view.control,
-            visible=False,
-            expand=True,
-        )
-        self._control = ft.Column(
-            controls=[self._about_section, self._license_section],
             spacing=8,
             expand=True,
         )
@@ -45,23 +34,3 @@ class AboutView:
     @property
     def control(self) -> ft.Control:
         return self._control
-
-    @property
-    def showing_licenses(self) -> bool:
-        return self._license_section.visible
-
-    def show_about(self) -> None:
-        self._about_section.visible = True
-        self._license_section.visible = False
-        self._request_update()
-
-    def _show_licenses(self, event: ft.Event[ft.OutlinedButton] | None = None) -> None:
-        self._about_section.visible = False
-        self._license_section.visible = True
-        self._request_update()
-
-    def _request_update(self) -> None:
-        try:
-            self._control.update()
-        except RuntimeError:
-            pass

@@ -62,18 +62,10 @@ def references_tile(panel: DiagnosticsPanel) -> ft.ExpansionTile:
     raise AssertionError("no references tile was built")
 
 
-def root_tile(panel: DiagnosticsPanel) -> ft.ExpansionTile:
-    control = panel.control
-    assert isinstance(control, ft.ExpansionTile)
-    return control
-
-
 def body(panel: DiagnosticsPanel) -> ft.Column:
-    controls = root_tile(panel).controls
-    assert controls is not None
-    container = controls[0]
-    assert isinstance(container, ft.Container)
-    content = container.content
+    control = panel.control
+    assert isinstance(control, ft.Column)
+    content = control.controls[1]
     assert isinstance(content, ft.Column)
     return content
 
@@ -131,20 +123,23 @@ def apply_inputs(
     tree: DetectorTreeSnapshot | None,
     observations: tuple[ConditionObservation, ...] = (),
     statuses: tuple[InstanceStatus, ...] = (),
+    *,
+    visible: bool,
 ) -> bool:
-    return panel.apply(tree, observations, (), statuses)
+    return panel.apply(tree, observations, (), statuses, visible=visible)
 
 
 class TestInitialState:
-    def test_starts_collapsed(self) -> None:
+    def test_starts_hidden_with_no_body(self) -> None:
         panel = DiagnosticsPanel()
 
-        assert root_tile(panel).expanded is False
-        assert panel.expanded is False
+        assert panel.visible is False
+        assert body(panel).controls == []
+        assert collect_text(panel.control) == ["Diagnostics"]
 
 
 class TestLazyMaterialization:
-    def test_collapsed_does_not_materialize(self) -> None:
+    def test_hidden_does_not_materialize(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
 
@@ -154,16 +149,17 @@ class TestLazyMaterialization:
             tree,
             (observation(condition),),
             (InstanceStatus(0, InstanceRuntimeState.READY),),
+            visible=False,
         )
 
-        assert panel.expanded is False
+        assert panel.visible is False
         assert body(panel).controls == []
         texts = collect_text(panel.control)
         assert "Scenario 0" not in texts
         assert "Connection" not in texts
         assert "Detected" not in texts
 
-    def test_diagnostics_view_is_not_built_while_collapsed(
+    def test_diagnostics_view_is_not_built_while_hidden(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
@@ -184,27 +180,27 @@ class TestLazyMaterialization:
         )
 
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition),))
+        apply_inputs(panel, tree, (observation(condition),), visible=False)
         assert calls == []
 
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, tree, (observation(condition),), visible=True)
         assert len(calls) == 1
 
-    def test_tree_change_while_collapsed_does_not_materialize(self) -> None:
+    def test_tree_change_while_hidden_does_not_materialize(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree_a = tree_for(instance(0, condition))
         tree_b = tree_for(instance(0, condition), instance(1, condition))
 
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree_a, (observation(condition),))
+        apply_inputs(panel, tree_a, (observation(condition),), visible=False)
         assert body(panel).controls == []
 
-        apply_inputs(panel, tree_b, (observation(condition),))
+        apply_inputs(panel, tree_b, (observation(condition),), visible=False)
 
         assert body(panel).controls == []
-        assert collect_text(panel.control) == ["Scenario / Diagnostics"]
+        assert collect_text(panel.control) == ["Diagnostics"]
 
-    def test_expand_materializes_full_tree(self) -> None:
+    def test_show_materializes_full_tree(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
@@ -213,14 +209,13 @@ class TestLazyMaterialization:
             tree,
             (observation(condition),),
             (InstanceStatus(0, InstanceRuntimeState.READY),),
+            visible=True,
         )
 
-        toggle(root_tile(panel), True)
-
-        assert panel.expanded is True
+        assert panel.visible is True
         assert body(panel).controls != []
         texts = collect_text(panel.control)
-        assert "Scenario / Diagnostics" in texts
+        assert "Diagnostics" in texts
         assert "Scenario 0" in texts
         assert "Connection" in texts
         assert "Connected" in texts
@@ -231,57 +226,68 @@ class TestLazyMaterialization:
         assert "Rule 0 (split)" in texts
         assert any("Detected" in text for text in texts)
 
-    def test_expand_uses_latest_snapshot(self) -> None:
+    def test_show_uses_latest_snapshot(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition, latest=0.1111),))
+        apply_inputs(
+            panel, tree, (observation(condition, latest=0.1111),), visible=False
+        )
+        apply_inputs(
+            panel, tree, (observation(condition, latest=0.7777),), visible=False
+        )
 
-        apply_inputs(panel, tree, (observation(condition, latest=0.7777),))
-
-        toggle(root_tile(panel), True)
+        apply_inputs(
+            panel, tree, (observation(condition, latest=0.7777),), visible=True
+        )
 
         texts = collect_text(panel.control)
         assert any("0.7777" in text for text in texts)
         assert not any("0.1111" in text for text in texts)
 
-    def test_collapse_discards_body(self) -> None:
+    def test_hide_discards_body(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition),))
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, tree, (observation(condition),), visible=True)
         assert body(panel).controls != []
 
-        toggle(root_tile(panel), False)
+        apply_inputs(panel, tree, (observation(condition),), visible=False)
 
-        assert panel.expanded is False
+        assert panel.visible is False
         assert body(panel).controls == []
-        assert collect_text(panel.control) == ["Scenario / Diagnostics"]
+        assert collect_text(panel.control) == ["Diagnostics"]
 
-    def test_reexpand_rebuilds_from_latest(self) -> None:
+    def test_reshow_rebuilds_from_latest(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition, latest=0.1111),))
-        toggle(root_tile(panel), True)
-        toggle(root_tile(panel), False)
+        apply_inputs(
+            panel, tree, (observation(condition, latest=0.1111),), visible=True
+        )
+        apply_inputs(
+            panel, tree, (observation(condition, latest=0.1111),), visible=False
+        )
 
-        apply_inputs(panel, tree, (observation(condition, latest=0.8888),))
-        toggle(root_tile(panel), True)
+        apply_inputs(
+            panel, tree, (observation(condition, latest=0.8888),), visible=True
+        )
 
         texts = collect_text(panel.control)
         assert any("0.8888" in text for text in texts)
         assert not any("0.1111" in text for text in texts)
 
-    def test_expanded_updates_in_place(self) -> None:
+    def test_visible_updates_in_place(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition, latest=0.5000),))
-        toggle(root_tile(panel), True)
+        apply_inputs(
+            panel, tree, (observation(condition, latest=0.5000),), visible=True
+        )
 
-        changed = apply_inputs(panel, tree, (observation(condition, latest=0.1234),))
+        changed = apply_inputs(
+            panel, tree, (observation(condition, latest=0.1234),), visible=True
+        )
 
         assert changed is True
         texts = collect_text(panel.control)
@@ -294,9 +300,7 @@ class TestContent:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition), instance(1, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree)
-
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, tree, visible=True)
 
         assert not any("LiveSplit" in text for text in collect_text(panel.control))
 
@@ -306,8 +310,7 @@ class TestReferenceLifecycle:
         condition = reference_detector()
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition),))
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, tree, (observation(condition),), visible=True)
         return panel
 
     def test_references_are_not_materialized_until_their_detector_expands(
@@ -334,13 +337,12 @@ class TestReferenceLifecycle:
         condition = reference_detector()
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition),))
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, tree, (observation(condition),), visible=True)
         tile = references_tile(panel)
         toggle(tile, True)
         assert len(images(tile)) == 1
 
-        apply_inputs(panel, tree, (observation(condition, latest=0.7),))
+        apply_inputs(panel, tree, (observation(condition, latest=0.7),), visible=True)
 
         assert len(images(tile)) == 1
         assert any("0.7000" in text for text in collect_text(panel.control))
@@ -351,10 +353,11 @@ class TestTreeLifecycle:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition),))
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, tree, (observation(condition),), visible=True)
 
-        changed = apply_inputs(panel, tree, (observation(condition, latest=0.1234),))
+        changed = apply_inputs(
+            panel, tree, (observation(condition, latest=0.1234),), visible=True
+        )
 
         assert changed is True
         texts = collect_text(panel.control)
@@ -366,11 +369,10 @@ class TestTreeLifecycle:
         two = tree_for(instance(0, condition), instance(1, condition))
         one = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, two)
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, two, visible=True)
         assert "Scenario 1" in collect_text(panel.control)
 
-        changed = apply_inputs(panel, one)
+        changed = apply_inputs(panel, one, visible=True)
 
         assert changed is True
         texts = collect_text(panel.control)
@@ -384,25 +386,35 @@ class TestTreeLifecycle:
             instance(0, condition), instance(1, condition), instance(2, condition)
         )
         panel = DiagnosticsPanel()
-        apply_inputs(panel, one)
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, one, visible=True)
 
-        apply_inputs(panel, three)
+        apply_inputs(panel, three, visible=True)
 
         texts = collect_text(panel.control)
         assert "Scenario 0" in texts
         assert "Scenario 1" in texts
         assert "Scenario 2" in texts
 
-    def test_tree_change_while_expanded_rebuilds(self) -> None:
+    def test_tree_change_while_visible_rebuilds(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         one = tree_for(instance(0, condition))
         two = tree_for(instance(0, condition), instance(1, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, one)
-        toggle(root_tile(panel), True)
+        apply_inputs(panel, one, visible=True)
 
-        changed = apply_inputs(panel, two)
+        changed = apply_inputs(panel, two, visible=True)
 
         assert changed is True
         assert "Scenario 1" in collect_text(panel.control)
+
+    def test_tree_change_while_hidden_releases_body(self) -> None:
+        condition = Detected(MeanBrightnessDetector(), 0.9)
+        one = tree_for(instance(0, condition))
+        two = tree_for(instance(0, condition), instance(1, condition))
+        panel = DiagnosticsPanel()
+        apply_inputs(panel, one, visible=True)
+        assert body(panel).controls != []
+
+        apply_inputs(panel, two, visible=False)
+
+        assert body(panel).controls == []

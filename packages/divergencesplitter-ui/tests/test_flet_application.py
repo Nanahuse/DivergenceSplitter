@@ -10,6 +10,7 @@ from divergencesplitter_ui.configuration.page import ConfigurationPage
 from divergencesplitter_ui.error_dialog import ErrorDialog
 from divergencesplitter_ui.flet_application import AppView, FletApplication
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
+from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.page import Monitor, MonitorUpdate
 from divergencesplitter_ui.session import SessionController, SessionState
 
@@ -94,11 +95,35 @@ class TestShutdown:
 
 
 class TestNavigation:
+    def test_view_order_includes_diagnostics_after_monitor(self) -> None:
+        assert [view.value for view in AppView] == [
+            "monitor",
+            "diagnostics",
+            "configuration",
+            "about",
+        ]
+
+    def test_switching_to_diagnostics_does_not_stop_runtime(self) -> None:
+        application, fake = make_application()
+        application._monitor_view = ft.Container()
+        application._diagnostics_view = ft.Container(visible=False)
+        application._configuration_view = ft.Container(visible=False)
+        rail = ft.NavigationRail(selected_index=1)
+
+        application._on_navigate(ft.Event("change", rail))
+
+        assert fake.request_stop_calls == 0
+        assert application.active_view == "diagnostics"
+        assert application._diagnostics_view.visible is True
+        assert application._monitor_view.visible is False
+        assert application._configuration_view.visible is False
+
     def test_switching_to_configuration_does_not_stop_runtime(self) -> None:
         application, fake = make_application()
         application._monitor_view = ft.Container()
+        application._diagnostics_view = ft.Container(visible=False)
         application._configuration_view = ft.Container(visible=False)
-        rail = ft.NavigationRail(selected_index=1)
+        rail = ft.NavigationRail(selected_index=2)
 
         application._on_navigate(ft.Event("change", rail))
 
@@ -106,13 +131,15 @@ class TestNavigation:
         assert application.active_view == "configuration"
         assert application._configuration_view.visible is True
         assert application._monitor_view.visible is False
+        assert application._diagnostics_view.visible is False
 
     def test_switching_to_about_does_not_stop_runtime(self) -> None:
         application, fake = make_application()
         application._monitor_view = ft.Container()
+        application._diagnostics_view = ft.Container(visible=False)
         application._configuration_view = ft.Container(visible=False)
         application._about_view = ft.Container(visible=False)
-        rail = ft.NavigationRail(selected_index=2)
+        rail = ft.NavigationRail(selected_index=3)
 
         application._on_navigate(ft.Event("change", rail))
 
@@ -121,10 +148,12 @@ class TestNavigation:
         assert application._about_view.visible is True
         assert application._monitor_view.visible is False
         assert application._configuration_view.visible is False
+        assert application._diagnostics_view.visible is False
 
     def test_switching_back_to_monitor_restores_visibility(self) -> None:
         application, _ = make_application()
         application._monitor_view = ft.Container(visible=False)
+        application._diagnostics_view = ft.Container(visible=False)
         application._configuration_view = ft.Container()
         rail = ft.NavigationRail(selected_index=0)
 
@@ -133,10 +162,15 @@ class TestNavigation:
         assert application.active_view == "monitor"
         assert application._monitor_view.visible is True
         assert application._configuration_view.visible is False
+        assert application._diagnostics_view.visible is False
 
 
 class _FakeSnapshot:
-    pass
+    def __init__(self) -> None:
+        self.tree = None
+        self.observations: tuple = ()
+        self.run_infos: tuple = ()
+        self.instance_statuses: tuple = ()
 
 
 class _FakeCoordinator:
@@ -201,12 +235,24 @@ class _StubDialog:
         return self._shown
 
 
+class _StubDiagnostics:
+    def __init__(self, *, changed: bool = False) -> None:
+        self._changed = changed
+        self.control = ft.Text("diagnostics")
+        self.calls: list[bool] = []
+
+    def apply(self, tree, observations, run_infos, statuses, *, visible: bool) -> bool:
+        self.calls.append(visible)
+        return self._changed if visible else False
+
+
 def _application_with(
     page: _RecordingPage,
     monitor: _FakeMonitor,
     *,
     configuration: _StubConfiguration | None = None,
     dialog: _StubDialog | None = None,
+    diagnostics: _StubDiagnostics | None = None,
 ) -> FletApplication:
     application, _ = make_application()
     application._page = cast(ft.Page, page)
@@ -216,6 +262,8 @@ def _application_with(
         application._configuration = cast(ConfigurationPage, configuration)
     if dialog is not None:
         application._error_dialog = cast(ErrorDialog, dialog)
+    if diagnostics is not None:
+        application._diagnostics = cast(DiagnosticsPanel, diagnostics)
     return application
 
 
@@ -296,6 +344,40 @@ class TestTargetedMonitorUpdates:
         asyncio.run(application._apply_monitor())
 
         assert page.updates == [(configuration.control,)]
+
+
+class TestDiagnosticsUpdates:
+    def test_hidden_diagnostics_is_applied_as_hidden(self) -> None:
+        page = _RecordingPage()
+        diagnostics = _StubDiagnostics(changed=True)
+        application = _application_with(page, _FakeMonitor(), diagnostics=diagnostics)
+
+        asyncio.run(application._apply_monitor())
+
+        assert diagnostics.calls == [False]
+        assert page.updates == []
+
+    def test_active_diagnostics_change_targets_its_control(self) -> None:
+        page = _RecordingPage()
+        diagnostics = _StubDiagnostics(changed=True)
+        application = _application_with(page, _FakeMonitor(), diagnostics=diagnostics)
+        application._active_view = AppView.DIAGNOSTICS
+
+        asyncio.run(application._apply_monitor())
+
+        assert diagnostics.calls == [True]
+        assert page.updates == [(diagnostics.control,)]
+
+    def test_active_diagnostics_without_change_does_not_patch(self) -> None:
+        page = _RecordingPage()
+        diagnostics = _StubDiagnostics(changed=False)
+        application = _application_with(page, _FakeMonitor(), diagnostics=diagnostics)
+        application._active_view = AppView.DIAGNOSTICS
+
+        asyncio.run(application._apply_monitor())
+
+        assert diagnostics.calls == [True]
+        assert page.updates == []
 
 
 class TestConfigurationPreviewTargets:

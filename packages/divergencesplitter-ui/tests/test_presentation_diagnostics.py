@@ -377,7 +377,7 @@ class TestProgress:
 
         condition = self._condition(then, observation)
 
-        assert condition.label == "▶ Then [TRUE]  step 1 / 2  ACTIVE"
+        assert condition.label == "▶ Then [TRUE]  step 2 / 2  ACTIVE"
 
 
 class TestMultipleScenarios:

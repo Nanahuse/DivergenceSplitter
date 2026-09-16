@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import cast
 
 import flet as ft
@@ -86,14 +86,6 @@ def collect_text(control: ft.Control) -> list[str]:
     ]
 
 
-def expand_diagnostics(monitor: Monitor) -> None:
-    root = monitor.diagnostics.control
-    assert isinstance(root, ft.ExpansionTile)
-    handler = cast(Callable[[ft.ControlEvent], object] | None, root.on_change)
-    assert handler is not None
-    handler(cast(ft.ControlEvent, ft.Event("change", root, data=True)))
-
-
 def make_monitor() -> tuple[Monitor, FakeDiagnostics, MonitorUpdateCoordinator]:
     condition = Detected(MeanBrightnessDetector(), 0.9)
     instance = ScenarioInstance(
@@ -128,7 +120,7 @@ def make_monitor() -> tuple[Monitor, FakeDiagnostics, MonitorUpdateCoordinator]:
     return Monitor(), diagnostics, coordinator
 
 
-def test_overview_and_diagnostics_share_one_observation_read() -> None:
+def test_overview_uses_one_observation_read() -> None:
     monitor, diagnostics, coordinator = make_monitor()
 
     snapshot = coordinator.snapshot()
@@ -140,14 +132,53 @@ def test_overview_and_diagnostics_share_one_observation_read() -> None:
     overview_texts = collect_text(monitor.scenario_overview.control)
     assert any("Detected" in text for text in overview_texts)
 
-    # Diagnostics is lazy: it stores the same read and materializes on expand.
-    assert collect_text(monitor.diagnostics.control) == ["Scenario / Diagnostics"]
-    expand_diagnostics(monitor)
 
-    diagnostics_texts = collect_text(monitor.diagnostics.control)
-    assert any("Detected" in text for text in diagnostics_texts)
-    assert any("tcp://rpc:0" in text for text in diagnostics_texts)
-    assert any("0.5000" in text for text in diagnostics_texts)
+class TestNoDiagnostics:
+    def test_monitor_does_not_own_diagnostics(self) -> None:
+        monitor = Monitor()
+
+        assert not hasattr(monitor, "diagnostics")
+
+    def test_monitor_has_no_diagnostics_control_text(self) -> None:
+        monitor, _, coordinator = make_monitor()
+        monitor.apply(coordinator.snapshot())
+
+        texts = collect_text(monitor.control)
+        assert "Scenario / Diagnostics" not in texts
+        assert "Diagnostics" not in texts
+
+
+class TestLayout:
+    def test_left_column_has_no_fixed_width(self) -> None:
+        monitor = Monitor()
+        control = monitor.control
+        assert isinstance(control, ft.Column)
+        top = control.controls[0]
+        assert isinstance(top, ft.Row)
+        left = top.controls[0]
+        assert isinstance(left, ft.Column)
+        assert left.width is None
+
+    def test_divider_follows_left_content(self) -> None:
+        monitor = Monitor()
+        control = monitor.control
+        assert isinstance(control, ft.Column)
+        top = control.controls[0]
+        assert isinstance(top, ft.Row)
+        assert isinstance(top.controls[1], ft.VerticalDivider)
+        right = top.controls[2]
+        assert isinstance(right, ft.Container)
+        assert right.expand is True
+
+    def test_no_control_uses_the_old_fixed_width(self) -> None:
+        monitor = Monitor()
+
+        widths = [
+            getattr(item, "width", None)
+            for item in iter_controls(monitor.control)
+            if isinstance(item, ft.Control)
+        ]
+        assert 560 not in widths
 
 
 class TestTargetedUpdates:
@@ -160,9 +191,6 @@ class TestTargetedUpdates:
         )
         assert monitor.controls_for_update(MonitorUpdate(scenario_overview=True)) == (
             monitor.scenario_overview.control,
-        )
-        assert monitor.controls_for_update(MonitorUpdate(diagnostics=True)) == (
-            monitor.diagnostics.control,
         )
         both = monitor.controls_for_update(
             MonitorUpdate(global_status=True, scenario_overview=True)
@@ -179,41 +207,27 @@ class TestTargetedUpdates:
 
         assert update.global_status is True
         assert update.scenario_overview is True
-        assert update.diagnostics is False
         assert update.changed is True
-        assert monitor.diagnostics.control not in monitor.controls_for_update(update)
 
-    def test_collapsed_diagnostics_is_never_a_target(self) -> None:
+    def test_second_apply_reports_no_overview_change(self) -> None:
         monitor, _, coordinator = make_monitor()
         monitor.apply(coordinator.snapshot())
 
         update = monitor.apply(coordinator.snapshot())
 
-        assert update.diagnostics is False
-        assert monitor.diagnostics.control not in monitor.controls_for_update(update)
+        assert update.scenario_overview is False
+        assert update.changed is False
 
-    def test_overview_change_does_not_target_expanded_diagnostics(self) -> None:
-        monitor, _, coordinator = make_monitor()
-        monitor.apply(coordinator.snapshot())
-        expand_diagnostics(monitor)
-        assert monitor.diagnostics.expanded is True
-
-        controls = monitor.controls_for_update(MonitorUpdate(scenario_overview=True))
-
-        assert monitor.scenario_overview.control in controls
-        assert monitor.diagnostics.control not in controls
-
-    def test_expanded_diagnostics_change_targets_diagnostics(self) -> None:
+    def test_overview_change_targets_only_overview(self) -> None:
         monitor, diagnostics, coordinator = make_monitor()
         monitor.apply(coordinator.snapshot())
-        expand_diagnostics(monitor)
-        assert monitor.diagnostics.expanded is True
-
         diagnostics.observations = (
             dataclasses.replace(diagnostics.observations[0], latest_score=0.9),
         )
 
         update = monitor.apply(coordinator.snapshot())
 
-        assert update.diagnostics is True
-        assert monitor.diagnostics.control in monitor.controls_for_update(update)
+        assert update.scenario_overview is True
+        assert monitor.controls_for_update(update) == (
+            monitor.scenario_overview.control,
+        )

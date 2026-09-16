@@ -1,15 +1,16 @@
-"""Scenario / Diagnostics panel for the Flet Monitor.
+"""Scenario Diagnostics page for the Flet UI.
 
-The panel renders the pure ``DiagnosticsView`` and never reads runtime
-structures itself. The whole body is materialized lazily: while the area is
-collapsed no view is built and no control tree is kept, so the Monitor update
-never diffs a large Diagnostics subtree. Expanding builds the tree from the
-latest snapshot inputs the Monitor handed over; collapsing disposes every
-section and clears the body so nothing stays resident. While expanded the
-controls are reused across observations (only text values are rewritten) and
-rebuilt when the tree identity changes. Reference images are materialized into
-``flet.Image`` controls only while their detector is expanded and released again
-on collapse, tracked through the pure ``ExpansionState``.
+The page renders the pure ``DiagnosticsView`` and never reads runtime structures
+itself. It is a top-level navigation page, so it fills the whole content area
+and scrolls as a whole instead of living in a fixed-height Monitor section. The
+body is only materialized while the page is visible: while another page is
+showing, ``apply`` keeps only the latest snapshot inputs and never diffs the
+large control tree. Opening the page builds the tree from the latest inputs;
+leaving it releases the resident controls again. While visible the controls are
+reused across observations (only text values are rewritten) and rebuilt when the
+tree identity changes. Reference images are materialized into ``flet.Image``
+controls only while their detector is expanded and released again on collapse,
+tracked through the pure ``ExpansionState``.
 """
 
 from __future__ import annotations
@@ -38,7 +39,6 @@ from divergencesplitter_ui.presentation_diagnostics import (
 )
 from divergencesplitter_ui.reference_image import reference_to_png_bytes
 
-_BODY_HEIGHT = 320
 _INDENT_WIDTH = 18
 _REFERENCE_WIDTH = 160
 _REFERENCE_KEY = 0
@@ -376,11 +376,13 @@ _DiagnosticsInputs = tuple[
 
 
 class DiagnosticsPanel:
-    """A collapsed-by-default, internally scrollable Scenario / Diagnostics.
+    """The full-height, scrollable Scenario Diagnostics page.
 
-    The body only exists while the tile is expanded. ``apply`` stores the latest
-    snapshot inputs but builds nothing until then; expanding materializes the
-    view from the stored inputs and collapsing disposes the control tree.
+    The body only exists while the page is visible. ``apply`` always stores the
+    latest snapshot inputs but builds or diffs nothing while another page is
+    showing; opening the page materializes the view from the stored inputs and
+    leaving it disposes the control tree so only the snapshot reference stays
+    resident.
     """
 
     def __init__(self) -> None:
@@ -388,30 +390,29 @@ class DiagnosticsPanel:
             controls=[],
             spacing=12,
             scroll=ft.ScrollMode.AUTO,
+            expand=True,
         )
-        self._tile = ft.ExpansionTile(
-            title=ft.Text("Scenario / Diagnostics"),
-            controls=[ft.Container(content=self._body, height=_BODY_HEIGHT)],
-            expanded=False,
-            maintain_state=True,
-            on_change=self._on_toggle,
+        self._control = ft.Column(
+            controls=[ft.Text("Diagnostics", size=22), self._body],
+            spacing=8,
+            expand=True,
         )
         self._scenarios: dict[int, _ScenarioSection] = {}
         self._tree_key: object | None = None
-        self._expanded = False
+        self._visible = False
         self._inputs: _DiagnosticsInputs | None = None
 
     @property
     def control(self) -> ft.Control:
         """The root control to add to the page."""
 
-        return self._tile
+        return self._control
 
     @property
-    def expanded(self) -> bool:
-        """Whether the user has expanded the Diagnostics area."""
+    def visible(self) -> bool:
+        """Whether the Diagnostics page is the one currently displayed."""
 
-        return self._expanded
+        return self._visible
 
     def apply(
         self,
@@ -419,30 +420,25 @@ class DiagnosticsPanel:
         observations: tuple[ConditionObservation, ...],
         run_infos: tuple[InstanceRunSnapshot, ...],
         statuses: tuple[InstanceStatus, ...],
+        *,
+        visible: bool,
     ) -> bool:
-        """Retain the latest snapshot and update the body while expanded.
+        """Retain the latest snapshot and update the body only while visible.
 
-        While collapsed this only stores the inputs; ``diagnostics_view`` is not
-        called and no control is built. While expanded the existing controls are
-        reused (or rebuilt on a tree change) exactly as before.
+        While hidden this only stores the inputs and releases any resident tree,
+        so ``diagnostics_view`` is not called and the large control tree is not
+        diffed. While visible the existing controls are reused (or rebuilt on a
+        tree change) exactly as before.
         """
 
         self._inputs = (tree, observations, run_infos, statuses)
-        if not self._expanded:
-            return False
-        return self._apply_view(diagnostics_view(*self._inputs))
-
-    def _on_toggle(self, event: ft.Event[ft.ExpansionTile]) -> None:
-        expanded = bool(event.data)
-        if expanded == self._expanded:
-            return
-        self._expanded = expanded
-        if expanded:
-            if self._inputs is not None:
-                self._apply_view(diagnostics_view(*self._inputs))
-        else:
+        if visible:
+            self._visible = True
+            return self._apply_view(diagnostics_view(*self._inputs))
+        if self._visible:
+            self._visible = False
             self._release()
-        _request_update(self._body)
+        return False
 
     def _apply_view(self, view: DiagnosticsView) -> bool:
         if view.tree_key is not self._tree_key:

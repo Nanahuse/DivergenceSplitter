@@ -19,7 +19,7 @@ from divergencesplitter_ui.presentation_overview import (
     ScenarioOverviewView,
 )
 
-_INDENT_WIDTH = 16
+_INDENT_WIDTH = 14
 _EMPTY_EVALUATING = "—"
 
 _STATUS_COLORS = {
@@ -67,26 +67,31 @@ def _all_details(groups: tuple[EvaluationGroupView, ...]) -> list[str]:
     return details
 
 
+def _condition_control(
+    view: ConditionEvaluationView,
+    depth: int,
+    detail_texts: list[ft.Text],
+) -> ft.Control:
+    detail = ft.Text(view.detail)
+    detail_texts.append(detail)
+    controls: list[ft.Control] = [
+        ft.Row(controls=[ft.Text(view.label), detail], spacing=12)
+    ]
+    controls.extend(
+        _condition_control(child, depth + 1, detail_texts) for child in view.children
+    )
+    return ft.Container(
+        content=ft.Column(controls=controls, spacing=2),
+        padding=ft.Padding.only(left=depth * _INDENT_WIDTH),
+    )
+
+
 def _build_conditions(
     views: tuple[ConditionEvaluationView, ...],
     depth: int,
     detail_texts: list[ft.Text],
 ) -> list[ft.Control]:
-    controls: list[ft.Control] = []
-    for view in views:
-        detail = ft.Text(view.detail)
-        detail_texts.append(detail)
-        controls.append(
-            ft.Container(
-                content=ft.Row(
-                    controls=[ft.Text(view.label), detail],
-                    spacing=12,
-                ),
-                padding=ft.Padding.only(left=depth * _INDENT_WIDTH),
-            )
-        )
-        controls.extend(_build_conditions(view.children, depth + 1, detail_texts))
-    return controls
+    return [_condition_control(view, depth, detail_texts) for view in views]
 
 
 def _build_group(
