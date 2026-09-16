@@ -1,7 +1,7 @@
 """Flet Configuration page composing file actions, source, and preview.
 
-The page shares one ``SettingsModel`` with the Dear PyGui Configuration page and
-never keeps a second settings state. It renders the draft, delegates New/Open/
+The page uses the single shared ``SettingsModel`` and never keeps a second
+settings state. It renders the draft, delegates New/Open/
 Save/Save As to ``ConfigurationActions``, and drives preview lifecycle through
 ``PreviewController``. Runtime restart happens only through ``SessionController``
 after a successful save.
@@ -357,9 +357,9 @@ class ConfigurationPage:
         self._request_update()
 
     def _on_log_level(self, event: ft.Event[ft.Dropdown]) -> None:
-        # Log level preserves the existing Dear PyGui semantics: it is applied
-        # to the running diagnostics immediately (live) while the draft keeps it
-        # for the next save. Applying it never restarts the session.
+        # Log level preserves the existing configuration semantics: it is
+        # applied to the running diagnostics immediately (live) while the draft
+        # keeps it for the next save. Applying it never restarts the session.
         level = self._log_level.value or "DEBUG"
         self._model.set_log_level(level)
         self._controller.set_log_level(level)

@@ -21,21 +21,22 @@ jobs:
         run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
       - name: Build UI directory distribution
         run: >-
-          uv run --no-sync pyinstaller
-          --onedir
-          --windowed
-          --clean
-          --name DivergenceSplitter
-          --collect-all dearpygui
-          --collect-all windows_capture_device_list
-          --collect-all NDIlib
-          --copy-metadata ndi-python
-          --collect-data divergencesplitter_ui
-          --copy-metadata divergencesplitter-ui
-          --distpath dist/windows
-          --workpath build/ui-pyinstaller
-          --specpath build/ui-pyinstaller
+          uv run --no-sync flet pack
           tools/ui_entry.py
+          --name DivergenceSplitter
+          --onedir
+          --distpath dist/windows
+          --pyinstaller-build-args=--collect-all
+          --pyinstaller-build-args=windows_capture_device_list
+          --pyinstaller-build-args=--collect-all
+          --pyinstaller-build-args=NDIlib
+          --pyinstaller-build-args=--copy-metadata
+          --pyinstaller-build-args=ndi-python
+          --pyinstaller-build-args=--collect-data
+          --pyinstaller-build-args=divergencesplitter_ui
+          --pyinstaller-build-args=--copy-metadata
+          --pyinstaller-build-args=divergencesplitter-ui
+          --yes
       - name: Build converter directory distribution
         run: >-
           uv run --no-sync pyinstaller
@@ -55,8 +56,11 @@ jobs:
             if ($exe.Length -eq 0) {
               throw "Built executable is empty: $name"
             }
-            if (-not (Test-Path "dist/windows/$name/_internal" -PathType Container)) {
-              throw "Missing dependency directory: $name"
+            # The onedir layout keeps the bundled dependencies next to the
+            # executable; its exact directory name is PyInstaller-internal.
+            $bundle_dirs = Get-ChildItem "dist/windows/$name" -Directory
+            if ($bundle_dirs.Count -eq 0) {
+              throw "Missing bundled dependency directory: $name"
             }
             Write-Output "Built $($exe.FullName) ($($exe.Length) bytes)"
           }
