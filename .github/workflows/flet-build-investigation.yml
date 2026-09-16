@@ -1,0 +1,115 @@
+name: Flet build investigation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+  BUILD_ROOT: artifacts/flet-build-investigation
+
+jobs:
+  root-as-is:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { python-version: "3.14" }
+      - name: Prepare and build baseline
+        shell: pwsh
+        run: .github/workflows/scripts/flet-investigation.ps1 root-as-is "uv run --no-sync flet build windows --verbose"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-investigation-root-as-is, path: artifacts/flet-build-investigation/root-as-is, retention-days: 5, if-no-files-found: error }
+
+  ui-as-is:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { python-version: "3.14" }
+      - name: Prepare and build UI baseline
+        shell: pwsh
+        run: .github/workflows/scripts/flet-investigation.ps1 ui-as-is "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-investigation-ui-as-is, path: artifacts/flet-build-investigation/ui-as-is, retention-days: 5, if-no-files-found: error }
+
+  entry-only:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { python-version: "3.14" }
+      - name: Prepare and build entry-only
+        shell: pwsh
+        run: .github/workflows/scripts/flet-investigation.ps1 entry-only "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-investigation-entry-only, path: artifacts/flet-build-investigation/entry-only, retention-days: 5, if-no-files-found: error }
+
+  workspace-dev-packages:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fecbb2e8d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { python-version: "3.14" }
+      - name: Prepare and build workspace packages
+        shell: pwsh
+        run: .github/workflows/scripts/flet-investigation.ps1 workspace-dev-packages "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-investigation-workspace-dev-packages, path: artifacts/flet-build-investigation/workspace-dev-packages, retention-days: 5, if-no-files-found: error }
+
+  pep508-git:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { python-version: "3.14" }
+      - name: Prepare and build PEP 508 Git
+        shell: pwsh
+        run: .github/workflows/scripts/flet-investigation.ps1 pep508-git "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-investigation-pep508-git, path: artifacts/flet-build-investigation/pep508-git, retention-days: 5, if-no-files-found: error }
+
+  all-dev-packages:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fecbb2e8d6c99fc78c9fec3a63790f8d # v10.0.0
+        with: { python-version: "3.14" }
+      - name: Prepare and build all local packages
+        shell: pwsh
+        run: .github/workflows/scripts/flet-investigation.ps1 all-dev-packages "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: flet-build-investigation-all-dev-packages, path: artifacts/flet-build-investigation/all-dev-packages, retention-days: 5, if-no-files-found: error }
+
+  summary:
+    if: always()
+    needs: [root-as-is, ui-as-is, entry-only, workspace-dev-packages, pep508-git, all-dev-packages]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: flet-build-investigation-*
+          path: artifacts/flet-build-investigation
+          merge-multiple: false
+      - name: Investigation summary
+        shell: pwsh
+        run: |
+          "## Flet build investigation" >> $env:GITHUB_STEP_SUMMARY
+          "| Approach | Build | EXE | CLI smoke | GUI smoke | Failure stage |" >> $env:GITHUB_STEP_SUMMARY
+          "|---|---|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
+          Get-ChildItem artifacts/flet-build-investigation -Directory | ForEach-Object {
+            $result = Get-Content (Join-Path $_.FullName result.txt) -Raw
+            $rows = @{}
+            $result -split "`n" | ForEach-Object { if ($_ -match '^([^:]+): (.*)$') { $rows[$matches[1]] = $matches[2].Trim() } }
+            "| $($rows['Approach']) | $($rows['Build result']) | $($rows['EXE found']) | $($rows['CLI smoke result']) | $($rows['GUI smoke result']) | $($rows['Failure stage']) |" >> $env:GITHUB_STEP_SUMMARY
+          }
+          "Production windows-distribution.yml was not changed by this workflow." >> $env:GITHUB_STEP_SUMMARY
