@@ -222,18 +222,21 @@ class FletApplication:
         if self._monitor is None:
             return
         snapshot = self._coordinator.snapshot()
-        changed = False
+        targets: list[ft.Control] = []
         if self._active_view is AppView.MONITOR:
-            changed |= self._monitor.apply(snapshot)
+            update = self._monitor.apply(snapshot)
+            targets.extend(self._monitor.controls_for_update(update))
         if self._configuration is not None:
-            changed |= self._configuration.tick(
-                self._controller.state,
-                visible=self._active_view is AppView.CONFIGURATION,
-            )
+            visible = self._active_view is AppView.CONFIGURATION
+            changed = self._configuration.tick(self._controller.state, visible=visible)
+            if visible and changed:
+                targets.append(self._configuration.control)
         if self._error_dialog is not None:
-            changed |= self._error_dialog.tick(self._controller.result)
-        if changed and self._page is not None:
-            self._page.update()
+            # Showing or hiding a dialog already patches the dialog controls, so
+            # it is intentionally kept out of the panel repaint targets.
+            self._error_dialog.tick(self._controller.result)
+        if targets and self._page is not None:
+            self._page.update(*targets)
 
     async def _input_preview_loop(self) -> None:
         monitor = self._monitor
@@ -246,12 +249,17 @@ class FletApplication:
 
     async def _configuration_preview_loop(self) -> None:
         while not self._stopping:
-            configuration = self._configuration
-            if configuration is not None and self._active_view is AppView.CONFIGURATION:
-                changed = await configuration.pump_preview()
-                if changed and self._page is not None:
-                    self._page.update()
+            await self._apply_configuration_preview()
             await asyncio.sleep(CONFIGURATION_PREVIEW_SECONDS)
+
+    async def _apply_configuration_preview(self) -> None:
+        configuration = self._configuration
+        if configuration is None or self._active_view is not AppView.CONFIGURATION:
+            return
+        if not await configuration.pump_preview():
+            return
+        if self._page is not None:
+            self._page.update(*configuration.preview_update_targets())
 
     async def shutdown(self) -> None:
         """Stop the GUI tasks and the runtime, then destroy the window.

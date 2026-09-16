@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Iterator
 from typing import cast
 
@@ -24,7 +25,7 @@ from divergencesplitter_runtime.observability import (
     build_detector_tree,
 )
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
-from divergencesplitter_ui.monitor.page import Monitor
+from divergencesplitter_ui.monitor.page import Monitor, MonitorUpdate
 from divergencesplitter_ui.session import SessionController, SessionState
 
 
@@ -147,3 +148,72 @@ def test_overview_and_diagnostics_share_one_observation_read() -> None:
     assert any("Detected" in text for text in diagnostics_texts)
     assert any("tcp://rpc:0" in text for text in diagnostics_texts)
     assert any("0.5000" in text for text in diagnostics_texts)
+
+
+class TestTargetedUpdates:
+    def test_controls_for_update_maps_only_changed_panels(self) -> None:
+        monitor = Monitor()
+
+        assert monitor.controls_for_update(MonitorUpdate()) == ()
+        assert monitor.controls_for_update(MonitorUpdate(global_status=True)) == (
+            monitor.global_status.control,
+        )
+        assert monitor.controls_for_update(MonitorUpdate(scenario_overview=True)) == (
+            monitor.scenario_overview.control,
+        )
+        assert monitor.controls_for_update(MonitorUpdate(diagnostics=True)) == (
+            monitor.diagnostics.control,
+        )
+        both = monitor.controls_for_update(
+            MonitorUpdate(global_status=True, scenario_overview=True)
+        )
+        assert both == (
+            monitor.global_status.control,
+            monitor.scenario_overview.control,
+        )
+
+    def test_apply_reports_each_panel_independently(self) -> None:
+        monitor, _, coordinator = make_monitor()
+
+        update = monitor.apply(coordinator.snapshot())
+
+        assert update.global_status is True
+        assert update.scenario_overview is True
+        assert update.diagnostics is False
+        assert update.changed is True
+        assert monitor.diagnostics.control not in monitor.controls_for_update(update)
+
+    def test_collapsed_diagnostics_is_never_a_target(self) -> None:
+        monitor, _, coordinator = make_monitor()
+        monitor.apply(coordinator.snapshot())
+
+        update = monitor.apply(coordinator.snapshot())
+
+        assert update.diagnostics is False
+        assert monitor.diagnostics.control not in monitor.controls_for_update(update)
+
+    def test_overview_change_does_not_target_expanded_diagnostics(self) -> None:
+        monitor, _, coordinator = make_monitor()
+        monitor.apply(coordinator.snapshot())
+        expand_diagnostics(monitor)
+        assert monitor.diagnostics.expanded is True
+
+        controls = monitor.controls_for_update(MonitorUpdate(scenario_overview=True))
+
+        assert monitor.scenario_overview.control in controls
+        assert monitor.diagnostics.control not in controls
+
+    def test_expanded_diagnostics_change_targets_diagnostics(self) -> None:
+        monitor, diagnostics, coordinator = make_monitor()
+        monitor.apply(coordinator.snapshot())
+        expand_diagnostics(monitor)
+        assert monitor.diagnostics.expanded is True
+
+        diagnostics.observations = (
+            dataclasses.replace(diagnostics.observations[0], latest_score=0.9),
+        )
+
+        update = monitor.apply(coordinator.snapshot())
+
+        assert update.diagnostics is True
+        assert monitor.diagnostics.control in monitor.controls_for_update(update)

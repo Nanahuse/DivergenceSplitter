@@ -448,6 +448,16 @@ class TestPreviewSync:
         assert preview.started == []
 
 
+class TestPreviewUpdateTargets:
+    def test_targets_include_the_preview_control(self) -> None:
+        page = make_page()
+
+        targets = page.preview_update_targets()
+
+        assert page.preview.control in targets
+        assert all(isinstance(target, ft.Control) for target in targets)
+
+
 class TestUnsavedEditsDoNotStopRuntime:
     def _running_page(self, **kwargs):
         controller = kwargs.pop("controller", None) or FakeController()

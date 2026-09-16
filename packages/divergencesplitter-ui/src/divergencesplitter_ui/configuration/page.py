@@ -168,6 +168,16 @@ class ConfigurationPage:
     def preview(self) -> ConfigurationPreview:
         return self._preview
 
+    def preview_update_targets(self) -> tuple[ft.Control, ...]:
+        """The controls one ``pump_preview`` cycle can change.
+
+        The preview frame itself streams over ``RawImage``'s data channel, so
+        only the preview status text and the opened-camera label need a regular
+        Flet patch; the application never repaints the whole page for them.
+        """
+
+        return (self._preview.control, self._opened_camera)
+
     async def pump_preview(self) -> bool:
         """Run one preview cycle: apply any pending start/stop, render a frame."""
 
