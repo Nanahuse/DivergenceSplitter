@@ -68,6 +68,10 @@ def prepare_metadata(
     ui_text += "\n[tool.flet.dev_packages]\n"
     ui_text += "".join(f'{name} = "{path}"\n' for name, path in dev.items())
     ui_text = add_windows_dependencies(ui_text, WINDOWS_DEPENDENCIES[mode])
+    # Flet 1.0.0 has --no-compile-packages, but no --no-cleanup-packages.
+    # Keep this experiment's Windows-only metadata explicit and runner-local.
+    ui_text += "\n[tool.flet.windows.compile]\npackages = false\n"
+    ui_text += "\n[tool.flet.windows.cleanup]\npackages = false\n"
 
     runtime_text = runtime_pyproject.read_text(encoding="utf-8")
     if mode == "pep508-git":

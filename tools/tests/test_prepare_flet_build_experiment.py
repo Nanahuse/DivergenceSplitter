@@ -64,6 +64,8 @@ def test_prepare_metadata_generates_valid_expected_metadata(
         ui_data["tool"]["flet"]["windows"]["dependencies"] == WINDOWS_DEPENDENCIES[mode]
     )
     assert ui_data["tool"]["flet"]["app"] == {"path": "src", "module": "main"}
+    assert ui_data["tool"]["flet"]["windows"]["compile"]["packages"] is False
+    assert ui_data["tool"]["flet"]["windows"]["cleanup"]["packages"] is False
     assert (ui / "src" / "main.py").is_file()
     if mode == "pep508-git":
         assert any(

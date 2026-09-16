@@ -4,7 +4,7 @@ $out = Join-Path $PWD "artifacts/flet-build-investigation/$Approach"
 $buildOutput = Join-Path $PWD "artifacts/flet-build-output/$Approach"
 New-Item -ItemType Directory -Force $out | Out-Null
 function Save-Text([string]$name, [string]$value) { $value | Out-File (Join-Path $out $name) -Encoding utf8 }
-$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $encoding = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $packageContent = 'NOT RUN'; $exeFound = 'NO'; $exePath = 'NOT FOUND'; $cli = 'NOT RUN'; $cliCode = 'NOT RUN'; $invalid = 'NOT RUN'; $invalidCode = 'NOT RUN'; $gui = 'NOT RUN'; $guiExitCode = 'N/A'; $stage = 'unknown'
+$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $encoding = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $packageContent = 'NOT RUN'; $opencvContent = 'NOT RUN'; $opencvRuntime = 'NOT RUN'; $exeFound = 'NO'; $exePath = 'NOT FOUND'; $cli = 'NOT RUN'; $cliCode = 'NOT RUN'; $invalid = 'NOT RUN'; $invalidCode = 'NOT RUN'; $gui = 'NOT RUN'; $guiExitCode = 'N/A'; $stage = 'unknown'
 $infraFailure = $false
 git rev-parse HEAD | Tee-Object (Join-Path $out commit.txt)
 uv --version | Tee-Object (Join-Path $out environment.txt)
@@ -24,7 +24,7 @@ if ($LASTEXITCODE -ne 0) { throw "flet --version failed with exit code $LASTEXIT
 uv run --no-sync flet build windows --help *>&1 | Tee-Object (Join-Path $out flet-build-cli-help.txt)
 if ($LASTEXITCODE -ne 0) { throw "flet build windows --help failed with exit code $LASTEXITCODE" }
 $cliHelp = Get-Content -Raw (Join-Path $out flet-build-cli-help.txt)
-if ($cliHelp -notmatch '--artifact' -or $cliHelp -notmatch '--product') { throw 'Flet CLI does not advertise --artifact and --product' }
+if ($cliHelp -notmatch '--artifact' -or $cliHelp -notmatch '--product' -or $cliHelp -notmatch '--no-compile-packages') { throw 'Flet CLI does not advertise required build options' }
 
 try {
   uv run python tools/prepare_flet_build_experiment.py $Approach
@@ -53,6 +53,8 @@ expected_win = {
  'pep508-git': ['divergencesplitter','ndi-python>=6.3.2.4'],
 }[mode]
 assert ui['tool']['flet']['windows']['dependencies'] == expected_win
+assert ui['tool']['flet']['windows']['compile']['packages'] is False
+assert ui['tool']['flet']['windows']['cleanup']['packages'] is False
 if mode == 'pep508-git':
     assert any(x.startswith('livesplit-bridge-client @ git+') for x in runtime['project']['dependencies'])
     assert any(x.startswith('windows-capture-device-list @ git+') for x in runtime['project']['dependencies'])
@@ -111,7 +113,7 @@ if ($preflight -eq 'PASS') {
 if ($encoding -eq 'PASS') {
   if (Test-Path $buildOutput) { Remove-Item -LiteralPath $buildOutput -Recurse -Force }
   New-Item -ItemType Directory -Force (Split-Path $buildOutput) | Out-Null
-  uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --verbose --artifact DivergenceSplitter --product DivergenceSplitter --output $buildOutput *>&1 | Tee-Object (Join-Path $out flet-build.log)
+  uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --verbose --artifact DivergenceSplitter --product DivergenceSplitter --no-compile-packages --output $buildOutput *>&1 | Tee-Object (Join-Path $out flet-build.log)
   $buildCode = $LASTEXITCODE
   $build = if ($buildCode -eq 0) { 'PASS' } else { 'FAIL' }
   if ($buildCode -eq 0) { $stage = '—' }
@@ -144,7 +146,9 @@ if ($exe) {
   & $exe --definitely-invalid-option *> (Join-Path $out cli-invalid.log); $invalidCode = $LASTEXITCODE; Save-Text cli-invalid-result.txt "exit_code=$invalidCode"
   $invalid = if ($invalidCode -eq 2) {'PASS'} else {"FAIL ($invalidCode)"}
   try {
-    $proc = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+    $guiStdout = Join-Path $out 'gui-stdout.log'
+    $guiStderr = Join-Path $out 'gui-stderr.log'
+    $proc = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $guiStdout -RedirectStandardError $guiStderr -ErrorAction Stop
     $processId = $proc.Id
     Start-Sleep -Seconds 5
     if ($proc.HasExited) { $gui = 'EXITED'; $guiExitCode = $proc.ExitCode }
@@ -156,6 +160,18 @@ if ($exe) {
 if ($build -eq 'PASS' -and (Test-Path $buildOutput)) {
   $files = @(Get-ChildItem -LiteralPath $buildOutput -Recurse -File)
   $relativeFiles = @($files | ForEach-Object { [System.IO.Path]::GetRelativePath($buildOutput,$_.FullName).Replace('\','/') })
+  $opencvPaths = @($files | Where-Object { $_.Directory.Name -eq 'cv2' } | ForEach-Object { $_.Directory.FullName } | Sort-Object -Unique)
+  $opencvPath = if ($opencvPaths.Count -gt 0) { $opencvPaths[0] } else { $null }
+  Save-Text opencv-package-path.txt $(if ($opencvPath) { $opencvPath } else { 'NOT FOUND' })
+  $opencvChecks = [ordered]@{}
+  foreach ($requiredFile in @('config.py', 'config-3.py', '__init__.py', 'cv2.pyd')) {
+    $opencvChecks["cv2/$requiredFile"] = [bool]($opencvPath -and (Test-Path -LiteralPath (Join-Path $opencvPath $requiredFile) -PathType Leaf))
+  }
+  $opencvChecks['OpenCV loader source files retained'] = ($opencvChecks['cv2/config.py'] -and $opencvChecks['cv2/config-3.py'])
+  $opencvChecks.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $(if ($_.Value) {'PASS'} else {'FAIL'}) } | Out-File (Join-Path $out opencv-content-check.txt) -Encoding utf8
+  $opencvContent = if (@($opencvChecks.Values | Where-Object { -not $_ }).Count -eq 0) {'PASS'} else {'FAIL'}
+  $sizeBytes = ($files | Measure-Object -Property Length -Sum).Sum
+  Save-Text build-output-size.txt "bytes=$sizeBytes`nmegabytes=$([math]::Round($sizeBytes / 1MB, 2))"
   $checks = [ordered]@{
     'divergencesplitter' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/divergencesplitter/' }).Count -gt 0)
     'divergencesplitter_runtime' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/divergencesplitter_runtime/' }).Count -gt 0)
@@ -170,22 +186,41 @@ if ($build -eq 'PASS' -and (Test-Path $buildOutput)) {
     'NumPy native extension' = [bool](@($relativeFiles | Where-Object { $_ -match '(?i)^site-packages/numpy/.*\.pyd$' }).Count -gt 0)
     'OpenCV (cv2)' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/cv2/' }).Count -gt 0)
     'OpenCV extension' = [bool](@($relativeFiles | Where-Object { $_ -match '(?i)^site-packages/cv2/.*\.pyd$' }).Count -gt 0)
+    'OpenCV config.py source' = $opencvChecks['cv2/config.py']
+    'OpenCV config-3.py source' = $opencvChecks['cv2/config-3.py']
+    'OpenCV __init__.py source' = $opencvChecks['cv2/__init__.py']
+    'OpenCV cv2.pyd' = $opencvChecks['cv2/cv2.pyd']
   }
   $checks.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $(if ($_.Value) {'PASS'} else {'FAIL'}) } | Out-File (Join-Path $out package-content-check.txt) -Encoding utf8
   $packageContent = if (@($checks.Values | Where-Object { -not $_ }).Count -eq 0) {'PASS'} else {'FAIL'}
-} else { Save-Text package-content-check.txt 'NOT RUN: Flet build did not succeed'; $packageContent = 'NOT RUN' }
+  $pythonExeCandidates = @((Join-Path $buildOutput 'python.exe'), (Join-Path (Join-Path $buildOutput 'python') 'python.exe'))
+  $packagedPython = $pythonExeCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+  if ($packagedPython) {
+    $env:PYTHONPATH = Join-Path $buildOutput 'site-packages'
+    & $packagedPython -c 'import cv2; print(cv2.__version__)' *>&1 | Tee-Object (Join-Path $out opencv-import-smoke.log)
+    $opencvRuntime = if ($LASTEXITCODE -eq 0) {'PASS'} else {'FAIL'}
+  } else {
+    $runtimeLogs = @((Join-Path $out cli-help.log),(Join-Path $out cli-invalid.log),(Join-Path $out gui-stdout.log),(Join-Path $out gui-stderr.log)) | Where-Object { Test-Path $_ } | ForEach-Object { Get-Content -Raw $_ }
+    $runtimeText = $runtimeLogs -join "`n"
+    if ($runtimeText -match '(?i)OpenCV loader: missing configuration|ImportError.{0,100}cv2|No module named .cv2') { $opencvRuntime = 'FAIL' }
+    elseif ($gui -eq 'ALIVE') { $opencvRuntime = 'PASS (application alive; no OpenCV import error in captured logs)' }
+    else { $opencvRuntime = 'NOT CONFIRMED' }
+  }
+  Save-Text opencv-runtime-result.txt $opencvRuntime
+} else { Save-Text package-content-check.txt 'NOT RUN: Flet build did not succeed'; Save-Text opencv-content-check.txt 'NOT RUN: Flet build did not succeed'; Save-Text opencv-package-path.txt 'NOT FOUND'; Save-Text build-output-size.txt 'NOT AVAILABLE'; $packageContent = 'NOT RUN'; $opencvContent = 'NOT RUN'; $opencvRuntime = 'NOT RUN' }
 
 if ($build -eq 'PASS') {
   if ($exeFound -ne 'YES') { $stage = 'app-exe-missing' }
+  elseif ($opencvContent -eq 'FAIL') { $stage = 'opencv-package-content' }
+  elseif ($opencvRuntime -eq 'FAIL') { $stage = 'opencv-runtime-import' }
   elseif ($packageContent -eq 'FAIL') { $stage = 'package-content' }
   elseif ($cli -ne 'PASS' -or $invalid -ne 'PASS') { $stage = 'cli-smoke' }
   else { $stage = '—' }
 } elseif ($build -eq 'NOT RUN' -and $stage -eq 'unknown') { $stage = if ($encoding -eq 'FAIL') {'encoding-preflight'} else {'dependency-preflight'} }
 
 Save-Text failure-stage.txt $stage
-Save-Text result.txt "Approach: pep508-git`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nEncoding preflight result: $encoding`nBuild result: $build`nBuild exit code: $buildCode`nPackage content result: $packageContent`nEXE found: $exeFound`nApp EXE path: $exePath`nCLI smoke result: $cli`nCLI --help exit code: $cliCode`nInvalid CLI result: $invalid`nInvalid option exit code: $invalidCode`nGUI smoke result: $gui`nGUI exit code: $guiExitCode`nFailure stage: $stage`nOutput directory: $buildOutput"
+Save-Text result.txt "Approach: pep508-git`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nEncoding preflight result: $encoding`nBuild result: $build`nBuild exit code: $buildCode`nPackage content result: $packageContent`nOpenCV content result: $opencvContent`nOpenCV runtime result: $opencvRuntime`nEXE found: $exeFound`nApp EXE path: $exePath`nCLI smoke result: $cli`nCLI --help exit code: $cliCode`nInvalid CLI result: $invalid`nInvalid option exit code: $invalidCode`nGUI smoke result: $gui`nGUI exit code: $guiExitCode`nFailure stage: $stage`nOutput directory: $buildOutput"
 Get-Content (Join-Path $out result.txt) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-"build_result=$build" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
 "build_result=$build" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
 if ($infraFailure) { exit 1 }
 exit 0
