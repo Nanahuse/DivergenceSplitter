@@ -1,17 +1,29 @@
 """Scenario / Diagnostics panel for the Flet Monitor.
 
 The panel renders the pure ``DiagnosticsView`` and never reads runtime
-structures itself. Controls are built once per ``DetectorTreeSnapshot`` and
-reused while that tree is stable; observation updates only rewrite text values,
-so the tree is not rebuilt at the Monitor update rate. Reference images are
-materialized into ``flet.Image`` controls only while their detector is expanded
-and released again on collapse, tracked through the pure ``ExpansionState``.
+structures itself. The whole body is materialized lazily: while the area is
+collapsed no view is built and no control tree is kept, so the Monitor update
+never diffs a large Diagnostics subtree. Expanding builds the tree from the
+latest snapshot inputs the Monitor handed over; collapsing disposes every
+section and clears the body so nothing stays resident. While expanded the
+controls are reused across observations (only text values are rewritten) and
+rebuilt when the tree identity changes. Reference images are materialized into
+``flet.Image`` controls only while their detector is expanded and released again
+on collapse, tracked through the pure ``ExpansionState``.
 """
 
 from __future__ import annotations
 
 import flet as ft
-from divergencesplitter_runtime.instance_runtime import InstanceRuntimeState
+from divergencesplitter_runtime.instance_runtime import (
+    InstanceRuntimeState,
+    InstanceStatus,
+)
+from divergencesplitter_runtime.observability import (
+    ConditionObservation,
+    DetectorTreeSnapshot,
+    InstanceRunSnapshot,
+)
 
 from divergencesplitter_ui.presentation import ExpansionEvent, ExpansionState
 from divergencesplitter_ui.presentation_diagnostics import (
@@ -22,6 +34,7 @@ from divergencesplitter_ui.presentation_diagnostics import (
     DiagnosticsRuleView,
     DiagnosticsView,
     ScenarioDiagnosticsView,
+    diagnostics_view,
 )
 from divergencesplitter_ui.reference_image import reference_to_png_bytes
 
@@ -351,8 +364,24 @@ class _ScenarioSection:
             group.dispose()
 
 
+# The latest snapshot inputs handed over by the Monitor. They are only kept as
+# references until the user expands, so no presentation model is built while the
+# area is collapsed.
+_DiagnosticsInputs = tuple[
+    DetectorTreeSnapshot | None,
+    tuple[ConditionObservation, ...],
+    tuple[InstanceRunSnapshot, ...],
+    tuple[InstanceStatus, ...],
+]
+
+
 class DiagnosticsPanel:
-    """A collapsed-by-default, internally scrollable Scenario / Diagnostics."""
+    """A collapsed-by-default, internally scrollable Scenario / Diagnostics.
+
+    The body only exists while the tile is expanded. ``apply`` stores the latest
+    snapshot inputs but builds nothing until then; expanding materializes the
+    view from the stored inputs and collapsing disposes the control tree.
+    """
 
     def __init__(self) -> None:
         self._body = ft.Column(
@@ -370,6 +399,7 @@ class DiagnosticsPanel:
         self._scenarios: dict[int, _ScenarioSection] = {}
         self._tree_key: object | None = None
         self._expanded = False
+        self._inputs: _DiagnosticsInputs | None = None
 
     @property
     def control(self) -> ft.Control:
@@ -383,20 +413,38 @@ class DiagnosticsPanel:
 
         return self._expanded
 
-    def should_update(self, tree: object | None) -> bool:
-        """Whether the Diagnostics needs rebuilding or value updates.
+    def apply(
+        self,
+        tree: DetectorTreeSnapshot | None,
+        observations: tuple[ConditionObservation, ...],
+        run_infos: tuple[InstanceRunSnapshot, ...],
+        statuses: tuple[InstanceStatus, ...],
+    ) -> bool:
+        """Retain the latest snapshot and update the body while expanded.
 
-        While the area is collapsed and the tree is unchanged there is nothing
-        to display, so the full view is not built. A tree change rebuilds once
-        so the content is ready when the user expands.
+        While collapsed this only stores the inputs; ``diagnostics_view`` is not
+        called and no control is built. While expanded the existing controls are
+        reused (or rebuilt on a tree change) exactly as before.
         """
 
-        return self._expanded or tree is not self._tree_key
+        self._inputs = (tree, observations, run_infos, statuses)
+        if not self._expanded:
+            return False
+        return self._apply_view(diagnostics_view(*self._inputs))
 
     def _on_toggle(self, event: ft.Event[ft.ExpansionTile]) -> None:
-        self._expanded = bool(event.data)
+        expanded = bool(event.data)
+        if expanded == self._expanded:
+            return
+        self._expanded = expanded
+        if expanded:
+            if self._inputs is not None:
+                self._apply_view(diagnostics_view(*self._inputs))
+        else:
+            self._release()
+        _request_update(self._body)
 
-    def apply(self, view: DiagnosticsView) -> bool:
+    def _apply_view(self, view: DiagnosticsView) -> bool:
         if view.tree_key is not self._tree_key:
             self._rebuild(view)
             return True
@@ -406,6 +454,13 @@ class DiagnosticsPanel:
             if control is not None and control.apply(scenario_view):
                 changed = True
         return changed
+
+    def _release(self) -> None:
+        for control in self._scenarios.values():
+            control.dispose()
+        self._scenarios = {}
+        self._tree_key = None
+        self._body.controls = []
 
     def _rebuild(self, view: DiagnosticsView) -> None:
         for control in self._scenarios.values():

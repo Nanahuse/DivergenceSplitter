@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import cast
 
 import flet as ft
@@ -85,6 +85,14 @@ def collect_text(control: ft.Control) -> list[str]:
     ]
 
 
+def expand_diagnostics(monitor: Monitor) -> None:
+    root = monitor.diagnostics.control
+    assert isinstance(root, ft.ExpansionTile)
+    handler = cast(Callable[[ft.ControlEvent], object] | None, root.on_change)
+    assert handler is not None
+    handler(cast(ft.ControlEvent, ft.Event("change", root, data=True)))
+
+
 def make_monitor() -> tuple[Monitor, FakeDiagnostics, MonitorUpdateCoordinator]:
     condition = Detected(MeanBrightnessDetector(), 0.9)
     instance = ScenarioInstance(
@@ -129,8 +137,13 @@ def test_overview_and_diagnostics_share_one_observation_read() -> None:
 
     assert diagnostics.take_calls == 1
     overview_texts = collect_text(monitor.scenario_overview.control)
-    diagnostics_texts = collect_text(monitor.diagnostics.control)
     assert any("Detected" in text for text in overview_texts)
+
+    # Diagnostics is lazy: it stores the same read and materializes on expand.
+    assert collect_text(monitor.diagnostics.control) == ["Scenario / Diagnostics"]
+    expand_diagnostics(monitor)
+
+    diagnostics_texts = collect_text(monitor.diagnostics.control)
     assert any("Detected" in text for text in diagnostics_texts)
     assert any("tcp://rpc:0" in text for text in diagnostics_texts)
     assert any("0.5000" in text for text in diagnostics_texts)
