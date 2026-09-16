@@ -25,9 +25,20 @@ from divergencesplitter_ui.about_page import AboutView
 from divergencesplitter_ui.configuration.dialogs import FletFileDialogs
 from divergencesplitter_ui.configuration.page import ConfigurationPage
 from divergencesplitter_ui.error_dialog import ErrorDialog
+from divergencesplitter_ui.logs import performance_log_file_path
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
 from divergencesplitter_ui.monitor.input_preview import PREVIEW_INTERVAL_SECONDS
 from divergencesplitter_ui.monitor.page import Monitor
+from divergencesplitter_ui.performance import (
+    FLAGS,
+    FLET_PAGE_UPDATE,
+    METRICS,
+    MONITOR_APPLY,
+    MONITOR_SNAPSHOT,
+    PerformanceFlags,
+    PerformanceMetrics,
+    configure_performance_logging,
+)
 from divergencesplitter_ui.session import SessionController
 from divergencesplitter_ui.settings import SettingsModel, WindowsCameraEnumerator
 
@@ -60,6 +71,8 @@ class FletApplication:
         initial_configuration: Path | None = None,
         coordinator: MonitorUpdateCoordinator | None = None,
         settings_model: SettingsModel | None = None,
+        performance_flags: PerformanceFlags = FLAGS,
+        performance_metrics: PerformanceMetrics = METRICS,
     ) -> None:
         self._controller = controller
         self._initial_configuration = initial_configuration
@@ -69,6 +82,8 @@ class FletApplication:
             if settings_model is not None
             else SettingsModel(WindowsCameraEnumerator())
         )
+        self._performance_flags = performance_flags
+        self._performance_metrics = performance_metrics
         self._page: ft.Page | None = None
         self._monitor: Monitor | None = None
         self._configuration: ConfigurationPage | None = None
@@ -96,6 +111,7 @@ class FletApplication:
     def run(self) -> None:
         """Run the Flet app until the window is closed and cleaned up."""
 
+        configure_performance_logging(log_path=performance_log_file_path())
         ft.run(self._main)
 
     def start_session(self, configuration: Path | None = None) -> None:
@@ -115,7 +131,10 @@ class FletApplication:
 
         file_picker = ft.FilePicker()
         dialogs = FletFileDialogs(page, file_picker)
-        self._monitor = Monitor()
+        self._monitor = Monitor(
+            flags=self._performance_flags,
+            metrics=self._performance_metrics,
+        )
         self._configuration = ConfigurationPage(self._controller, self._model, dialogs)
         self._about = AboutView()
         self._error_dialog = ErrorDialog(
@@ -221,10 +240,12 @@ class FletApplication:
     async def _apply_monitor(self) -> None:
         if self._monitor is None:
             return
-        snapshot = self._coordinator.snapshot()
+        with self._performance_metrics.measure(MONITOR_SNAPSHOT):
+            snapshot = self._coordinator.snapshot()
         changed = False
         if self._active_view is AppView.MONITOR:
-            changed |= self._monitor.apply(snapshot)
+            with self._performance_metrics.measure(MONITOR_APPLY):
+                changed |= self._monitor.apply(snapshot)
         if self._configuration is not None:
             changed |= self._configuration.tick(
                 self._controller.state,
@@ -232,17 +253,28 @@ class FletApplication:
             )
         if self._error_dialog is not None:
             changed |= self._error_dialog.tick(self._controller.result)
-        if changed and self._page is not None:
-            self._page.update()
+        if (
+            changed
+            and self._page is not None
+            and not self._performance_flags.disable_page_update
+        ):
+            with self._performance_metrics.measure(FLET_PAGE_UPDATE):
+                self._page.update()
+        self._performance_metrics.flush_if_due()
 
     async def _input_preview_loop(self) -> None:
-        monitor = self._monitor
-        if monitor is None:
+        if self._monitor is None:
             return
         while not self._stopping:
-            if self._active_view is AppView.MONITOR:
-                await monitor.input_preview.render_latest(self._controller.diagnostics)
+            await self._render_input_preview_once()
             await asyncio.sleep(PREVIEW_INTERVAL_SECONDS)
+
+    async def _render_input_preview_once(self) -> None:
+        if self._performance_flags.disable_input_preview:
+            return
+        monitor = self._monitor
+        if monitor is not None and self._active_view is AppView.MONITOR:
+            await monitor.input_preview.render_latest(self._controller.diagnostics)
 
     async def _configuration_preview_loop(self) -> None:
         while not self._stopping:

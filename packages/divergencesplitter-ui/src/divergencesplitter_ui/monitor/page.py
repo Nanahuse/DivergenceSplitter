@@ -16,6 +16,14 @@ from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.global_status import GlobalStatusPanel
 from divergencesplitter_ui.monitor.input_preview import InputPreviewPanel
 from divergencesplitter_ui.monitor.scenario_overview import ScenarioOverviewPanel
+from divergencesplitter_ui.performance import (
+    DIAGNOSTICS_PRESENTATION,
+    FLAGS,
+    METRICS,
+    SCENARIO_OVERVIEW_PRESENTATION,
+    PerformanceFlags,
+    PerformanceMetrics,
+)
 from divergencesplitter_ui.presentation import global_status_text
 from divergencesplitter_ui.presentation_diagnostics import diagnostics_view
 from divergencesplitter_ui.presentation_overview import scenario_overview_view
@@ -26,9 +34,16 @@ _LEFT_COLUMN_WIDTH = 560
 class Monitor:
     """Compose the Monitor panels and apply one snapshot to them."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        flags: PerformanceFlags = FLAGS,
+        metrics: PerformanceMetrics = METRICS,
+    ) -> None:
+        self._flags = flags
+        self._metrics = metrics
         self.global_status = GlobalStatusPanel()
-        self.input_preview = InputPreviewPanel()
+        self.input_preview = InputPreviewPanel(metrics=metrics)
         self.scenario_overview = ScenarioOverviewPanel()
         self.diagnostics = DiagnosticsPanel()
         top = ft.Row(
@@ -70,22 +85,24 @@ class Monitor:
         changed = self.global_status.apply(
             global_status_text(snapshot.state, snapshot.metrics)
         )
-        changed |= self.scenario_overview.apply(
-            scenario_overview_view(
+        with self._metrics.measure(SCENARIO_OVERVIEW_PRESENTATION):
+            overview_view = scenario_overview_view(
                 snapshot.tree,
                 snapshot.observations,
                 snapshot.run_infos,
                 snapshot.instance_statuses,
                 snapshot.metrics,
             )
-        )
-        if self.diagnostics.should_update(snapshot.tree):
-            changed |= self.diagnostics.apply(
-                diagnostics_view(
+        changed |= self.scenario_overview.apply(overview_view)
+        if not self._flags.disable_diagnostics and self.diagnostics.should_update(
+            snapshot.tree
+        ):
+            with self._metrics.measure(DIAGNOSTICS_PRESENTATION):
+                diagnostics_model = diagnostics_view(
                     snapshot.tree,
                     snapshot.observations,
                     snapshot.run_infos,
                     snapshot.instance_statuses,
                 )
-            )
+            changed |= self.diagnostics.apply(diagnostics_model)
         return changed

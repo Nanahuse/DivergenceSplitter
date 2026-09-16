@@ -12,3 +12,8 @@ def log_file_path() -> Path:
         else Path.cwd()
     )
     return root / "diagnostics.log"
+
+
+def performance_log_file_path() -> Path:
+    """Sibling of the diagnostics log for development-only UI timing records."""
+    return log_file_path().with_name("performance.log")

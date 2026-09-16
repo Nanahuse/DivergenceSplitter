@@ -62,6 +62,8 @@ from divergencesplitter_runtime.observability import (
     InstanceRunSnapshot,
 )
 
+from divergencesplitter_ui.performance import set_performance_level
+
 _LOG_LEVELS = {
     "OFF": logging.CRITICAL + 1,
     "DEBUG": logging.DEBUG,
@@ -377,6 +379,7 @@ class SessionController:
         diagnostics = self.diagnostics
         if diagnostics is not None:
             diagnostics.set_level(_LOG_LEVELS[level])
+        set_performance_level(_LOG_LEVELS[level])
 
     def _run(self, path: Path) -> None:
         diagnostics: SessionDiagnostics | None = None
@@ -442,7 +445,7 @@ class SessionController:
         if self._finish_if_stopped():
             return
 
-        diagnostics.set_level(_LOG_LEVELS[configuration.runtime.log_level])
+        self.set_log_level(configuration.runtime.log_level)
         try:
             instances = self._load_instances(
                 configuration,

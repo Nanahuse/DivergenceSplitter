@@ -15,6 +15,12 @@ from collections.abc import Callable
 import flet as ft
 
 from divergencesplitter_ui.frame_preview import prepare_preview
+from divergencesplitter_ui.performance import (
+    METRICS,
+    PREVIEW_PREPARE,
+    PREVIEW_RAW_IMAGE_RENDER,
+    PerformanceMetrics,
+)
 from divergencesplitter_ui.presentation import ObservableDiagnostics
 
 PREVIEW_FPS = 20.0
@@ -27,7 +33,8 @@ _StopCheck = Callable[[], bool]
 class InputPreviewPanel:
     """Display the latest processed frame on a ``RawImage``."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, metrics: PerformanceMetrics = METRICS) -> None:
+        self._metrics = metrics
         self._image = ft.RawImage()
         self._control = ft.Column(
             controls=[ft.Text("Input Preview"), self._image],
@@ -53,8 +60,11 @@ class InputPreviewPanel:
         frame = diagnostics.take_latest_processed_frame()
         if frame is None:
             return False
+        with self._metrics.measure(PREVIEW_PREPARE):
+            prepared = prepare_preview(frame.image)
         try:
-            await self._image.render(prepare_preview(frame.image))
+            with self._metrics.measure(PREVIEW_RAW_IMAGE_RENDER):
+                await self._image.render(prepared)
         except RuntimeError, TimeoutError:
             return False
         return True
