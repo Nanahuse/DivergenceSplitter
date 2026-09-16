@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import cast
 
 import flet as ft
@@ -45,19 +45,6 @@ def title_text(tile: ft.ExpansionTile) -> str:
     return str(getattr(title, "value", ""))
 
 
-def find_button(control: ft.Control, label: str) -> ft.OutlinedButton:
-    for item in iter_controls(control):
-        if isinstance(item, ft.OutlinedButton) and item.content == label:
-            return item
-    raise AssertionError(f"no button labelled {label!r}")
-
-
-def click(control: ft.OutlinedButton) -> None:
-    handler = cast(Callable[[], object] | None, control.on_click)
-    assert handler is not None
-    handler()
-
-
 class TestLicenseView:
     def test_builds_one_section_per_inventory_entry(self) -> None:
         sections = license_sections(bundled_inventory())
@@ -82,15 +69,7 @@ class TestLicenseView:
 
         assert cast(ft.Column, view.control).scroll == ft.ScrollMode.AUTO
 
-    def test_back_button_invokes_callback(self) -> None:
-        calls: list[bool] = []
-        view = LicenseView(on_back=lambda: calls.append(True))
-
-        click(find_button(view.control, "Back to About"))
-
-        assert calls == [True]
-
-    def test_without_back_callback_has_no_button(self) -> None:
+    def test_has_no_about_navigation(self) -> None:
         view = LicenseView()
 
         labels = [

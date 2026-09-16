@@ -324,8 +324,9 @@ class TestConditionFormatting:
         group = self._condition((observation, detected_observation(detected)), hold)
 
         condition = group.rules[0].conditions[0]
-        assert condition.label == "Hold → Detected"
+        assert condition.label == "Hold"
         assert "0.742 s / 1.000 s" in condition.detail
+        assert [child.label for child in condition.children] == ["Detected"]
 
     def test_nth_progress(self) -> None:
         detected = Detected(MeanBrightnessDetector(), 0.9)
@@ -334,19 +335,33 @@ class TestConditionFormatting:
         group = self._condition((observation, detected_observation(detected)), nth)
 
         condition = group.rules[0].conditions[0]
-        assert condition.label == "Nth → Detected"
+        assert condition.label == "Nth"
         assert "2 / 3" in condition.detail
+        assert [child.label for child in condition.children] == ["Detected"]
 
-    def test_then_progress(self) -> None:
+    def test_then_progress_is_one_based(self) -> None:
         first = Detected(MeanBrightnessDetector(), 0.9)
         second = Detected(MeanBrightnessDetector(), 0.9)
-        then = Then(first, second)
-        observation = progress_observation(then, current=1, target=2, unit="step")
+        third = Detected(MeanBrightnessDetector(), 0.9)
+        then = Then(first, second, third)
+        observation = progress_observation(then, current=0, target=3, unit="step")
         group = self._condition((observation, detected_observation(first)), then)
 
         condition = group.rules[0].conditions[0]
-        assert condition.label == "Then → Detected"
-        assert "step 1 / 2" in condition.detail
+        assert condition.label == "Then"
+        assert condition.detail == "step 1 / 3"
+        assert [child.label for child in condition.children] == ["Detected"]
+
+    def test_then_progress_at_last_step_is_not_beyond_target(self) -> None:
+        first = Detected(MeanBrightnessDetector(), 0.9)
+        second = Detected(MeanBrightnessDetector(), 0.9)
+        third = Detected(MeanBrightnessDetector(), 0.9)
+        then = Then(first, second, third)
+        observation = progress_observation(then, current=2, target=3, unit="step")
+        group = self._condition((observation, detected_observation(first)), then)
+
+        condition = group.rules[0].conditions[0]
+        assert condition.detail == "step 3 / 3"
 
     def test_elapsed_progress(self) -> None:
         elapsed = Elapsed(2_000_000_000)
@@ -361,7 +376,7 @@ class TestConditionFormatting:
 
 
 class TestActivePathShape:
-    def test_single_chain_is_compacted(self) -> None:
+    def test_single_chain_is_nested_vertically(self) -> None:
         detected = Detected(MeanBrightnessDetector(), 0.9)
         hold = Hold(detected, duration_nanoseconds=1_000_000_000)
         instance = make_instance(
@@ -383,8 +398,9 @@ class TestActivePathShape:
         ).scenarios[0]
 
         condition = card.evaluation_groups[0].rules[0].conditions[0]
-        assert condition.label == "Hold → Detected"
-        assert condition.children == ()
+        assert condition.label == "Hold"
+        assert condition.children[0].label == "Detected"
+        assert condition.children[0].children == ()
 
     def test_multiple_active_branches_are_preserved(self) -> None:
         first = Detected(MeanBrightnessDetector(), 0.9)

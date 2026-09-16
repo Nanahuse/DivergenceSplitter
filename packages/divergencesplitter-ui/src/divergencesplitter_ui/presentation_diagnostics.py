@@ -1,10 +1,10 @@
-"""Pure Scenario / Diagnostics presentation model for the Monitor.
+"""Pure Scenario Diagnostics presentation model for the Diagnostics page.
 
 Builds immutable view values from the same ``MonitorSnapshot`` the Scenario
 Overview consumes: the detector tree, condition observations, run info, and
 instance statuses. Nothing here imports a GUI framework, and observations are
 joined to the tree by identity exactly once, reusing ``presentation`` helpers so
-the Diagnostics never re-interprets runtime structures itself.
+the Diagnostics page never re-interprets runtime structures itself.
 
 Unlike the Overview, Diagnostics keeps the full static tree (every split, rule,
 sequence step, and inactive condition) and reports detailed detector and

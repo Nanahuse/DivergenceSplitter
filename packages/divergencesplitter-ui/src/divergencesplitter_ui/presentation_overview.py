@@ -8,9 +8,9 @@ helpers so the Overview never re-implements condition resolution.
 
 The model reports only *currently evaluated* material: a condition appears when
 ``ConditionObservation.active`` is true or when it has an active descendant, so
-a condition that merely holds a stale TRUE/FALSE result is never shown. A single
-active chain is compacted with ``→``; a node with several active children keeps
-its branches nested so no branch is dropped.
+a condition that merely holds a stale TRUE/FALSE result is never shown. Every
+active condition keeps its own line and its branches stay nested; sibling
+conditions are never compacted into one horizontal ``A → B`` line.
 """
 
 from __future__ import annotations
@@ -64,11 +64,12 @@ class EvaluationKind(Enum):
 
 @dataclass(frozen=True)
 class ConditionEvaluationView:
-    """One active condition line, possibly a compacted single chain.
+    """One active condition line with its nested child conditions.
 
-    ``label`` is the condition type or a ``A → B`` chain. ``detail`` carries the
-    progress or detector score text, and ``children`` holds the branches that
-    must stay nested.
+    ``label`` is the condition type. ``detail`` carries the progress or detector
+    score text, and ``children`` holds the nested conditions. The hierarchy is
+    preserved instead of being compacted so deep condition chains render
+    vertically rather than consuming horizontal space.
     """
 
     label: str
@@ -131,11 +132,6 @@ class ScenarioOverviewView:
     scenarios: tuple[ScenarioCardView, ...]
 
 
-def _join_detail(outer: str, inner: str) -> str:
-    parts = [part for part in (outer, inner) if part]
-    return "   ".join(parts)
-
-
 def _condition_view(
     node: ConditionNode,
     index: ObservationIndex,
@@ -148,17 +144,9 @@ def _condition_view(
     )
     if not view.active and not children:
         return None
-    detail = condition_progress_label(view)
-    if len(children) == 1:
-        child = children[0]
-        return ConditionEvaluationView(
-            label=f"{view.condition_type} → {child.label}",
-            detail=_join_detail(detail, child.detail),
-            children=child.children,
-        )
     return ConditionEvaluationView(
         label=view.condition_type,
-        detail=detail,
+        detail=condition_progress_label(view),
         children=children,
     )
 

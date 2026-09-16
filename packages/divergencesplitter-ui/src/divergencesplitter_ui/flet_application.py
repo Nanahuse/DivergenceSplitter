@@ -26,6 +26,7 @@ from divergencesplitter_ui.configuration.dialogs import FletFileDialogs
 from divergencesplitter_ui.configuration.page import ConfigurationPage
 from divergencesplitter_ui.error_dialog import ErrorDialog
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
+from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.input_preview import PREVIEW_INTERVAL_SECONDS
 from divergencesplitter_ui.monitor.page import Monitor
 from divergencesplitter_ui.session import SessionController
@@ -43,11 +44,17 @@ class AppView(StrEnum):
     """The top-level page the navigation rail is showing."""
 
     MONITOR = "monitor"
+    DIAGNOSTICS = "diagnostics"
     CONFIGURATION = "configuration"
     ABOUT = "about"
 
 
-_VIEW_ORDER = (AppView.MONITOR, AppView.CONFIGURATION, AppView.ABOUT)
+_VIEW_ORDER = (
+    AppView.MONITOR,
+    AppView.DIAGNOSTICS,
+    AppView.CONFIGURATION,
+    AppView.ABOUT,
+)
 
 
 class FletApplication:
@@ -71,10 +78,12 @@ class FletApplication:
         )
         self._page: ft.Page | None = None
         self._monitor: Monitor | None = None
+        self._diagnostics: DiagnosticsPanel | None = None
         self._configuration: ConfigurationPage | None = None
         self._about: AboutView | None = None
         self._error_dialog: ErrorDialog | None = None
         self._monitor_view: ft.Container | None = None
+        self._diagnostics_view: ft.Container | None = None
         self._configuration_view: ft.Container | None = None
         self._about_view: ft.Container | None = None
         self._navigation: ft.NavigationRail | None = None
@@ -116,6 +125,7 @@ class FletApplication:
         file_picker = ft.FilePicker()
         dialogs = FletFileDialogs(page, file_picker)
         self._monitor = Monitor()
+        self._diagnostics = DiagnosticsPanel()
         self._configuration = ConfigurationPage(self._controller, self._model, dialogs)
         self._about = AboutView()
         self._error_dialog = ErrorDialog(
@@ -126,6 +136,9 @@ class FletApplication:
             self._load_initial_configuration(self._initial_configuration)
 
         self._monitor_view = ft.Container(self._monitor.control, expand=True)
+        self._diagnostics_view = ft.Container(
+            self._diagnostics.control, expand=True, visible=False
+        )
         self._configuration_view = ft.Container(
             self._configuration.control, expand=True, visible=False
         )
@@ -135,6 +148,9 @@ class FletApplication:
             label_type=ft.NavigationRailLabelType.ALL,
             destinations=[
                 ft.NavigationRailDestination(icon=ft.Icons.MONITOR, label="Monitor"),
+                ft.NavigationRailDestination(
+                    icon=ft.Icons.TROUBLESHOOT, label="Diagnostics"
+                ),
                 ft.NavigationRailDestination(
                     icon=ft.Icons.SETTINGS, label="Configuration"
                 ),
@@ -151,6 +167,7 @@ class FletApplication:
                     ft.Column(
                         controls=[
                             self._monitor_view,
+                            self._diagnostics_view,
                             self._configuration_view,
                             self._about_view,
                         ],
@@ -197,6 +214,7 @@ class FletApplication:
         self._active_view = view
         for candidate, container in (
             (AppView.MONITOR, self._monitor_view),
+            (AppView.DIAGNOSTICS, self._diagnostics_view),
             (AppView.CONFIGURATION, self._configuration_view),
             (AppView.ABOUT, self._about_view),
         ):
@@ -219,13 +237,22 @@ class FletApplication:
             await self._apply_monitor()
 
     async def _apply_monitor(self) -> None:
-        if self._monitor is None:
-            return
         snapshot = self._coordinator.snapshot()
         targets: list[ft.Control] = []
-        if self._active_view is AppView.MONITOR:
+        if self._active_view is AppView.MONITOR and self._monitor is not None:
             update = self._monitor.apply(snapshot)
             targets.extend(self._monitor.controls_for_update(update))
+        if self._diagnostics is not None:
+            diagnostics_visible = self._active_view is AppView.DIAGNOSTICS
+            changed = self._diagnostics.apply(
+                snapshot.tree,
+                snapshot.observations,
+                snapshot.run_infos,
+                snapshot.instance_statuses,
+                visible=diagnostics_visible,
+            )
+            if changed:
+                targets.append(self._diagnostics.control)
         if self._configuration is not None:
             visible = self._active_view is AppView.CONFIGURATION
             changed = self._configuration.tick(self._controller.state, visible=visible)

@@ -246,7 +246,7 @@ def condition_label(view: ConditionView) -> str:
     elif view.progress_unit == "count":
         progress = f"  {view.progress_current} / {view.progress_target}"
     elif view.progress_unit == "step":
-        progress = f"  step {view.progress_current} / {view.progress_target}"
+        progress = f"  {_step_progress_text(view)}"
     if view.duration_nanoseconds is not None:
         elapsed = (
             "—"
@@ -281,6 +281,21 @@ def _format_progress_value(value: float | None) -> str:
     return "—" if value is None else str(value)
 
 
+def _step_progress_text(view: ConditionView) -> str:
+    """Format a Then step as a one-based ``step current / target``.
+
+    The runtime reports a zero-based step index; the UI shows the one-based
+    position the user is on, and never reports a position beyond the target.
+    """
+
+    current = view.progress_current
+    target = view.progress_target
+    display = None if current is None else current + 1
+    if display is not None and target is not None:
+        display = min(display, target)
+    return f"step {_format_progress_value(display)} / {_format_progress_value(target)}"
+
+
 def condition_progress_label(view: ConditionView) -> str:
     """Format one condition's current progress for the Scenario Overview.
 
@@ -308,10 +323,7 @@ def condition_progress_label(view: ConditionView) -> str:
             f"{_format_progress_value(view.progress_target)}"
         )
     if view.progress_unit == "step":
-        return (
-            f"step {_format_progress_value(view.progress_current)} / "
-            f"{_format_progress_value(view.progress_target)}"
-        )
+        return _step_progress_text(view)
     return ""
 
 

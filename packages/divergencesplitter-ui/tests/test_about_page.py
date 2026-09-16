@@ -1,25 +1,23 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from typing import cast
+from collections.abc import Iterator
 
 import flet as ft
 from divergencesplitter_ui.about import VERSION, about_info
 from divergencesplitter_ui.about_page import AboutView
+from divergencesplitter_ui.licenses import bundled_inventory, license_sections
 
 
 def iter_controls(control: ft.Control) -> Iterator[ft.Control]:
-    stack = [control]
-    while stack:
-        item = stack.pop()
-        yield item
-        stack.extend(getattr(item, "controls", None) or ())
-        content = getattr(item, "content", None)
-        if isinstance(content, ft.Control):
-            stack.append(content)
-        title = getattr(item, "title", None)
-        if isinstance(title, ft.Control):
-            stack.append(title)
+    yield control
+    for child in getattr(control, "controls", None) or ():
+        yield from iter_controls(child)
+    content = getattr(control, "content", None)
+    if isinstance(content, ft.Control):
+        yield from iter_controls(content)
+    title = getattr(control, "title", None)
+    if isinstance(title, ft.Control):
+        yield from iter_controls(title)
 
 
 def collect_text(control: ft.Control) -> list[str]:
@@ -30,17 +28,17 @@ def collect_text(control: ft.Control) -> list[str]:
     ]
 
 
-def find_button(control: ft.Control, label: str) -> ft.OutlinedButton:
-    for item in iter_controls(control):
-        if isinstance(item, ft.OutlinedButton) and item.content == label:
-            return item
-    raise AssertionError(f"no button labelled {label!r}")
+def expansion_tiles(control: ft.Control) -> list[ft.ExpansionTile]:
+    return [
+        item for item in iter_controls(control) if isinstance(item, ft.ExpansionTile)
+    ]
 
 
-def click(control: ft.OutlinedButton) -> None:
-    handler = cast(Callable[[], object] | None, control.on_click)
-    assert handler is not None
-    handler()
+def title_text(tile: ft.ExpansionTile) -> str:
+    title = tile.title
+    if isinstance(title, str):
+        return title
+    return str(getattr(title, "value", ""))
 
 
 class TestAboutView:
@@ -51,12 +49,25 @@ class TestAboutView:
         assert about_info().application_name in texts
         assert f"Version: {VERSION}" in texts
 
-    def test_licenses_round_trip(self) -> None:
+    def test_shows_license_tree_immediately(self) -> None:
+        sections = license_sections(bundled_inventory())
+
         view = AboutView()
-        assert view.showing_licenses is False
 
-        click(find_button(view.control, "Licenses..."))
-        assert view.showing_licenses is True
+        texts = collect_text(view.control)
+        assert "Licenses" in texts
+        assert sections[0].title in texts
+        assert [title_text(tile) for tile in expansion_tiles(view.control)] == [
+            section.title for section in sections
+        ]
 
-        click(find_button(view.control, "Back to About"))
-        assert view.showing_licenses is False
+    def test_has_no_license_navigation(self) -> None:
+        view = AboutView()
+
+        labels = [
+            item.content
+            for item in iter_controls(view.control)
+            if isinstance(item, ft.OutlinedButton)
+        ]
+        assert "Licenses..." not in labels
+        assert "Back to About" not in labels

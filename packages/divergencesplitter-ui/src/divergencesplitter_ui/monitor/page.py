@@ -1,12 +1,13 @@
 """Monitor screen composition for the Flet UI.
 
-The top area holds Global Status above Input Preview on the left and the
-scrolling Scenario Overview on the right; the bottom is the collapsed Scenario
-/ Diagnostics. ``apply`` takes one Monitor snapshot and pushes it to every
-panel, so the Overview and Diagnostics always share one observation read. It
-returns a ``MonitorUpdate`` reporting which panels changed, preserving that
-information instead of collapsing it into a single bool, so the application can
-patch just the changed controls.
+The screen holds Global Status above Input Preview on the left and the scrolling
+Scenario Overview on the right. The left column takes only the width its content
+needs, so the divider sits directly after the status and preview and the
+Overview takes the remaining space. ``apply`` takes one Monitor snapshot and
+pushes it to every panel, so every panel shares one observation read. It returns
+a ``MonitorUpdate`` reporting which panels changed, preserving that information
+instead of collapsing it into a single bool, so the application can patch just
+the changed controls.
 """
 
 from __future__ import annotations
@@ -16,14 +17,11 @@ from dataclasses import dataclass
 import flet as ft
 
 from divergencesplitter_ui.monitor.coordinator import MonitorSnapshot
-from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.global_status import GlobalStatusPanel
 from divergencesplitter_ui.monitor.input_preview import InputPreviewPanel
 from divergencesplitter_ui.monitor.scenario_overview import ScenarioOverviewPanel
 from divergencesplitter_ui.presentation import global_status_text
 from divergencesplitter_ui.presentation_overview import scenario_overview_view
-
-_LEFT_COLUMN_WIDTH = 560
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,13 +30,12 @@ class MonitorUpdate:
 
     global_status: bool = False
     scenario_overview: bool = False
-    diagnostics: bool = False
 
     @property
     def changed(self) -> bool:
         """Whether any panel changed."""
 
-        return self.global_status or self.scenario_overview or self.diagnostics
+        return self.global_status or self.scenario_overview
 
 
 class Monitor:
@@ -48,7 +45,6 @@ class Monitor:
         self.global_status = GlobalStatusPanel()
         self.input_preview = InputPreviewPanel()
         self.scenario_overview = ScenarioOverviewPanel()
-        self.diagnostics = DiagnosticsPanel()
         top = ft.Row(
             controls=[
                 ft.Column(
@@ -57,7 +53,6 @@ class Monitor:
                         ft.Divider(),
                         self.input_preview.control,
                     ],
-                    width=_LEFT_COLUMN_WIDTH,
                     spacing=12,
                 ),
                 ft.VerticalDivider(),
@@ -71,7 +66,7 @@ class Monitor:
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
         self._control = ft.Column(
-            controls=[top, ft.Divider(), self.diagnostics.control],
+            controls=[top],
             expand=True,
             spacing=8,
         )
@@ -98,20 +93,13 @@ class Monitor:
                     snapshot.metrics,
                 )
             ),
-            diagnostics=self.diagnostics.apply(
-                snapshot.tree,
-                snapshot.observations,
-                snapshot.run_infos,
-                snapshot.instance_statuses,
-            ),
         )
 
     def controls_for_update(self, update: MonitorUpdate) -> tuple[ft.Control, ...]:
         """The panel controls whose state changed and should be patched.
 
         The application patches exactly these controls, so an unrelated panel
-        (for example an expanded Diagnostics) is never diffed because another
-        panel changed.
+        never gets diffed because another panel changed.
         """
 
         controls: list[ft.Control] = []
@@ -119,6 +107,4 @@ class Monitor:
             controls.append(self.global_status.control)
         if update.scenario_overview:
             controls.append(self.scenario_overview.control)
-        if update.diagnostics:
-            controls.append(self.diagnostics.control)
         return tuple(controls)
