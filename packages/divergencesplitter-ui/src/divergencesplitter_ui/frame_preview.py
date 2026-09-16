@@ -3,8 +3,11 @@
 Nothing in this module imports a GUI framework, so the pixel work can be
 exercised in tests that run without a GPU or a window. :func:`preview_size`
 bounds the preview to a fixed maximum while never upscaling, and
-:func:`prepare_preview` returns the downscaled, channel-swapped ``uint8`` array
-that ``flet.RawImage.render`` requires.
+:func:`prepare_preview` returns the downscaled, channel-swapped, C-contiguous
+RGBA ``uint8`` array that ``flet.RawImage.render`` consumes directly. Producing
+RGBA here avoids the extra RGB-to-RGBA allocation Flet performs for three-channel
+input, and the alpha is fully opaque so the result is premultiplied by
+definition.
 """
 
 from __future__ import annotations
@@ -53,26 +56,27 @@ def preview_size(
     )
 
 
-def to_rgb_uint8(image: np.ndarray) -> np.ndarray:
-    """Return ``image`` as a contiguous RGB ``uint8`` array.
+def to_rgba_uint8(image: np.ndarray) -> np.ndarray:
+    """Return ``image`` as a contiguous RGBA ``uint8`` array.
 
-    Accepts the layouts produced by the runtime's frame sources: two-dimensional
-    grayscale, singleton-channel, three-channel BGR, and four-channel BGRA. The
-    source array is never modified.
+    Accepts the layouts produced by the runtime's frame sources:
+    two-dimensional grayscale, singleton-channel, three-channel BGR, and
+    four-channel BGRA. Grayscale and BGR get an opaque alpha of 255; BGRA keeps
+    its alpha. The source array is never modified.
     """
 
     array = np.asarray(image)
     if array.ndim == 2:
-        rgb = cv2.cvtColor(array, cv2.COLOR_GRAY2RGB)
+        rgba = cv2.cvtColor(array, cv2.COLOR_GRAY2RGBA)
     elif array.ndim == 3 and array.shape[2] == 1:
-        rgb = cv2.cvtColor(array[:, :, 0], cv2.COLOR_GRAY2RGB)
+        rgba = cv2.cvtColor(array[:, :, 0], cv2.COLOR_GRAY2RGBA)
     elif array.ndim == 3 and array.shape[2] == 3:
-        rgb = array[:, :, ::-1]
+        rgba = cv2.cvtColor(array, cv2.COLOR_BGR2RGBA)
     elif array.ndim == 3 and array.shape[2] == 4:
-        rgb = array[:, :, 2::-1]
+        rgba = cv2.cvtColor(array, cv2.COLOR_BGRA2RGBA)
     else:
         raise ValueError(f"unsupported image shape: {array.shape}")
-    return np.ascontiguousarray(rgb, dtype=np.uint8)
+    return np.ascontiguousarray(rgba, dtype=np.uint8)
 
 
 def prepare_preview(
@@ -83,9 +87,9 @@ def prepare_preview(
 ) -> np.ndarray:
     """Prepare one frame for a ``flet.RawImage`` without touching the source.
 
-    The preview-only copy is resized with area interpolation and returned as a
-    contiguous RGB ``uint8`` array. The original frame, its dtype, and its
-    channel order are left intact.
+    The preview-only copy is resized first, then converted to a contiguous RGBA
+    ``uint8`` array. The original frame, its dtype, and its channel order are
+    left intact.
     """
 
     array = np.asarray(image)
@@ -103,4 +107,4 @@ def prepare_preview(
             (size.width, size.height),
             interpolation=cv2.INTER_AREA,
         )
-    return to_rgb_uint8(array)
+    return to_rgba_uint8(array)
