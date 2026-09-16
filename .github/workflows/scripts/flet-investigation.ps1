@@ -5,6 +5,7 @@ $buildOutput = Join-Path $PWD "artifacts/flet-build-output/$Approach"
 New-Item -ItemType Directory -Force $out | Out-Null
 function Save-Text([string]$name, [string]$value) { $value | Out-File (Join-Path $out $name) -Encoding utf8 }
 $prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $exeFound = 'NO'; $cli = 'NOT RUN'; $invalid = 'NOT RUN'; $gui = 'NOT RUN'; $stage = 'unknown'
+$infraFailure = $false
 git rev-parse HEAD | Tee-Object (Join-Path $out commit.txt)
 uv --version | Tee-Object (Join-Path $out environment.txt)
 uv run python --version | Tee-Object -Append (Join-Path $out environment.txt)
@@ -25,7 +26,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "metadata helper failed with exit code $LASTEXITCODE" }
   $prepare = 'PASS'
 } catch {
-  $prepare = 'FAIL'; $stage = 'experiment-preparation'; Save-Text preparation-error.txt $_.Exception.Message
+  $prepare = 'FAIL'; $infraFailure = $true; $stage = 'experiment-preparation'; Save-Text preparation-error.txt $_.Exception.Message
 }
 
 if ($prepare -eq 'PASS') {
@@ -57,7 +58,7 @@ if mode == 'pep508-git':
 print('TOML: PASS\nentry: PASS\ndev_packages: PASS\nwindows_dependencies: PASS\npep508_refs: ' + ('PASS' if mode == 'pep508-git' else 'N/A'))
 "@
   uv run python -c $validation 2>&1 | Tee-Object (Join-Path $out experiment-metadata-validation.txt)
-  if ($LASTEXITCODE -eq 0) { $metadata = 'PASS'; Save-Text toml-validation.txt 'PASS' } else { $metadata = 'FAIL'; $stage = 'experiment-metadata-validation'; Save-Text toml-validation.txt 'FAIL' }
+  if ($LASTEXITCODE -eq 0) { $metadata = 'PASS'; Save-Text toml-validation.txt 'PASS' } else { $metadata = 'FAIL'; $infraFailure = $true; $stage = 'experiment-metadata-validation'; Save-Text toml-validation.txt 'FAIL' }
 }
 
 if ($metadata -eq 'PASS') {
@@ -130,3 +131,5 @@ if ($build -eq 'PASS') {
 Save-Text failure-stage.txt $stage
 Save-Text result.txt "Approach: $Approach`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nBuild result: $build`nBuild exit code: $buildCode`nEXE found: $exeFound`nCLI smoke result: $cli`nInvalid CLI result: $invalid`nGUI smoke result: $gui`nFailure stage: $stage`nOutput directory: $buildOutput"
 Get-Content (Join-Path $out result.txt) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+if ($infraFailure) { exit 1 }
+exit 0
