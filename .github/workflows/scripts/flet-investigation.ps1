@@ -1,10 +1,10 @@
-param([Parameter(Mandatory=$true)][ValidateSet('pep508-git','all-dev-packages')][string]$Approach)
+param([Parameter(Mandatory=$true)][ValidateSet('pep508-git')][string]$Approach)
 $ErrorActionPreference = 'Stop'
 $out = Join-Path $PWD "artifacts/flet-build-investigation/$Approach"
 $buildOutput = Join-Path $PWD "artifacts/flet-build-output/$Approach"
 New-Item -ItemType Directory -Force $out | Out-Null
 function Save-Text([string]$name, [string]$value) { $value | Out-File (Join-Path $out $name) -Encoding utf8 }
-$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $encoding = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $exeFound = 'NO'; $cli = 'NOT RUN'; $invalid = 'NOT RUN'; $gui = 'NOT RUN'; $stage = 'unknown'
+$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $encoding = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $packageContent = 'NOT RUN'; $exeFound = 'NO'; $exePath = 'NOT FOUND'; $cli = 'NOT RUN'; $cliCode = 'NOT RUN'; $invalid = 'NOT RUN'; $invalidCode = 'NOT RUN'; $gui = 'NOT RUN'; $guiExitCode = 'N/A'; $stage = 'unknown'
 $infraFailure = $false
 git rev-parse HEAD | Tee-Object (Join-Path $out commit.txt)
 uv --version | Tee-Object (Join-Path $out environment.txt)
@@ -21,16 +21,12 @@ PYTHONIOENCODING=$env:PYTHONIOENCODING
 "@ | Out-File (Join-Path $out environment.txt) -Append -Encoding utf8
 uv run flet --version | Tee-Object -Append (Join-Path $out environment.txt)
 if ($LASTEXITCODE -ne 0) { throw "flet --version failed with exit code $LASTEXITCODE" }
+uv run --no-sync flet build windows --help *>&1 | Tee-Object (Join-Path $out flet-build-cli-help.txt)
+if ($LASTEXITCODE -ne 0) { throw "flet build windows --help failed with exit code $LASTEXITCODE" }
+$cliHelp = Get-Content -Raw (Join-Path $out flet-build-cli-help.txt)
+if ($cliHelp -notmatch '--artifact' -or $cliHelp -notmatch '--product') { throw 'Flet CLI does not advertise --artifact and --product' }
 
 try {
-  if ($Approach -eq 'all-dev-packages') {
-    New-Item -ItemType Directory -Force .flet-dev-packages | Out-Null
-    foreach ($repo in @('livesplit-bridge-client','windows-capture-device-list')) {
-      git clone --depth 1 --branch v0.2.0 "https://github.com/Nanahuse/$repo.git" ".flet-dev-packages/$repo"
-      if ($LASTEXITCODE -ne 0) { throw "git clone $repo failed with exit code $LASTEXITCODE" }
-      "repository=$(git -C ".flet-dev-packages/$repo" remote get-url origin)`ntag=v0.2.0`ncommit=$(git -C ".flet-dev-packages/$repo" rev-parse HEAD)`npath=$(Resolve-Path ".flet-dev-packages/$repo")" | Out-File (Join-Path $out "$repo-source.txt") -Encoding utf8
-    }
-  }
   uv run python tools/prepare_flet_build_experiment.py $Approach
   if ($LASTEXITCODE -ne 0) { throw "metadata helper failed with exit code $LASTEXITCODE" }
   $prepare = 'PASS'
@@ -51,12 +47,10 @@ mode = '$Approach'
 assert ui['tool']['flet']['app'] == {'path': 'src', 'module': 'main'}
 expected_dev = {
  'pep508-git': {'divergencesplitter-runtime','divergencesplitter'},
- 'all-dev-packages': {'divergencesplitter-runtime','divergencesplitter','livesplit-bridge-client','windows-capture-device-list'},
 }[mode]
 assert set(ui['tool']['flet']['dev_packages']) == expected_dev
 expected_win = {
  'pep508-git': ['divergencesplitter','ndi-python>=6.3.2.4'],
- 'all-dev-packages': ['divergencesplitter','livesplit-bridge-client','windows-capture-device-list','ndi-python>=6.3.2.4'],
 }[mode]
 assert ui['tool']['flet']['windows']['dependencies'] == expected_win
 if mode == 'pep508-git':
@@ -117,7 +111,7 @@ if ($preflight -eq 'PASS') {
 if ($encoding -eq 'PASS') {
   if (Test-Path $buildOutput) { Remove-Item -LiteralPath $buildOutput -Recurse -Force }
   New-Item -ItemType Directory -Force (Split-Path $buildOutput) | Out-Null
-  uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --verbose --output $buildOutput *>&1 | Tee-Object (Join-Path $out flet-build.log)
+  uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --verbose --artifact DivergenceSplitter --product DivergenceSplitter --output $buildOutput *>&1 | Tee-Object (Join-Path $out flet-build.log)
   $buildCode = $LASTEXITCODE
   $build = if ($buildCode -eq 0) { 'PASS' } else { 'FAIL' }
   if ($buildCode -eq 0) { $stage = '—' }
@@ -134,31 +128,64 @@ if ($encoding -eq 'PASS') {
   }
 } else { Save-Text build_exit_code.txt 'NOT RUN'; if ($encoding -eq 'NOT RUN' -and $stage -eq 'unknown') { $stage = 'dependency-preflight' } }
 
-if (Test-Path $buildOutput) { Get-ChildItem $buildOutput -Recurse -File | Select-Object FullName,Length | Out-File (Join-Path $out output-manifest.txt) -Encoding utf8 } else { Save-Text output-manifest.txt 'build output directory not created' }
-$exe = if (Test-Path $buildOutput) { Get-ChildItem $buildOutput -Recurse -Filter DivergenceSplitter.exe -File | Select-Object -First 1 } else { $null }
+if (Test-Path $buildOutput) {
+  Get-ChildItem $buildOutput -Recurse -File | ForEach-Object { "{0}`t{1}" -f $_.FullName,$_.Length } | Out-File (Join-Path $out output-manifest.txt) -Encoding utf8
+} else { Save-Text output-manifest.txt 'build output directory not created' }
+
+$exe = Join-Path $buildOutput 'DivergenceSplitter.exe'
+if (Test-Path -LiteralPath $exe -PathType Leaf) {
+  $exeFound = 'YES'; $exePath = (Resolve-Path -LiteralPath $exe).Path
+  Save-Text app-exe.txt $exePath
+} else { $exe = $null; Save-Text app-exe.txt 'NOT FOUND: expected build output root DivergenceSplitter.exe' }
+
 if ($exe) {
-  $exeFound = 'YES'; & $exe.FullName --help *> (Join-Path $out cli-help.log); $cliCode = $LASTEXITCODE; $cli = if ($cliCode -eq 0) {'PASS'} else {"FAIL ($cliCode)"}
+  & $exe --help *> (Join-Path $out cli-help.log); $cliCode = $LASTEXITCODE; $cli = if ($cliCode -eq 0) {'PASS'} else {"FAIL ($cliCode)"}
   Save-Text cli-help-result.txt "exit_code=$cliCode"
-  & $exe.FullName --definitely-invalid-option *> (Join-Path $out cli-invalid.log); $invalidCode = $LASTEXITCODE; Save-Text cli-invalid-result.txt "exit_code=$invalidCode"
+  & $exe --definitely-invalid-option *> (Join-Path $out cli-invalid.log); $invalidCode = $LASTEXITCODE; Save-Text cli-invalid-result.txt "exit_code=$invalidCode"
   $invalid = if ($invalidCode -eq 2) {'PASS'} else {"FAIL ($invalidCode)"}
   try {
-    $proc = Start-Process -FilePath $exe.FullName -PassThru
-    Start-Sleep -Seconds 3
-    $gui = if ($proc.HasExited) {'EXITED'} else {'ALIVE'}
-    if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force }
-    Save-Text gui-startup.txt $gui
-  } catch { $gui = 'ERROR'; Save-Text gui-startup.txt $_.Exception.Message }
+    $proc = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+    $processId = $proc.Id
+    Start-Sleep -Seconds 5
+    if ($proc.HasExited) { $gui = 'EXITED'; $guiExitCode = $proc.ExitCode }
+    else { $gui = 'ALIVE'; $guiExitCode = 'N/A'; Stop-Process -Id $processId -Force }
+    Save-Text gui-startup.txt "process start: SUCCESS`nPID: $processId`n5-second state: $gui`nexit code: $guiExitCode"
+  } catch { $gui = 'ERROR'; Save-Text gui-startup.txt "process start: ERROR`n$($_.Exception.Message)" }
 } elseif ($build -eq 'NOT RUN' -and $stage -eq 'unknown') { $stage = if ($encoding -eq 'FAIL') {'encoding-preflight'} else {'dependency-preflight'} }
 
+if ($build -eq 'PASS' -and (Test-Path $buildOutput)) {
+  $files = @(Get-ChildItem -LiteralPath $buildOutput -Recurse -File)
+  $relativeFiles = @($files | ForEach-Object { [System.IO.Path]::GetRelativePath($buildOutput,$_.FullName).Replace('\','/') })
+  $checks = [ordered]@{
+    'divergencesplitter' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/divergencesplitter/' }).Count -gt 0)
+    'divergencesplitter_runtime' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/divergencesplitter_runtime/' }).Count -gt 0)
+    'livesplit' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/livesplit/' }).Count -gt 0)
+    'livesplit_bridge' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/livesplit_bridge/' }).Count -gt 0)
+    'windows_capture_device_list' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/windows_capture_device_list/' }).Count -gt 0)
+    'NDIlib package' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/NDIlib/' }).Count -gt 0)
+    'NDIlib extension' = [bool](@($relativeFiles | Where-Object { $_ -match '(?i)^site-packages/NDIlib/NDIlib.*\.pyd$' }).Count -gt 0)
+    'NDI runtime DLL' = [bool](@($relativeFiles | Where-Object { $_ -match '(?i)^site-packages/NDIlib/.*\.dll$' }).Count -gt 0)
+    'windows_capture_device_list extension' = [bool](@($relativeFiles | Where-Object { $_ -match '(?i)^site-packages/windows_capture_device_list/.*\.pyd$' }).Count -gt 0)
+    'NumPy' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/numpy/' }).Count -gt 0)
+    'NumPy native extension' = [bool](@($relativeFiles | Where-Object { $_ -match '(?i)^site-packages/numpy/.*\.pyd$' }).Count -gt 0)
+    'OpenCV (cv2)' = [bool](@($relativeFiles | Where-Object { $_ -match '^site-packages/cv2/' }).Count -gt 0)
+    'OpenCV extension' = [bool](@($relativeFiles | Where-Object { $_ -match '(?i)^site-packages/cv2/.*\.pyd$' }).Count -gt 0)
+  }
+  $checks.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $(if ($_.Value) {'PASS'} else {'FAIL'}) } | Out-File (Join-Path $out package-content-check.txt) -Encoding utf8
+  $packageContent = if (@($checks.Values | Where-Object { -not $_ }).Count -eq 0) {'PASS'} else {'FAIL'}
+} else { Save-Text package-content-check.txt 'NOT RUN: Flet build did not succeed'; $packageContent = 'NOT RUN' }
+
 if ($build -eq 'PASS') {
-  $needles = @('divergencesplitter','divergencesplitter-runtime','livesplit-bridge-client','windows-capture-device-list','ndi-python','numpy','opencv-contrib-python')
-  foreach ($needle in $needles) { $found = $log -match [regex]::Escape($needle); "$needle`: $(if ($found) {'LOG MATCH'} else {'NO LOG MATCH'})" | Out-File (Join-Path $out packaged-dependencies.txt) -Append -Encoding utf8 }
-  $nativeMatches = Get-ChildItem $buildOutput -Recurse -File | Where-Object FullName -Match '(?i)NDIlib|(^|[\\/])ndi([\\/]|\.)|windows_capture_device_list'
-  if ($nativeMatches) { $nativeMatches | Select-Object FullName,Length | Out-File (Join-Path $out native-content-check.txt) -Encoding utf8 }
-  else { Save-Text native-content-check.txt 'No matching NDI/camera native content filenames found in output tree' }
-}
+  if ($exeFound -ne 'YES') { $stage = 'app-exe-missing' }
+  elseif ($packageContent -eq 'FAIL') { $stage = 'package-content' }
+  elseif ($cli -ne 'PASS' -or $invalid -ne 'PASS') { $stage = 'cli-smoke' }
+  else { $stage = '—' }
+} elseif ($build -eq 'NOT RUN' -and $stage -eq 'unknown') { $stage = if ($encoding -eq 'FAIL') {'encoding-preflight'} else {'dependency-preflight'} }
+
 Save-Text failure-stage.txt $stage
-Save-Text result.txt "Approach: $Approach`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nEncoding preflight result: $encoding`nBuild result: $build`nBuild exit code: $buildCode`nEXE found: $exeFound`nCLI smoke result: $cli`nInvalid CLI result: $invalid`nGUI smoke result: $gui`nFailure stage: $stage`nOutput directory: $buildOutput"
+Save-Text result.txt "Approach: pep508-git`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nEncoding preflight result: $encoding`nBuild result: $build`nBuild exit code: $buildCode`nPackage content result: $packageContent`nEXE found: $exeFound`nApp EXE path: $exePath`nCLI smoke result: $cli`nCLI --help exit code: $cliCode`nInvalid CLI result: $invalid`nInvalid option exit code: $invalidCode`nGUI smoke result: $gui`nGUI exit code: $guiExitCode`nFailure stage: $stage`nOutput directory: $buildOutput"
 Get-Content (Join-Path $out result.txt) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+"build_result=$build" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+"build_result=$build" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
 if ($infraFailure) { exit 1 }
 exit 0

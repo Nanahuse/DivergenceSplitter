@@ -20,21 +20,9 @@ DEV_PACKAGES = {
         "divergencesplitter-runtime": "../divergencesplitter-runtime",
         "divergencesplitter": "../divergencesplitter",
     },
-    "all-dev-packages": {
-        "divergencesplitter-runtime": "../divergencesplitter-runtime",
-        "divergencesplitter": "../divergencesplitter",
-        "livesplit-bridge-client": "../../.flet-dev-packages/livesplit-bridge-client",
-        "windows-capture-device-list": "../../.flet-dev-packages/windows-capture-device-list",
-    },
 }
 WINDOWS_DEPENDENCIES = {
     "pep508-git": ["divergencesplitter", "ndi-python>=6.3.2.4"],
-    "all-dev-packages": [
-        "divergencesplitter",
-        "livesplit-bridge-client",
-        "windows-capture-device-list",
-        "ndi-python>=6.3.2.4",
-    ],
 }
 
 
