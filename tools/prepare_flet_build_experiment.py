@@ -7,7 +7,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / "packages" / "divergencesplitter-ui"
+UI_PYPROJECT = UI / "pyproject.toml"
 RUNTIME = ROOT / "packages" / "divergencesplitter-runtime"
+RUNTIME_PYPROJECT = RUNTIME / "pyproject.toml"
 
 
 def append_once(path: Path, text: str) -> None:
@@ -24,25 +26,25 @@ def prepare_entry() -> None:
         'if __name__ == "__main__":\n    raise SystemExit(main())\n',
         encoding="utf-8",
     )
-    append_once(UI / "pyproject.toml", '[tool.flet.app]\npath = "src"\nmodule = "main"')
+    append_once(UI_PYPROJECT, '[tool.flet.app]\npath = "src"\nmodule = "main"')
 
 
 def add_workspace_dev_packages() -> None:
-    text = (UI / "pyproject.toml").read_text(encoding="utf-8")
+    text = UI_PYPROJECT.read_text(encoding="utf-8")
     block = (
-        "[tool.flet]\ndev_packages = {\n"
-        '    "divergencesplitter-runtime" = "../divergencesplitter-runtime",\n'
-        '    "divergencesplitter" = "../divergencesplitter",\n}\n'
+        "[tool.flet.dev_packages]\n"
+        'divergencesplitter-runtime = "../divergencesplitter-runtime"\n'
+        'divergencesplitter = "../divergencesplitter"\n'
     )
     if block not in text:
-        marker = "[tool.flet.app]"
-        UI.joinpath("pyproject.toml").write_text(
-            text.replace(marker, block + "\n" + marker), encoding="utf-8"
+        UI_PYPROJECT.write_text(
+            text.replace("[tool.flet.app]", block + "\n[tool.flet.app]"),
+            encoding="utf-8",
         )
 
 
 def replace_git_sources_with_pep508() -> None:
-    text = RUNTIME.read_text(encoding="utf-8")
+    text = RUNTIME_PYPROJECT.read_text(encoding="utf-8")
     text = text.replace(
         '    "livesplit-bridge-client",',
         '    "livesplit-bridge-client @ git+https://github.com/Nanahuse/livesplit-bridge-client.git@v0.2.0",',
@@ -53,26 +55,26 @@ def replace_git_sources_with_pep508() -> None:
     )
     start = text.index("\n[tool.uv.sources]")
     end = text.index("\n[build-system]", start)
-    RUNTIME.write_text(text[:start] + text[end:], encoding="utf-8")
+    RUNTIME_PYPROJECT.write_text(text[:start] + text[end:], encoding="utf-8")
     append_once(
-        UI / "pyproject.toml",
+        UI_PYPROJECT,
         '[tool.flet.windows]\ndependencies = ["ndi-python>=6.3.2.4"]',
     )
 
 
 def add_all_dev_packages() -> None:
-    text = (UI / "pyproject.toml").read_text(encoding="utf-8")
+    text = UI_PYPROJECT.read_text(encoding="utf-8")
     block = (
-        "[tool.flet]\ndev_packages = {\n"
-        '    "divergencesplitter-runtime" = "../divergencesplitter-runtime",\n'
-        '    "divergencesplitter" = "../divergencesplitter",\n'
-        '    "livesplit-bridge-client" = "../../.flet-dev-packages/livesplit-bridge-client",\n'
-        '    "windows-capture-device-list" = "../../.flet-dev-packages/windows-capture-device-list",\n}\n'
+        "[tool.flet.dev_packages]\n"
+        'divergencesplitter-runtime = "../divergencesplitter-runtime"\n'
+        'divergencesplitter = "../divergencesplitter"\n'
+        'livesplit-bridge-client = "../../.flet-dev-packages/livesplit-bridge-client"\n'
+        'windows-capture-device-list = "../../.flet-dev-packages/windows-capture-device-list"\n'
         '\n[tool.flet.windows]\ndependencies = ["ndi-python>=6.3.2.4"]'
     )
     if block not in text:
         text = text.replace("[tool.flet.app]", block + "\n[tool.flet.app]")
-    UI.joinpath("pyproject.toml").write_text(text, encoding="utf-8")
+    UI_PYPROJECT.write_text(text, encoding="utf-8")
 
 
 def main() -> None:

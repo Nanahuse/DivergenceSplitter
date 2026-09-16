@@ -22,15 +22,16 @@ if ($Approach -eq 'all-dev-packages') {
 Copy-Item packages/divergencesplitter-ui/pyproject.toml $out/ui-pyproject.toml
 Copy-Item packages/divergencesplitter-runtime/pyproject.toml $out/runtime-pyproject.toml
 if (Test-Path packages/divergencesplitter-ui/src/main.py) { Copy-Item packages/divergencesplitter-ui/src/main.py $out/main.py }
+uv run python -c "import tomllib; from pathlib import Path; [tomllib.loads(Path(p).read_text(encoding='utf-8')) for p in ['packages/divergencesplitter-ui/pyproject.toml','packages/divergencesplitter-runtime/pyproject.toml']]; print('PASS')" | Tee-Object (Join-Path $out toml-validation.txt)
 
 & powershell -NoProfile -Command "$BuildCommand *>&1 | Tee-Object '$out/flet-build.log'; exit `$LASTEXITCODE"
 $code = $LASTEXITCODE
 Save-Text build_exit_code.txt $code
 $stage = 'unknown'
 $log = if (Test-Path "$out/flet-build.log") { Get-Content -Raw "$out/flet-build.log" } else { '' }
-if ($log -match 'Flutter.*(download|install)|Downloading Flutter') { $stage = 'flutter-sdk-setup' }
-elseif ($log -match 'project.*(discover|path)|No Python app') { $stage = 'project-discovery' }
-elseif ($log -match 'entry.point|main\.py') { $stage = 'entry-point' }
+if ($log -match 'TOMLDecodeError|Invalid initial character|Invalid value') { $stage = 'toml-parse' }
+elseif ($log -match 'Flutter.*(failed|error|exception)|Unable to install Flutter|Flutter SDK.*not found') { $stage = 'flutter-sdk-setup' }
+elseif ($log -match 'main\.py not found|No Python app|project.*(discover|path)') { $stage = 'entry-point' }
 elseif ($log -match 'livesplit-bridge-client|windows-capture-device-list|git\+') { $stage = 'git-dependency' }
 elseif ($log -match 'ndi-python|NDIlib') { $stage = 'ndi-dependency' }
 elseif ($log -match 'dependency|resolve|package') { $stage = 'python-dependency-packaging' }
