@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import cast
 
 import flet as ft
+from divergencesplitter_ui.configuration.page import ConfigurationPage
 from divergencesplitter_ui.error_dialog import ErrorDialog
-from divergencesplitter_ui.flet_application import FletApplication
+from divergencesplitter_ui.flet_application import AppView, FletApplication
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
-from divergencesplitter_ui.monitor.page import Monitor
+from divergencesplitter_ui.monitor.page import Monitor, MonitorUpdate
 from divergencesplitter_ui.session import SessionController, SessionState
 
 
@@ -144,8 +145,78 @@ class _FakeCoordinator:
 
 
 class _FakeMonitor:
-    def apply(self, snapshot) -> bool:
-        return False
+    def __init__(
+        self, update: MonitorUpdate | None = None, controls: tuple = ()
+    ) -> None:
+        self._update = update if update is not None else MonitorUpdate()
+        self._controls = controls
+        self.apply_calls = 0
+
+    def apply(self, snapshot) -> MonitorUpdate:
+        self.apply_calls += 1
+        return self._update
+
+    def controls_for_update(self, update: MonitorUpdate) -> tuple:
+        return self._controls
+
+
+class _RecordingPage:
+    def __init__(self) -> None:
+        self.updates: list[tuple] = []
+
+    def update(self, *controls) -> None:
+        self.updates.append(controls)
+
+
+class _StubConfiguration:
+    def __init__(
+        self,
+        *,
+        changed: bool = False,
+        preview_changed: bool = False,
+        preview_targets: tuple = (),
+    ) -> None:
+        self._changed = changed
+        self._preview_changed = preview_changed
+        self._preview_targets = preview_targets
+        self.control = ft.Text("configuration")
+
+    def tick(self, state, *, visible: bool) -> bool:
+        return self._changed
+
+    async def pump_preview(self) -> bool:
+        return self._preview_changed
+
+    def preview_update_targets(self) -> tuple:
+        return self._preview_targets
+
+
+class _StubDialog:
+    def __init__(self, shown: bool = False) -> None:
+        self._shown = shown
+        self.tick_calls = 0
+
+    def tick(self, result) -> bool:
+        self.tick_calls += 1
+        return self._shown
+
+
+def _application_with(
+    page: _RecordingPage,
+    monitor: _FakeMonitor,
+    *,
+    configuration: _StubConfiguration | None = None,
+    dialog: _StubDialog | None = None,
+) -> FletApplication:
+    application, _ = make_application()
+    application._page = cast(ft.Page, page)
+    application._monitor = cast(Monitor, monitor)
+    application._coordinator = cast(MonitorUpdateCoordinator, _FakeCoordinator())
+    if configuration is not None:
+        application._configuration = cast(ConfigurationPage, configuration)
+    if dialog is not None:
+        application._error_dialog = cast(ErrorDialog, dialog)
+    return application
 
 
 class TestErrorWiring:
@@ -166,3 +237,104 @@ class TestErrorWiring:
         asyncio.run(application._apply_monitor())
 
         assert recorded == ["terminal-result"]
+
+
+class TestTargetedMonitorUpdates:
+    def test_patches_only_the_changed_panel_controls(self) -> None:
+        page = _RecordingPage()
+        first = ft.Text("first")
+        second = ft.Text("second")
+        monitor = _FakeMonitor(
+            MonitorUpdate(global_status=True, scenario_overview=True),
+            (first, second),
+        )
+        application = _application_with(page, monitor)
+
+        asyncio.run(application._apply_monitor())
+
+        assert page.updates == [(first, second)]
+
+    def test_no_patch_when_nothing_changed(self) -> None:
+        page = _RecordingPage()
+        application = _application_with(
+            page, _FakeMonitor(), configuration=_StubConfiguration()
+        )
+
+        asyncio.run(application._apply_monitor())
+
+        assert page.updates == []
+
+    def test_shown_error_dialog_does_not_force_a_panel_repaint(self) -> None:
+        page = _RecordingPage()
+        dialog = _StubDialog(shown=True)
+        application = _application_with(page, _FakeMonitor(), dialog=dialog)
+
+        asyncio.run(application._apply_monitor())
+
+        assert dialog.tick_calls == 1
+        assert page.updates == []
+
+    def test_hidden_configuration_change_is_not_targeted(self) -> None:
+        page = _RecordingPage()
+        configuration = _StubConfiguration(changed=True)
+        application = _application_with(
+            page, _FakeMonitor(), configuration=configuration
+        )
+
+        asyncio.run(application._apply_monitor())
+
+        assert page.updates == []
+
+    def test_active_configuration_change_targets_its_control(self) -> None:
+        page = _RecordingPage()
+        configuration = _StubConfiguration(changed=True)
+        application = _application_with(
+            page, _FakeMonitor(), configuration=configuration
+        )
+        application._active_view = AppView.CONFIGURATION
+
+        asyncio.run(application._apply_monitor())
+
+        assert page.updates == [(configuration.control,)]
+
+
+class TestConfigurationPreviewTargets:
+    def test_preview_change_patches_only_preview_targets(self) -> None:
+        page = _RecordingPage()
+        preview_control = ft.Text("preview")
+        configuration = _StubConfiguration(
+            preview_changed=True, preview_targets=(preview_control,)
+        )
+        application = _application_with(
+            page, _FakeMonitor(), configuration=configuration
+        )
+        application._active_view = AppView.CONFIGURATION
+
+        asyncio.run(application._apply_configuration_preview())
+
+        assert page.updates == [(preview_control,)]
+
+    def test_preview_without_change_does_not_patch(self) -> None:
+        page = _RecordingPage()
+        configuration = _StubConfiguration(preview_changed=False)
+        application = _application_with(
+            page, _FakeMonitor(), configuration=configuration
+        )
+        application._active_view = AppView.CONFIGURATION
+
+        asyncio.run(application._apply_configuration_preview())
+
+        assert page.updates == []
+
+    def test_preview_skipped_when_configuration_hidden(self) -> None:
+        page = _RecordingPage()
+        configuration = _StubConfiguration(
+            preview_changed=True, preview_targets=(ft.Text("preview"),)
+        )
+        application = _application_with(
+            page, _FakeMonitor(), configuration=configuration
+        )
+
+        asyncio.run(application._apply_configuration_preview())
+
+        assert page.updates == []
