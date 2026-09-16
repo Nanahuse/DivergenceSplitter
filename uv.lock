@@ -166,9 +166,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "divergencesplitter", editable = "packages/divergencesplitter" },
-    { name = "livesplit-bridge-client", git = "https://github.com/Nanahuse/livesplit-bridge-client.git?tag=v0.2.0" },
+    { name = "livesplit-bridge-client", git = "https://github.com/Nanahuse/livesplit-bridge-client.git?rev=v0.2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "windows-capture-device-list", marker = "sys_platform == 'win32'", git = "https://github.com/Nanahuse/windows-capture-device-list.git?tag=v0.2.0" },
+    { name = "windows-capture-device-list", marker = "sys_platform == 'win32'", git = "https://github.com/Nanahuse/windows-capture-device-list.git?rev=v0.2.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -317,7 +317,7 @@ wheels = [
 [[package]]
 name = "livesplit-bridge-client"
 version = "0.2.0"
-source = { git = "https://github.com/Nanahuse/livesplit-bridge-client.git?tag=v0.2.0#a8197070cffa86fcdb6be116c713584556b809b3" }
+source = { git = "https://github.com/Nanahuse/livesplit-bridge-client.git?rev=v0.2.0#a8197070cffa86fcdb6be116c713584556b809b3" }
 dependencies = [
     { name = "protobuf" },
     { name = "pyzmq" },
@@ -770,4 +770,4 @@ wheels = [
 [[package]]
 name = "windows-capture-device-list"
 version = "0.2.0"
-source = { git = "https://github.com/Nanahuse/windows-capture-device-list.git?tag=v0.2.0#d7199df43044b8cbd65befda388c68f077852a3e" }
+source = { git = "https://github.com/Nanahuse/windows-capture-device-list.git?rev=v0.2.0#d7199df43044b8cbd65befda388c68f077852a3e" }
