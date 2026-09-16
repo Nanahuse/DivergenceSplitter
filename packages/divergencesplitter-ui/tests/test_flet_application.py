@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import cast
 
 import flet as ft
+from divergencesplitter_ui.error_dialog import ErrorDialog
 from divergencesplitter_ui.flet_application import FletApplication
+from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
+from divergencesplitter_ui.monitor.page import Monitor
 from divergencesplitter_ui.session import SessionController, SessionState
 
 
@@ -16,6 +19,7 @@ class FakeController:
     def __init__(self) -> None:
         self.state = SessionState.IDLE
         self.diagnostics = None
+        self.result = None
         self.started: list[Path] = []
         self.request_stop_calls = 0
         self.join_calls: list[int] = []
@@ -102,6 +106,21 @@ class TestNavigation:
         assert application._configuration_view.visible is True
         assert application._monitor_view.visible is False
 
+    def test_switching_to_about_does_not_stop_runtime(self) -> None:
+        application, fake = make_application()
+        application._monitor_view = ft.Container()
+        application._configuration_view = ft.Container(visible=False)
+        application._about_view = ft.Container(visible=False)
+        rail = ft.NavigationRail(selected_index=2)
+
+        application._on_navigate(ft.Event("change", rail))
+
+        assert fake.request_stop_calls == 0
+        assert application.active_view == "about"
+        assert application._about_view.visible is True
+        assert application._monitor_view.visible is False
+        assert application._configuration_view.visible is False
+
     def test_switching_back_to_monitor_restores_visibility(self) -> None:
         application, _ = make_application()
         application._monitor_view = ft.Container(visible=False)
@@ -113,3 +132,37 @@ class TestNavigation:
         assert application.active_view == "monitor"
         assert application._monitor_view.visible is True
         assert application._configuration_view.visible is False
+
+
+class _FakeSnapshot:
+    pass
+
+
+class _FakeCoordinator:
+    def snapshot(self):
+        return _FakeSnapshot()
+
+
+class _FakeMonitor:
+    def apply(self, snapshot) -> bool:
+        return False
+
+
+class TestErrorWiring:
+    def test_result_is_polled_into_the_error_dialog(self) -> None:
+        application, fake = make_application()
+        fake.result = "terminal-result"
+        recorded: list[object] = []
+
+        class RecordingDialog:
+            def tick(self, result) -> bool:
+                recorded.append(result)
+                return False
+
+        application._monitor = cast(Monitor, _FakeMonitor())
+        application._coordinator = cast(MonitorUpdateCoordinator, _FakeCoordinator())
+        application._error_dialog = cast(ErrorDialog, RecordingDialog())
+
+        asyncio.run(application._apply_monitor())
+
+        assert recorded == ["terminal-result"]

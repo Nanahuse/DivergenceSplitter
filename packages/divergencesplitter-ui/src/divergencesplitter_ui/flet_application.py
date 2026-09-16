@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from enum import StrEnum
 from pathlib import Path
 
 import flet as ft
@@ -20,8 +21,10 @@ from divergencesplitter_runtime.configuration.json_file import (
     load_configuration,
 )
 
+from divergencesplitter_ui.about_page import AboutView
 from divergencesplitter_ui.configuration.dialogs import FletFileDialogs
 from divergencesplitter_ui.configuration.page import ConfigurationPage
+from divergencesplitter_ui.error_dialog import ErrorDialog
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
 from divergencesplitter_ui.monitor.input_preview import PREVIEW_INTERVAL_SECONDS
 from divergencesplitter_ui.monitor.page import Monitor
@@ -35,8 +38,16 @@ MONITOR_INTERVAL_SECONDS = 0.1
 CONFIGURATION_PREVIEW_SECONDS = 1.0 / 15.0
 _MAIN_POLL_SECONDS = 0.1
 
-_MONITOR = "monitor"
-_CONFIGURATION = "configuration"
+
+class AppView(StrEnum):
+    """The top-level page the navigation rail is showing."""
+
+    MONITOR = "monitor"
+    CONFIGURATION = "configuration"
+    ABOUT = "about"
+
+
+_VIEW_ORDER = (AppView.MONITOR, AppView.CONFIGURATION, AppView.ABOUT)
 
 
 class FletApplication:
@@ -61,10 +72,13 @@ class FletApplication:
         self._page: ft.Page | None = None
         self._monitor: Monitor | None = None
         self._configuration: ConfigurationPage | None = None
+        self._about: AboutView | None = None
+        self._error_dialog: ErrorDialog | None = None
         self._monitor_view: ft.Container | None = None
         self._configuration_view: ft.Container | None = None
+        self._about_view: ft.Container | None = None
         self._navigation: ft.NavigationRail | None = None
-        self._active_view = _MONITOR
+        self._active_view = AppView.MONITOR
         self._tasks: list[asyncio.Task] = []
         self._stopping = False
         self._shutdown_started = False
@@ -76,7 +90,7 @@ class FletApplication:
         return self._stopping
 
     @property
-    def active_view(self) -> str:
+    def active_view(self) -> AppView:
         return self._active_view
 
     def run(self) -> None:
@@ -103,6 +117,11 @@ class FletApplication:
         dialogs = FletFileDialogs(page, file_picker)
         self._monitor = Monitor()
         self._configuration = ConfigurationPage(self._controller, self._model, dialogs)
+        self._about = AboutView()
+        self._error_dialog = ErrorDialog(
+            show_dialog=page.show_dialog,
+            hide_dialog=page.pop_dialog,
+        )
         if self._initial_configuration is not None:
             self._load_initial_configuration(self._initial_configuration)
 
@@ -110,6 +129,7 @@ class FletApplication:
         self._configuration_view = ft.Container(
             self._configuration.control, expand=True, visible=False
         )
+        self._about_view = ft.Container(self._about.control, expand=True, visible=False)
         navigation = ft.NavigationRail(
             selected_index=0,
             label_type=ft.NavigationRailLabelType.ALL,
@@ -118,6 +138,7 @@ class FletApplication:
                 ft.NavigationRailDestination(
                     icon=ft.Icons.SETTINGS, label="Configuration"
                 ),
+                ft.NavigationRailDestination(icon=ft.Icons.INFO, label="About"),
             ],
             on_change=self._on_navigate,
         )
@@ -128,7 +149,11 @@ class FletApplication:
                     navigation,
                     ft.VerticalDivider(),
                     ft.Column(
-                        controls=[self._monitor_view, self._configuration_view],
+                        controls=[
+                            self._monitor_view,
+                            self._configuration_view,
+                            self._about_view,
+                        ],
                         expand=True,
                     ),
                 ],
@@ -164,11 +189,19 @@ class FletApplication:
 
     def _on_navigate(self, event: ft.Event[ft.NavigationRail]) -> None:
         selected = int(event.control.selected_index or 0)
-        self._active_view = _CONFIGURATION if selected == 1 else _MONITOR
-        if self._monitor_view is not None:
-            self._monitor_view.visible = self._active_view == _MONITOR
-        if self._configuration_view is not None:
-            self._configuration_view.visible = self._active_view == _CONFIGURATION
+        view = (
+            _VIEW_ORDER[selected]
+            if 0 <= selected < len(_VIEW_ORDER)
+            else AppView.MONITOR
+        )
+        self._active_view = view
+        for candidate, container in (
+            (AppView.MONITOR, self._monitor_view),
+            (AppView.CONFIGURATION, self._configuration_view),
+            (AppView.ABOUT, self._about_view),
+        ):
+            if container is not None:
+                container.visible = candidate is view
         if self._page is not None:
             self._page.update()
 
@@ -190,13 +223,15 @@ class FletApplication:
             return
         snapshot = self._coordinator.snapshot()
         changed = False
-        if self._active_view == _MONITOR:
+        if self._active_view is AppView.MONITOR:
             changed |= self._monitor.apply(snapshot)
         if self._configuration is not None:
             changed |= self._configuration.tick(
                 self._controller.state,
-                visible=self._active_view == _CONFIGURATION,
+                visible=self._active_view is AppView.CONFIGURATION,
             )
+        if self._error_dialog is not None:
+            changed |= self._error_dialog.tick(self._controller.result)
         if changed and self._page is not None:
             self._page.update()
 
@@ -205,14 +240,14 @@ class FletApplication:
         if monitor is None:
             return
         while not self._stopping:
-            if self._active_view == _MONITOR:
+            if self._active_view is AppView.MONITOR:
                 await monitor.input_preview.render_latest(self._controller.diagnostics)
             await asyncio.sleep(PREVIEW_INTERVAL_SECONDS)
 
     async def _configuration_preview_loop(self) -> None:
         while not self._stopping:
             configuration = self._configuration
-            if configuration is not None and self._active_view == _CONFIGURATION:
+            if configuration is not None and self._active_view is AppView.CONFIGURATION:
                 changed = await configuration.pump_preview()
                 if changed and self._page is not None:
                     self._page.update()
