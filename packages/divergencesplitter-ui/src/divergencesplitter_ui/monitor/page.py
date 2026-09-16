@@ -17,7 +17,6 @@ from divergencesplitter_ui.monitor.global_status import GlobalStatusPanel
 from divergencesplitter_ui.monitor.input_preview import InputPreviewPanel
 from divergencesplitter_ui.monitor.scenario_overview import ScenarioOverviewPanel
 from divergencesplitter_ui.presentation import global_status_text
-from divergencesplitter_ui.presentation_diagnostics import diagnostics_view
 from divergencesplitter_ui.presentation_overview import scenario_overview_view
 
 _LEFT_COLUMN_WIDTH = 560
@@ -79,13 +78,10 @@ class Monitor:
                 snapshot.metrics,
             )
         )
-        if self.diagnostics.should_update(snapshot.tree):
-            changed |= self.diagnostics.apply(
-                diagnostics_view(
-                    snapshot.tree,
-                    snapshot.observations,
-                    snapshot.run_infos,
-                    snapshot.instance_statuses,
-                )
-            )
+        changed |= self.diagnostics.apply(
+            snapshot.tree,
+            snapshot.observations,
+            snapshot.run_infos,
+            snapshot.instance_statuses,
+        )
         return changed
