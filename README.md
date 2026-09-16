@@ -40,6 +40,12 @@ leaves). Custom `ImageDetector` implementations must expose a read-only
 empty tuple when there are none). These properties feed the desktop UI display
 only; they never perform evaluation, reset, or state changes.
 
+The desktop UI version is generated from
+`packages/divergencesplitter-ui/pyproject.toml`. After `uv sync`, run
+`uv run python tools/generate_ui_version.py` before launching the UI directly
+from source or running tests that import the UI. CI runs this generator after
+syncing its environment.
+
 Scenario modules only import the authoring library and export `scenario`. A
 minimal `scenario.py` is:
 

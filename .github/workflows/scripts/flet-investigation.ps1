@@ -4,13 +4,16 @@ $out = Join-Path $PWD "artifacts/flet-build-investigation/$Approach"
 $buildOutput = Join-Path $PWD "artifacts/flet-build-output/$Approach"
 New-Item -ItemType Directory -Force $out | Out-Null
 function Save-Text([string]$name, [string]$value) { $value | Out-File (Join-Path $out $name) -Encoding utf8 }
-$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $encoding = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $packageContent = 'NOT RUN'; $opencvContent = 'NOT RUN'; $opencvRuntime = 'NOT RUN'; $exeFound = 'NO'; $exePath = 'NOT FOUND'; $cli = 'NOT RUN'; $cliCode = 'NOT RUN'; $invalid = 'NOT RUN'; $invalidCode = 'NOT RUN'; $gui = 'NOT RUN'; $guiExitCode = 'N/A'; $stage = 'unknown'
+$prepare = 'NOT RUN'; $metadata = 'NOT RUN'; $preflight = 'NOT RUN'; $encoding = 'NOT RUN'; $build = 'NOT RUN'; $buildCode = 'NOT RUN'; $packageContent = 'NOT RUN'; $opencvContent = 'NOT RUN'; $opencvRuntime = 'NOT RUN'; $versionRuntime = 'NOT RUN'; $exeFound = 'NO'; $exePath = 'NOT FOUND'; $cli = 'NOT RUN'; $cliCode = 'NOT RUN'; $invalid = 'NOT RUN'; $invalidCode = 'NOT RUN'; $gui = 'NOT RUN'; $guiExitCode = 'N/A'; $stage = 'unknown'
 $infraFailure = $false
 git rev-parse HEAD | Tee-Object (Join-Path $out commit.txt)
 uv --version | Tee-Object (Join-Path $out environment.txt)
 uv run python --version | Tee-Object -Append (Join-Path $out environment.txt)
 uv sync --locked --all-packages --group build --extra ndi
 if ($LASTEXITCODE -ne 0) { throw "uv sync failed with exit code $LASTEXITCODE" }
+uv run python tools/generate_ui_version.py | Tee-Object (Join-Path $out ui-version-generation.txt)
+if ($LASTEXITCODE -ne 0) { throw "UI version generation failed with exit code $LASTEXITCODE" }
+Copy-Item packages/divergencesplitter-ui/src/divergencesplitter_ui/_version.py $out/ui-version.py
 $env:FLET_CLI_NO_RICH_OUTPUT = '1'
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
@@ -55,10 +58,13 @@ expected_win = {
 assert ui['tool']['flet']['windows']['dependencies'] == expected_win
 assert ui['tool']['flet']['windows']['compile']['packages'] is False
 assert ui['tool']['flet']['windows']['cleanup']['packages'] is False
+project_version = ui['project']['version']
+version_source = Path('packages/divergencesplitter-ui/src/divergencesplitter_ui/_version.py').read_text(encoding='utf-8')
+assert f'VERSION = "{project_version}"' in version_source
 if mode == 'pep508-git':
     assert any(x.startswith('livesplit-bridge-client @ git+') for x in runtime['project']['dependencies'])
     assert any(x.startswith('windows-capture-device-list @ git+') for x in runtime['project']['dependencies'])
-print('TOML: PASS\nentry: PASS\ndev_packages: PASS\nwindows_dependencies: PASS\npep508_refs: ' + ('PASS' if mode == 'pep508-git' else 'N/A'))
+print('TOML: PASS\nentry: PASS\ndev_packages: PASS\nwindows_dependencies: PASS\nversion source: PASS\npep508_refs: ' + ('PASS' if mode == 'pep508-git' else 'N/A'))
 "@
   uv run python -c $validation 2>&1 | Tee-Object (Join-Path $out experiment-metadata-validation.txt)
   if ($LASTEXITCODE -eq 0) { $metadata = 'PASS'; Save-Text toml-validation.txt 'PASS' } else { $metadata = 'FAIL'; $infraFailure = $true; $stage = 'experiment-metadata-validation'; Save-Text toml-validation.txt 'FAIL' }
@@ -190,6 +196,7 @@ if ($build -eq 'PASS' -and (Test-Path $buildOutput)) {
     'OpenCV config-3.py source' = $opencvChecks['cv2/config-3.py']
     'OpenCV __init__.py source' = $opencvChecks['cv2/__init__.py']
     'OpenCV cv2.pyd' = $opencvChecks['cv2/cv2.pyd']
+    'UI version module' = [bool](@($relativeFiles | Where-Object { $_ -match '^app/divergencesplitter_ui/_version\.(py|pyc)$' }).Count -gt 0)
   }
   $checks.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $(if ($_.Value) {'PASS'} else {'FAIL'}) } | Out-File (Join-Path $out package-content-check.txt) -Encoding utf8
   $packageContent = if (@($checks.Values | Where-Object { -not $_ }).Count -eq 0) {'PASS'} else {'FAIL'}
@@ -199,6 +206,7 @@ if ($build -eq 'PASS' -and (Test-Path $buildOutput)) {
     $env:PYTHONPATH = Join-Path $buildOutput 'site-packages'
     & $packagedPython -c 'import cv2; print(cv2.__version__)' *>&1 | Tee-Object (Join-Path $out opencv-import-smoke.log)
     $opencvRuntime = if ($LASTEXITCODE -eq 0) {'PASS'} else {'FAIL'}
+    $runtimeText = Get-Content -Raw (Join-Path $out opencv-import-smoke.log)
   } else {
     $runtimeLogs = @((Join-Path $out cli-help.log),(Join-Path $out cli-invalid.log),(Join-Path $out gui-stdout.log),(Join-Path $out gui-stderr.log)) | Where-Object { Test-Path $_ } | ForEach-Object { Get-Content -Raw $_ }
     $runtimeText = $runtimeLogs -join "`n"
@@ -207,19 +215,24 @@ if ($build -eq 'PASS' -and (Test-Path $buildOutput)) {
     else { $opencvRuntime = 'NOT CONFIRMED' }
   }
   Save-Text opencv-runtime-result.txt $opencvRuntime
-} else { Save-Text package-content-check.txt 'NOT RUN: Flet build did not succeed'; Save-Text opencv-content-check.txt 'NOT RUN: Flet build did not succeed'; Save-Text opencv-package-path.txt 'NOT FOUND'; Save-Text build-output-size.txt 'NOT AVAILABLE'; $packageContent = 'NOT RUN'; $opencvContent = 'NOT RUN'; $opencvRuntime = 'NOT RUN' }
+  if ($runtimeText -match '(?i)PackageNotFoundError|No package metadata was found for divergencesplitter-ui') { $versionRuntime = 'FAIL' }
+  elseif ($checks['UI version module'] -and $gui -eq 'ALIVE' -and $runtimeText -notmatch '(?i)The application encountered an error|Traceback') { $versionRuntime = 'PASS (AboutView initializes at startup; no metadata/runtime exception in captured logs)' }
+  else { $versionRuntime = 'NOT CONFIRMED' }
+  Save-Text version-runtime-result.txt $versionRuntime
+} else { Save-Text package-content-check.txt 'NOT RUN: Flet build did not succeed'; Save-Text opencv-content-check.txt 'NOT RUN: Flet build did not succeed'; Save-Text opencv-package-path.txt 'NOT FOUND'; Save-Text build-output-size.txt 'NOT AVAILABLE'; Save-Text version-runtime-result.txt 'NOT RUN'; $packageContent = 'NOT RUN'; $opencvContent = 'NOT RUN'; $opencvRuntime = 'NOT RUN'; $versionRuntime = 'NOT RUN' }
 
 if ($build -eq 'PASS') {
   if ($exeFound -ne 'YES') { $stage = 'app-exe-missing' }
   elseif ($opencvContent -eq 'FAIL') { $stage = 'opencv-package-content' }
   elseif ($opencvRuntime -eq 'FAIL') { $stage = 'opencv-runtime-import' }
+  elseif ($versionRuntime -eq 'FAIL') { $stage = 'version-metadata-runtime' }
   elseif ($packageContent -eq 'FAIL') { $stage = 'package-content' }
   elseif ($cli -ne 'PASS' -or $invalid -ne 'PASS') { $stage = 'cli-smoke' }
   else { $stage = '—' }
 } elseif ($build -eq 'NOT RUN' -and $stage -eq 'unknown') { $stage = if ($encoding -eq 'FAIL') {'encoding-preflight'} else {'dependency-preflight'} }
 
 Save-Text failure-stage.txt $stage
-Save-Text result.txt "Approach: pep508-git`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nEncoding preflight result: $encoding`nBuild result: $build`nBuild exit code: $buildCode`nPackage content result: $packageContent`nOpenCV content result: $opencvContent`nOpenCV runtime result: $opencvRuntime`nEXE found: $exeFound`nApp EXE path: $exePath`nCLI smoke result: $cli`nCLI --help exit code: $cliCode`nInvalid CLI result: $invalid`nInvalid option exit code: $invalidCode`nGUI smoke result: $gui`nGUI exit code: $guiExitCode`nFailure stage: $stage`nOutput directory: $buildOutput"
+Save-Text result.txt "Approach: pep508-git`nPreparation result: $prepare`nMetadata validation result: $metadata`nDependency preflight result: $preflight`nEncoding preflight result: $encoding`nBuild result: $build`nBuild exit code: $buildCode`nPackage content result: $packageContent`nOpenCV content result: $opencvContent`nOpenCV runtime result: $opencvRuntime`nVersion metadata/runtime result: $versionRuntime`nEXE found: $exeFound`nApp EXE path: $exePath`nCLI smoke result: $cli`nCLI --help exit code: $cliCode`nInvalid CLI result: $invalid`nInvalid option exit code: $invalidCode`nGUI smoke result: $gui`nGUI exit code: $guiExitCode`nFailure stage: $stage`nOutput directory: $buildOutput"
 Get-Content (Join-Path $out result.txt) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 "build_result=$build" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
 if ($infraFailure) { exit 1 }

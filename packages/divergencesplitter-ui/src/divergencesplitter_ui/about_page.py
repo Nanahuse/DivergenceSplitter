@@ -1,9 +1,7 @@
 """Flet About view with its nested Licenses sub-view.
 
-The application name and version come from the existing pure ``about_info()``
-(authority: the ``divergencesplitter-ui`` package metadata), so no version is
-hardcoded here. Licenses is reached from About and returns to About, all inside
-the same window.
+The application name and generated project version come from ``about_info()``.
+Licenses is reached from About and returns to About, all inside the same window.
 """
 
 from __future__ import annotations

@@ -17,6 +17,10 @@ jobs:
           python-version: "3.14"
       - name: Sync locked environment
         run: uv sync --locked --all-packages
+      - name: Generate UI version module
+        run: uv run python tools/generate_ui_version.py
+      - name: Verify generated UI version module is current
+        run: git diff --exit-code -- packages/divergencesplitter-ui/src/divergencesplitter_ui/_version.py
       - name: Check formatting
         run: uv run ruff format --check .
       - name: Lint

@@ -1,17 +1,15 @@
-"""Pure application information for the About screen.
+"""Application information for the About screen.
 
-The application version is read from the ``divergencesplitter-ui`` package
-metadata, the same authority that builds and distributes the executable. No
-second version constant exists anywhere in the UI source.
+The application version is generated from the UI package's ``pyproject.toml``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import metadata
+
+from divergencesplitter_ui._version import VERSION
 
 APPLICATION_NAME = "DivergenceSplitter"
-DISTRIBUTION_NAME = "divergencesplitter-ui"
 
 
 @dataclass(frozen=True)
@@ -23,13 +21,9 @@ class AboutInfo:
 
 
 def about_info() -> AboutInfo:
-    """Read application identity from the installed package metadata.
-
-    ``metadata.version`` is the injected seam for tests; it is never wrapped
-    in a deeper interface hierarchy.
-    """
+    """Return application identity using the generated project version."""
 
     return AboutInfo(
         application_name=APPLICATION_NAME,
-        version=metadata.version(DISTRIBUTION_NAME),
+        version=VERSION,
     )
