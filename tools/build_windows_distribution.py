@@ -31,7 +31,6 @@ from generate_ui_version import generate_ui_version
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 UI_PACKAGE = Path("packages") / "divergencesplitter-ui"
-UI_PYPROJECT = UI_PACKAGE / "pyproject.toml"
 UI_VERSION_MODULE = UI_PACKAGE / "src" / "divergencesplitter_ui" / "_version.py"
 
 UI_ARTIFACT = "DivergenceSplitter"
@@ -216,7 +215,7 @@ def smoke_test_cli(executable: Path) -> None:
 def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     """Run the full Windows distribution build and return when verified."""
 
-    version = generate_ui_version(root / UI_PYPROJECT, root / UI_VERSION_MODULE)
+    version = generate_ui_version(root / UI_PACKAGE)
     print(f"Generated UI version {version}")
 
     run_command(flet_build_command(), cwd=root, env=flet_environment())
