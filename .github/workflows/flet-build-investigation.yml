@@ -20,7 +20,7 @@ jobs:
         with: { python-version: "3.14" }
       - name: Prepare and build baseline
         shell: pwsh
-        run: .github/workflows/scripts/flet-investigation.ps1 root-as-is "uv run --no-sync flet build windows --verbose"
+        run: .github/workflows/scripts/flet-investigation.ps1 root-as-is "uv run --no-sync flet build windows --yes --no-rich-output --output artifacts/flet-build-output/root-as-is --verbose"
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-root-as-is, path: artifacts/flet-build-investigation/root-as-is, retention-days: 5, if-no-files-found: error }
@@ -33,7 +33,7 @@ jobs:
         with: { python-version: "3.14" }
       - name: Prepare and build UI baseline
         shell: pwsh
-        run: .github/workflows/scripts/flet-investigation.ps1 ui-as-is "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+        run: .github/workflows/scripts/flet-investigation.ps1 ui-as-is "uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --output artifacts/flet-build-output/ui-as-is --verbose"
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-ui-as-is, path: artifacts/flet-build-investigation/ui-as-is, retention-days: 5, if-no-files-found: error }
@@ -46,7 +46,7 @@ jobs:
         with: { python-version: "3.14" }
       - name: Prepare and build entry-only
         shell: pwsh
-        run: .github/workflows/scripts/flet-investigation.ps1 entry-only "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+        run: .github/workflows/scripts/flet-investigation.ps1 entry-only "uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --output artifacts/flet-build-output/entry-only --verbose"
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-entry-only, path: artifacts/flet-build-investigation/entry-only, retention-days: 5, if-no-files-found: error }
@@ -59,7 +59,7 @@ jobs:
         with: { python-version: "3.14" }
       - name: Prepare and build workspace packages
         shell: pwsh
-        run: .github/workflows/scripts/flet-investigation.ps1 workspace-dev-packages "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+        run: .github/workflows/scripts/flet-investigation.ps1 workspace-dev-packages "uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --output artifacts/flet-build-output/workspace-dev-packages --verbose"
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-workspace-dev-packages, path: artifacts/flet-build-investigation/workspace-dev-packages, retention-days: 5, if-no-files-found: error }
@@ -72,7 +72,7 @@ jobs:
         with: { python-version: "3.14" }
       - name: Prepare and build PEP 508 Git
         shell: pwsh
-        run: .github/workflows/scripts/flet-investigation.ps1 pep508-git "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+        run: .github/workflows/scripts/flet-investigation.ps1 pep508-git "uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --output artifacts/flet-build-output/pep508-git --verbose"
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-pep508-git, path: artifacts/flet-build-investigation/pep508-git, retention-days: 5, if-no-files-found: error }
@@ -85,7 +85,7 @@ jobs:
         with: { python-version: "3.14" }
       - name: Prepare and build all local packages
         shell: pwsh
-        run: .github/workflows/scripts/flet-investigation.ps1 all-dev-packages "uv run --no-sync flet build windows packages/divergencesplitter-ui --verbose"
+        run: .github/workflows/scripts/flet-investigation.ps1 all-dev-packages "uv run --no-sync flet build windows packages/divergencesplitter-ui --yes --no-rich-output --output artifacts/flet-build-output/all-dev-packages --verbose"
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: flet-build-investigation-all-dev-packages, path: artifacts/flet-build-investigation/all-dev-packages, retention-days: 5, if-no-files-found: error }

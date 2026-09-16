@@ -26,16 +26,21 @@ if (Test-Path packages/divergencesplitter-ui/src/main.py) { Copy-Item packages/d
 & powershell -NoProfile -Command "$BuildCommand *>&1 | Tee-Object '$out/flet-build.log'; exit `$LASTEXITCODE"
 $code = $LASTEXITCODE
 Save-Text build_exit_code.txt $code
-$stage = 'artifact generation'
+$stage = 'unknown'
 $log = if (Test-Path "$out/flet-build.log") { Get-Content -Raw "$out/flet-build.log" } else { '' }
-if ($log -match 'entry|main.py') { $stage = 'entry point' }
-if ($log -match 'dependency|resolve|package') { $stage = 'dependency resolution' }
-if ($log -match 'Git|git+') { $stage = 'Git dependency' }
-if ($log -match 'NDI|ndi-python|NDIlib') { $stage = 'NDI dependency' }
+if ($log -match 'Flutter.*(download|install)|Downloading Flutter') { $stage = 'flutter-sdk-setup' }
+elseif ($log -match 'project.*(discover|path)|No Python app') { $stage = 'project-discovery' }
+elseif ($log -match 'entry.point|main\.py') { $stage = 'entry-point' }
+elseif ($log -match 'livesplit-bridge-client|windows-capture-device-list|git\+') { $stage = 'git-dependency' }
+elseif ($log -match 'ndi-python|NDIlib') { $stage = 'ndi-dependency' }
+elseif ($log -match 'dependency|resolve|package') { $stage = 'python-dependency-packaging' }
+elseif ($log -match 'Flutter project|Generating.*project') { $stage = 'flutter-project-generation' }
+elseif ($log -match 'flutter.*build') { $stage = 'flutter-build' }
 Save-Text failure-stage.txt ($(if ($code -eq 0) { '—' } else { $stage }))
 
-Get-ChildItem -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName,Length | Out-File "$out/output-manifest.txt" -Encoding utf8
-$exe = Get-ChildItem -Recurse -Filter DivergenceSplitter.exe -File -ErrorAction SilentlyContinue | Select-Object -First 1
+$buildOutput = Join-Path $PWD "artifacts/flet-build-output/$Approach"
+if (Test-Path $buildOutput) { Get-ChildItem $buildOutput -Recurse -File | Select-Object FullName,Length | Out-File "$out/output-manifest.txt" -Encoding utf8 } else { Save-Text output-manifest.txt 'build output directory not created' }
+$exe = if (Test-Path $buildOutput) { Get-ChildItem $buildOutput -Recurse -Filter DivergenceSplitter.exe -File | Select-Object -First 1 } else { $null }
 $exeFound = if ($exe) { 'YES' } else { 'NO' }
 $cli = 'NOT RUN'
 if ($exe) { & $exe.FullName --help *> "$out/cli-help.log"; $cli = if ($LASTEXITCODE -eq 0) { 'PASS' } else { "FAIL ($LASTEXITCODE)" } }
