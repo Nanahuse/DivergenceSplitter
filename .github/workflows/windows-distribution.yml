@@ -15,63 +15,19 @@ jobs:
       - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           python-version: "3.14"
+      - name: Cache Flutter and Flet
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/flutter/3.44.8
+            ~/.flet/cache
+          key: flet-build-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
       - name: Sync locked environment
         run: uv sync --locked --all-packages --group build --extra ndi
       - name: Check license inventory
         run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
-      - name: Build UI directory distribution
-        run: >-
-          uv run --no-sync flet pack
-          tools/ui_entry.py
-          --name DivergenceSplitter
-          --onedir
-          --distpath dist/windows
-          --pyinstaller-build-args=--collect-all
-          --pyinstaller-build-args=windows_capture_device_list
-          --pyinstaller-build-args=--collect-all
-          --pyinstaller-build-args=NDIlib
-          --pyinstaller-build-args=--copy-metadata
-          --pyinstaller-build-args=ndi-python
-          --pyinstaller-build-args=--collect-data
-          --pyinstaller-build-args=divergencesplitter_ui
-          --pyinstaller-build-args=--copy-metadata
-          --pyinstaller-build-args=divergencesplitter-ui
-          --yes
-      - name: Build converter directory distribution
-        run: >-
-          uv run --no-sync pyinstaller
-          --onedir
-          --windowed
-          --clean
-          --name autosplit-converter
-          --distpath dist/windows
-          --workpath build/converter-pyinstaller
-          --specpath build/converter-pyinstaller
-          tools/converter_entry.py
-      - name: Verify directory distributions
-        shell: pwsh
-        run: |
-          foreach ($name in @("DivergenceSplitter", "autosplit-converter")) {
-            $exe = Get-Item "dist/windows/$name/$name.exe" -ErrorAction Stop
-            if ($exe.Length -eq 0) {
-              throw "Built executable is empty: $name"
-            }
-            # The onedir layout keeps the bundled dependencies next to the
-            # executable; its exact directory name is PyInstaller-internal.
-            $bundle_dirs = Get-ChildItem "dist/windows/$name" -Directory
-            if ($bundle_dirs.Count -eq 0) {
-              throw "Missing bundled dependency directory: $name"
-            }
-            Write-Output "Built $($exe.FullName) ($($exe.Length) bytes)"
-          }
-      - name: Create and verify 7z archive
-        shell: pwsh
-        working-directory: dist/windows
-        run: |
-          7z a -t7z ../DivergenceSplitter-windows-x64.7z DivergenceSplitter autosplit-converter
-          if ($LASTEXITCODE -ne 0) { throw "7z archive creation failed" }
-          7z t ../DivergenceSplitter-windows-x64.7z
-          if ($LASTEXITCODE -ne 0) { throw "7z archive verification failed" }
+      - name: Build and verify Windows distribution
+        run: uv run --no-sync python tools/build_windows_distribution.py
       - name: Upload Windows distribution archive
         uses: actions/upload-artifact@v7
         with:

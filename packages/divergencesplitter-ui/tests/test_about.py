@@ -1,34 +1,21 @@
 from __future__ import annotations
 
-from importlib import metadata
-
-import pytest
-from divergencesplitter_ui.about import AboutInfo, about_info
+from divergencesplitter_ui.about import (
+    APPLICATION_NAME,
+    VERSION,
+    AboutInfo,
+    about_info,
+)
 
 
 class TestAboutInfo:
-    def test_application_name(self, monkeypatch) -> None:
-        monkeypatch.setattr(metadata, "version", lambda name: "0.1.0")
-
+    def test_application_name(self) -> None:
         info = about_info()
 
-        assert info.application_name == "DivergenceSplitter"
+        assert info.application_name == APPLICATION_NAME
 
-    def test_returns_exact_info_values(self, monkeypatch) -> None:
-        monkeypatch.setattr(metadata, "version", lambda name: "1.2.3")
-
+    def test_uses_generated_version(self) -> None:
         assert about_info() == AboutInfo(
-            application_name="DivergenceSplitter",
-            version="1.2.3",
+            application_name=APPLICATION_NAME,
+            version=VERSION,
         )
-
-    def test_missing_metadata_is_reported_not_silently_replaced(
-        self, monkeypatch
-    ) -> None:
-        def missing(name: str) -> str:
-            raise metadata.PackageNotFoundError(name)
-
-        monkeypatch.setattr(metadata, "version", missing)
-
-        with pytest.raises(metadata.PackageNotFoundError):
-            about_info()
