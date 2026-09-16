@@ -1,9 +1,9 @@
 """Pure presentation and update logic for the main screen.
 
-Nothing in this module imports Dear PyGui. It decides *what* to update from
-session state, observation snapshots, and a monotonic clock, leaving *how* to
-reach the widgets to the renderer. The decision points below are the units
-covered by behavior tests:
+This module is GUI-independent. It decides *what* to update from session state,
+observation snapshots, and a monotonic clock, leaving *how* to reach the widgets
+to the GUI layer. The decision points below are the units covered by behavior
+tests:
 
 * state re-rendering only on change,
 * observation re-rendering only when a new snapshot arrives,
@@ -112,6 +112,46 @@ def evaluation_latency_label(metrics: InstanceEvaluationMetrics) -> str:
     )
 
 
+UNMEASURED_FPS = "— fps"
+
+
+@dataclass(frozen=True)
+class GlobalStatusText:
+    """Transfer-only display values for the Global Status panel."""
+
+    state: str
+    input_fps: str
+    processing_fps: str
+
+
+def format_fps(value: float) -> str:
+    """Format one throughput value in frames per second."""
+
+    return f"{value:.1f} fps"
+
+
+def global_status_text(
+    state: object,
+    snapshot: RuntimeMetricsSnapshot | None,
+) -> GlobalStatusText:
+    """Format the session state and throughput metrics for the Global Status.
+
+    ``state`` is any object exposing a ``name`` (the ``SessionState`` enum);
+    ``snapshot`` is ``None`` before a session publishes metrics, which renders
+    as an unmeasured placeholder rather than a stale value.
+    """
+
+    return GlobalStatusText(
+        state=getattr(state, "name", str(state)),
+        input_fps=(
+            UNMEASURED_FPS if snapshot is None else format_fps(snapshot.input_fps)
+        ),
+        processing_fps=(
+            UNMEASURED_FPS if snapshot is None else format_fps(snapshot.processing_fps)
+        ),
+    )
+
+
 def has_new_observations(observations: tuple[ConditionObservation, ...]) -> bool:
     """Return whether ``observations`` carries a fresh snapshot to apply.
 
@@ -217,13 +257,66 @@ def condition_label(view: ConditionView) -> str:
     return f"{marker}{view.condition_type} [{view.status_label}]{progress}{active}"
 
 
+_INSTANCE_STATE_LABELS = {
+    InstanceRuntimeState.CONNECTING: "Connecting...",
+    InstanceRuntimeState.READY: "Connected",
+    InstanceRuntimeState.FAILED: "Failed",
+    InstanceRuntimeState.STOPPED: "Stopped",
+}
+
+
+def instance_state_label(state: InstanceRuntimeState) -> str:
+    """Return the short display label for one instance lifecycle state."""
+
+    return _INSTANCE_STATE_LABELS[state]
+
+
+def _format_seconds(value_nanoseconds: float | None) -> str:
+    if value_nanoseconds is None:
+        return "—"
+    return f"{value_nanoseconds / 1_000_000_000:.3f} s"
+
+
+def _format_progress_value(value: float | None) -> str:
+    return "—" if value is None else str(value)
+
+
+def condition_progress_label(view: ConditionView) -> str:
+    """Format one condition's current progress for the Scenario Overview.
+
+    Detected conditions render ``current / threshold   Max: max`` and prefix
+    ``ERROR`` when evaluation failed. Elapsed and Hold render seconds, Nth a
+    count, and Then a step. Conditions without progress render an empty string.
+    """
+
+    if view.progress_unit == "score":
+        detail = (
+            f"{format_score(view.latest_score)} / {format_score(view.minimum_score)}"
+            f"   Max: {format_score(view.max_score)}"
+        )
+        if view.status_label == "ERROR":
+            return f"ERROR   {detail}"
+        return detail
+    if view.progress_unit == "nanoseconds":
+        return (
+            f"{_format_seconds(view.progress_current)} / "
+            f"{_format_seconds(view.progress_target)}"
+        )
+    if view.progress_unit == "count":
+        return (
+            f"{_format_progress_value(view.progress_current)} / "
+            f"{_format_progress_value(view.progress_target)}"
+        )
+    if view.progress_unit == "step":
+        return (
+            f"step {_format_progress_value(view.progress_current)} / "
+            f"{_format_progress_value(view.progress_target)}"
+        )
+    return ""
+
+
 def instance_status_label(status: InstanceStatus) -> str:
-    label = {
-        InstanceRuntimeState.CONNECTING: "Connecting...",
-        InstanceRuntimeState.READY: "Connected",
-        InstanceRuntimeState.FAILED: "Failed",
-        InstanceRuntimeState.STOPPED: "Stopped",
-    }[status.state]
+    label = instance_state_label(status.state)
     return f"{label} — {status.error}" if status.error else label
 
 

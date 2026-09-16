@@ -30,8 +30,8 @@ installable packages:
 - `divergencesplitter-runtime` contains scenario loading and the runtime state
   machines. It depends on `divergencesplitter`.
 - `divergencesplitter-ui` is the Windows-only desktop UI. It depends on
-  `divergencesplitter-runtime` and Dear PyGui. Core and runtime install without
-  any GUI dependency.
+  `divergencesplitter-runtime` and Flet. Core and runtime install without any
+  GUI dependency.
 
 Custom `Condition` implementations must expose a read-only `children` property
 returning their child conditions in declaration order (an empty tuple for

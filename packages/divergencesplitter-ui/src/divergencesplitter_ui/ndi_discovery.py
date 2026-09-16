@@ -1,8 +1,8 @@
 """Background NDI capability probing and source discovery for the UI.
 
-The Dear PyGui render thread must never block on NDI, so capability probing and
-source listing run on a short-lived worker thread. The page requests a refresh
-and reads the most recent result on its next tick.
+The Flet event loop must never block on NDI, so capability probing and source
+listing run on a short-lived worker thread. The page requests a refresh and
+reads the most recent result on its next tick.
 """
 
 from __future__ import annotations

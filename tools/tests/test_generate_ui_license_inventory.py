@@ -262,6 +262,21 @@ class TestLicenseText:
         with pytest.raises(RuntimeError, match="cannot collect"):
             invgen.license_text(dist)
 
+    def test_vendored_text_is_used_when_wheel_ships_no_license_file(self) -> None:
+        dist = FakeDistribution("flet", "1.0.0", license_expression="Apache-2.0")
+
+        text = invgen.license_text(dist)
+
+        assert text.startswith("=== tools/licenses/Apache-2.0.txt ===")
+        assert "Apache License" in text
+        assert "Version 2.0, January 2004" in text
+
+    def test_expression_without_vendored_text_still_raises(self) -> None:
+        dist = FakeDistribution("mine", "1.0.0", license_expression="MIT")
+
+        with pytest.raises(RuntimeError, match="cannot collect"):
+            invgen.license_text(dist)
+
 
 class TestBuildInventory:
     def test_packages_are_sorted_by_normalized_name(self) -> None:
@@ -438,10 +453,10 @@ class TestCheckInventory:
             },
             "packages": [
                 {
-                    "name": "dearpygui",
+                    "name": "sample-package",
                     "version": "2.3.1",
                     "license": "MIT",
-                    "license_text": "dearpygui text",
+                    "license_text": "sample package text",
                 },
                 {
                     "name": "numpy",
