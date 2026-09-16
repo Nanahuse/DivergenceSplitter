@@ -7,16 +7,17 @@ real Flet/Flutter build.
 
 Order of work:
 
-1. Generate the UI version module from the UI project metadata.
-2. Build the Flet Windows application.
-3. Build the AutoSplit converter with PyInstaller.
-4. Validate the UI and converter output trees.
-5. Smoke test the UI executable.
-6. Create and verify the 7z distribution archive.
+1. Build the Flet Windows application.
+2. Build the AutoSplit converter with PyInstaller.
+3. Validate the UI and converter output trees.
+4. Smoke test the UI executable.
+5. Create and verify the 7z distribution archive.
 
-The Flet metadata in ``packages/divergencesplitter-ui/pyproject.toml`` is the
-authority for the build; this script never rewrites project metadata and never
-builds its own ``uv`` environment.
+The workflow generates the UI version module (``tools/generate_ui_version.py``)
+immediately before this script. The Flet metadata in
+``packages/divergencesplitter-ui/pyproject.toml`` is the authority for the
+build; this script never rewrites project metadata and never builds its own
+``uv`` environment.
 """
 
 from __future__ import annotations
@@ -26,12 +27,9 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from generate_ui_version import generate_ui_version
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 UI_PACKAGE = Path("packages") / "divergencesplitter-ui"
-UI_VERSION_MODULE = UI_PACKAGE / "src" / "divergencesplitter_ui" / "_version.py"
 
 UI_ARTIFACT = "DivergenceSplitter"
 CONVERTER_ARTIFACT = "autosplit-converter"
@@ -214,9 +212,6 @@ def smoke_test_cli(executable: Path) -> None:
 
 def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     """Run the full Windows distribution build and return when verified."""
-
-    version = generate_ui_version(root / UI_PACKAGE)
-    print(f"Generated UI version {version}")
 
     run_command(flet_build_command(), cwd=root, env=flet_environment())
     run_command(converter_build_command(), cwd=root)

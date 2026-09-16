@@ -40,15 +40,6 @@ def make_tree(root: Path) -> None:
     (converter_dir / f"{bwd.CONVERTER_ARTIFACT}.exe").write_bytes(b"converter")
 
 
-def make_ui_pyproject(root: Path) -> None:
-    ui = root / bwd.UI_PACKAGE
-    ui.mkdir(parents=True, exist_ok=True)
-    (ui / "pyproject.toml").write_text(
-        '[project]\nname = "divergencesplitter-ui"\nversion = "0.1.0"\n',
-        encoding="utf-8",
-    )
-
-
 class RecordingRunner:
     def __init__(self) -> None:
         self.calls: list[tuple[list[str], Path | None, Mapping[str, str] | None]] = []
@@ -183,7 +174,6 @@ class TestOrchestration:
     def test_runs_build_validate_and_archive(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        make_ui_pyproject(tmp_path)
         make_tree(tmp_path)
         runner = RecordingRunner()
         monkeypatch.setattr(bwd, "run_command", runner)
@@ -195,13 +185,10 @@ class TestOrchestration:
         assert any("pyinstaller" in command for command in commands)
         assert any(command[:2] == ["7z", "a"] for command in commands)
         assert any(command[:2] == ["7z", "t"] for command in commands)
-        assert (tmp_path / bwd.UI_VERSION_MODULE).is_file()
 
     def test_propagates_build_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        make_ui_pyproject(tmp_path)
-
         def runner(args, *, cwd=None, env=None, check=True):
             raise subprocess.CalledProcessError(1, list(args))
 
@@ -213,7 +200,6 @@ class TestOrchestration:
     def test_fails_when_ui_artifact_missing(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        make_ui_pyproject(tmp_path)
         monkeypatch.setattr(bwd, "run_command", RecordingRunner())
 
         with pytest.raises(RuntimeError):

@@ -26,6 +26,8 @@ jobs:
         run: uv sync --locked --all-packages --group build --extra ndi
       - name: Check license inventory
         run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
+      - name: Generate UI version module
+        run: uv run --no-sync python tools/generate_ui_version.py
       - name: Build and verify Windows distribution
         run: uv run --no-sync python tools/build_windows_distribution.py
       - name: Upload Windows distribution archive
