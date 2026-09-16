@@ -15,7 +15,6 @@ dependencies = [
 
 [project.scripts]
 divergencesplitter-ui = "divergencesplitter_ui.main:main"
-divergencesplitter-ui-flet = "divergencesplitter_ui.flet_main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13"]

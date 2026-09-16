@@ -1,8 +1,8 @@
-"""Command-line entry point for the Windows-only desktop UI.
+"""Command-line entry point for the DivergenceSplitter desktop UI.
 
-An optional configuration path preserves command-line startup while the
-settings screen can open a configuration when no path is supplied. No explicit
-start button is added; opening or saving a valid configuration starts a session.
+This launches the Flet application. An optional configuration path preserves
+command-line startup; without one the window opens on the Monitor and a
+configuration can be opened from the Configuration page.
 """
 
 from __future__ import annotations
@@ -12,7 +12,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from divergencesplitter_ui.application import run_configuration
+from divergencesplitter_ui.bootstrap import build_desktop_controller
+from divergencesplitter_ui.flet_application import FletApplication
 
 EXIT_USAGE_ERROR = 2
 
@@ -26,6 +27,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_application(configuration: Path | None) -> FletApplication:
+    """Construct the Flet application with the existing session pipeline."""
+
+    return FletApplication(
+        build_desktop_controller(),
+        initial_configuration=configuration,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -33,7 +43,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else EXIT_USAGE_ERROR
 
-    run_configuration(arguments.configuration)
+    build_application(arguments.configuration).run()
     return 0
 
 
