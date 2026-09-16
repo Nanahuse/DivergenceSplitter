@@ -139,7 +139,8 @@ class ConfigurationPreview:
                     normalized.image,
                     max_width=PREVIEW_MAX_WIDTH,
                     max_height=PREVIEW_MAX_HEIGHT,
-                )
+                ),
+                premultiplied=True,
             )
         except RuntimeError, TimeoutError:
             return changed

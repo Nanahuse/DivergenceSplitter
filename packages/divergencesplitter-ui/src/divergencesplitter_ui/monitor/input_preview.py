@@ -17,7 +17,7 @@ import flet as ft
 from divergencesplitter_ui.frame_preview import prepare_preview
 from divergencesplitter_ui.presentation import ObservableDiagnostics
 
-PREVIEW_FPS = 20.0
+PREVIEW_FPS = 15.0
 PREVIEW_INTERVAL_SECONDS = 1.0 / PREVIEW_FPS
 
 _DiagnosticsProvider = Callable[[], ObservableDiagnostics | None]
@@ -54,7 +54,10 @@ class InputPreviewPanel:
         if frame is None:
             return False
         try:
-            await self._image.render(prepare_preview(frame.image))
+            await self._image.render(
+                prepare_preview(frame.image),
+                premultiplied=True,
+            )
         except RuntimeError, TimeoutError:
             return False
         return True
