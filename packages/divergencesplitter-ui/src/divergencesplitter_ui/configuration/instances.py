@@ -15,7 +15,7 @@ import flet as ft
 
 from divergencesplitter_ui.configuration.dialogs import SCENARIO_EXTENSIONS, FileDialogs
 from divergencesplitter_ui.settings import (
-    EditableApplicationConfiguration,
+    EditableProfile,
     EditPermission,
     SettingsModel,
 )
@@ -61,7 +61,7 @@ class InstancesSection:
 
     def apply(
         self,
-        draft: EditableApplicationConfiguration,
+        draft: EditableProfile,
         permission: EditPermission,
     ) -> bool:
         changed = False
@@ -80,7 +80,7 @@ class InstancesSection:
                 changed |= self._set_enabled(control, enabled)
         return changed
 
-    def _rebuild(self, draft: EditableApplicationConfiguration) -> None:
+    def _rebuild(self, draft: EditableProfile) -> None:
         self._count = len(draft.instances)
         self._rows = [
             self._build_row(index, instance)

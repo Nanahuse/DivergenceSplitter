@@ -38,7 +38,7 @@ def test_camera_preview_opens_without_scenario(monkeypatch, tmp_path) -> None:
     source = FakeSource()
     monkeypatch.setattr(
         "divergencesplitter_ui.camera_preview.build_frame_source",
-        lambda configuration, base_directory: source,
+        lambda configuration: source,
     )
     preview = CameraPreview()
     configuration = CameraSourceConfiguration(
@@ -47,7 +47,7 @@ def test_camera_preview_opens_without_scenario(monkeypatch, tmp_path) -> None:
         False,
     )
 
-    preview.start(configuration, tmp_path)
+    preview.start(configuration)
     assert source.ready.wait(1.0)
     deadline = time.monotonic() + 1.0
     frame = None
@@ -88,10 +88,10 @@ def test_ndi_preview_continues_after_timeout_and_closes_on_worker(
     source = NdiSource("Sender", api=api)
     monkeypatch.setattr(
         "divergencesplitter_ui.camera_preview.build_frame_source",
-        lambda configuration, base_directory: source,
+        lambda configuration: source,
     )
     preview = CameraPreview()
-    preview.start(NdiSourceConfiguration("Sender"), tmp_path)
+    preview.start(NdiSourceConfiguration("Sender"))
     try:
         deadline = time.monotonic() + 2
         frame = None

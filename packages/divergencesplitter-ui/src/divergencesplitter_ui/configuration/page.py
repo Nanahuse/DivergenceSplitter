@@ -2,7 +2,7 @@
 
 The page uses the single shared ``SettingsModel`` and never keeps a second
 settings state. It renders the draft, delegates New/Open/
-Save/Save As to ``ConfigurationActions``, and drives preview lifecycle through
+Save/Save As to ``ProfileActions``, and drives preview lifecycle through
 ``PreviewController``. Runtime restart happens only through ``SessionController``
 after a successful save.
 """
@@ -10,9 +10,13 @@ after a successful save.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import flet as ft
 from divergencesplitter.frame.models import Frame
+from divergencesplitter_runtime.configuration.app_settings_json import (
+    default_app_settings_path,
+)
 from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     NdiSourceConfiguration,
@@ -22,7 +26,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
 )
 
-from divergencesplitter_ui.configuration.actions import ConfigurationActions
+from divergencesplitter_ui.configuration.actions import ProfileActions
 from divergencesplitter_ui.configuration.dialogs import FileDialogs
 from divergencesplitter_ui.configuration.frame_processing import FrameProcessingSection
 from divergencesplitter_ui.configuration.instances import InstancesSection
@@ -35,7 +39,7 @@ from divergencesplitter_ui.configuration.source import SourceSection
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.session import SessionController, SessionState, is_active
 from divergencesplitter_ui.settings import (
-    EditableApplicationConfiguration,
+    EditableProfile,
     SettingsModel,
     SourceType,
     edit_permission,
@@ -57,11 +61,17 @@ class ConfigurationPage:
         ndi_discovery: NdiDiscovery | None = None,
         preview: ConfigurationPreview | None = None,
         preview_controller: PreviewController | None = None,
+        settings_path: Path | None = None,
     ) -> None:
         self._controller = controller
         self._model = model
         self._dialogs = dialogs
-        self._actions = ConfigurationActions(controller, model, dialogs)
+        self._settings_path = (
+            settings_path if settings_path is not None else default_app_settings_path()
+        )
+        self._actions = ProfileActions(
+            controller, model, dialogs, settings_path=self._settings_path
+        )
         self._preview = preview if preview is not None else ConfigurationPreview()
         self._preview_controller = (
             preview_controller
@@ -84,18 +94,22 @@ class ConfigurationPage:
             model, dialogs, on_changed=self._sync_preview_now
         )
         self._status = ft.Text("", color=ft.Colors.ORANGE_300)
-        self._config_path = ft.TextField(value="", read_only=True, expand=True)
-        self._new_button = ft.OutlinedButton(content="New...", on_click=self._on_new)
-        self._open_button = ft.OutlinedButton(content="Open...", on_click=self._on_open)
+        self._profile_path = ft.TextField(value="", read_only=True, expand=True)
+        self._new_button = ft.OutlinedButton(
+            content="New Profile...", on_click=self._on_new
+        )
+        self._open_button = ft.OutlinedButton(
+            content="Open Profile...", on_click=self._on_open
+        )
         self._save_button = ft.OutlinedButton(content="Save", on_click=self._on_save)
         self._save_as_button = ft.OutlinedButton(
-            content="Save As...", on_click=self._on_save_as
+            content="Save Profile As...", on_click=self._on_save_as
         )
         self._opened_camera = ft.Text(capture_settings_label(None))
         self._log_level = ft.Dropdown(
             label="Logging (OFF / DEBUG: all details)",
             options=[ft.DropdownOption(key="OFF"), ft.DropdownOption(key="DEBUG")],
-            value="DEBUG",
+            value="OFF",
             on_select=self._on_log_level,
         )
         self._reaction_time = ft.TextField(
@@ -103,14 +117,15 @@ class ConfigurationPage:
             value="0",
             width=200,
             keyboard_type=ft.KeyboardType.NUMBER,
-            on_change=self._on_reaction_time,
+            on_submit=self._on_reaction_time_committed,
+            on_blur=self._on_reaction_time_committed,
         )
         self._control = ft.Column(
             controls=[
                 ft.Text("Configuration", size=20),
                 ft.Row(
                     controls=[
-                        self._config_path,
+                        self._profile_path,
                         self._new_button,
                         self._open_button,
                         self._save_button,
@@ -161,7 +176,7 @@ class ConfigurationPage:
         return self._control
 
     @property
-    def actions(self) -> ConfigurationActions:
+    def actions(self) -> ProfileActions:
         return self._actions
 
     @property
@@ -214,11 +229,11 @@ class ConfigurationPage:
         draft = self._model.draft
         path_text = ""
         if draft is not None:
-            path_text = str(draft.configuration_path)
+            path_text = str(draft.profile_path)
             if self._model.is_dirty:
                 path_text += " *"
-        if self._config_path.value != path_text:
-            self._config_path.value = path_text
+        if self._profile_path.value != path_text:
+            self._profile_path.value = path_text
             changed = True
         if self._status.value != self._actions.status:
             self._status.value = self._actions.status
@@ -233,8 +248,8 @@ class ConfigurationPage:
             changed |= self._source.apply(draft, permission)
             changed |= self._frame_processing.apply(draft, permission)
             changed |= self._instances.apply(draft, permission)
-            changed |= self._sync_common_fields(draft, permission)
             self._sync_preview(draft)
+        changed |= self._sync_common_fields(permission)
         return changed
 
     def populate(self) -> None:
@@ -252,15 +267,14 @@ class ConfigurationPage:
         self._preview_controller.stop()
         self._source.stop_ndi()
 
-    def _sync_common_fields(
-        self, draft: EditableApplicationConfiguration, permission
-    ) -> bool:
+    def _sync_common_fields(self, permission) -> bool:
         changed = False
-        if self._log_level.value != draft.log_level:
-            self._log_level.value = draft.log_level
+        settings = self._model.app_settings
+        if self._log_level.value != settings.log_level:
+            self._log_level.value = settings.log_level
             changed = True
-        if self._reaction_time.value != str(draft.reaction_time_ms):
-            self._reaction_time.value = str(draft.reaction_time_ms)
+        if self._reaction_time.value != str(settings.reaction_time_ms):
+            self._reaction_time.value = str(settings.reaction_time_ms)
             changed = True
         changed |= self._set_enabled(self._log_level, permission.log_level)
         changed |= self._set_enabled(self._reaction_time, permission.reaction_time)
@@ -271,7 +285,7 @@ class ConfigurationPage:
         if draft is not None:
             self._sync_preview(draft)
 
-    def _sync_preview(self, draft: EditableApplicationConfiguration) -> None:
+    def _sync_preview(self, draft: EditableProfile) -> None:
         transform = source_transform_from_editable(draft)
         self._preview_controller.update_transform(transform)
         if is_active(self._controller.state):
@@ -291,12 +305,11 @@ class ConfigurationPage:
         except (SourceConfigurationError, ValueError) as error:
             self._actions.set_status(f"preview: {error}")
             return
-        base_directory = draft.configuration_path.parent
         self._pending_preview_command = lambda: self._preview_controller.start_draft(
-            configuration, base_directory
+            configuration
         )
 
-    def _preview_key(self, draft: EditableApplicationConfiguration) -> tuple | None:
+    def _preview_key(self, draft: EditableProfile) -> tuple | None:
         source = draft.source
         if source.selected_type is SourceType.CAMERA:
             camera = source.camera
@@ -312,7 +325,7 @@ class ConfigurationPage:
 
     def _preview_configuration(
         self,
-        draft: EditableApplicationConfiguration,
+        draft: EditableProfile,
         transform: SourceTransformConfiguration,
     ) -> CameraSourceConfiguration | NdiSourceConfiguration:
         source = draft.source
@@ -337,7 +350,7 @@ class ConfigurationPage:
         Editing the draft only changes the draft and synchronizes the preview;
         it never stops or restarts the session. While a session runs, the
         Configuration preview keeps showing its raw input frame, so the draft
-        change is deferred until Save. Only ``ConfigurationActions`` reloads the
+        change is deferred until Save. Only ``ProfileActions`` reloads the
         controlled runtime, and only after a successful save.
         """
 
@@ -367,21 +380,23 @@ class ConfigurationPage:
         self._request_update()
 
     def _on_log_level(self, event: ft.Event[ft.Dropdown]) -> None:
-        # Log level preserves the existing configuration semantics: it is
-        # applied to the running diagnostics immediately (live) while the draft
-        # keeps it for the next save. Applying it never restarts the session.
+        # Log level is App Settings: it is persisted and applied live, and it
+        # never marks the Profile dirty or restarts the runtime.
         level = self._log_level.value or "DEBUG"
-        self._model.set_log_level(level)
-        self._controller.set_log_level(level)
+        self._actions.set_log_level(level)
+        self._request_update()
 
-    def _on_reaction_time(self, event: ft.Event[ft.TextField]) -> None:
-        # Reaction time follows the draft like every other runtime option; a
-        # running session keeps its loaded value until Save reloads it.
+    def _on_reaction_time_committed(self, event: ft.Event[ft.TextField]) -> None:
+        # Reaction time is App Settings too. Only a committed value (submit or
+        # blur) is applied, so a partial number never restarts the runtime.
         try:
             value = int((self._reaction_time.value or "").strip())
         except ValueError:
+            self._actions.set_status("reaction time must be a non-negative integer")
+            self._request_update()
             return
-        self._model.set_reaction_time_ms(value)
+        self._actions.commit_reaction_time(value)
+        self._request_update()
 
     def _request_update(self) -> None:
         try:

@@ -25,20 +25,10 @@ from divergencesplitter_runtime.cli import (
     _StatusReporter,
     main,
 )
-from divergencesplitter_runtime.configuration.json_file import (
-    ConfigurationValidationError,
-)
-
-
-def empty_scenario() -> Scenario:
-    condition = Detected(MeanBrightnessDetector(), -1.0)
-    return Scenario(condition, condition, None, ())
-
-
 from divergencesplitter_runtime.configuration.models import (
-    ApplicationConfiguration,
+    AppSettings,
     InstanceConfiguration,
-    RuntimeConfiguration,
+    Profile,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.scenario_loader import (
@@ -51,22 +41,29 @@ from divergencesplitter_runtime.configuration.scenario_module import (
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
 )
+from divergencesplitter_runtime.configuration.strict_json import (
+    ConfigurationValidationError,
+)
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.metrics import RuntimeMetricsSnapshot
 
 
-def make_configuration() -> ApplicationConfiguration:
-    return ApplicationConfiguration(
+def empty_scenario() -> Scenario:
+    condition = Detected(MeanBrightnessDetector(), -1.0)
+    return Scenario(condition, condition, None, ())
+
+
+def make_profile() -> Profile:
+    return Profile(
         1,
-        VideoSourceConfiguration("run.mp4"),
+        VideoSourceConfiguration(str(Path.cwd() / "run.mp4")),
         (
             InstanceConfiguration(
                 LiveSplitConnection("rpc", "event"),
-                "./scenario.py",
+                str(Path.cwd() / "scenario.py"),
             ),
         ),
-        RuntimeConfiguration("INFO"),
     )
 
 
@@ -134,18 +131,27 @@ def reset_fake_runtime() -> None:
     FakeStatusReporter.instances = []
 
 
+@pytest.fixture(autouse=True)
+def isolate_app_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Keep the CLI tests away from the real per-user settings file.
+    monkeypatch.setattr(
+        "divergencesplitter_runtime.cli.load_app_settings_or_default",
+        lambda path: AppSettings(1, "DEBUG", 0),
+    )
+
+
 def run_with_fake_runtime(
     outcome: BaseException | None = None,
 ) -> tuple[int, str, FakeRuntime, tuple[ScenarioInstance, ...], object]:
     scenario = empty_scenario()
     frame_source = object()
-    configuration = make_configuration()
+    profile = make_profile()
     stderr = StringIO()
     FakeRuntime.outcome = outcome
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=configuration,
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=profile,
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -159,7 +165,7 @@ def run_with_fake_runtime(
         patch("divergencesplitter_runtime.cli._StatusReporter", FakeStatusReporter),
         patch("sys.stderr", stderr),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
     instances = FakeRuntime.instances[0].loaded_instances
     return result, stderr.getvalue(), FakeRuntime.instances[0], instances, frame_source
 
@@ -196,10 +202,10 @@ def test_invalid_arguments_return_usage_error(arguments: list[str]) -> None:
 
     assert result == EXIT_USAGE_ERROR
     assert "cli.usage_failed" in stderr.getvalue()
-    assert "configuration" in stderr.getvalue()
+    assert "profile" in stderr.getvalue()
 
 
-def test_missing_configuration_returns_configuration_error(tmp_path: Path) -> None:
+def test_missing_profile_returns_configuration_error(tmp_path: Path) -> None:
     stderr = StringIO()
 
     with patch("sys.stderr", stderr):
@@ -210,17 +216,17 @@ def test_missing_configuration_returns_configuration_error(tmp_path: Path) -> No
     assert "FileNotFoundError" in stderr.getvalue()
 
 
-def test_invalid_configuration_returns_startup_validation_error() -> None:
+def test_invalid_profile_returns_startup_validation_error() -> None:
     stderr = StringIO()
 
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            side_effect=ConfigurationValidationError("invalid configuration"),
+            "divergencesplitter_runtime.cli.load_profile",
+            side_effect=ConfigurationValidationError("invalid profile"),
         ),
         patch("sys.stderr", stderr),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     assert result == EXIT_STARTUP_VALIDATION_ERROR
     assert "cli.startup_validation_failed" in stderr.getvalue()
@@ -229,12 +235,12 @@ def test_invalid_configuration_returns_startup_validation_error() -> None:
 
 def test_source_resolution_error_prevents_runtime_construction() -> None:
     stderr = StringIO()
-    configuration = make_configuration()
+    profile = make_profile()
 
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=configuration,
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=profile,
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -246,7 +252,7 @@ def test_source_resolution_error_prevents_runtime_construction() -> None:
         ),
         patch("sys.stderr", stderr),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     assert result == EXIT_STARTUP_VALIDATION_ERROR
     assert "select the camera again" in stderr.getvalue()
@@ -255,21 +261,25 @@ def test_source_resolution_error_prevents_runtime_construction() -> None:
 
 def test_missing_module_returns_scenario_module_error(tmp_path: Path) -> None:
     stderr = StringIO()
-    configuration = ApplicationConfiguration(
+    profile = Profile(
         1,
-        VideoSourceConfiguration("run.mp4"),
-        (InstanceConfiguration(LiveSplitConnection("rpc", "event"), "./missing.py"),),
-        RuntimeConfiguration("INFO"),
+        VideoSourceConfiguration(str(Path.cwd() / "run.mp4")),
+        (
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"),
+                str(tmp_path / "missing.py"),
+            ),
+        ),
     )
 
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=configuration,
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=profile,
         ),
         patch("sys.stderr", stderr),
     ):
-        result = main([str(tmp_path / "config.json")])
+        result = main([str(tmp_path / "profile.json")])
 
     assert result == EXIT_CONFIGURATION_LOAD_ERROR
     assert "cli.scenario_module_failed" in stderr.getvalue()
@@ -282,8 +292,8 @@ def test_module_system_exit_is_reported_as_module_error() -> None:
 
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=make_configuration(),
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=make_profile(),
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -291,7 +301,7 @@ def test_module_system_exit_is_reported_as_module_error() -> None:
         ),
         patch("sys.stderr", stderr),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     assert result == EXIT_CONFIGURATION_LOAD_ERROR
     assert 'exception_type="SystemExit"' in stderr.getvalue()
@@ -308,8 +318,8 @@ def test_module_validation_error_is_reported_with_each_cause() -> None:
 
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=make_configuration(),
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=make_profile(),
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -317,7 +327,7 @@ def test_module_validation_error_is_reported_with_each_cause() -> None:
         ),
         patch("sys.stderr", stderr),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     output = stderr.getvalue()
     assert result == EXIT_STARTUP_VALIDATION_ERROR
@@ -336,8 +346,8 @@ def test_scenario_loader_error_is_reported_as_module_error() -> None:
 
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=make_configuration(),
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=make_profile(),
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -345,7 +355,7 @@ def test_scenario_loader_error_is_reported_as_module_error() -> None:
         ),
         patch("sys.stderr", stderr),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     assert result == EXIT_CONFIGURATION_LOAD_ERROR
     assert "cli.scenario_module_failed" in stderr.getvalue()
@@ -390,8 +400,8 @@ def test_keyboard_interrupt_during_module_load_returns_130() -> None:
 
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=make_configuration(),
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=make_profile(),
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -399,7 +409,7 @@ def test_keyboard_interrupt_during_module_load_returns_130() -> None:
         ),
         patch("sys.stderr", stderr),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     assert result == EXIT_INTERRUPTED
     assert "cli.interrupted" in stderr.getvalue()
@@ -418,8 +428,8 @@ def test_stderr_failure_does_not_replace_runtime_exit_status() -> None:
     FakeRuntime.outcome = RuntimeError("boom")
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=make_configuration(),
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=make_profile(),
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -432,7 +442,7 @@ def test_stderr_failure_does_not_replace_runtime_exit_status() -> None:
         patch("divergencesplitter_runtime.cli.ApplicationRuntime", FakeRuntime),
         patch("sys.stderr", BrokenStderr()),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     assert result == EXIT_RUNTIME_ERROR
 
@@ -450,7 +460,7 @@ def test_diagnostic_formatting_failure_does_not_stop_runtime() -> None:
     assert result == EXIT_COMPLETED
 
 
-def test_cli_load_resizes_references(monkeypatch, tmp_path) -> None:
+def test_cli_load_resizes_references(monkeypatch) -> None:
     from dataclasses import replace
 
     from divergencesplitter.detector import (
@@ -473,8 +483,8 @@ def test_cli_load_resizes_references(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         "divergencesplitter_runtime.cli.load_scenario", lambda path: scenario
     )
-    original = make_configuration()
-    configuration = replace(
+    original = make_profile()
+    profile = replace(
         original,
         source=replace(
             original.source,
@@ -483,27 +493,22 @@ def test_cli_load_resizes_references(monkeypatch, tmp_path) -> None:
             ),
         ),
     )
-    loaded = _load_instances(configuration, tmp_path)[0].scenario.start_condition
+    loaded = _load_instances(profile)[0].scenario.start_condition
     assert isinstance(loaded, Detected)
     assert loaded.detector.reference_images[0].image == ((0,),)
 
 
-def test_reaction_time_is_forwarded_to_the_runtime() -> None:
-    configuration = ApplicationConfiguration(
-        1,
-        VideoSourceConfiguration("run.mp4"),
-        (
-            InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"),
-                "./scenario.py",
-            ),
-        ),
-        RuntimeConfiguration("INFO", 30),
+def test_reaction_time_is_forwarded_to_the_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "divergencesplitter_runtime.cli.load_app_settings_or_default",
+        lambda path: AppSettings(1, "OFF", 30),
     )
     with (
         patch(
-            "divergencesplitter_runtime.cli.load_configuration",
-            return_value=configuration,
+            "divergencesplitter_runtime.cli.load_profile",
+            return_value=make_profile(),
         ),
         patch(
             "divergencesplitter_runtime.cli.load_scenario",
@@ -517,7 +522,7 @@ def test_reaction_time_is_forwarded_to_the_runtime() -> None:
         patch("divergencesplitter_runtime.cli._StatusReporter", FakeStatusReporter),
         patch("sys.stderr", StringIO()),
     ):
-        result = main(["config.json"])
+        result = main(["profile.json"])
 
     assert result == EXIT_COMPLETED
     assert FakeRuntime.instances[0].reaction_time_ms == 30

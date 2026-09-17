@@ -11,14 +11,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from dataclasses import replace
 from enum import StrEnum
 from pathlib import Path
 
 import flet as ft
-from divergencesplitter_runtime.configuration.json_file import (
+from divergencesplitter_runtime.configuration.app_settings_json import (
+    default_app_settings,
+    default_app_settings_path,
+    load_app_settings,
+    save_app_settings,
+)
+from divergencesplitter_runtime.configuration.models import AppSettings
+from divergencesplitter_runtime.configuration.profile_json import load_profile
+from divergencesplitter_runtime.configuration.strict_json import (
     ConfigurationFileError,
     ConfigurationValidationError,
-    load_configuration,
 )
 
 from divergencesplitter_ui.about_page import AboutView
@@ -29,7 +37,7 @@ from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
 from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.input_preview import PREVIEW_INTERVAL_SECONDS
 from divergencesplitter_ui.monitor.page import Monitor
-from divergencesplitter_ui.session import SessionController
+from divergencesplitter_ui.session import SessionAlreadyActiveError, SessionController
 from divergencesplitter_ui.settings import SettingsModel, WindowsCameraEnumerator
 
 WINDOW_WIDTH = 1200
@@ -64,18 +72,24 @@ class FletApplication:
         self,
         controller: SessionController,
         *,
-        initial_configuration: Path | None = None,
+        initial_profile: Path | None = None,
         coordinator: MonitorUpdateCoordinator | None = None,
         settings_model: SettingsModel | None = None,
+        settings_path: Path | None = None,
     ) -> None:
         self._controller = controller
-        self._initial_configuration = initial_configuration
+        self._initial_profile = initial_profile
         self._coordinator = coordinator or MonitorUpdateCoordinator(controller)
         self._model = (
             settings_model
             if settings_model is not None
             else SettingsModel(WindowsCameraEnumerator())
         )
+        self._settings_path = (
+            settings_path if settings_path is not None else default_app_settings_path()
+        )
+        self._startup_error: str | None = None
+        self._load_app_settings()
         self._page: ft.Page | None = None
         self._monitor: Monitor | None = None
         self._diagnostics: DiagnosticsPanel | None = None
@@ -102,17 +116,86 @@ class FletApplication:
     def active_view(self) -> AppView:
         return self._active_view
 
+    def _load_app_settings(self) -> None:
+        """Load App Settings at startup, discarding an invalid file entirely.
+
+        A missing file is the normal first-run case. An invalid file must not
+        contribute any field, so in particular its ``last_profile`` is never used
+        to restore a Profile. Nothing is written back here, so a broken file is
+        never silently overwritten.
+        """
+
+        path = self._settings_path
+        if not path.exists():
+            self._model.load_app_settings(default_app_settings())
+            return
+        try:
+            settings = load_app_settings(path)
+        except (ConfigurationFileError, ConfigurationValidationError) as error:
+            self._model.load_app_settings(default_app_settings())
+            self._startup_error = f"invalid app settings ignored: {error}"
+            return
+        self._model.load_app_settings(settings)
+
+    def _runtime_app_settings(self) -> AppSettings:
+        # last_profile is lifecycle-owned and is never handed to the runtime.
+        return replace(self._model.app_settings_document(), last_profile=None)
+
+    def _save_app_settings(self) -> bool:
+        try:
+            save_app_settings(self._settings_path, self._model.app_settings_document())
+        except OSError as error:
+            self._set_startup_status(f"could not save app settings: {error}")
+            return False
+        return True
+
+    def _set_startup_status(self, message: str) -> None:
+        if self._configuration is not None:
+            self._configuration.actions.set_status(message)
+
     def run(self) -> None:
         """Run the Flet app until the window is closed and cleaned up."""
 
         ft.run(self._main)
 
-    def start_session(self, configuration: Path | None = None) -> None:
-        """Start the controller's existing session thread when a path exists."""
+    def start_session(self, profile: Path | None = None) -> bool:
+        """Start a Profile session using the startup precedence.
 
-        path = self._initial_configuration if configuration is None else configuration
-        if path is not None:
-            self._controller.start(path)
+        The explicit command-line Profile wins over ``last_profile``; without
+        either, no session is started. A failure to load the chosen Profile
+        leaves the application running with no Profile selected.
+        """
+
+        explicit = self._initial_profile if profile is None else profile
+        if explicit is not None:
+            return self._start_profile(explicit)
+        last_profile = self._model.last_profile
+        if last_profile is not None:
+            return self._start_profile(last_profile)
+        return False
+
+    def _start_profile(self, path: Path) -> bool:
+        try:
+            resolved = Path(path).expanduser().resolve()
+        except OSError as error:
+            self._set_startup_status(f"could not open profile: {error}")
+            return False
+        try:
+            profile = load_profile(resolved)
+        except (ConfigurationFileError, ConfigurationValidationError) as error:
+            self._set_startup_status(f"could not open profile: {error}")
+            return False
+        self._model.open_profile(profile, resolved)
+        # A successfully loaded startup Profile becomes last_profile. If only
+        # the App Settings write fails, the Profile itself stays selected.
+        self._model.set_last_profile(resolved)
+        self._save_app_settings()
+        try:
+            self._controller.start(resolved, app_settings=self._runtime_app_settings())
+        except SessionAlreadyActiveError as error:
+            self._set_startup_status(str(error))
+            return False
+        return True
 
     async def _main(self, page: ft.Page) -> None:
         self._page = page
@@ -126,14 +209,19 @@ class FletApplication:
         dialogs = FletFileDialogs(page, file_picker)
         self._monitor = Monitor()
         self._diagnostics = DiagnosticsPanel()
-        self._configuration = ConfigurationPage(self._controller, self._model, dialogs)
+        self._configuration = ConfigurationPage(
+            self._controller,
+            self._model,
+            dialogs,
+            settings_path=self._settings_path,
+        )
         self._about = AboutView()
         self._error_dialog = ErrorDialog(
             show_dialog=page.show_dialog,
             hide_dialog=page.pop_dialog,
         )
-        if self._initial_configuration is not None:
-            self._load_initial_configuration(self._initial_configuration)
+        if self._startup_error is not None:
+            self._configuration.actions.set_status(self._startup_error)
 
         self._monitor_view = ft.Container(self._monitor.control, expand=True)
         self._diagnostics_view = ft.Container(
@@ -193,16 +281,6 @@ class FletApplication:
                 await asyncio.sleep(_MAIN_POLL_SECONDS)
         finally:
             await self.shutdown()
-
-    def _load_initial_configuration(self, path: Path) -> None:
-        if self._configuration is None:
-            return
-        try:
-            configuration = load_configuration(path)
-        except (ConfigurationFileError, ConfigurationValidationError) as error:
-            self._configuration.actions.set_status(str(error))
-            return
-        self._model.open_configuration(configuration, path)
 
     def _on_navigate(self, event: ft.Event[ft.NavigationRail]) -> None:
         selected = int(event.control.selected_index or 0)
