@@ -53,7 +53,7 @@ class AssetLicense:
     """A non-Python asset redistributed inside the application.
 
     Unlike ``LicenseEntry`` it has no package version because it is not a
-    distribution; the bundled Noto Sans JP font is conveyed this way.
+    distribution; non-Python assets are conveyed this way.
     """
 
     name: str

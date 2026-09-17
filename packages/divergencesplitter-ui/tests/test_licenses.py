@@ -12,7 +12,6 @@ from divergencesplitter_ui.licenses import (
     LicenseInventory,
     LicenseInventoryError,
     LicenseSection,
-    bundled_inventory,
     license_sections,
     load_inventory,
 )
@@ -51,9 +50,9 @@ def package(**fields: Any) -> dict[str, Any]:
 
 def asset(**fields: Any) -> dict[str, Any]:
     defaults = {
-        "name": "Noto Sans JP",
-        "license": "SIL Open Font License 1.1",
-        "license_text": "the OFL text",
+        "name": "sample-asset",
+        "license": "MIT",
+        "license_text": "the asset license text",
     }
     defaults.update(fields)
     return defaults
@@ -110,7 +109,7 @@ class TestLoadInventory:
         inventory = load([package()], assets=[asset()])
 
         assert inventory.assets == (
-            AssetLicense("Noto Sans JP", "SIL Open Font License 1.1", "the OFL text"),
+            AssetLicense("sample-asset", "MIT", "the asset license text"),
         )
 
     def test_missing_asset_field_raises(self) -> None:
@@ -212,11 +211,7 @@ class TestLicenseSections:
                 "the GPL text",
             ),
             packages=(LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "the BSD text"),),
-            assets=(
-                AssetLicense(
-                    "Noto Sans JP", "SIL Open Font License 1.1", "the OFL text"
-                ),
-            ),
+            assets=(AssetLicense("sample-asset", "MIT", "the asset license text"),),
         )
 
     def test_application_section_comes_first(self) -> None:
@@ -239,16 +234,6 @@ class TestLicenseSections:
         sections = license_sections(self.make_inventory())
 
         assert sections[2] == LicenseSection(
-            title="Noto Sans JP — SIL Open Font License 1.1",
-            text="the OFL text",
+            title="sample-asset — MIT",
+            text="the asset license text",
         )
-
-    def test_bundled_inventory_exposes_noto_sans_jp_license(self) -> None:
-        sections = license_sections(bundled_inventory())
-
-        noto = [
-            section for section in sections if section.title.startswith("Noto Sans JP")
-        ]
-        assert len(noto) == 1
-        assert "SIL Open Font License" in noto[0].title
-        assert "SIL OPEN FONT LICENSE Version 1.1" in noto[0].text
