@@ -60,9 +60,6 @@ SCHEMA_VERSION = 3
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "GPL-3.0-only"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
-NOTO_SANS_JP_NAME = "Noto Sans JP"
-NOTO_SANS_JP_LICENSE = "SIL Open Font License 1.1"
-NOTO_SANS_JP_LICENSE_PATH = UI_MODULE_ROOT / "assets" / "fonts" / "OFL.txt"
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
 # Canonical license texts vendored for distributions that declare an SPDX
@@ -348,23 +345,6 @@ def application_entry() -> ApplicationEntry:
     }
 
 
-def bundled_assets() -> list[AssetEntry]:
-    """Return the non-Python assets redistributed inside the executable.
-
-    The bundled Noto Sans JP font is not a Python distribution, so it is
-    inventoried as an asset together with the OFL license text that accompanies
-    the font file in the UI package.
-    """
-
-    return [
-        {
-            "name": NOTO_SANS_JP_NAME,
-            "license": NOTO_SANS_JP_LICENSE,
-            "license_text": NOTO_SANS_JP_LICENSE_PATH.read_text(encoding="utf-8"),
-        }
-    ]
-
-
 def build_inventory(
     closure: dict[str, metadata.Distribution],
 ) -> InventoryDocument:
@@ -391,7 +371,7 @@ def build_inventory(
         "schema_version": SCHEMA_VERSION,
         "application": application_entry(),
         "packages": packages,
-        "assets": bundled_assets(),
+        "assets": [],
     }
 
 
