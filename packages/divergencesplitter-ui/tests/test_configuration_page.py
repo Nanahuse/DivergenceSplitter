@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -9,14 +10,13 @@ import flet as ft
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter.frame.ndi import NdiSupport
 from divergencesplitter_runtime.configuration.models import (
-    ApplicationConfiguration,
     CameraBackend,
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
+    Profile,
     ResizeInterpolation,
-    RuntimeConfiguration,
 )
 from divergencesplitter_ui.configuration.page import ConfigurationPage
 from divergencesplitter_ui.configuration.preview import PreviewController
@@ -34,6 +34,12 @@ from divergencesplitter_ui.settings import (
     SettingsModel,
     SourceType,
 )
+
+BASE = Path.cwd()
+
+
+def p(name: str) -> str:
+    return str(BASE / name)
 
 
 class FakeCameraEnumerator:
@@ -67,7 +73,7 @@ class FakeController:
         self.join_calls = 0
         self.log_levels: list[str] = []
 
-    def start(self, path) -> None:
+    def start(self, path, *, app_settings) -> None:
         if self.state in {
             SessionState.LOADING,
             SessionState.CONNECTING,
@@ -133,8 +139,8 @@ class FakePreviewController:
     def update_transform(self, transform) -> None:
         self.transforms.append(transform)
 
-    def start_draft(self, configuration, base_directory) -> None:
-        self.started.append((configuration, base_directory))
+    def start_draft(self, configuration) -> None:
+        self.started.append(configuration)
 
     def stop(self) -> None:
         self.stop_calls += 1
@@ -154,8 +160,8 @@ class FakePreviewController:
         return None
 
 
-def camera_configuration() -> ApplicationConfiguration:
-    return ApplicationConfiguration(
+def camera_profile() -> Profile:
+    return Profile(
         version=1,
         source=CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 7),
@@ -163,29 +169,29 @@ def camera_configuration() -> ApplicationConfiguration:
             False,
         ),
         instances=(
-            InstanceConfiguration(LiveSplitConnection("rpc", "event"), "scenario.py"),
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"), p("scenario.py")
+            ),
         ),
-        runtime=RuntimeConfiguration("INFO"),
     )
 
 
 def make_page(
     *,
-    configuration: ApplicationConfiguration | None = None,
+    profile: Profile | None = None,
     ndi: FakeNdiDiscovery | None = None,
     controller: FakeController | None = None,
     preview: FakePreviewController | None = None,
 ) -> ConfigurationPage:
     model = SettingsModel(FakeCameraEnumerator())
-    model.open_configuration(
-        configuration or camera_configuration(), Path("config.json")
-    )
+    model.open_profile(profile or camera_profile(), Path("config.json"))
     return ConfigurationPage(
         cast(SessionController, controller or FakeController()),
         model,
         FakeDialogs(),
         ndi_discovery=cast(NdiDiscovery, ndi or FakeNdiDiscovery()),
         preview_controller=cast(PreviewController, preview or FakePreviewController()),
+        settings_path=Path(tempfile.mkdtemp()) / "settings.json",
     )
 
 
@@ -390,12 +396,11 @@ class TestTick:
     def test_dirty_indicator_and_permissions(self) -> None:
         page = make_page()
         assert page.tick(SessionState.IDLE, visible=True) is True
-        assert page._config_path.value == "config.json"
+        assert page._profile_path.value == "config.json"
 
-        page._model.set_log_level("OFF")
+        page._model.set_instance_scenario(0, p("other.py"))
         page.tick(SessionState.IDLE, visible=True)
-        assert page._config_path.value.endswith(" *")
-        assert page._log_level.value == "OFF"
+        assert page._profile_path.value.endswith(" *")
 
     def test_transition_state_disables_source_editing(self) -> None:
         page = make_page()
@@ -557,21 +562,29 @@ class TestUnsavedEditsDoNotStopRuntime:
         page._log_level.value = "OFF"
         fire(page._on_log_level, page._log_level)
 
-        assert page._model.draft is not None
-        assert page._model.draft.log_level == "OFF"
+        assert page._model.app_settings.log_level == "OFF"
         assert controller.log_levels == ["OFF"]
+        assert not page._model.is_dirty
         self._assert_runtime_untouched(controller)
 
-    def test_reaction_time_edits_draft_only(self) -> None:
+    def test_reaction_time_commit_reloads_running_profile(self) -> None:
         page, controller = self._running_page()
 
         page._reaction_time.value = "30"
-        fire(page._on_reaction_time, page._reaction_time)
+        fire(page._on_reaction_time_committed, page._reaction_time)
 
-        assert page._model.draft is not None
-        assert page._model.draft.reaction_time_ms == 30
-        self._assert_runtime_untouched(controller)
-        assert page._model.is_dirty
+        assert page._model.app_settings.reaction_time_ms == 30
+        assert not page._model.is_dirty
+        assert controller.request_stop_calls == 1
+
+    def test_invalid_reaction_time_does_not_reload(self) -> None:
+        page, controller = self._running_page()
+
+        page._reaction_time.value = "abc"
+        fire(page._on_reaction_time_committed, page._reaction_time)
+
+        assert controller.request_stop_calls == 0
+        assert page._model.app_settings.reaction_time_ms == 0
 
     def test_draft_change_does_not_transition_session_state(self) -> None:
         page, controller = self._running_page()

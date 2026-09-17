@@ -25,7 +25,7 @@ from divergencesplitter_ui.settings import (
     SOURCE_TYPE_LABELS,
     CameraDevice,
     CameraMode,
-    EditableApplicationConfiguration,
+    EditableProfile,
     EditPermission,
     SettingsModel,
     SourceType,
@@ -166,7 +166,7 @@ class SourceSection:
     def stop_ndi(self) -> None:
         self._ndi_discovery.join(2.0)
 
-    def populate(self, draft: EditableApplicationConfiguration) -> None:
+    def populate(self, draft: EditableProfile) -> None:
         """Refresh camera modes and NDI sources from the draft."""
 
         self._video_path.value = draft.source.video.path
@@ -181,7 +181,7 @@ class SourceSection:
 
     def apply(
         self,
-        draft: EditableApplicationConfiguration,
+        draft: EditableProfile,
         permission: EditPermission,
     ) -> bool:
         """Sync values and enablement from the draft; return whether it changed."""

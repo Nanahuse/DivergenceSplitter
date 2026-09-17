@@ -1,20 +1,28 @@
-from divergencesplitter_runtime.configuration.json_file import (
-    load_configuration,
-    save_configuration,
+from divergencesplitter_runtime.configuration.app_settings_json import (
+    default_app_settings,
+    default_app_settings_path,
+    load_app_settings,
+    load_app_settings_or_default,
+    save_app_settings,
 )
 from divergencesplitter_runtime.configuration.models import (
-    ApplicationConfiguration,
+    AppSettings,
     CameraBackend,
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
     CropConfiguration,
     InstanceConfiguration,
+    NdiSourceConfiguration,
+    Profile,
     ResizeConfiguration,
-    RuntimeConfiguration,
     SourceConfiguration,
     SourceTransformConfiguration,
     VideoSourceConfiguration,
+)
+from divergencesplitter_runtime.configuration.profile_json import (
+    load_profile,
+    save_profile,
 )
 from divergencesplitter_runtime.configuration.scenario_loader import (
     ScenarioLoaderError,
@@ -31,7 +39,10 @@ from divergencesplitter_runtime.configuration.scenario_yaml import (
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     build_frame_source,
-    resolve_configuration_path,
+)
+from divergencesplitter_runtime.configuration.strict_json import (
+    ConfigurationFileError,
+    ConfigurationValidationError,
 )
 from divergencesplitter_runtime.configuration.validation import (
     validate_instances,
@@ -40,15 +51,18 @@ from divergencesplitter_runtime.configuration.validation import (
 )
 
 __all__ = [
-    "ApplicationConfiguration",
+    "AppSettings",
     "CameraBackend",
     "CameraDeviceConfiguration",
     "CameraModeConfiguration",
     "CameraSourceConfiguration",
+    "ConfigurationFileError",
+    "ConfigurationValidationError",
     "CropConfiguration",
     "InstanceConfiguration",
+    "NdiSourceConfiguration",
+    "Profile",
     "ResizeConfiguration",
-    "RuntimeConfiguration",
     "ScenarioLoaderError",
     "ScenarioModuleExecutionError",
     "ScenarioModuleValidationError",
@@ -57,12 +71,16 @@ __all__ = [
     "SourceTransformConfiguration",
     "VideoSourceConfiguration",
     "build_frame_source",
-    "load_configuration",
+    "default_app_settings",
+    "default_app_settings_path",
+    "load_app_settings",
+    "load_app_settings_or_default",
+    "load_profile",
     "load_scenario",
     "load_scenario_module",
     "load_scenario_yaml",
-    "resolve_configuration_path",
-    "save_configuration",
+    "save_app_settings",
+    "save_profile",
     "validate_instances",
     "validate_scenario",
     "validate_split_count",
