@@ -262,6 +262,21 @@ class TestLicenseText:
         with pytest.raises(RuntimeError, match="cannot collect"):
             invgen.license_text(dist)
 
+    def test_vendored_text_is_used_when_wheel_ships_no_license_file(self) -> None:
+        dist = FakeDistribution("flet", "1.0.0", license_expression="Apache-2.0")
+
+        text = invgen.license_text(dist)
+
+        assert text.startswith("=== tools/licenses/Apache-2.0.txt ===")
+        assert "Apache License" in text
+        assert "Version 2.0, January 2004" in text
+
+    def test_expression_without_vendored_text_still_raises(self) -> None:
+        dist = FakeDistribution("mine", "1.0.0", license_expression="MIT")
+
+        with pytest.raises(RuntimeError, match="cannot collect"):
+            invgen.license_text(dist)
+
 
 class TestBuildInventory:
     def test_packages_are_sorted_by_normalized_name(self) -> None:
@@ -331,16 +346,8 @@ class TestBuildInventory:
                     "license_text": "=== licenses/LICENSE.txt ===\nnumpy text",
                 },
             ],
-            "assets": invgen.bundled_assets(),
+            "assets": [],
         }
-
-    def test_bundled_assets_describe_noto_sans_jp(self) -> None:
-        assets = invgen.bundled_assets()
-
-        assert len(assets) == 1
-        assert assets[0]["name"] == "Noto Sans JP"
-        assert assets[0]["license"] == "SIL Open Font License 1.1"
-        assert "SIL OPEN FONT LICENSE Version 1.1" in assets[0]["license_text"]
 
     def test_own_packages_are_not_licensed_or_displayed(self) -> None:
         dists = [
@@ -438,10 +445,10 @@ class TestCheckInventory:
             },
             "packages": [
                 {
-                    "name": "dearpygui",
+                    "name": "sample-package",
                     "version": "2.3.1",
                     "license": "MIT",
-                    "license_text": "dearpygui text",
+                    "license_text": "sample package text",
                 },
                 {
                     "name": "numpy",
@@ -450,13 +457,7 @@ class TestCheckInventory:
                     "license_text": "numpy text",
                 },
             ],
-            "assets": [
-                {
-                    "name": "Noto Sans JP",
-                    "license": "SIL Open Font License 1.1",
-                    "license_text": "the OFL text",
-                },
-            ],
+            "assets": [],
         }
 
     def write_stored(self, tmp_path: Path, document: invgen.InventoryDocument) -> None:
@@ -514,13 +515,6 @@ class TestCheckInventory:
     def test_application_difference_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()
         stored["application"]["license_text"] = "edited GPL text"
-        self.write_stored(tmp_path, stored)
-
-        assert invgen.check_inventory(self.make_expected()) is False
-
-    def test_missing_asset_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["assets"] = []
         self.write_stored(tmp_path, stored)
 
         assert invgen.check_inventory(self.make_expected()) is False

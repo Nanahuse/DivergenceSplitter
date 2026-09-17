@@ -9,7 +9,7 @@ classifiers = [
 ]
 dependencies = [
     "divergencesplitter-runtime",
-    "dearpygui>=2.3.1,<3; sys_platform == 'win32'",
+    "flet>=1.0,<2",
 ]
 
 [project.scripts]
@@ -21,6 +21,26 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 divergencesplitter-runtime = { workspace = true }
+
+[tool.flet.app]
+path = "src"
+module = "main"
+
+[tool.flet.dev_packages]
+divergencesplitter-runtime = "../divergencesplitter-runtime"
+divergencesplitter = "../divergencesplitter"
+
+[tool.flet.windows]
+dependencies = [
+    "divergencesplitter",
+    "ndi-python>=6.3.2.4",
+]
+
+[tool.flet.windows.compile]
+packages = false
+
+[tool.flet.windows.cleanup]
+packages = false
 
 [dependency-groups]
 dev = [

@@ -204,6 +204,10 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Generated from the UI project metadata by tools/generate_ui_version.py
+# immediately before the UI build.
+packages/divergencesplitter-ui/src/divergencesplitter_ui/_version.py
+
 # Ruff stuff:
 .ruff_cache/
 

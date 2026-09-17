@@ -95,6 +95,38 @@ def select_configured_camera(
     return next(device for device in devices if device is selected)
 
 
+def camera_backend_value(backend: object) -> str:
+    """Return a device backend as its lowercase ``CameraBackend`` value."""
+
+    value = getattr(backend, "value", None)
+    if isinstance(value, str):
+        return value
+    return str(getattr(backend, "name", "")).lower()
+
+
+def camera_backend(backend: object) -> CameraBackend:
+    return CameraBackend(camera_backend_value(backend))
+
+
+def camera_backend_display(backend: str) -> str:
+    return {
+        "direct_show": "DirectShow",
+        "media_foundation": "Media Foundation",
+    }.get(backend, backend)
+
+
+def camera_device_label(device: CameraDevice) -> str:
+    return (
+        f"[{camera_backend_display(camera_backend_value(device.backend))}] "
+        f"{device.name} (index {device.index})"
+    )
+
+
+def camera_mode_label(mode: CameraMode) -> str:
+    format_value = getattr(mode, "format", None) or getattr(mode, "subtype_guid", "")
+    return f"{mode.width} × {mode.height} @ {mode.fps:g} fps — {format_value}"
+
+
 @dataclass
 class EditableCameraSourceConfiguration:
     device: CameraDeviceConfiguration | None
@@ -274,6 +306,14 @@ def _configuration_transform(
     except (TypeError, ValueError) as error:
         raise ValueError(str(error)) from error
     return SourceTransformConfiguration(crop, resize)
+
+
+def source_transform_from_editable(
+    editable: EditableApplicationConfiguration,
+) -> SourceTransformConfiguration:
+    """Project the draft crop/resize into a validated transform configuration."""
+
+    return _configuration_transform(editable.source.transform)
 
 
 def validate_instances_draft(

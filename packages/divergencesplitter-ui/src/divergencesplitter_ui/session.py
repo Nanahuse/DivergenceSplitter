@@ -3,7 +3,7 @@
 The controller turns a confirmed configuration path into one runtime execution
 and reports its terminal outcome. It reuses the shared configuration, scenario,
 source, and runtime construction path; it only adds ownership, stop, and result
-reporting. Dear PyGui and screen presentation live elsewhere in this package.
+reporting. GUI and screen presentation live elsewhere in this package.
 """
 
 from __future__ import annotations
