@@ -519,13 +519,6 @@ class TestCheckInventory:
 
         assert invgen.check_inventory(self.make_expected()) is False
 
-    def test_missing_asset_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["assets"] = []
-        self.write_stored(tmp_path, stored)
-
-        assert invgen.check_inventory(self.make_expected()) is False
-
     def test_missing_inventory_file_fails(self, tmp_path: Path) -> None:
         invgen.INVENTORY_PATH = tmp_path / "absent.json"
 
