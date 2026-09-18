@@ -344,8 +344,8 @@ sequences multiple Rules and their Actions.
 ## Windows distribution
 
 The `Windows distribution` CI workflow builds the desktop UI and AutoSplit
-Converter sequentially in one Windows job. Its `DivergenceSplitter-windows-x64.7z`
-artifact downloads directly as a 7z archive without an outer ZIP wrapper:
+Converter sequentially in one Windows job. Its `DivergenceSplitter-windows-x64`
+artifact downloads as a GitHub Actions ZIP:
 
 ```text
 DivergenceSplitter/

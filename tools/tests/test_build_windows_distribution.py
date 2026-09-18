@@ -96,17 +96,6 @@ class TestBuildCommands:
         assert env["PYTHONUTF8"] == "1"
         assert env["PYTHONIOENCODING"] == "utf-8"
 
-    def test_archive_commands_use_bundled_names(self, tmp_path: Path) -> None:
-        archive = tmp_path / "out.7z"
-
-        create = bwd.archive_create_command(archive)
-        assert create[:3] == ["7z", "a", "-t7z"]
-        assert create[3] == archive.as_posix()
-        assert create[4:] == [bwd.UI_ARTIFACT, bwd.CONVERTER_ARTIFACT]
-
-        assert bwd.archive_test_command(archive) == ["7z", "t", archive.as_posix()]
-
-
 class TestVerification:
     def test_accepts_complete_tree(self, tmp_path: Path) -> None:
         make_tree(tmp_path)
@@ -165,7 +154,7 @@ class TestSmokeTest:
 
 
 class TestOrchestration:
-    def test_runs_build_validate_and_archive(
+    def test_runs_build_and_validate(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         make_tree(tmp_path)
@@ -178,8 +167,7 @@ class TestOrchestration:
         commands = [call[0] for call in runner.calls]
         assert any("flet" in command and "build" in command for command in commands)
         assert any("pyinstaller" in command for command in commands)
-        assert any(command[:2] == ["7z", "a"] for command in commands)
-        assert any(command[:2] == ["7z", "t"] for command in commands)
+        assert not any("7z" in command for command in commands)
 
     def test_propagates_build_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
