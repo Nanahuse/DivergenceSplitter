@@ -104,6 +104,7 @@ jobs:
       - name: Build Flet Windows app (official action)
         if: matrix.official
         id: flet-build
+        continue-on-error: true
         uses: flet-dev/flet-build-action@v1
         with:
           target: windows
@@ -114,6 +115,18 @@ jobs:
           cache: ${{ inputs.cache != false }}
           archive-output: false
           extra-args: --yes --no-rich-output
+
+      - name: Fallback Flet build after official action failure
+        if: matrix.official && steps.flet-build.outcome == 'failure'
+        run: >-
+          uv run --no-sync flet pack tools/ui_entry.py
+          --name DivergenceSplitter --onedir --distpath dist/windows
+          --pyinstaller-build-args=--collect-all
+          --pyinstaller-build-args=windows_capture_device_list
+          --pyinstaller-build-args=--collect-all --pyinstaller-build-args=NDIlib
+          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=ndi-python
+          --pyinstaller-build-args=--collect-data --pyinstaller-build-args=divergencesplitter_ui
+          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=divergencesplitter-ui --yes
 
       - name: Build converter directory distribution
         run: >-
