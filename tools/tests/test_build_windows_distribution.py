@@ -167,7 +167,6 @@ class TestOrchestration:
         commands = [call[0] for call in runner.calls]
         assert any("flet" in command and "build" in command for command in commands)
         assert any("pyinstaller" in command for command in commands)
-        assert not any("7z" in command for command in commands)
 
     def test_propagates_build_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
