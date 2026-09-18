@@ -96,6 +96,7 @@ class TestBuildCommands:
         assert env["PYTHONUTF8"] == "1"
         assert env["PYTHONIOENCODING"] == "utf-8"
 
+
 class TestVerification:
     def test_accepts_complete_tree(self, tmp_path: Path) -> None:
         make_tree(tmp_path)
