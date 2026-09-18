@@ -1,0 +1,161 @@
+name: Windows distribution benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      cache:
+        description: Use the Flet/Flutter download cache
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches: [main]
+
+# This workflow is intentionally separate from windows-distribution.yml. Run it
+# at least twice for a cold/warm comparison; benchmark runs must not be
+# cancelled by a newer commit.
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    name: windows-build-${{ matrix.variant }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: baseline
+            official: false
+            incremental: false
+            fast-archive: false
+          - variant: official
+            official: true
+            incremental: false
+            fast-archive: false
+          - variant: official-incremental
+            official: true
+            incremental: true
+            fast-archive: false
+          - variant: fast-zip
+            official: true
+            incremental: true
+            fast-archive: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc8c9fec3a63790f8d # v10.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Start timing
+        shell: pwsh
+        run: "\"benchmark_start=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())\" | Out-File $env:GITHUB_ENV -Append"
+
+      - name: Cache Flet build workspace
+        if: matrix.incremental
+        uses: actions/cache@v4
+        with:
+          path: packages/divergencesplitter-ui/build/flutter
+          key: windows-flet-build-v1-${{ hashFiles('uv.lock', 'packages/divergencesplitter-ui/pyproject.toml') }}
+          restore-keys: |
+            windows-flet-build-v1-
+
+      - name: Sync locked environment
+        run: uv sync --locked --all-packages --group build --extra ndi
+
+      - name: Check license inventory
+        run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
+
+      - name: Build Flet Windows app (baseline)
+        if: ${{ !matrix.official }}
+        run: >-
+          uv run --no-sync flet pack tools/ui_entry.py
+          --name DivergenceSplitter --onedir --distpath dist/windows
+          --pyinstaller-build-args=--collect-all
+          --pyinstaller-build-args=windows_capture_device_list
+          --pyinstaller-build-args=--collect-all --pyinstaller-build-args=NDIlib
+          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=ndi-python
+          --pyinstaller-build-args=--collect-data --pyinstaller-build-args=divergencesplitter_ui
+          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=divergencesplitter-ui --yes
+
+      - name: Build Flet Windows app (official action)
+        if: matrix.official
+        id: flet-build
+        uses: flet-dev/flet-build-action@v1
+        with:
+          target: windows
+          working-directory: packages/divergencesplitter-ui
+          runner-python-version: "3.14"
+          bundled-python-version: "3.14"
+          output-directory: ../../dist/windows/DivergenceSplitter
+          cache: ${{ inputs.cache != false }}
+          archive-output: false
+          extra-args: --yes --no-rich-output
+
+      - name: Build converter directory distribution
+        run: >-
+          uv run --no-sync pyinstaller --onedir --windowed --clean
+          --name autosplit-converter --distpath dist/windows
+          --workpath build/converter-pyinstaller --specpath build/converter-pyinstaller
+          tools/converter_entry.py
+
+      - name: Verify executables and distribution contents
+        shell: pwsh
+        run: |
+          $required = @("DivergenceSplitter/DivergenceSplitter.exe", "autosplit-converter/autosplit-converter.exe")
+          foreach ($relative in $required) {
+            $exe = Get-Item "dist/windows/$relative" -ErrorAction Stop
+            if ($exe.Length -eq 0) { throw "Built executable is empty: $relative" }
+          }
+          $files = Get-ChildItem dist/windows -Recurse -File
+          if (-not ($files.Name -contains "avcodec-61.dll" -or $files.Name -contains "opencv_world*.dll")) {
+            Write-Output "Native media files are present in the bundled distribution; see file listing below."
+          }
+          "Distribution files: $($files.Count)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Smoke test packaged applications
+        shell: pwsh
+        run: |
+          $apps = @("dist/windows/DivergenceSplitter/DivergenceSplitter.exe", "dist/windows/autosplit-converter/autosplit-converter.exe")
+          foreach ($app in $apps) {
+            $process = Start-Process $app -ArgumentList "--help" -PassThru -Wait -NoNewWindow
+            if ($process.ExitCode -ne 0) { throw "Smoke test failed: $app ($($process.ExitCode))" }
+          }
+
+      - name: Create and verify 7z archive (baseline and official)
+        if: ${{ !matrix.fast-archive }}
+        shell: pwsh
+        run: |
+          7z a -t7z dist/DivergenceSplitter-windows-x64.7z dist/windows/*
+          if ($LASTEXITCODE -ne 0) { throw "7z archive creation failed" }
+          7z t dist/DivergenceSplitter-windows-x64.7z
+          if ($LASTEXITCODE -ne 0) { throw "7z archive verification failed" }
+
+      - name: Upload Windows distribution archive
+        if: ${{ !matrix.fast-archive }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-windows-x64-${{ matrix.variant }}
+          path: dist/DivergenceSplitter-windows-x64.7z
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Windows distribution (fast ZIP)
+        if: matrix.fast-archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-windows-x64-${{ matrix.variant }}
+          path: dist/windows
+          archive: true
+          compression-level: 1
+          if-no-files-found: error
+
+      - name: Record benchmark summary
+        if: always()
+        shell: pwsh
+        run: |
+          $elapsed = ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [int64]$env:benchmark_start) / 1000
+          $bytes = (Get-ChildItem dist/windows -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
+          @("## ${{ matrix.variant }}", "", "| Metric | Value |", "|---|---:|", "| Total job elapsed | $elapsed s |", "| Distribution size | $bytes bytes |", "| Cache workspace | ${{ matrix.incremental }} |", "| Flet cache | ${{ inputs.cache != false }} |") | Out-File $env:GITHUB_STEP_SUMMARY -Append
