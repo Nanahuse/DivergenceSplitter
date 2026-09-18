@@ -10,6 +10,7 @@ on:
         type: boolean
   push:
     branches: [main]
+  pull_request:
 
 # This workflow is intentionally separate from windows-distribution.yml. Run it
 # at least twice for a cold/warm comparison; benchmark runs must not be
