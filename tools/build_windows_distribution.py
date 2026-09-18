@@ -22,6 +22,7 @@ build; this script never rewrites project metadata and never builds its own
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import time
@@ -233,10 +234,16 @@ def smoke_test_application(
                 process.wait()
 
 
-def build_windows_distribution(root: Path = REPO_ROOT) -> None:
+def build_windows_distribution(
+    root: Path = REPO_ROOT,
+    *,
+    skip_flet_build: bool = False,
+    skip_archive: bool = False,
+) -> None:
     """Run the full Windows distribution build and return when verified."""
 
-    run_command(flet_build_command(), cwd=root, env=flet_environment())
+    if not skip_flet_build:
+        run_command(flet_build_command(), cwd=root, env=flet_environment())
     run_command(converter_build_command(), cwd=root)
 
     ui_dir = root / DIST_ROOT / UI_ARTIFACT
@@ -246,14 +253,22 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
 
     smoke_test_application(ui_dir / f"{UI_ARTIFACT}.exe")
 
-    archive = root / ARCHIVE_PATH
-    run_command(archive_create_command(archive), cwd=root / DIST_ROOT)
-    run_command(archive_test_command(archive), cwd=root / DIST_ROOT)
-    print(f"Built and verified {archive}")
+    if not skip_archive:
+        archive = root / ARCHIVE_PATH
+        run_command(archive_create_command(archive), cwd=root / DIST_ROOT)
+        run_command(archive_test_command(archive), cwd=root / DIST_ROOT)
+        print(f"Built and verified {archive}")
 
 
 def main() -> None:
-    build_windows_distribution()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-flet-build", action="store_true")
+    parser.add_argument("--skip-archive", action="store_true")
+    args = parser.parse_args()
+    build_windows_distribution(
+        skip_flet_build=args.skip_flet_build,
+        skip_archive=args.skip_archive,
+    )
 
 
 if __name__ == "__main__":

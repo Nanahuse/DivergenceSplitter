@@ -2,19 +2,8 @@ name: Windows distribution benchmark
 
 on:
   workflow_dispatch:
-    inputs:
-      cache:
-        description: Use the Flet/Flutter download cache
-        required: true
-        default: true
-        type: boolean
-  push:
-    branches: [main]
   pull_request:
 
-# This workflow is intentionally separate from windows-distribution.yml. Run it
-# at least twice for a cold/warm comparison; benchmark runs must not be
-# cancelled by a newer commit.
 permissions:
   contents: read
 
@@ -44,67 +33,48 @@ jobs:
             fast-archive: true
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+      - name: Setup environment
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           python-version: "3.14"
 
-      - name: Start timing
-        shell: pwsh
-        run: "\"benchmark_start=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())\" | Out-File $env:GITHUB_ENV -Append"
+      - name: Restore Flutter and Flet cache
+        if: matrix.official == false
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/flutter/3.44.8
+            ~/.flet/cache
+          key: flet-build-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
 
-      - name: Cache Flet build workspace
+      - name: Restore build/flutter cache
         if: matrix.incremental
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: packages/divergencesplitter-ui/build/flutter
-          key: windows-flet-build-v1-${{ hashFiles('uv.lock', 'packages/divergencesplitter-ui/pyproject.toml') }}
+          key: windows-flet-build-v2-${{ hashFiles('uv.lock', 'packages/divergencesplitter-ui/pyproject.toml') }}-${{ github.sha }}
           restore-keys: |
-            windows-flet-build-v1-
+            windows-flet-build-v2-${{ hashFiles('uv.lock', 'packages/divergencesplitter-ui/pyproject.toml') }}-
+            windows-flet-build-v2-
 
-      - name: Sync locked environment
+      - name: Sync environment
         run: uv sync --locked --all-packages --group build --extra ndi
 
       - name: Check license inventory
         run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
 
-      # flet 1.0.0 has no --version --json output yet, while v1 of the
-      # official action uses that interface during its prepare phase. Keep
-      # the locked Flet version and provide only the metadata adapter the
-      # action needs; all build invocations are delegated to the real CLI.
-      - name: Adapt Flet metadata for official action
-        if: matrix.official
-        shell: pwsh
-        run: |
-          $shim = Join-Path $env:RUNNER_TEMP "flet-action-shim"
-          New-Item -ItemType Directory -Force $shim | Out-Null
-          @'
-          @echo off
-          if "%~1"=="--version" if "%~2"=="--json" (
-            echo {"flet":"1.0.0","flutter":"unknown","linux_dependencies":[]}
-            exit /b 0
-          )
-          "%GITHUB_WORKSPACE%\.venv\Scripts\flet.exe" %*
-          '@ | Set-Content (Join-Path $shim "flet.cmd")
-          "$shim" | Out-File $env:GITHUB_PATH -Append
+      - name: Generate UI version
+        run: uv run --no-sync python tools/generate_ui_version.py
 
-      - name: Build Flet Windows app (baseline)
-        if: ${{ !matrix.official }}
-        run: >-
-          uv run --no-sync flet pack tools/ui_entry.py
-          --name DivergenceSplitter --onedir --distpath dist/windows
-          --pyinstaller-build-args=--collect-all
-          --pyinstaller-build-args=windows_capture_device_list
-          --pyinstaller-build-args=--collect-all --pyinstaller-build-args=NDIlib
-          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=ndi-python
-          --pyinstaller-build-args=--collect-data --pyinstaller-build-args=divergencesplitter_ui
-          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=divergencesplitter-ui --yes
+      - name: Flet build (production baseline)
+        if: matrix.official == false
+        run: uv run --no-sync python tools/build_windows_distribution.py
 
-      - name: Build Flet Windows app (official action)
+      - name: Flet build (official action)
         if: matrix.official
-        id: flet-build
-        continue-on-error: true
         uses: flet-dev/flet-build-action@v1
         with:
           target: windows
@@ -112,59 +82,17 @@ jobs:
           runner-python-version: "3.14"
           bundled-python-version: "3.14"
           output-directory: ../../dist/windows/DivergenceSplitter
-          cache: ${{ inputs.cache != false }}
+          cache: true
           archive-output: false
-          extra-args: --yes --no-rich-output
 
-      - name: Fallback Flet build after official action failure
-        if: matrix.official && steps.flet-build.outcome == 'failure'
+      - name: Converter, verification, and smoke test
+        if: matrix.official
         run: >-
-          uv run --no-sync flet pack tools/ui_entry.py
-          --name DivergenceSplitter --onedir --distpath dist/windows
-          --pyinstaller-build-args=--collect-all
-          --pyinstaller-build-args=windows_capture_device_list
-          --pyinstaller-build-args=--collect-all --pyinstaller-build-args=NDIlib
-          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=ndi-python
-          --pyinstaller-build-args=--collect-data --pyinstaller-build-args=divergencesplitter_ui
-          --pyinstaller-build-args=--copy-metadata --pyinstaller-build-args=divergencesplitter-ui --yes
+          uv run --no-sync python tools/build_windows_distribution.py
+          --skip-flet-build${{ matrix.fast-archive && ' --skip-archive' || '' }}
 
-      - name: Build converter directory distribution
-        run: >-
-          uv run --no-sync pyinstaller --onedir --windowed --clean
-          --name autosplit-converter --distpath dist/windows
-          --workpath build/converter-pyinstaller --specpath build/converter-pyinstaller
-          tools/converter_entry.py
-
-      - name: Verify executables and distribution contents
-        shell: pwsh
-        run: |
-          $required = @("DivergenceSplitter/DivergenceSplitter.exe", "autosplit-converter/autosplit-converter.exe")
-          foreach ($relative in $required) {
-            $exe = Get-Item "dist/windows/$relative" -ErrorAction Stop
-            if ($exe.Length -eq 0) { throw "Built executable is empty: $relative" }
-          }
-          $files = Get-ChildItem dist/windows -Recurse -File
-          if (-not ($files.Name -contains "avcodec-61.dll" -or $files.Name -contains "opencv_world*.dll")) {
-            Write-Output "Native media files are present in the bundled distribution; see file listing below."
-          }
-          "Distribution files: $($files.Count)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-
-      - name: Smoke test packaged applications
-        shell: pwsh
-        run: |
-          $apps = @("dist/windows/DivergenceSplitter/DivergenceSplitter.exe", "dist/windows/autosplit-converter/autosplit-converter.exe")
-          foreach ($app in $apps) {
-            $process = Start-Process $app -PassThru
-            if (-not $process.WaitForExit(15000)) {
-              Stop-Process -Id $process.Id -Force
-              Write-Output "Smoke test passed (process started): $app"
-            } elseif ($process.ExitCode -ne 0) {
-              throw "Smoke test failed: $app ($($process.ExitCode))"
-            }
-          }
-
-      - name: Create and verify 7z archive (baseline and official)
-        if: ${{ !matrix.fast-archive }}
+      - name: Create and verify 7z archive
+        if: matrix.fast-archive == false && matrix.official
         shell: pwsh
         run: |
           7z a -t7z dist/DivergenceSplitter-windows-x64.7z dist/windows/*
@@ -173,7 +101,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "7z archive verification failed" }
 
       - name: Upload Windows distribution archive
-        if: ${{ !matrix.fast-archive }}
+        if: matrix.fast-archive == false
         uses: actions/upload-artifact@v7
         with:
           name: DivergenceSplitter-windows-x64-${{ matrix.variant }}
@@ -185,16 +113,8 @@ jobs:
         if: matrix.fast-archive
         uses: actions/upload-artifact@v7
         with:
-          name: DivergenceSplitter-windows-x64-${{ matrix.variant }}
+          name: DivergenceSplitter-windows-x64-fast-zip
           path: dist/windows
           archive: true
           compression-level: 1
           if-no-files-found: error
-
-      - name: Record benchmark summary
-        if: always()
-        shell: pwsh
-        run: |
-          $elapsed = ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [int64]$env:benchmark_start) / 1000
-          $bytes = (Get-ChildItem dist/windows -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
-          @("## ${{ matrix.variant }}", "", "| Metric | Value |", "|---|---:|", "| Total job elapsed | $elapsed s |", "| Distribution size | $bytes bytes |", "| Cache workspace | ${{ matrix.incremental }} |", "| Flet cache | ${{ inputs.cache != false }} |") | Out-File $env:GITHUB_STEP_SUMMARY -Append
