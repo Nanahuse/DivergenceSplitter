@@ -89,6 +89,9 @@ jobs:
           output-directory: ../../dist/windows/DivergenceSplitter
           cache: true
           archive-output: false
+          extra-args: >-
+            --artifact DivergenceSplitter
+            --product DivergenceSplitter
 
       - name: Converter, verification, and smoke test
         if: matrix.official
