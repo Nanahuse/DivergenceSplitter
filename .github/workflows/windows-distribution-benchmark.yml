@@ -1,4 +1,4 @@
-name: Windows distribution benchmark
+name: Windows distribution compression benchmark
 
 on:
   workflow_dispatch:
@@ -9,56 +9,24 @@ permissions:
 
 jobs:
   windows-build:
-    name: windows-build-${{ matrix.variant }}
+    name: windows-build-compression
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: baseline
-            official: false
-            incremental: false
-            fast-archive: false
-          - variant: official
-            official: true
-            incremental: false
-            fast-archive: false
-          - variant: official-incremental
-            official: true
-            incremental: true
-            fast-archive: false
-          - variant: fast-zip
-            official: true
-            incremental: true
-            fast-archive: true
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup environment
+      - name: Setup uv
         uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
         with:
           python-version: "3.14"
 
       - name: Restore Flutter and Flet cache
-        if: matrix.official == false
         uses: actions/cache@v6
         with:
           path: |
             ~/flutter/3.44.8
             ~/.flet/cache
           key: flet-build-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
-
-      - name: Restore build/flutter cache
-        if: matrix.incremental
-        uses: actions/cache@v6
-        with:
-          path: packages/divergencesplitter-ui/build/flutter
-          key: windows-flet-build-v2-${{ hashFiles('uv.lock', 'packages/divergencesplitter-ui/pyproject.toml') }}-${{ github.sha }}
-          restore-keys: |
-            windows-flet-build-v2-${{ hashFiles('uv.lock', 'packages/divergencesplitter-ui/pyproject.toml') }}-
-            windows-flet-build-v2-
 
       - name: Sync environment
         run: uv sync --locked --all-packages --group build --extra ndi
@@ -69,60 +37,55 @@ jobs:
       - name: Generate UI version
         run: uv run --no-sync python tools/generate_ui_version.py
 
-      - name: Prepare Flet CLI
-        if: matrix.official
-        shell: pwsh
-        run: uv run --no-sync flet --version --json | Out-Null
-
-      - name: Flet build (production baseline)
-        if: matrix.official == false
+      - name: Build and verify Windows distribution
         run: uv run --no-sync python tools/build_windows_distribution.py
 
-      - name: Flet build (official action)
-        if: matrix.official
-        uses: flet-dev/flet-build-action@v1
-        with:
-          target: windows
-          working-directory: packages/divergencesplitter-ui
-          runner-python-version: "3.14"
-          bundled-python-version: "3.14"
-          output-directory: ../../dist/windows/DivergenceSplitter
-          cache: true
-          archive-output: false
-          extra-args: >-
-            --artifact DivergenceSplitter
-            --product DivergenceSplitter
-
-      - name: Converter, verification, and smoke test
-        if: matrix.official
-        run: >-
-          uv run --no-sync python tools/build_windows_distribution.py
-          --skip-flet-build --skip-archive
-
-      - name: Create and verify 7z archive
-        if: matrix.fast-archive == false && matrix.official
+      - name: Record input distribution size
         shell: pwsh
         run: |
-          7z a -t7z dist/DivergenceSplitter-windows-x64.7z dist/windows/*
-          if ($LASTEXITCODE -ne 0) { throw "7z archive creation failed" }
-          7z t dist/DivergenceSplitter-windows-x64.7z
-          if ($LASTEXITCODE -ne 0) { throw "7z archive verification failed" }
+          $bytes = (Get-ChildItem dist/windows -Recurse -File | Measure-Object Length -Sum).Sum
+          "## Compression benchmark`n`nInput distribution size: $bytes bytes" | Out-File $env:GITHUB_STEP_SUMMARY -Append
 
-      - name: Upload Windows distribution archive
-        if: matrix.fast-archive == false
+      - name: Upload 7z reference
         uses: actions/upload-artifact@v7
         with:
-          name: DivergenceSplitter-windows-x64-${{ matrix.variant }}
+          name: DivergenceSplitter-7z
           path: dist/DivergenceSplitter-windows-x64.7z
           archive: false
           if-no-files-found: error
 
-      - name: Upload Windows distribution (fast ZIP)
-        if: matrix.fast-archive
+      - name: Upload Artifact ZIP level 0
         uses: actions/upload-artifact@v7
         with:
-          name: DivergenceSplitter-windows-x64-fast-zip
+          name: DivergenceSplitter-artifact-level-0
+          path: dist/windows
+          archive: true
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload Artifact ZIP level 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-artifact-level-1
           path: dist/windows
           archive: true
           compression-level: 1
+          if-no-files-found: error
+
+      - name: Upload Artifact ZIP level 6
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-artifact-level-6
+          path: dist/windows
+          archive: true
+          compression-level: 6
+          if-no-files-found: error
+
+      - name: Upload Artifact ZIP level 9
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-artifact-level-9
+          path: dist/windows
+          archive: true
+          compression-level: 9
           if-no-files-found: error
