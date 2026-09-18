@@ -69,6 +69,11 @@ jobs:
       - name: Generate UI version
         run: uv run --no-sync python tools/generate_ui_version.py
 
+      - name: Prepare Flet CLI
+        if: matrix.official
+        shell: pwsh
+        run: uv run --no-sync flet --version --json | Out-Null
+
       - name: Flet build (production baseline)
         if: matrix.official == false
         run: uv run --no-sync python tools/build_windows_distribution.py
@@ -89,7 +94,7 @@ jobs:
         if: matrix.official
         run: >-
           uv run --no-sync python tools/build_windows_distribution.py
-          --skip-flet-build${{ matrix.fast-archive && ' --skip-archive' || '' }}
+          --skip-flet-build --skip-archive
 
       - name: Create and verify 7z archive
         if: matrix.fast-archive == false && matrix.official
