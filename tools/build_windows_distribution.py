@@ -70,8 +70,12 @@ def flet_environment() -> dict[str, str]:
     return env
 
 
-def flet_build_command() -> list[str]:
-    """Flet Windows build command; compile/cleanup live in project metadata."""
+def flet_build_command(root: Path = REPO_ROOT) -> list[str]:
+    """Flet Windows build command; compile/cleanup live in project metadata.
+
+    Every path is rooted at ``root`` so the build output stays inside the
+    checkout (the worktree) even when the command is run from another directory.
+    """
 
     return [
         "uv",
@@ -80,7 +84,7 @@ def flet_build_command() -> list[str]:
         "flet",
         "build",
         "windows",
-        UI_PACKAGE.as_posix(),
+        (root / UI_PACKAGE).as_posix(),
         "--yes",
         "--no-rich-output",
         "--artifact",
@@ -88,13 +92,18 @@ def flet_build_command() -> list[str]:
         "--product",
         UI_ARTIFACT,
         "--output",
-        (DIST_ROOT / UI_ARTIFACT).as_posix(),
+        (root / DIST_ROOT / UI_ARTIFACT).as_posix(),
     ]
 
 
-def converter_build_command() -> list[str]:
-    """AutoSplit converter build command; the converter stays on PyInstaller."""
+def converter_build_command(root: Path = REPO_ROOT) -> list[str]:
+    """AutoSplit converter build command; the converter stays on PyInstaller.
 
+    Every path is rooted at ``root`` so the build output stays inside the
+    checkout (the worktree) even when the command is run from another directory.
+    """
+
+    workpath = root / Path("build") / "converter-pyinstaller"
     return [
         "uv",
         "run",
@@ -106,12 +115,12 @@ def converter_build_command() -> list[str]:
         "--name",
         CONVERTER_ARTIFACT,
         "--distpath",
-        DIST_ROOT.as_posix(),
+        (root / DIST_ROOT).as_posix(),
         "--workpath",
-        (Path("build") / "converter-pyinstaller").as_posix(),
+        workpath.as_posix(),
         "--specpath",
-        (Path("build") / "converter-pyinstaller").as_posix(),
-        (Path("tools") / "converter_entry.py").as_posix(),
+        workpath.as_posix(),
+        (root / Path("tools") / "converter_entry.py").as_posix(),
     ]
 
 
@@ -236,8 +245,8 @@ def smoke_test_application(
 def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     """Run the full Windows distribution build and return when verified."""
 
-    run_command(flet_build_command(), cwd=root, env=flet_environment())
-    run_command(converter_build_command(), cwd=root)
+    run_command(flet_build_command(root), cwd=root, env=flet_environment())
+    run_command(converter_build_command(root), cwd=root)
 
     ui_dir = root / DIST_ROOT / UI_ARTIFACT
     converter_dir = root / DIST_ROOT / CONVERTER_ARTIFACT

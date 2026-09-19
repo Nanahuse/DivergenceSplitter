@@ -68,16 +68,34 @@ class TestBuildCommands:
             "flet",
             "build",
             "windows",
-            bwd.UI_PACKAGE.as_posix(),
+            (bwd.REPO_ROOT / bwd.UI_PACKAGE).as_posix(),
         ]
         assert "--artifact" in command
         assert command[command.index("--artifact") + 1] == bwd.UI_ARTIFACT
         assert (
             command[command.index("--output") + 1]
-            == (bwd.DIST_ROOT / bwd.UI_ARTIFACT).as_posix()
+            == (bwd.REPO_ROOT / bwd.DIST_ROOT / bwd.UI_ARTIFACT).as_posix()
         )
         assert "--no-compile-packages" not in command
         assert "--no-cleanup-packages" not in command
+
+    def test_build_outputs_stay_inside_the_repository_root(
+        self, tmp_path: Path
+    ) -> None:
+        flet = bwd.flet_build_command(tmp_path)
+        converter = bwd.converter_build_command(tmp_path)
+
+        output = Path(flet[flet.index("--output") + 1])
+        assert output.is_relative_to(tmp_path)
+
+        distpath = Path(converter[converter.index("--distpath") + 1])
+        assert distpath.is_relative_to(tmp_path)
+
+        workpath = Path(converter[converter.index("--workpath") + 1])
+        assert workpath.is_relative_to(tmp_path)
+
+        specpath = Path(converter[converter.index("--specpath") + 1])
+        assert specpath.is_relative_to(tmp_path)
 
     def test_converter_build_stays_pyinstaller(self) -> None:
         command = bwd.converter_build_command()
