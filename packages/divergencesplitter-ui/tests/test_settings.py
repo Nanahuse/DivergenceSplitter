@@ -27,6 +27,7 @@ from divergencesplitter_ui.session import SessionState, is_active
 from divergencesplitter_ui.settings import (
     SOURCE_TYPE_LABELS,
     CameraDevice,
+    CameraMode,
     EditableCameraSourceConfiguration,
     EditableCropConfiguration,
     EditableInstanceConfiguration,
@@ -35,6 +36,7 @@ from divergencesplitter_ui.settings import (
     EditableVideoSourceConfiguration,
     SettingsModel,
     SourceType,
+    camera_mode_label,
     camera_source,
     edit_permission,
     editable_profile_from,
@@ -758,6 +760,24 @@ class TestCameraSelection:
             )
             is None
         )
+
+
+class TestCameraModeLabel:
+    def test_label_uses_multiply_sign_and_em_dash(self) -> None:
+        mode = cast(
+            CameraMode,
+            SimpleNamespace(width=1920, height=1080, fps=60.0, format="EYUY2"),
+        )
+
+        assert camera_mode_label(mode) == "1920 × 1080 @ 60 fps — EYUY2"
+
+    def test_label_falls_back_to_subtype_guid(self) -> None:
+        mode = cast(
+            CameraMode,
+            SimpleNamespace(width=320, height=240, fps=30.0, subtype_guid="YUY2"),
+        )
+
+        assert camera_mode_label(mode) == "320 × 240 @ 30 fps — YUY2"
 
 
 class TestSettingsDecisions:

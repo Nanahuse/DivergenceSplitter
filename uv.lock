@@ -185,6 +185,7 @@ source = { editable = "packages/divergencesplitter-ui" }
 dependencies = [
     { name = "divergencesplitter-runtime" },
     { name = "flet" },
+    { name = "ndi-python", marker = "sys_platform == 'win32'" },
 ]
 
 [package.dev-dependencies]
@@ -198,6 +199,7 @@ dev = [
 requires-dist = [
     { name = "divergencesplitter-runtime", editable = "packages/divergencesplitter-runtime" },
     { name = "flet", specifier = ">=1.0,<2" },
+    { name = "ndi-python", marker = "sys_platform == 'win32'", specifier = ">=6.3.2.4" },
 ]
 
 [package.metadata.requires-dev]
