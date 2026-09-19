@@ -16,10 +16,8 @@ tracked through the pure ``ExpansionState``.
 from __future__ import annotations
 
 import flet as ft
-from divergencesplitter_runtime.instance_runtime import (
-    InstanceRuntimeState,
-    InstanceStatus,
-)
+from divergencesplitter_runtime.configuration.models import Theme
+from divergencesplitter_runtime.instance_runtime import InstanceStatus
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     DetectorTreeSnapshot,
@@ -38,19 +36,15 @@ from divergencesplitter_ui.presentation_diagnostics import (
     diagnostics_view,
 )
 from divergencesplitter_ui.reference_image import reference_to_png_bytes
+from divergencesplitter_ui.theme import (
+    SemanticColors,
+    instance_status_color,
+    semantic_colors,
+)
 
 _INDENT_WIDTH = 18
 _REFERENCE_WIDTH = 160
 _REFERENCE_KEY = 0
-
-_STATUS_COLORS = {
-    InstanceRuntimeState.READY: ft.Colors.GREEN_400,
-    InstanceRuntimeState.CONNECTING: ft.Colors.AMBER_400,
-    InstanceRuntimeState.FAILED: ft.Colors.RED_400,
-    InstanceRuntimeState.STOPPED: ft.Colors.GREY_500,
-}
-_ACTIVE_COLOR = ft.Colors.AMBER
-_ERROR_COLOR = ft.Colors.RED_400
 
 
 def _set_text(control: ft.Text, value: str, *, color=None) -> bool:
@@ -167,7 +161,13 @@ class _DetectorSection:
 class _ConditionSection:
     """One condition, its detector, and its nested children."""
 
-    def __init__(self, view: DiagnosticsConditionView, depth: int) -> None:
+    def __init__(
+        self,
+        view: DiagnosticsConditionView,
+        depth: int,
+        colors: SemanticColors,
+    ) -> None:
+        self._colors = colors
         self._label = ft.Text(view.label)
         self._detector = (
             None
@@ -175,7 +175,7 @@ class _ConditionSection:
             else _DetectorSection(view.detector, depth + 1)
         )
         self._children = [
-            _ConditionSection(child, depth + 1) for child in view.children
+            _ConditionSection(child, depth + 1, colors) for child in view.children
         ]
         controls: list[ft.Control] = [self._label]
         if self._detector is not None:
@@ -194,7 +194,7 @@ class _ConditionSection:
         changed = _set_text(
             self._label,
             view.label,
-            color=_ACTIVE_COLOR if view.active else None,
+            color=self._colors.active if view.active else None,
         )
         if self._detector is not None and view.detector is not None:
             changed |= self._detector.apply(view.detector)
@@ -214,12 +214,18 @@ class _ConditionSection:
 class _RuleSection:
     """A plain rule's conditions or a rule sequence's steps."""
 
-    def __init__(self, view: DiagnosticsRuleView, depth: int) -> None:
+    def __init__(
+        self,
+        view: DiagnosticsRuleView,
+        depth: int,
+        colors: SemanticColors,
+    ) -> None:
         self._title = ft.Text(view.label)
         self._conditions = [
-            _ConditionSection(condition, depth + 1) for condition in view.conditions
+            _ConditionSection(condition, depth + 1, colors)
+            for condition in view.conditions
         ]
-        self._steps = [_RuleSection(step, depth + 1) for step in view.steps]
+        self._steps = [_RuleSection(step, depth + 1, colors) for step in view.steps]
         controls: list[ft.Control] = [self._title]
         controls.extend(condition.control for condition in self._conditions)
         controls.extend(step.control for step in self._steps)
@@ -252,12 +258,18 @@ class _RuleSection:
 class _GroupSection:
     """Start, Reset, Incomplete, or one Split."""
 
-    def __init__(self, view: DiagnosticsGroupView, depth: int) -> None:
+    def __init__(
+        self,
+        view: DiagnosticsGroupView,
+        depth: int,
+        colors: SemanticColors,
+    ) -> None:
         self._title = ft.Text(view.label, weight=ft.FontWeight.BOLD)
         self._conditions = [
-            _ConditionSection(condition, depth + 1) for condition in view.conditions
+            _ConditionSection(condition, depth + 1, colors)
+            for condition in view.conditions
         ]
-        self._rules = [_RuleSection(rule, depth + 1) for rule in view.rules]
+        self._rules = [_RuleSection(rule, depth + 1, colors) for rule in view.rules]
         controls: list[ft.Control] = [self._title]
         controls.extend(condition.control for condition in self._conditions)
         controls.extend(rule.control for rule in self._rules)
@@ -290,7 +302,8 @@ class _GroupSection:
 class _ConnectionSection:
     """One scenario's connection status, endpoints, and error."""
 
-    def __init__(self, view: DiagnosticsConnectionView) -> None:
+    def __init__(self, view: DiagnosticsConnectionView, colors: SemanticColors) -> None:
+        self._colors = colors
         self._status = ft.Text(view.status_label)
         self._rpc = ft.Text(view.rpc_endpoint)
         self._event = ft.Text(view.event_endpoint)
@@ -321,14 +334,14 @@ class _ConnectionSection:
         changed = _set_text(
             self._status,
             view.status_label,
-            color=_STATUS_COLORS.get(view.state),
+            color=instance_status_color(view.state, self._colors),
         )
         changed |= _set_text(self._rpc, view.rpc_endpoint)
         changed |= _set_text(self._event, view.event_endpoint)
         changed |= _set_text(
             self._error,
             view.error_label,
-            color=_ERROR_COLOR if view.has_error else None,
+            color=self._colors.error if view.has_error else None,
         )
         return changed
 
@@ -336,9 +349,9 @@ class _ConnectionSection:
 class _ScenarioSection:
     """One expandable scenario with its connection and full tree."""
 
-    def __init__(self, view: ScenarioDiagnosticsView) -> None:
-        self._connection = _ConnectionSection(view.connection)
-        self._groups = [_GroupSection(group, 1) for group in view.groups]
+    def __init__(self, view: ScenarioDiagnosticsView, colors: SemanticColors) -> None:
+        self._connection = _ConnectionSection(view.connection, colors)
+        self._groups = [_GroupSection(group, 1, colors) for group in view.groups]
         self._tile = ft.ExpansionTile(
             title=ft.Text(view.label),
             controls=[
@@ -385,7 +398,9 @@ class DiagnosticsPanel:
     resident.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, theme: Theme = Theme.LIGHT) -> None:
+        self._theme = theme
+        self._colors = semantic_colors(theme)
         self._body = ft.Column(
             controls=[],
             spacing=12,
@@ -413,6 +428,14 @@ class DiagnosticsPanel:
         """Whether the Diagnostics page is the one currently displayed."""
 
         return self._visible
+
+    def set_theme(self, theme: Theme) -> None:
+        """Switch semantic colors and rebuild the resident tree when visible."""
+
+        self._theme = theme
+        self._colors = semantic_colors(theme)
+        if self._visible:
+            self._tree_key = None
 
     def apply(
         self,
@@ -465,7 +488,7 @@ class DiagnosticsPanel:
         controls = []
         self._scenarios = {}
         for scenario_view in view.scenarios:
-            control = _ScenarioSection(scenario_view)
+            control = _ScenarioSection(scenario_view, self._colors)
             self._scenarios[scenario_view.scenario_index] = control
             controls.append(control.control)
         self._body.controls = controls

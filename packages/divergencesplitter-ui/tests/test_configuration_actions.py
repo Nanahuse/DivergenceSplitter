@@ -6,6 +6,9 @@ from types import SimpleNamespace
 from typing import cast
 
 from divergencesplitter import LiveSplitConnection
+from divergencesplitter_runtime.configuration.app_settings_json import (
+    load_app_settings,
+)
 from divergencesplitter_runtime.configuration.models import (
     AppSettings,
     CameraBackend,
@@ -14,6 +17,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     InstanceConfiguration,
     Profile,
+    Theme,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.profile_json import (
@@ -211,6 +215,30 @@ class TestNew:
 
         assert result is False
         assert dialogs.confirm_calls == 1
+
+
+class TestSetTheme:
+    def test_set_theme_applies_and_persists_immediately(self, tmp_path: Path) -> None:
+        applied: list[Theme] = []
+        model = make_model(tmp_path / "config.json")
+        controller = FakeController()
+        settings_path = tmp_path / "settings.json"
+        actions = ProfileActions(
+            cast(SessionController, controller),
+            model,
+            FakeDialogs(),
+            settings_path=settings_path,
+            on_theme_applied=applied.append,
+        )
+
+        actions.set_theme(Theme.DARK)
+
+        assert applied == [Theme.DARK]
+        assert model.app_settings.theme is Theme.DARK
+        assert not model.is_dirty
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+        assert load_app_settings(settings_path).ui.theme is Theme.DARK
 
 
 class TestOpen:

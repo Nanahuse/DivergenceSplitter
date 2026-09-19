@@ -18,6 +18,8 @@ from divergencesplitter_runtime.configuration.models import (
     ResizeConfiguration,
     SourceConfiguration,
     SourceTransformConfiguration,
+    Theme,
+    UiSettings,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.profile_json import (
@@ -69,6 +71,8 @@ __all__ = [
     "ScenarioYamlError",
     "SourceConfiguration",
     "SourceTransformConfiguration",
+    "Theme",
+    "UiSettings",
     "VideoSourceConfiguration",
     "build_frame_source",
     "default_app_settings",

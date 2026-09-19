@@ -13,6 +13,7 @@ runs only while the Input tab is active. Runtime restart happens only through
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     NdiSourceConfiguration,
     SourceTransformConfiguration,
+    Theme,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
@@ -84,6 +86,7 @@ class ConfigurationPage:
         preview: ConfigurationPreview | None = None,
         preview_controller: PreviewController | None = None,
         settings_path: Path | None = None,
+        on_apply_theme: Callable[[Theme], None] | None = None,
     ) -> None:
         self._controller = controller
         self._model = model
@@ -92,7 +95,11 @@ class ConfigurationPage:
             settings_path if settings_path is not None else default_app_settings_path()
         )
         self._actions = ProfileActions(
-            controller, model, dialogs, settings_path=self._settings_path
+            controller,
+            model,
+            dialogs,
+            settings_path=self._settings_path,
+            on_theme_applied=on_apply_theme,
         )
         preview_control = preview if preview is not None else ConfigurationPreview()
         self._preview_controller = (
@@ -121,6 +128,7 @@ class ConfigurationPage:
             model, dialogs, on_changed=self._sync_preview_now
         )
         self._system = SystemTab(
+            on_theme=self._on_theme,
             on_log_level=self._on_log_level,
             on_reaction_time_committed=self._on_reaction_time_committed,
         )
@@ -128,6 +136,7 @@ class ConfigurationPage:
         self._source = self._input.source
         self._frame_processing = self._input.frame_processing
         self._instances = self._scenarios.section
+        self._theme = self._system.theme
         self._log_level = self._system.log_level
         self._reaction_time = self._system.reaction_time
         self._profile_path = self._header.profile_path
@@ -197,6 +206,11 @@ class ConfigurationPage:
         self._active_tab = tab
         self._tabs.selected_index = _TAB_ORDER.index(tab)
         self.tick(self._controller.state, visible=True)
+
+    def set_theme(self, theme: Theme) -> None:
+        """Apply a theme to the Configuration page's own controls."""
+
+        self._header.set_theme(theme)
 
     def preview_update_targets(self) -> tuple[ft.Control, ...]:
         """The controls one ``pump_preview`` cycle can change.
@@ -419,6 +433,18 @@ class ConfigurationPage:
             self._actions.set_status(str(error))
         self.populate()
         self.tick(self._controller.state, visible=True)
+        self._request_update()
+
+    def _on_theme(self, event: ft.Event[ft.Dropdown]) -> None:
+        # Theme is App Settings, so it is persisted to its own file and applied
+        # live; it never marks the Profile dirty or restarts the runtime.
+        try:
+            theme = Theme(self._theme.value or Theme.LIGHT.value)
+        except ValueError:
+            self._actions.set_status("unsupported theme")
+            self._request_update()
+            return
+        self._actions.set_theme(theme)
         self._request_update()
 
     def _on_log_level(self, event: ft.Event[ft.Dropdown]) -> None:

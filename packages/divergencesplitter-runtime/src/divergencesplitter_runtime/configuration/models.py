@@ -11,7 +11,7 @@ Both have their own schema version and never embed each other's fields.
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -152,6 +152,24 @@ PROFILE_VERSION = 1
 _LOG_LEVELS = frozenset({"OFF", "DEBUG", "INFO", "WARNING", "ERROR"})
 
 
+class Theme(StrEnum):
+    """The appearance theme selected in App Settings."""
+
+    LIGHT = "light"
+    DARK = "dark"
+
+
+@dataclass(frozen=True)
+class UiSettings:
+    """Application appearance settings, independent of any Profile."""
+
+    theme: Theme = Theme.LIGHT
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.theme, Theme):
+            raise TypeError(f"unsupported theme: {self.theme!r}")
+
+
 def _is_absolute_path(value: str) -> bool:
     try:
         return Path(value).is_absolute()
@@ -171,6 +189,7 @@ class AppSettings:
     log_level: str
     reaction_time_ms: int = 0
     last_profile: str | None = None
+    ui: UiSettings = field(default_factory=UiSettings)
 
     def __post_init__(self) -> None:
         if self.version != APP_SETTINGS_VERSION:
