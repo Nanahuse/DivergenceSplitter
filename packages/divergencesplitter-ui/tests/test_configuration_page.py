@@ -9,6 +9,9 @@ from typing import cast
 import flet as ft
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter.frame.ndi import NdiSupport
+from divergencesplitter_runtime.configuration.app_settings_json import (
+    load_app_settings,
+)
 from divergencesplitter_runtime.configuration.models import (
     CameraBackend,
     CameraDeviceConfiguration,
@@ -17,6 +20,7 @@ from divergencesplitter_runtime.configuration.models import (
     InstanceConfiguration,
     Profile,
     ResizeInterpolation,
+    Theme,
 )
 from divergencesplitter_runtime.configuration.profile_json import load_profile
 from divergencesplitter_ui.configuration.page import (
@@ -188,6 +192,7 @@ def make_page(
     ndi: FakeNdiDiscovery | None = None,
     controller: FakeController | None = None,
     preview: FakePreviewController | None = None,
+    on_apply_theme=None,
 ) -> ConfigurationPage:
     model = SettingsModel(FakeCameraEnumerator())
     if not empty:
@@ -201,6 +206,7 @@ def make_page(
         ndi_discovery=cast(NdiDiscovery, ndi or FakeNdiDiscovery()),
         preview_controller=cast(PreviewController, preview or FakePreviewController()),
         settings_path=Path(tempfile.mkdtemp()) / "settings.json",
+        on_apply_theme=on_apply_theme,
     )
 
 
@@ -909,3 +915,60 @@ class TestSaveSemantics:
 
         assert page._model.draft is not None
         assert page._model.draft.source.transform.resize is not None
+
+
+class TestThemeSelection:
+    def test_dropdown_lists_light_and_dark_and_defaults_to_light(self) -> None:
+        page = make_page()
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        labels = [option.text or option.key for option in page._theme.options]
+
+        assert labels == ["Light", "Dark"]
+        assert page._theme.value == "light"
+
+    def test_dropdown_applies_theme_immediately(self) -> None:
+        applied: list[Theme] = []
+        page = make_page(on_apply_theme=applied.append)
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        page._theme.value = "dark"
+        fire(page._on_theme, page._theme)
+
+        assert page._model.app_settings.theme is Theme.DARK
+        assert applied == [Theme.DARK]
+        assert not page._model.is_dirty
+
+    def test_theme_is_persisted_without_saving_a_profile(self) -> None:
+        page = make_page(empty=True)
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+        settings_path = page._actions._settings_path
+
+        page._theme.value = "dark"
+        fire(page._on_theme, page._theme)
+
+        assert load_app_settings(settings_path).ui.theme is Theme.DARK
+
+    def test_theme_change_does_not_restart_the_runtime(self) -> None:
+        controller = FakeController()
+        page = make_page(controller=controller)
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        page._theme.value = "dark"
+        fire(page._on_theme, page._theme)
+
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+
+    def test_transition_state_disables_the_theme_dropdown(self) -> None:
+        page = make_page()
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        page.tick(SessionState.CONNECTING, visible=True)
+
+        assert page._theme.disabled is True

@@ -22,7 +22,7 @@ from divergencesplitter_runtime.configuration.app_settings_json import (
     load_app_settings,
     save_app_settings,
 )
-from divergencesplitter_runtime.configuration.models import AppSettings
+from divergencesplitter_runtime.configuration.models import AppSettings, Theme
 from divergencesplitter_runtime.configuration.profile_json import load_profile
 from divergencesplitter_runtime.configuration.strict_json import (
     ConfigurationFileError,
@@ -39,6 +39,7 @@ from divergencesplitter_ui.monitor.input_preview import PREVIEW_INTERVAL_SECONDS
 from divergencesplitter_ui.monitor.page import Monitor
 from divergencesplitter_ui.session import SessionAlreadyActiveError, SessionController
 from divergencesplitter_ui.settings import SettingsModel, WindowsCameraEnumerator
+from divergencesplitter_ui.theme import apply_theme
 
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 900
@@ -153,6 +154,24 @@ class FletApplication:
         if self._configuration is not None:
             self._configuration.actions.set_status(message)
 
+    def _apply_theme(self, theme: Theme) -> None:
+        """Apply one theme to the page and every theme-aware panel.
+
+        Called at startup with the loaded App Settings theme and after a
+        successful save. It never restarts the runtime.
+        """
+
+        if self._page is not None:
+            apply_theme(self._page, theme)
+        if self._monitor is not None:
+            self._monitor.set_theme(theme)
+        if self._diagnostics is not None:
+            self._diagnostics.set_theme(theme)
+        if self._configuration is not None:
+            self._configuration.set_theme(theme)
+        if self._page is not None:
+            self._page.update()
+
     def run(self) -> None:
         """Run the Flet app until the window is closed and cleaned up."""
 
@@ -205,15 +224,17 @@ class FletApplication:
         page.window.prevent_close = True
         page.window.on_event = self._on_window_event
 
+        theme = self._model.app_settings.theme
         file_picker = ft.FilePicker()
         dialogs = FletFileDialogs(page, file_picker)
-        self._monitor = Monitor()
-        self._diagnostics = DiagnosticsPanel()
+        self._monitor = Monitor(theme)
+        self._diagnostics = DiagnosticsPanel(theme)
         self._configuration = ConfigurationPage(
             self._controller,
             self._model,
             dialogs,
             settings_path=self._settings_path,
+            on_apply_theme=self._apply_theme,
         )
         self._about = AboutView()
         self._error_dialog = ErrorDialog(
@@ -266,7 +287,7 @@ class FletApplication:
                 vertical_alignment=ft.CrossAxisAlignment.START,
             )
         )
-        page.update()
+        self._apply_theme(theme)
 
         self.start_session()
         self._configuration.populate()

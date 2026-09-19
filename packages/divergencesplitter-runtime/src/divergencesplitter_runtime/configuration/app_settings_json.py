@@ -14,12 +14,15 @@ from pathlib import Path
 from divergencesplitter_runtime.configuration.models import (
     APP_SETTINGS_VERSION,
     AppSettings,
+    Theme,
+    UiSettings,
 )
 from divergencesplitter_runtime.configuration.strict_json import (
     ConfigurationFileError,
     ConfigurationValidationError,
     check_keys,
     dump_json_document,
+    enum_value,
     integer_value,
     load_json_document,
     object_value,
@@ -60,7 +63,7 @@ def load_app_settings(path: str | Path) -> AppSettings:
         check_keys(
             root,
             required={"version", "log_level", "reaction_time_ms"},
-            optional={"last_profile"},
+            optional={"last_profile", "ui"},
         )
         version = integer_value(root["version"], "version")
         if version != APP_SETTINGS_VERSION:
@@ -68,6 +71,7 @@ def load_app_settings(path: str | Path) -> AppSettings:
         last_profile = root.get("last_profile")
         if last_profile is not None:
             last_profile = string_value(last_profile, "last_profile")
+        ui = _ui(root["ui"]) if "ui" in root else UiSettings()
         return AppSettings(
             version=version,
             log_level=string_value(root["log_level"], "log_level"),
@@ -75,9 +79,17 @@ def load_app_settings(path: str | Path) -> AppSettings:
                 root["reaction_time_ms"], "reaction_time_ms"
             ),
             last_profile=last_profile,
+            ui=ui,
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationValidationError(str(error)) from error
+
+
+def _ui(value: object) -> UiSettings:
+    ui = object_value(value, "ui")
+    check_keys(ui, required=set(), optional={"theme"})
+    theme = enum_value(ui.get("theme", Theme.LIGHT.value), Theme, "ui.theme")
+    return UiSettings(theme)
 
 
 def load_app_settings_or_default(path: str | Path) -> AppSettings:
@@ -109,6 +121,7 @@ def save_app_settings(path: str | Path, settings: AppSettings) -> None:
                 "log_level": settings.log_level,
                 "reaction_time_ms": settings.reaction_time_ms,
                 "last_profile": settings.last_profile,
+                "ui": {"theme": settings.ui.theme.value},
             }
         ),
         encoding="utf-8",

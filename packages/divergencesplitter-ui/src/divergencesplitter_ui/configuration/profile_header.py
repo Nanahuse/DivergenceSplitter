@@ -11,6 +11,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import flet as ft
+from divergencesplitter_runtime.configuration.models import Theme
+
+from divergencesplitter_ui.theme import semantic_colors
 
 NO_PROFILE_TEXT = "No profile selected"
 
@@ -25,7 +28,9 @@ class ProfileHeader:
         on_open: Callable[[ft.Event[ft.OutlinedButton]], object],
         on_save: Callable[[ft.Event[ft.OutlinedButton]], object],
         on_save_as: Callable[[ft.Event[ft.OutlinedButton]], object],
+        theme: Theme = Theme.LIGHT,
     ) -> None:
+        self._colors = semantic_colors(theme)
         self._profile_path = ft.TextField(
             value=NO_PROFILE_TEXT,
             read_only=True,
@@ -41,7 +46,7 @@ class ProfileHeader:
         self._save_as_button = ft.OutlinedButton(
             content="Save Profile As...", on_click=on_save_as, disabled=True
         )
-        self._status = ft.Text("", color=ft.Colors.ORANGE_300)
+        self._status = ft.Text("", color=self._colors.primary)
         self._control = ft.Column(
             controls=[
                 ft.Text("Profile", size=16, weight=ft.FontWeight.BOLD),
@@ -87,6 +92,10 @@ class ProfileHeader:
     @property
     def status(self) -> ft.Text:
         return self._status
+
+    def set_theme(self, theme: Theme) -> None:
+        self._colors = semantic_colors(theme)
+        self._status.color = self._colors.primary
 
     def sync(
         self,

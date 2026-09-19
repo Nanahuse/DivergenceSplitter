@@ -9,7 +9,11 @@ from divergencesplitter_runtime.configuration.app_settings_json import (
     load_app_settings_or_default,
     save_app_settings,
 )
-from divergencesplitter_runtime.configuration.models import AppSettings
+from divergencesplitter_runtime.configuration.models import (
+    AppSettings,
+    Theme,
+    UiSettings,
+)
 from divergencesplitter_runtime.configuration.strict_json import (
     ConfigurationFileError,
     ConfigurationValidationError,
@@ -137,3 +141,106 @@ def test_default_path_is_under_the_application_directory() -> None:
 
     assert path.name == "settings.json"
     assert path.parent.name == "DivergenceSplitter"
+
+
+class TestUiSettings:
+    def test_default_theme_is_light(self) -> None:
+        assert default_app_settings().ui == UiSettings()
+        assert default_app_settings().ui.theme is Theme.LIGHT
+
+    def test_loads_light_theme(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        write_settings(
+            path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "ui": {"theme": "light"},
+            },
+        )
+
+        assert load_app_settings(path).ui.theme is Theme.LIGHT
+
+    def test_loads_dark_theme(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        write_settings(
+            path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "ui": {"theme": "dark"},
+            },
+        )
+
+        assert load_app_settings(path).ui.theme is Theme.DARK
+
+    def test_missing_ui_defaults_to_light(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        write_settings(path, {"version": 1, "log_level": "OFF", "reaction_time_ms": 0})
+
+        assert load_app_settings(path).ui.theme is Theme.LIGHT
+
+    def test_missing_theme_defaults_to_light(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        write_settings(
+            path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "ui": {},
+            },
+        )
+
+        assert load_app_settings(path).ui.theme is Theme.LIGHT
+
+    @pytest.mark.parametrize("theme", ["system", "Light", "DARK", ""])
+    def test_rejects_unknown_theme(self, tmp_path: Path, theme: str) -> None:
+        path = tmp_path / "settings.json"
+        write_settings(
+            path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "ui": {"theme": theme},
+            },
+        )
+
+        with pytest.raises(ConfigurationValidationError):
+            load_app_settings(path)
+
+    def test_rejects_non_object_ui(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        write_settings(
+            path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "ui": "dark",
+            },
+        )
+
+        with pytest.raises(ConfigurationValidationError):
+            load_app_settings(path)
+
+    @pytest.mark.parametrize("theme", [Theme.LIGHT, Theme.DARK])
+    def test_round_trips_theme(self, tmp_path: Path, theme: Theme) -> None:
+        path = tmp_path / "settings.json"
+        settings = AppSettings(1, "OFF", 0, None, UiSettings(theme))
+
+        save_app_settings(path, settings)
+
+        assert load_app_settings(path) == settings
+
+    def test_save_emits_ui_theme(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        save_app_settings(path, AppSettings(1, "OFF", 0, None, UiSettings(Theme.DARK)))
+
+        stored = json.loads(path.read_text(encoding="utf-8"))
+
+        assert stored["ui"] == {"theme": "dark"}
+        assert stored["version"] == 1

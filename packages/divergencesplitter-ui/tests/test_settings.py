@@ -9,6 +9,7 @@ from divergencesplitter_runtime.configuration.app_settings_json import (
     save_app_settings,
 )
 from divergencesplitter_runtime.configuration.models import (
+    AppSettings,
     CameraBackend,
     CameraDeviceConfiguration,
     CameraModeConfiguration,
@@ -17,6 +18,8 @@ from divergencesplitter_runtime.configuration.models import (
     NdiSourceConfiguration,
     Profile,
     ResizeConfiguration,
+    Theme,
+    UiSettings,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.profile_json import (
@@ -873,3 +876,62 @@ class TestReactionTime:
         permission = edit_permission(SessionState.RUNNING)
 
         assert permission.reaction_time
+
+
+class TestThemeSettings:
+    def test_default_theme_is_light(self) -> None:
+        model = SettingsModel(FakeCameraEnumerator())
+
+        assert model.app_settings.theme is Theme.LIGHT
+        assert not model.is_dirty
+
+    def test_loads_theme_from_app_settings(self) -> None:
+        model = SettingsModel(FakeCameraEnumerator())
+
+        model.load_app_settings(AppSettings(1, "OFF", 0, None, UiSettings(Theme.DARK)))
+
+        assert model.app_settings.theme is Theme.DARK
+        assert not model.is_dirty
+
+    def test_set_theme_does_not_dirty_the_profile(self) -> None:
+        model = make_model()
+        model.mark_saved()
+
+        model.set_theme(Theme.DARK)
+
+        assert model.app_settings.theme is Theme.DARK
+        assert not model.is_dirty
+
+    def test_theme_projects_to_app_settings_document(self) -> None:
+        model = make_model()
+
+        model.set_theme(Theme.DARK)
+
+        assert model.app_settings_document().ui == UiSettings(Theme.DARK)
+
+    def test_theme_round_trips_through_settings_json(self, tmp_path: Path) -> None:
+        model = make_model()
+        model.set_theme(Theme.DARK)
+        path = tmp_path / "settings.json"
+
+        save_app_settings(path, model.app_settings_document())
+        reloaded = load_app_settings(path)
+
+        assert reloaded.ui.theme is Theme.DARK
+        other = SettingsModel(FakeCameraEnumerator())
+        other.load_app_settings(reloaded)
+        assert other.app_settings.theme is Theme.DARK
+
+    @pytest.mark.parametrize("theme", [Theme.LIGHT, Theme.DARK])
+    def test_projection_and_loading_are_symmetric(
+        self, tmp_path: Path, theme: Theme
+    ) -> None:
+        model = make_model()
+        model.set_theme(theme)
+        path = tmp_path / "settings.json"
+
+        save_app_settings(path, model.app_settings_document())
+        other = SettingsModel(FakeCameraEnumerator())
+        other.load_app_settings(load_app_settings(path))
+
+        assert other.app_settings.theme is theme

@@ -31,6 +31,8 @@ from divergencesplitter_runtime.configuration.models import (
     ResizeInterpolation,
     SourceConfiguration,
     SourceTransformConfiguration,
+    Theme,
+    UiSettings,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
@@ -208,6 +210,7 @@ class EditableAppSettings:
 
     log_level: str = "OFF"
     reaction_time_ms: int = 0
+    theme: Theme = Theme.LIGHT
 
 
 def editable_profile_from(configuration: Profile, path: Path) -> EditableProfile:
@@ -414,6 +417,7 @@ class EditPermission:
     instances: bool
     log_level: bool
     reaction_time: bool
+    theme: bool
 
 
 def edit_permission(state: SessionState) -> EditPermission:
@@ -422,7 +426,7 @@ def edit_permission(state: SessionState) -> EditPermission:
         SessionState.CONNECTING,
         SessionState.STOPPING,
     }
-    return EditPermission(editable, editable, editable, editable)
+    return EditPermission(editable, editable, editable, editable, editable)
 
 
 class SettingsModel:
@@ -475,6 +479,7 @@ class SettingsModel:
         self._app_settings = EditableAppSettings(
             "OFF" if settings.log_level == "OFF" else "DEBUG",
             settings.reaction_time_ms,
+            settings.ui.theme,
         )
         self._last_profile = (
             None if settings.last_profile is None else Path(settings.last_profile)
@@ -697,6 +702,14 @@ class SettingsModel:
         self._app_settings.reaction_time_ms = value
         return self._app_settings
 
+    def set_theme(self, theme: Theme) -> EditableAppSettings:
+        """Set the App Settings theme; App Settings never dirty the Profile."""
+
+        if not isinstance(theme, Theme):
+            raise TypeError(f"unsupported theme: {theme!r}")
+        self._app_settings.theme = theme
+        return self._app_settings
+
     def profile_document(self) -> Profile | None:
         return (
             profile_from_editable(self._profile) if self._profile is not None else None
@@ -710,4 +723,5 @@ class SettingsModel:
             last_profile=(
                 None if self._last_profile is None else str(self._last_profile)
             ),
+            ui=UiSettings(self._app_settings.theme),
         )

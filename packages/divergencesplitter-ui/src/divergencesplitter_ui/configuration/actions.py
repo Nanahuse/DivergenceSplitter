@@ -9,6 +9,7 @@ successful save or a committed App Settings change reloads it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from divergencesplitter_runtime.configuration.app_settings_json import (
 from divergencesplitter_runtime.configuration.models import (
     CameraDeviceConfiguration,
     CameraModeConfiguration,
+    Theme,
 )
 from divergencesplitter_runtime.configuration.profile_json import (
     load_profile,
@@ -63,11 +65,13 @@ class ProfileActions:
         dialogs: FileDialogs,
         *,
         settings_path: Path,
+        on_theme_applied: Callable[[Theme], None] | None = None,
     ) -> None:
         self._controller = controller
         self._model = model
         self._dialogs = dialogs
         self._settings_path = settings_path
+        self._on_theme_applied = on_theme_applied
         self._status = ""
         self._settings_error: str | None = None
         self._pending_reload_path: Path | None = None
@@ -217,6 +221,18 @@ class ProfileActions:
         self._model.set_log_level(level)
         self._controller.set_log_level(level)
         self._persist_app_settings()
+
+    def set_theme(self, theme: Theme) -> None:
+        """Persist the theme to App Settings and apply it live.
+
+        The theme lives in its own settings file, not in a Profile, so it is
+        written immediately like the log level and never restarts the runtime.
+        """
+
+        self._model.set_theme(theme)
+        self._persist_app_settings()
+        if self._on_theme_applied is not None:
+            self._on_theme_applied(self._model.app_settings.theme)
 
     def commit_reaction_time(self, value: int) -> None:
         """Persist a committed reaction time and reload the running Profile.

@@ -13,6 +13,7 @@ from divergencesplitter_runtime.configuration.models import (
     AppSettings,
     InstanceConfiguration,
     Profile,
+    Theme,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.profile_json import save_profile
@@ -565,6 +566,58 @@ class TestDiagnosticsUpdates:
 
         assert diagnostics.calls == [True]
         assert page.updates == []
+
+
+class _ThemePage:
+    def __init__(self) -> None:
+        self.theme = "unset"
+        self.dark_theme = "unset"
+        self.theme_mode = None
+        self.update_calls = 0
+
+    def update(self, *controls) -> None:
+        self.update_calls += 1
+
+
+class _ThemePanel:
+    def __init__(self) -> None:
+        self.themes: list[Theme] = []
+
+    def set_theme(self, theme: Theme) -> None:
+        self.themes.append(theme)
+
+
+class TestThemeApplication:
+    def test_apply_theme_sets_the_page_and_panels(self) -> None:
+        application, _ = make_application()
+        page = _ThemePage()
+        application._page = cast(ft.Page, page)
+        monitor = _ThemePanel()
+        diagnostics = _ThemePanel()
+        configuration = _ThemePanel()
+        application._monitor = cast(Monitor, monitor)
+        application._diagnostics = cast(DiagnosticsPanel, diagnostics)
+        application._configuration = cast(ConfigurationPage, configuration)
+
+        application._apply_theme(Theme.DARK)
+
+        assert page.theme_mode is ft.ThemeMode.DARK
+        assert page.theme is None
+        assert isinstance(page.dark_theme, ft.Theme)
+        assert monitor.themes == [Theme.DARK]
+        assert diagnostics.themes == [Theme.DARK]
+        assert configuration.themes == [Theme.DARK]
+        assert page.update_calls == 1
+
+    def test_apply_light_theme_keeps_standard_light(self) -> None:
+        application, _ = make_application()
+        page = _ThemePage()
+        application._page = cast(ft.Page, page)
+
+        application._apply_theme(Theme.LIGHT)
+
+        assert page.theme_mode is ft.ThemeMode.LIGHT
+        assert page.theme is None
 
 
 class TestConfigurationPreviewTargets:
