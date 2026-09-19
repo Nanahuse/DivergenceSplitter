@@ -131,7 +131,7 @@ def camera_device_label(device: CameraDevice) -> str:
 
 def camera_mode_label(mode: CameraMode) -> str:
     format_value = getattr(mode, "format", None) or getattr(mode, "subtype_guid", "")
-    return f"{mode.width} ÁE{mode.height} @ {mode.fps:g} fps  E{format_value}"
+    return f"{mode.width} × {mode.height} @ {mode.fps:g} fps — {format_value}"
 
 
 @dataclass
