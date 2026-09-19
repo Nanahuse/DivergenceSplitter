@@ -1,4 +1,10 @@
-"""Editable configuration state and conversion to validated runtime values."""
+"""Editable Profile and App Settings state with projection to validated values.
+
+The editable state is split by responsibility: :class:`EditableProfile` owns the
+source, instances, and Profile path, while :class:`EditableAppSettings` owns the
+log level and reaction time. ``SettingsModel`` coordinates both without merging
+them, so App Settings edits never mark the Profile dirty.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,8 @@ from typing import Protocol
 
 from divergencesplitter.livesplit.models import LiveSplitConnection
 from divergencesplitter_runtime.configuration.models import (
-    ApplicationConfiguration,
+    APP_SETTINGS_VERSION,
+    AppSettings,
     CameraBackend,
     CameraDeviceConfiguration,
     CameraModeConfiguration,
@@ -19,11 +26,13 @@ from divergencesplitter_runtime.configuration.models import (
     CropConfiguration,
     InstanceConfiguration,
     NdiSourceConfiguration,
+    Profile,
     ResizeConfiguration,
     ResizeInterpolation,
-    RuntimeConfiguration,
     SourceConfiguration,
     SourceTransformConfiguration,
+    Theme,
+    UiSettings,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
@@ -183,17 +192,28 @@ class EditableInstanceConfiguration:
 
 
 @dataclass
-class EditableApplicationConfiguration:
-    configuration_path: Path
+class EditableProfile:
+    """The editable Profile draft: its path, source, and instances only.
+
+    Log level and reaction time are App Settings, so they are deliberately not
+    fields here and never make a Profile dirty.
+    """
+
+    profile_path: Path
     source: EditableSourceSettings
     instances: tuple[EditableInstanceConfiguration, ...]
-    log_level: str
+
+
+@dataclass
+class EditableAppSettings:
+    """The editable App Settings state shown by the settings controls."""
+
+    log_level: str = "OFF"
     reaction_time_ms: int = 0
+    theme: Theme = Theme.LIGHT
 
 
-def editable_from_configuration(
-    configuration: ApplicationConfiguration, path: Path
-) -> EditableApplicationConfiguration:
+def editable_profile_from(configuration: Profile, path: Path) -> EditableProfile:
     source = configuration.source
     match source:
         case CameraSourceConfiguration():
@@ -224,7 +244,7 @@ def editable_from_configuration(
             )
         case _:  # pragma: no cover - protects future source additions
             raise ValueError(f"unsupported source: {source!r}")
-    return EditableApplicationConfiguration(
+    return EditableProfile(
         path,
         source_settings,
         tuple(
@@ -233,13 +253,11 @@ def editable_from_configuration(
             )
             for i in configuration.instances
         ),
-        "OFF" if configuration.runtime.log_level == "OFF" else "DEBUG",
-        configuration.runtime.reaction_time_ms,
     )
 
 
 def camera_source(
-    editable: EditableApplicationConfiguration,
+    editable: EditableProfile,
 ) -> EditableCameraSourceConfiguration | None:
     return (
         editable.source.camera
@@ -249,7 +267,7 @@ def camera_source(
 
 
 def ndi_source(
-    editable: EditableApplicationConfiguration,
+    editable: EditableProfile,
 ) -> EditableNdiSourceConfiguration | None:
     return (
         editable.source.ndi if editable.source.selected_type is SourceType.NDI else None
@@ -309,7 +327,7 @@ def _configuration_transform(
 
 
 def source_transform_from_editable(
-    editable: EditableApplicationConfiguration,
+    editable: EditableProfile,
 ) -> SourceTransformConfiguration:
     """Project the draft crop/resize into a validated transform configuration."""
 
@@ -344,9 +362,9 @@ def validate_instances_draft(
         raise ValueError("\n".join(errors))
 
 
-def configuration_from_editable(
-    editable: EditableApplicationConfiguration,
-) -> ApplicationConfiguration:
+def profile_from_editable(
+    editable: EditableProfile,
+) -> Profile:
     validate_instances_draft(editable.instances)
     source_settings = editable.source
     source: SourceConfiguration
@@ -381,7 +399,7 @@ def configuration_from_editable(
             raise ValueError(
                 f"unsupported source type: {source_settings.selected_type}"
             )
-    return ApplicationConfiguration(
+    return Profile(
         version=1,
         source=source,
         instances=tuple(
@@ -390,7 +408,6 @@ def configuration_from_editable(
             )
             for i in editable.instances
         ),
-        runtime=RuntimeConfiguration(editable.log_level, editable.reaction_time_ms),
     )
 
 
@@ -400,6 +417,7 @@ class EditPermission:
     instances: bool
     log_level: bool
     reaction_time: bool
+    theme: bool
 
 
 def edit_permission(state: SessionState) -> EditPermission:
@@ -408,13 +426,23 @@ def edit_permission(state: SessionState) -> EditPermission:
         SessionState.CONNECTING,
         SessionState.STOPPING,
     }
-    return EditPermission(editable, editable, editable, editable)
+    return EditPermission(editable, editable, editable, editable, editable)
 
 
 class SettingsModel:
+    """Own the editable Profile draft and the App Settings state separately.
+
+    Profile edits drive :attr:`is_dirty`; log level and reaction time live in the
+    App Settings state and never mark the Profile dirty. ``last_profile`` is
+    lifecycle-owned: it tracks the last Profile that was successfully opened or
+    saved so it can be persisted as part of App Settings.
+    """
+
     def __init__(self, camera_enumerator: CameraEnumerator) -> None:
         self._camera_enumerator = camera_enumerator
-        self._editable: EditableApplicationConfiguration | None = None
+        self._profile: EditableProfile | None = None
+        self._app_settings = EditableAppSettings()
+        self._last_profile: Path | None = None
         self._dirty = False
         self._ndi_available = False
 
@@ -426,28 +454,47 @@ class SettingsModel:
         self._ndi_available = available
 
     @property
-    def editable(self) -> EditableApplicationConfiguration | None:
-        return self._editable
+    def profile(self) -> EditableProfile | None:
+        return self._profile
 
     @property
-    def draft(self) -> EditableApplicationConfiguration | None:
-        return self._editable
+    def draft(self) -> EditableProfile | None:
+        return self._profile
 
     @property
     def is_dirty(self) -> bool:
         return self._dirty
 
-    def open_configuration(
-        self, configuration: ApplicationConfiguration, path: Path
-    ) -> EditableApplicationConfiguration:
-        self._editable = editable_from_configuration(configuration, path)
-        self._dirty = False
-        return self._editable
+    @property
+    def app_settings(self) -> EditableAppSettings:
+        return self._app_settings
 
-    def create_default_configuration(
-        self, path: Path
-    ) -> EditableApplicationConfiguration:
-        self._editable = EditableApplicationConfiguration(
+    @property
+    def last_profile(self) -> Path | None:
+        return self._last_profile
+
+    def load_app_settings(self, settings: AppSettings) -> None:
+        """Seed the App Settings state from a loaded (or default) document."""
+
+        self._app_settings = EditableAppSettings(
+            "OFF" if settings.log_level == "OFF" else "DEBUG",
+            settings.reaction_time_ms,
+            settings.ui.theme,
+        )
+        self._last_profile = (
+            None if settings.last_profile is None else Path(settings.last_profile)
+        )
+
+    def set_last_profile(self, path: Path | None) -> None:
+        self._last_profile = None if path is None else Path(path)
+
+    def open_profile(self, profile: Profile, path: Path) -> EditableProfile:
+        self._profile = editable_profile_from(profile, path)
+        self._dirty = False
+        return self._profile
+
+    def create_default_profile(self, path: Path) -> EditableProfile:
+        self._profile = EditableProfile(
             path,
             EditableSourceSettings(
                 SourceType.CAMERA,
@@ -457,31 +504,28 @@ class SettingsModel:
                 EditableSourceTransform(),
             ),
             (),
-            "INFO",
         )
         self._dirty = True
-        return self._editable
+        return self._profile
 
-    def create_default_camera_configuration(
+    def create_default_camera_profile(
         self,
         path: Path,
         device: CameraDeviceConfiguration,
         mode: CameraModeConfiguration | None = None,
-    ) -> EditableApplicationConfiguration:
-        editable = self.create_default_configuration(path)
+    ) -> EditableProfile:
+        editable = self.create_default_profile(path)
         editable.source.camera.device = device
         editable.source.camera.mode = mode
         return editable
 
-    def mark_saved(
-        self, path: Path | None = None
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    def mark_saved(self, path: Path | None = None) -> EditableProfile | None:
+        if self._profile is None:
             return None
         if path is not None:
-            self._editable.configuration_path = path
+            self._profile.profile_path = path
         self._dirty = False
-        return self._editable
+        return self._profile
 
     def list_cameras(self) -> Sequence[CameraDevice]:
         return self._camera_enumerator.list_devices()
@@ -490,63 +534,59 @@ class SettingsModel:
         if before != after:
             self._dirty = True
 
-    def set_source_type(
-        self, source_type: SourceType
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    def set_source_type(self, source_type: SourceType) -> EditableProfile | None:
+        if self._profile is None:
             return None
         if source_type is SourceType.NDI and not self._ndi_available:
             return None
-        before = self._editable.source.selected_type
-        self._editable.source.selected_type = source_type
+        before = self._profile.source.selected_type
+        self._profile.source.selected_type = source_type
         self._changed(before, source_type)
-        return self._editable
+        return self._profile
 
-    def set_ndi_source_name(self, name: str) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    def set_ndi_source_name(self, name: str) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        before = self._editable.source.ndi.name
-        self._editable.source.ndi.name = name
+        before = self._profile.source.ndi.name
+        self._profile.source.ndi.name = name
         self._changed(before, name)
-        return self._editable
+        return self._profile
 
-    def set_video_path(self, path: str) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    def set_video_path(self, path: str) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        before = self._editable.source.video.path
-        self._editable.source.video.path = path
+        before = self._profile.source.video.path
+        self._profile.source.video.path = path
         self._changed(before, path)
-        return self._editable
+        return self._profile
 
     def set_crop(
         self, crop: EditableCropConfiguration | None
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    ) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        before = self._editable.source.transform.crop
-        self._editable.source.transform.crop = crop
+        before = self._profile.source.transform.crop
+        self._profile.source.transform.crop = crop
         self._changed(before, crop)
-        return self._editable
+        return self._profile
 
     def set_resize(
         self, resize: EditableResizeConfiguration | None
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    ) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        before = self._editable.source.transform.resize
-        self._editable.source.transform.resize = resize
+        before = self._profile.source.transform.resize
+        self._profile.source.transform.resize = resize
         self._changed(before, resize)
-        return self._editable
+        return self._profile
 
     def set_crop_values(
         self, left: int, right: int, top: int, bottom: int
-    ) -> EditableApplicationConfiguration | None:
+    ) -> EditableProfile | None:
         return self.set_crop(EditableCropConfiguration(left, right, top, bottom))
 
-    def set_resize_values(
-        self, width: int, height: int
-    ) -> EditableApplicationConfiguration | None:
-        current = self._editable.source.transform.resize if self._editable else None
+    def set_resize_values(self, width: int, height: int) -> EditableProfile | None:
+        current = self._profile.source.transform.resize if self._profile else None
         interpolation = (
             current.interpolation if current is not None else ResizeInterpolation.AREA
         )
@@ -557,10 +597,10 @@ class SettingsModel:
 
     def set_resize_interpolation(
         self, interpolation: ResizeInterpolation
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None or self._editable.source.transform.resize is None:
-            return self._editable
-        current = self._editable.source.transform.resize
+    ) -> EditableProfile | None:
+        if self._profile is None or self._profile.source.transform.resize is None:
+            return self._profile
+        current = self._profile.source.transform.resize
         return self.set_resize(
             EditableResizeConfiguration(
                 current.width, current.height, interpolation, current.resize_references
@@ -568,9 +608,9 @@ class SettingsModel:
         )
 
     def set_resize_references(self, enabled: bool):
-        if self._editable is None or self._editable.source.transform.resize is None:
-            return self._editable
-        current = self._editable.source.transform.resize
+        if self._profile is None or self._profile.source.transform.resize is None:
+            return self._profile
+        current = self._profile.source.transform.resize
         return self.set_resize(
             EditableResizeConfiguration(
                 current.width, current.height, current.interpolation, enabled
@@ -579,115 +619,109 @@ class SettingsModel:
 
     def set_camera_device(
         self, backend: CameraBackend, name: str, index: int
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    ) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        camera = self._editable.source.camera
+        camera = self._profile.source.camera
         value = CameraDeviceConfiguration(backend, name, index)
         changed = camera.device != value
         self._changed(camera.device, value)
         if changed:
             camera.device, camera.mode = value, None
-        return self._editable
+        return self._profile
 
-    def set_camera_mode(
-        self, mode: CameraModeConfiguration
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    def set_camera_mode(self, mode: CameraModeConfiguration) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        camera = self._editable.source.camera
+        camera = self._profile.source.camera
         self._changed(camera.mode, mode)
         camera.mode = mode
-        return self._editable
+        return self._profile
 
-    def set_request_60_fps(
-        self, enabled: bool
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    def set_request_60_fps(self, enabled: bool) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        camera = self._editable.source.camera
+        camera = self._profile.source.camera
         self._changed(camera.request_60_fps, enabled)
         camera.request_60_fps = enabled
-        return self._editable
+        return self._profile
 
-    def _replace_instance(
-        self, index: int, **changes: str
-    ) -> EditableApplicationConfiguration | None:
-        if self._editable is None or not 0 <= index < len(self._editable.instances):
-            return self._editable
-        instance = self._editable.instances[index]
+    def _replace_instance(self, index: int, **changes: str) -> EditableProfile | None:
+        if self._profile is None or not 0 <= index < len(self._profile.instances):
+            return self._profile
+        instance = self._profile.instances[index]
         updated = replace(instance, **changes)
         self._changed(instance, updated)
-        self._editable.instances = (
-            self._editable.instances[:index]
+        self._profile.instances = (
+            self._profile.instances[:index]
             + (updated,)
-            + self._editable.instances[index + 1 :]
+            + self._profile.instances[index + 1 :]
         )
-        return self._editable
+        return self._profile
 
     def set_instance_scenario(
         self, index: int, scenario: str
-    ) -> EditableApplicationConfiguration | None:
+    ) -> EditableProfile | None:
         return self._replace_instance(index, scenario=scenario)
 
     def set_instance_rpc_endpoint(
         self, index: int, endpoint: str
-    ) -> EditableApplicationConfiguration | None:
+    ) -> EditableProfile | None:
         return self._replace_instance(index, rpc_endpoint=endpoint)
 
     def set_instance_event_endpoint(
         self, index: int, endpoint: str
-    ) -> EditableApplicationConfiguration | None:
+    ) -> EditableProfile | None:
         return self._replace_instance(index, event_endpoint=endpoint)
 
-    def add_instance(self) -> EditableApplicationConfiguration | None:
-        if self._editable is None:
+    def add_instance(self) -> EditableProfile | None:
+        if self._profile is None:
             return None
-        self._editable.instances += (EditableInstanceConfiguration("", "", ""),)
+        self._profile.instances += (EditableInstanceConfiguration("", "", ""),)
         self._dirty = True
-        return self._editable
+        return self._profile
 
-    def remove_instance(self, index: int) -> EditableApplicationConfiguration | None:
-        if self._editable is None or not 0 <= index < len(self._editable.instances):
-            return self._editable
-        self._editable.instances = (
-            self._editable.instances[:index] + self._editable.instances[index + 1 :]
+    def remove_instance(self, index: int) -> EditableProfile | None:
+        if self._profile is None or not 0 <= index < len(self._profile.instances):
+            return self._profile
+        self._profile.instances = (
+            self._profile.instances[:index] + self._profile.instances[index + 1 :]
         )
         self._dirty = True
-        return self._editable
+        return self._profile
 
-    def set_log_level(self, level: str) -> EditableApplicationConfiguration | None:
+    def set_log_level(self, level: str) -> EditableAppSettings:
         if level not in LOG_LEVELS:
             raise ValueError(f"unsupported logging mode: {level!r}")
-        if self._editable is None:
-            return None
-        self._changed(self._editable.log_level, level)
-        self._editable.log_level = level
-        return self._editable
+        self._app_settings.log_level = level
+        return self._app_settings
 
-    def set_reaction_time_ms(
-        self, value: int
-    ) -> EditableApplicationConfiguration | None:
+    def set_reaction_time_ms(self, value: int) -> EditableAppSettings:
         if type(value) is not int or value < 0:
             raise ValueError("reaction time must be a non-negative integer")
-        if self._editable is None:
-            return None
-        self._changed(self._editable.reaction_time_ms, value)
-        self._editable.reaction_time_ms = value
-        return self._editable
+        self._app_settings.reaction_time_ms = value
+        return self._app_settings
 
-    def configuration(self) -> ApplicationConfiguration | None:
+    def set_theme(self, theme: Theme) -> EditableAppSettings:
+        """Set the App Settings theme; App Settings never dirty the Profile."""
+
+        if not isinstance(theme, Theme):
+            raise TypeError(f"unsupported theme: {theme!r}")
+        self._app_settings.theme = theme
+        return self._app_settings
+
+    def profile_document(self) -> Profile | None:
         return (
-            configuration_from_editable(self._editable)
-            if self._editable is not None
-            else None
+            profile_from_editable(self._profile) if self._profile is not None else None
         )
 
-
-# Temporary import aliases keep integrations using the former public names source-compatible.
-CameraSourceDraft = EditableCameraSourceConfiguration
-NdiSourceDraft = EditableNdiSourceConfiguration
-InstanceDraft = EditableInstanceConfiguration
-SettingsDraft = EditableApplicationConfiguration
-draft_from_configuration = editable_from_configuration
-configuration_from_draft = configuration_from_editable
+    def app_settings_document(self) -> AppSettings:
+        return AppSettings(
+            version=APP_SETTINGS_VERSION,
+            log_level=self._app_settings.log_level,
+            reaction_time_ms=self._app_settings.reaction_time_ms,
+            last_profile=(
+                None if self._last_profile is None else str(self._last_profile)
+            ),
+            ui=UiSettings(self._app_settings.theme),
+        )

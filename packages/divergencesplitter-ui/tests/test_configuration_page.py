@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -8,17 +9,24 @@ from typing import cast
 import flet as ft
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter.frame.ndi import NdiSupport
+from divergencesplitter_runtime.configuration.app_settings_json import (
+    load_app_settings,
+)
 from divergencesplitter_runtime.configuration.models import (
-    ApplicationConfiguration,
     CameraBackend,
     CameraDeviceConfiguration,
     CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
+    Profile,
     ResizeInterpolation,
-    RuntimeConfiguration,
+    Theme,
 )
-from divergencesplitter_ui.configuration.page import ConfigurationPage
+from divergencesplitter_runtime.configuration.profile_json import load_profile
+from divergencesplitter_ui.configuration.page import (
+    ConfigurationPage,
+    ConfigurationTab,
+)
 from divergencesplitter_ui.configuration.preview import PreviewController
 from divergencesplitter_ui.monitor.input_preview import (
     PREVIEW_INTERVAL_SECONDS,  # noqa: F401
@@ -34,6 +42,12 @@ from divergencesplitter_ui.settings import (
     SettingsModel,
     SourceType,
 )
+
+BASE = Path.cwd()
+
+
+def p(name: str) -> str:
+    return str(BASE / name)
 
 
 class FakeCameraEnumerator:
@@ -67,7 +81,7 @@ class FakeController:
         self.join_calls = 0
         self.log_levels: list[str] = []
 
-    def start(self, path) -> None:
+    def start(self, path, *, app_settings) -> None:
         if self.state in {
             SessionState.LOADING,
             SessionState.CONNECTING,
@@ -133,8 +147,8 @@ class FakePreviewController:
     def update_transform(self, transform) -> None:
         self.transforms.append(transform)
 
-    def start_draft(self, configuration, base_directory) -> None:
-        self.started.append((configuration, base_directory))
+    def start_draft(self, configuration) -> None:
+        self.started.append(configuration)
 
     def stop(self) -> None:
         self.stop_calls += 1
@@ -154,8 +168,8 @@ class FakePreviewController:
         return None
 
 
-def camera_configuration() -> ApplicationConfiguration:
-    return ApplicationConfiguration(
+def camera_profile() -> Profile:
+    return Profile(
         version=1,
         source=CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 7),
@@ -163,29 +177,36 @@ def camera_configuration() -> ApplicationConfiguration:
             False,
         ),
         instances=(
-            InstanceConfiguration(LiveSplitConnection("rpc", "event"), "scenario.py"),
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"), p("scenario.py")
+            ),
         ),
-        runtime=RuntimeConfiguration("INFO"),
     )
 
 
 def make_page(
     *,
-    configuration: ApplicationConfiguration | None = None,
+    profile: Profile | None = None,
+    empty: bool = False,
+    profile_path: Path | None = None,
     ndi: FakeNdiDiscovery | None = None,
     controller: FakeController | None = None,
     preview: FakePreviewController | None = None,
+    on_apply_theme=None,
 ) -> ConfigurationPage:
     model = SettingsModel(FakeCameraEnumerator())
-    model.open_configuration(
-        configuration or camera_configuration(), Path("config.json")
-    )
+    if not empty:
+        model.open_profile(
+            profile or camera_profile(), profile_path or Path("config.json")
+        )
     return ConfigurationPage(
         cast(SessionController, controller or FakeController()),
         model,
         FakeDialogs(),
         ndi_discovery=cast(NdiDiscovery, ndi or FakeNdiDiscovery()),
         preview_controller=cast(PreviewController, preview or FakePreviewController()),
+        settings_path=Path(tempfile.mkdtemp()) / "settings.json",
+        on_apply_theme=on_apply_theme,
     )
 
 
@@ -193,14 +214,38 @@ def fire(handler, control, data=None) -> None:
     handler(ft.Event("change", control, data=data))
 
 
+def collect_controls(root: ft.Control) -> list[ft.Control]:
+    found: list[ft.Control] = []
+    stack: list[object] = [root]
+    while stack:
+        item = stack.pop()
+        if not isinstance(item, ft.Control):
+            continue
+        found.append(item)
+        controls = getattr(item, "controls", None)
+        if isinstance(controls, (list, tuple)):
+            stack.extend(controls)
+        elif isinstance(controls, ft.Control):
+            stack.append(controls)
+        for attribute in ("content", "title"):
+            child = getattr(item, attribute, None)
+            if isinstance(child, ft.Control):
+                stack.append(child)
+    return found
+
+
 def collect_text(control: ft.Control) -> list[str]:
     found: list[str] = []
     stack = [control]
     while stack:
         item = stack.pop()
-        value = getattr(item, "value", None)
-        if isinstance(value, str):
-            found.append(value)
+        if isinstance(item, str):
+            found.append(item)
+            continue
+        for attribute in ("value", "label", "content"):
+            candidate = getattr(item, attribute, None)
+            if isinstance(candidate, str):
+                found.append(candidate)
         stack.extend(getattr(item, "controls", None) or ())
         content = getattr(item, "content", None)
         if content is not None:
@@ -390,12 +435,11 @@ class TestTick:
     def test_dirty_indicator_and_permissions(self) -> None:
         page = make_page()
         assert page.tick(SessionState.IDLE, visible=True) is True
-        assert page._config_path.value == "config.json"
+        assert page._profile_path.value == "config.json"
 
-        page._model.set_log_level("OFF")
+        page._model.set_instance_scenario(0, p("other.py"))
         page.tick(SessionState.IDLE, visible=True)
-        assert page._config_path.value.endswith(" *")
-        assert page._log_level.value == "OFF"
+        assert page._profile_path.value.endswith(" *")
 
     def test_transition_state_disables_source_editing(self) -> None:
         page = make_page()
@@ -557,21 +601,29 @@ class TestUnsavedEditsDoNotStopRuntime:
         page._log_level.value = "OFF"
         fire(page._on_log_level, page._log_level)
 
-        assert page._model.draft is not None
-        assert page._model.draft.log_level == "OFF"
+        assert page._model.app_settings.log_level == "OFF"
         assert controller.log_levels == ["OFF"]
+        assert not page._model.is_dirty
         self._assert_runtime_untouched(controller)
 
-    def test_reaction_time_edits_draft_only(self) -> None:
+    def test_reaction_time_commit_reloads_running_profile(self) -> None:
         page, controller = self._running_page()
 
         page._reaction_time.value = "30"
-        fire(page._on_reaction_time, page._reaction_time)
+        fire(page._on_reaction_time_committed, page._reaction_time)
 
-        assert page._model.draft is not None
-        assert page._model.draft.reaction_time_ms == 30
-        self._assert_runtime_untouched(controller)
-        assert page._model.is_dirty
+        assert page._model.app_settings.reaction_time_ms == 30
+        assert not page._model.is_dirty
+        assert controller.request_stop_calls == 1
+
+    def test_invalid_reaction_time_does_not_reload(self) -> None:
+        page, controller = self._running_page()
+
+        page._reaction_time.value = "abc"
+        fire(page._on_reaction_time_committed, page._reaction_time)
+
+        assert controller.request_stop_calls == 0
+        assert page._model.app_settings.reaction_time_ms == 0
 
     def test_draft_change_does_not_transition_session_state(self) -> None:
         page, controller = self._running_page()
@@ -591,3 +643,332 @@ class TestTeardown:
         page.teardown()
 
         assert preview.stop_calls == 1
+
+
+class TestProfileHeader:
+    def test_path_buttons_and_status(self) -> None:
+        page = make_page()
+        page.tick(SessionState.IDLE, visible=True)
+
+        labels = collect_text(page.control)
+        assert "New Profile..." in labels
+        assert "Open Profile..." in labels
+        assert "Save" in labels
+        assert "Save Profile As..." in labels
+        assert page._profile_path.value == "config.json"
+
+        page._actions.set_status("saved config.json")
+        page.tick(SessionState.IDLE, visible=True)
+        assert page._header.status.value == "saved config.json"
+
+    def test_dirty_marker_tracks_profile_edits(self) -> None:
+        page = make_page()
+        page.tick(SessionState.IDLE, visible=True)
+        assert not page._profile_path.value.endswith(" *")
+
+        page._model.set_instance_scenario(0, p("other.py"))
+        page.tick(SessionState.IDLE, visible=True)
+
+        assert page._profile_path.value.endswith(" *")
+
+    def test_no_profile_disables_save(self) -> None:
+        page = make_page(empty=True)
+        page.tick(SessionState.IDLE, visible=True)
+
+        assert page._profile_path.value == "No profile selected"
+        assert page._header.save_button.disabled is True
+        assert page._header.save_as_button.disabled is True
+        assert page._header.new_button.disabled is False
+        assert page._header.open_button.disabled is False
+
+
+class TestTabStructure:
+    def test_three_tabs_with_input_initial(self) -> None:
+        page = make_page()
+
+        content = page._tabs.content
+        assert isinstance(content, ft.Column)
+        tab_bar = content.controls[0]
+        assert isinstance(tab_bar, ft.TabBar)
+        labels: list[str] = []
+        for tab in tab_bar.tabs:
+            assert isinstance(tab, ft.Tab)
+            label = tab.label
+            assert isinstance(label, str)
+            labels.append(label)
+        assert labels == [
+            "Input",
+            "Scenarios & Connections",
+            "System",
+        ]
+        assert page._tabs.selected_index == 0
+        assert page.active_tab is ConfigurationTab.INPUT
+
+    def test_switching_tabs_does_not_change_draft_or_runtime(self) -> None:
+        controller = FakeController()
+        page = make_page(controller=controller)
+        page.tick(SessionState.IDLE, visible=True)
+        assert page._model.draft is not None
+        draft = page._model.draft
+
+        for tab in (
+            ConfigurationTab.SYSTEM,
+            ConfigurationTab.SCENARIOS,
+            ConfigurationTab.INPUT,
+        ):
+            page.select_tab(tab)
+
+        assert page._model.draft is draft
+        assert not page._model.is_dirty
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+
+    def test_tab_change_event_selects_tab(self) -> None:
+        page = make_page()
+        page._tabs.selected_index = 2
+        fire(page._on_tab_change, page._tabs)
+
+        assert page.active_tab is ConfigurationTab.SYSTEM
+
+
+class TestInputTab:
+    def test_profile_shows_source_and_frame_processing(self) -> None:
+        page = make_page()
+        page.tick(SessionState.IDLE, visible=True)
+
+        assert page._input._body.visible is True
+        assert page._input._empty.visible is False
+        labels = collect_text(page._input.control)
+        assert "Input source" in labels
+        assert "Frame processing" in labels
+        assert page.preview.control in collect_controls(page._input.control)
+
+    def test_no_profile_shows_empty_state(self) -> None:
+        page = make_page(empty=True)
+        page.tick(SessionState.IDLE, visible=True)
+
+        assert page._input._empty.visible is True
+        assert page._input._body.visible is False
+        assert (
+            "Create or open a Profile to configure the input source."
+            in collect_text(page._input.control)
+        )
+
+
+class TestPreviewLifecycle:
+    def test_input_to_system_stops_and_returning_resyncs(self) -> None:
+        preview = FakePreviewController()
+        page = make_page(preview=preview)
+        page.tick(SessionState.IDLE, visible=True)
+        asyncio.run(page.pump_preview())
+        assert len(preview.started) == 1
+
+        page.select_tab(ConfigurationTab.SYSTEM)
+        asyncio.run(page.pump_preview())
+        assert preview.stop_calls >= 1
+        stopped = preview.stop_calls
+
+        page.select_tab(ConfigurationTab.INPUT)
+        asyncio.run(page.pump_preview())
+        assert len(preview.started) == 2
+        assert preview.stop_calls == stopped
+
+    def test_system_tab_does_not_schedule_preview(self) -> None:
+        preview = FakePreviewController()
+        page = make_page(preview=preview)
+        page.tick(SessionState.IDLE, visible=True)
+        asyncio.run(page.pump_preview())
+        page.select_tab(ConfigurationTab.SYSTEM)
+        asyncio.run(page.pump_preview())
+
+        assert len(preview.started) == 1
+
+
+class TestScenariosTab:
+    def test_cards_use_scenario_terminology(self) -> None:
+        page = make_page()
+        page.tick(SessionState.IDLE, visible=True)
+        page.select_tab(ConfigurationTab.SCENARIOS)
+
+        labels = collect_text(page._scenarios.control)
+        assert "Scenarios & Connections" in labels
+        assert "Add Scenario" in labels
+        assert "Add instance" not in labels
+        assert "Scenario 1" in labels
+        assert "LiveSplit Connection" in labels
+        assert "RPC endpoint" in labels
+        assert "Event endpoint" in labels
+
+    def test_edit_add_remove(self) -> None:
+        page = make_page()
+        page.tick(SessionState.IDLE, visible=True)
+        page.select_tab(ConfigurationTab.SCENARIOS)
+        section = page._instances
+
+        section._rows[0].rpc.value = "tcp://127.0.0.1:54000"
+        fire(section._rows[0].rpc.on_change, section._rows[0].rpc)
+        section._rows[0].event.value = "tcp://127.0.0.1:54001"
+        fire(section._rows[0].event.on_change, section._rows[0].event)
+        section._rows[0].scenario.value = "next.py"
+        fire(section._rows[0].scenario.on_change, section._rows[0].scenario)
+
+        draft = page._model.draft
+        assert draft is not None
+        assert draft.instances[0].rpc_endpoint == "tcp://127.0.0.1:54000"
+        assert draft.instances[0].event_endpoint == "tcp://127.0.0.1:54001"
+        assert draft.instances[0].scenario == "next.py"
+
+        fire(section._on_add, section._control)
+        assert len(draft.instances) == 2
+
+        section._on_remove(0)
+        assert len(draft.instances) == 1
+
+    def test_no_profile_shows_empty_state(self) -> None:
+        page = make_page(empty=True)
+        page.tick(SessionState.IDLE, visible=True)
+        page.select_tab(ConfigurationTab.SCENARIOS)
+
+        assert page._scenarios._empty.visible is True
+        assert page._scenarios._body.visible is False
+        assert (
+            "Create or open a Profile to configure scenarios and connections."
+            in collect_text(page._scenarios.control)
+        )
+
+
+class TestSystemTab:
+    def test_editable_without_profile(self) -> None:
+        controller = FakeController()
+        page = make_page(empty=True, controller=controller)
+        page.select_tab(ConfigurationTab.SYSTEM)
+
+        assert page._log_level.disabled is False
+        assert page._reaction_time.disabled is False
+
+        page._log_level.value = "DEBUG"
+        fire(page._on_log_level, page._log_level)
+        page._reaction_time.value = "50"
+        fire(page._on_reaction_time_committed, page._reaction_time)
+
+        assert page._model.app_settings.log_level == "DEBUG"
+        assert page._model.app_settings.reaction_time_ms == 50
+        assert not page._model.is_dirty
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+
+    def test_app_settings_changes_keep_profile_clean(self) -> None:
+        page = make_page()
+        page.select_tab(ConfigurationTab.SYSTEM)
+        assert not page._model.is_dirty
+
+        page._log_level.value = "DEBUG"
+        fire(page._on_log_level, page._log_level)
+        assert not page._model.is_dirty
+
+        page._reaction_time.value = "25"
+        fire(page._on_reaction_time_committed, page._reaction_time)
+        assert not page._model.is_dirty
+
+
+class TestSaveSemantics:
+    def test_input_edit_saved_from_system_tab(self, tmp_path: Path) -> None:
+        path = tmp_path / "config.json"
+        page = make_page(profile_path=path)
+        page.tick(SessionState.IDLE, visible=True)
+        section = page._frame_processing
+        section._crop_enabled.value = True
+        fire(section._on_crop_enabled_changed, section._crop_enabled, data=True)
+
+        page.select_tab(ConfigurationTab.SYSTEM)
+        result = asyncio.run(page._actions.save(SessionState.IDLE))
+
+        assert result is True
+        saved = load_profile(path)
+        assert saved.source.transform.crop is not None
+
+    def test_scenario_edit_saved_from_system_tab(self, tmp_path: Path) -> None:
+        path = tmp_path / "config.json"
+        page = make_page(profile_path=path)
+        page.tick(SessionState.IDLE, visible=True)
+        page.select_tab(ConfigurationTab.SCENARIOS)
+        section = page._instances
+        section._rows[0].scenario.value = p("next.py")
+        fire(section._rows[0].scenario.on_change, section._rows[0].scenario)
+
+        page.select_tab(ConfigurationTab.SYSTEM)
+        result = asyncio.run(page._actions.save(SessionState.IDLE))
+
+        assert result is True
+        saved = load_profile(path)
+        assert saved.instances[0].scenario == p("next.py")
+
+    def test_inactive_tab_edits_are_preserved(self) -> None:
+        page = make_page()
+        page.tick(SessionState.IDLE, visible=True)
+        section = page._frame_processing
+        section._resize_enabled.value = True
+        fire(section._on_resize_enabled_changed, section._resize_enabled, data=True)
+
+        page.select_tab(ConfigurationTab.SCENARIOS)
+        page.select_tab(ConfigurationTab.INPUT)
+
+        assert page._model.draft is not None
+        assert page._model.draft.source.transform.resize is not None
+
+
+class TestThemeSelection:
+    def test_dropdown_lists_light_and_dark_and_defaults_to_light(self) -> None:
+        page = make_page()
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        labels = [option.text or option.key for option in page._theme.options]
+
+        assert labels == ["Light", "Dark"]
+        assert page._theme.value == "light"
+
+    def test_dropdown_applies_theme_immediately(self) -> None:
+        applied: list[Theme] = []
+        page = make_page(on_apply_theme=applied.append)
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        page._theme.value = "dark"
+        fire(page._on_theme, page._theme)
+
+        assert page._model.app_settings.theme is Theme.DARK
+        assert applied == [Theme.DARK]
+        assert not page._model.is_dirty
+
+    def test_theme_is_persisted_without_saving_a_profile(self) -> None:
+        page = make_page(empty=True)
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+        settings_path = page._actions._settings_path
+
+        page._theme.value = "dark"
+        fire(page._on_theme, page._theme)
+
+        assert load_app_settings(settings_path).ui.theme is Theme.DARK
+
+    def test_theme_change_does_not_restart_the_runtime(self) -> None:
+        controller = FakeController()
+        page = make_page(controller=controller)
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        page._theme.value = "dark"
+        fire(page._on_theme, page._theme)
+
+        assert controller.request_stop_calls == 0
+        assert controller.started == []
+
+    def test_transition_state_disables_the_theme_dropdown(self) -> None:
+        page = make_page()
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.tick(SessionState.IDLE, visible=True)
+
+        page.tick(SessionState.CONNECTING, visible=True)
+
+        assert page._theme.disabled is True

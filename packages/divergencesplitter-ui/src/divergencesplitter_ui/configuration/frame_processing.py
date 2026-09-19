@@ -14,7 +14,7 @@ import flet as ft
 from divergencesplitter_runtime.configuration.models import ResizeInterpolation
 
 from divergencesplitter_ui.settings import (
-    EditableApplicationConfiguration,
+    EditableProfile,
     EditPermission,
     SettingsModel,
 )
@@ -110,7 +110,7 @@ class FrameProcessingSection:
 
     def apply(
         self,
-        draft: EditableApplicationConfiguration,
+        draft: EditableProfile,
         permission: EditPermission,
     ) -> bool:
         changed = False

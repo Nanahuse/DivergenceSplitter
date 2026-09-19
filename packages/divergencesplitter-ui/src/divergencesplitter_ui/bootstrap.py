@@ -14,7 +14,7 @@ from typing import TextIO
 from divergencesplitter_ui.logs import log_file_path
 from divergencesplitter_ui.session import (
     ApplicationRuntimeFactory,
-    DefaultConfigurationLoader,
+    DefaultProfileLoader,
     DefaultScenarioLoader,
     DefaultSourceBuilder,
     OperationalDiagnosticsFactory,
@@ -28,7 +28,7 @@ def build_controller(
     """Construct a session pipeline identical to the command line's."""
 
     return SessionController(
-        configuration_loader=DefaultConfigurationLoader(),
+        profile_loader=DefaultProfileLoader(),
         scenario_loader=DefaultScenarioLoader(),
         source_builder=DefaultSourceBuilder(),
         runtime_factory=ApplicationRuntimeFactory(),

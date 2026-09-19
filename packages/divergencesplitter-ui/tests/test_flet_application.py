@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import tempfile
 import threading
 from pathlib import Path
 from typing import cast
 
 import flet as ft
+from divergencesplitter import LiveSplitConnection
+from divergencesplitter_runtime.configuration.models import (
+    AppSettings,
+    InstanceConfiguration,
+    Profile,
+    Theme,
+    VideoSourceConfiguration,
+)
+from divergencesplitter_runtime.configuration.profile_json import save_profile
 from divergencesplitter_ui.configuration.page import ConfigurationPage
 from divergencesplitter_ui.error_dialog import ErrorDialog
 from divergencesplitter_ui.flet_application import AppView, FletApplication
@@ -13,6 +24,8 @@ from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
 from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.page import Monitor, MonitorUpdate
 from divergencesplitter_ui.session import SessionController, SessionState
+
+BASE = Path.cwd()
 
 
 class FakeController:
@@ -23,11 +36,13 @@ class FakeController:
         self.diagnostics = None
         self.result = None
         self.started: list[Path] = []
+        self.started_settings: list[AppSettings] = []
         self.request_stop_calls = 0
         self.join_calls: list[int] = []
 
-    def start(self, configuration: Path) -> None:
-        self.started.append(Path(configuration))
+    def start(self, profile: Path, *, app_settings: AppSettings) -> None:
+        self.started.append(Path(profile))
+        self.started_settings.append(app_settings)
 
     def request_stop(self) -> None:
         self.request_stop_calls += 1
@@ -39,32 +54,205 @@ class FakeController:
 
 def make_application(
     *,
-    configuration: Path | None = None,
+    profile: Path | None = None,
+    settings_path: Path | None = None,
 ) -> tuple[FletApplication, FakeController]:
     fake = FakeController()
     application = FletApplication(
         cast(SessionController, fake),
-        initial_configuration=configuration,
+        initial_profile=profile,
+        settings_path=settings_path or Path(tempfile.mkdtemp()) / "settings.json",
     )
     return application, fake
 
 
-class TestStartSession:
-    def test_starts_the_existing_controller_with_the_initial_configuration(
-        self,
+def sample_profile() -> Profile:
+    return Profile(
+        version=1,
+        source=VideoSourceConfiguration(str(BASE / "run.mp4")),
+        instances=(
+            InstanceConfiguration(
+                LiveSplitConnection("rpc", "event"),
+                str(BASE / "scenario.py"),
+            ),
+        ),
+    )
+
+
+def write_profile(path: Path) -> Profile:
+    profile = sample_profile()
+    save_profile(path, profile)
+    return profile
+
+
+def write_settings(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+class TestStartupProfileSelection:
+    def test_explicit_profile_starts_and_becomes_last_profile(
+        self, tmp_path: Path
     ) -> None:
-        application, fake = make_application(configuration=Path("config.json"))
+        path = tmp_path / "smw.json"
+        write_profile(path)
+        settings_path = tmp_path / "settings.json"
+        application, fake = make_application(profile=path, settings_path=settings_path)
 
-        application.start_session()
+        assert application.start_session() is True
 
-        assert fake.started == [Path("config.json")]
+        assert fake.started == [path.resolve()]
+        stored = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert stored["last_profile"] == str(path.resolve())
 
-    def test_no_configuration_leaves_the_session_idle(self) -> None:
-        application, fake = make_application()
+    def test_no_profile_leaves_the_session_idle(self, tmp_path: Path) -> None:
+        application, fake = make_application(settings_path=tmp_path / "settings.json")
 
-        application.start_session()
+        assert application.start_session() is False
 
         assert fake.started == []
+
+    def test_last_profile_is_restored(self, tmp_path: Path) -> None:
+        path = tmp_path / "smw.json"
+        write_profile(path)
+        settings_path = tmp_path / "settings.json"
+        write_settings(
+            settings_path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "last_profile": str(path),
+            },
+        )
+        application, fake = make_application(settings_path=settings_path)
+
+        assert application.start_session() is True
+
+        assert fake.started == [path.resolve()]
+
+    def test_missing_last_profile_target_leaves_unselected(
+        self, tmp_path: Path
+    ) -> None:
+        settings_path = tmp_path / "settings.json"
+        write_settings(
+            settings_path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "last_profile": str(tmp_path / "missing.json"),
+            },
+        )
+        application, fake = make_application(settings_path=settings_path)
+
+        assert application.start_session() is False
+
+        assert fake.started == []
+
+    def test_invalid_last_profile_target_leaves_unselected(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "broken.json"
+        path.write_text("{ not valid", encoding="utf-8")
+        settings_path = tmp_path / "settings.json"
+        write_settings(
+            settings_path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "last_profile": str(path),
+            },
+        )
+        application, fake = make_application(settings_path=settings_path)
+
+        assert application.start_session() is False
+
+        assert fake.started == []
+
+    def test_invalid_app_settings_discards_last_profile(self, tmp_path: Path) -> None:
+        valid = tmp_path / "smw.json"
+        write_profile(valid)
+        settings_path = tmp_path / "settings.json"
+        write_settings(
+            settings_path,
+            {
+                "version": 1,
+                "log_level": "DEBUG",
+                "reaction_time_ms": "broken",
+                "last_profile": str(valid),
+            },
+        )
+        application, fake = make_application(settings_path=settings_path)
+
+        assert application.start_session() is False
+
+        assert fake.started == []
+        assert application._model.app_settings_document().last_profile is None
+
+    def test_invalid_app_settings_is_not_overwritten_on_startup(
+        self, tmp_path: Path
+    ) -> None:
+        settings_path = tmp_path / "settings.json"
+        original = json.dumps(
+            {
+                "version": 1,
+                "log_level": "DEBUG",
+                "reaction_time_ms": "broken",
+                "last_profile": None,
+            }
+        )
+        settings_path.write_text(original, encoding="utf-8")
+        application, fake = make_application(settings_path=settings_path)
+
+        application.start_session()
+
+        assert settings_path.read_text(encoding="utf-8") == original
+        assert fake.started == []
+
+    def test_explicit_profile_wins_over_last_profile(self, tmp_path: Path) -> None:
+        explicit = tmp_path / "explicit.json"
+        write_profile(explicit)
+        last = tmp_path / "last.json"
+        write_profile(last)
+        settings_path = tmp_path / "settings.json"
+        write_settings(
+            settings_path,
+            {
+                "version": 1,
+                "log_level": "OFF",
+                "reaction_time_ms": 0,
+                "last_profile": str(last),
+            },
+        )
+        application, fake = make_application(
+            profile=explicit, settings_path=settings_path
+        )
+
+        assert application.start_session() is True
+
+        assert fake.started == [explicit.resolve()]
+
+    def test_loaded_app_settings_reach_the_runtime(self, tmp_path: Path) -> None:
+        path = tmp_path / "smw.json"
+        write_profile(path)
+        settings_path = tmp_path / "settings.json"
+        write_settings(
+            settings_path,
+            {
+                "version": 1,
+                "log_level": "DEBUG",
+                "reaction_time_ms": 30,
+                "last_profile": str(path),
+            },
+        )
+        application, fake = make_application(settings_path=settings_path)
+
+        application.start_session()
+
+        assert fake.started_settings[0].log_level == "DEBUG"
+        assert fake.started_settings[0].reaction_time_ms == 30
+        assert fake.started_settings[0].last_profile is None
 
 
 class TestShutdown:
@@ -378,6 +566,58 @@ class TestDiagnosticsUpdates:
 
         assert diagnostics.calls == [True]
         assert page.updates == []
+
+
+class _ThemePage:
+    def __init__(self) -> None:
+        self.theme = "unset"
+        self.dark_theme = "unset"
+        self.theme_mode = None
+        self.update_calls = 0
+
+    def update(self, *controls) -> None:
+        self.update_calls += 1
+
+
+class _ThemePanel:
+    def __init__(self) -> None:
+        self.themes: list[Theme] = []
+
+    def set_theme(self, theme: Theme) -> None:
+        self.themes.append(theme)
+
+
+class TestThemeApplication:
+    def test_apply_theme_sets_the_page_and_panels(self) -> None:
+        application, _ = make_application()
+        page = _ThemePage()
+        application._page = cast(ft.Page, page)
+        monitor = _ThemePanel()
+        diagnostics = _ThemePanel()
+        configuration = _ThemePanel()
+        application._monitor = cast(Monitor, monitor)
+        application._diagnostics = cast(DiagnosticsPanel, diagnostics)
+        application._configuration = cast(ConfigurationPage, configuration)
+
+        application._apply_theme(Theme.DARK)
+
+        assert page.theme_mode is ft.ThemeMode.DARK
+        assert page.theme is None
+        assert isinstance(page.dark_theme, ft.Theme)
+        assert monitor.themes == [Theme.DARK]
+        assert diagnostics.themes == [Theme.DARK]
+        assert configuration.themes == [Theme.DARK]
+        assert page.update_calls == 1
+
+    def test_apply_light_theme_keeps_standard_light(self) -> None:
+        application, _ = make_application()
+        page = _ThemePage()
+        application._page = cast(ft.Page, page)
+
+        application._apply_theme(Theme.LIGHT)
+
+        assert page.theme_mode is ft.ThemeMode.LIGHT
+        assert page.theme is None
 
 
 class TestConfigurationPreviewTargets:

@@ -23,7 +23,7 @@ jobs:
             ~/.flet/cache
           key: flet-build-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
       - name: Sync locked environment
-        run: uv sync --locked --all-packages --group build --extra ndi
+        run: uv sync --locked --all-packages --group build
       - name: Check license inventory
         run: uv run --no-sync python tools/generate_ui_license_inventory.py --check
       - name: Generate UI version module
