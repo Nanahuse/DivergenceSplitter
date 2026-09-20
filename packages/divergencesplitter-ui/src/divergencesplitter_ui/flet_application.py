@@ -219,7 +219,7 @@ class FletApplication:
         page.window.prevent_close = True
         page.window.on_event = self._on_window_event
 
-        theme = self._model.app_settings.theme
+        theme = self._model.applied_app_settings.theme
         file_picker = ft.FilePicker()
         dialogs = FletFileDialogs(page, file_picker)
         self._monitor = Monitor(theme)
@@ -356,7 +356,7 @@ class FletApplication:
                 targets.append(self._profile_page.control)
         if self._settings_page is not None and self._active_view is AppView.SETTINGS:
             changed = self._settings_page.sync(
-                self._model.app_settings, edit_permission(state)
+                self._model.app_settings_draft, edit_permission(state)
             )
             if changed:
                 targets.append(self._settings_page.control)

@@ -29,6 +29,7 @@ from divergencesplitter_runtime.configuration.profile_json import (
 from divergencesplitter_ui.session import SessionState, is_active
 from divergencesplitter_ui.settings import (
     SOURCE_TYPE_LABELS,
+    AppSettingsDraft,
     CameraDevice,
     CameraMode,
     EditableCameraSourceConfiguration,
@@ -163,19 +164,21 @@ class TestSettingsModel:
         model.mark_saved()
         assert not model.is_dirty
 
-        model.set_log_level("DEBUG")
+        model.edit_log_level("DEBUG")
 
         assert not model.is_dirty
-        assert model.app_settings_document().log_level == "DEBUG"
+        assert model.app_settings_draft.log_level == "DEBUG"
+        assert model.validate_app_settings().log_level == "DEBUG"
 
     def test_reaction_time_does_not_dirty_the_profile(self) -> None:
         model = make_model()
         model.mark_saved()
 
-        model.set_reaction_time_ms(30)
+        model.edit_reaction_time("30")
 
         assert not model.is_dirty
-        assert model.app_settings_document().reaction_time_ms == 30
+        assert model.app_settings_draft.reaction_time_text == "30"
+        assert model.validate_app_settings().reaction_time_ms == 30
 
     def test_new_default_profile_is_dirty(self) -> None:
         model = SettingsModel(FakeCameraEnumerator())
@@ -212,7 +215,7 @@ class TestSettingsModel:
         model.set_instance_scenario(0, p("next.py"))
         model.set_camera_device(CameraBackend.DIRECT_SHOW, "USB Camera", 7)
         model.set_camera_mode(CameraModeConfiguration(1920, 1080, 59.94, "MJPG-GUID"))
-        model.set_log_level("DEBUG")
+        model.edit_log_level("DEBUG")
 
         configuration = model.profile_document()
         assert configuration is not None
@@ -822,30 +825,39 @@ class TestSettingsDecisions:
             assert not is_active(state)
 
 
+def commit(model: SettingsModel) -> None:
+    """Validate the draft and commit it, mirroring a successful Apply."""
+
+    model.apply_app_settings(model.validate_app_settings())
+
+
 class TestReactionTime:
     def test_reaction_time_change_projects_to_app_settings_only(self) -> None:
         model = make_model()
         model.mark_saved()
         assert not model.is_dirty
 
-        model.set_reaction_time_ms(30)
+        model.edit_reaction_time("30")
+        commit(model)
 
         assert not model.is_dirty
         assert model.app_settings_document().reaction_time_ms == 30
         assert model.profile_document() is not None
 
-    @pytest.mark.parametrize("value", [-1, True, 1.5])
-    def test_reaction_time_rejects_invalid_value(self, value: object) -> None:
+    @pytest.mark.parametrize("value", ["-1", "abc", "1.5", "", "  "])
+    def test_reaction_time_rejects_invalid_value(self, value: str) -> None:
         model = make_model()
+        model.edit_reaction_time(value)
 
         with pytest.raises(ValueError):
-            model.set_reaction_time_ms(cast(int, value))
+            model.validate_app_settings()
 
     def test_reaction_time_round_trips_through_settings_json(
         self, tmp_path: Path
     ) -> None:
         model = make_model()
-        model.set_reaction_time_ms(30)
+        model.edit_reaction_time("30")
+        commit(model)
 
         path = tmp_path / "settings.json"
         save_app_settings(path, model.app_settings_document())
@@ -858,7 +870,8 @@ class TestReactionTime:
 
     def test_log_level_round_trips_through_settings_json(self, tmp_path: Path) -> None:
         model = make_model()
-        model.set_log_level("DEBUG")
+        model.edit_log_level("DEBUG")
+        commit(model)
 
         path = tmp_path / "settings.json"
         save_app_settings(path, model.app_settings_document())
@@ -878,11 +891,66 @@ class TestReactionTime:
         assert permission.reaction_time
 
 
+class TestAppSettingsDraft:
+    def test_editing_does_not_change_the_applied_settings(self) -> None:
+        model = make_model()
+        assert not model.app_settings_dirty
+
+        model.edit_theme(Theme.DARK)
+        model.edit_log_level("DEBUG")
+        model.edit_reaction_time("30")
+
+        assert model.app_settings_dirty
+        assert model.applied_app_settings.theme is Theme.LIGHT
+        assert model.applied_app_settings.log_level == "OFF"
+        assert model.applied_app_settings.reaction_time_ms == 0
+        assert model.app_settings_document().ui == UiSettings(Theme.LIGHT)
+
+    def test_apply_commits_and_resets_the_draft(self) -> None:
+        model = make_model()
+        model.edit_theme(Theme.DARK)
+        model.edit_log_level("DEBUG")
+        model.edit_reaction_time("30")
+        assert model.app_settings_dirty
+
+        commit(model)
+
+        assert not model.app_settings_dirty
+        assert model.applied_app_settings.theme is Theme.DARK
+        assert model.applied_app_settings.log_level == "DEBUG"
+        assert model.applied_app_settings.reaction_time_ms == 30
+        assert model.app_settings_draft == AppSettingsDraft(Theme.DARK, "DEBUG", "30")
+
+    def test_unparseable_reaction_time_counts_as_a_change(self) -> None:
+        model = make_model()
+
+        model.edit_reaction_time("not a number")
+
+        assert model.app_settings_dirty
+
+    def test_equivalent_reaction_time_is_not_a_change(self) -> None:
+        model = make_model()
+
+        model.edit_reaction_time(" 0 ")
+
+        assert not model.app_settings_dirty
+
+    def test_load_seeds_draft_and_applied_equally(self) -> None:
+        model = SettingsModel(FakeCameraEnumerator())
+
+        model.load_app_settings(AppSettings(1, "OFF", 0, None, UiSettings(Theme.DARK)))
+
+        assert model.applied_app_settings.theme is Theme.DARK
+        assert model.app_settings_draft == AppSettingsDraft(Theme.DARK, "OFF", "0")
+        assert not model.app_settings_dirty
+        assert not model.is_dirty
+
+
 class TestThemeSettings:
     def test_default_theme_is_light(self) -> None:
         model = SettingsModel(FakeCameraEnumerator())
 
-        assert model.app_settings.theme is Theme.LIGHT
+        assert model.applied_app_settings.theme is Theme.LIGHT
         assert not model.is_dirty
 
     def test_loads_theme_from_app_settings(self) -> None:
@@ -890,28 +958,31 @@ class TestThemeSettings:
 
         model.load_app_settings(AppSettings(1, "OFF", 0, None, UiSettings(Theme.DARK)))
 
-        assert model.app_settings.theme is Theme.DARK
+        assert model.applied_app_settings.theme is Theme.DARK
         assert not model.is_dirty
 
-    def test_set_theme_does_not_dirty_the_profile(self) -> None:
+    def test_edit_theme_does_not_dirty_the_profile(self) -> None:
         model = make_model()
         model.mark_saved()
 
-        model.set_theme(Theme.DARK)
+        model.edit_theme(Theme.DARK)
 
-        assert model.app_settings.theme is Theme.DARK
+        assert model.app_settings_draft.theme is Theme.DARK
+        assert model.applied_app_settings.theme is Theme.LIGHT
         assert not model.is_dirty
 
-    def test_theme_projects_to_app_settings_document(self) -> None:
+    def test_theme_projects_to_app_settings_document_after_apply(self) -> None:
         model = make_model()
 
-        model.set_theme(Theme.DARK)
+        model.edit_theme(Theme.DARK)
+        commit(model)
 
         assert model.app_settings_document().ui == UiSettings(Theme.DARK)
 
     def test_theme_round_trips_through_settings_json(self, tmp_path: Path) -> None:
         model = make_model()
-        model.set_theme(Theme.DARK)
+        model.edit_theme(Theme.DARK)
+        commit(model)
         path = tmp_path / "settings.json"
 
         save_app_settings(path, model.app_settings_document())
@@ -920,18 +991,19 @@ class TestThemeSettings:
         assert reloaded.ui.theme is Theme.DARK
         other = SettingsModel(FakeCameraEnumerator())
         other.load_app_settings(reloaded)
-        assert other.app_settings.theme is Theme.DARK
+        assert other.applied_app_settings.theme is Theme.DARK
 
     @pytest.mark.parametrize("theme", [Theme.LIGHT, Theme.DARK])
     def test_projection_and_loading_are_symmetric(
         self, tmp_path: Path, theme: Theme
     ) -> None:
         model = make_model()
-        model.set_theme(theme)
+        model.edit_theme(theme)
+        commit(model)
         path = tmp_path / "settings.json"
 
         save_app_settings(path, model.app_settings_document())
         other = SettingsModel(FakeCameraEnumerator())
         other.load_app_settings(load_app_settings(path))
 
-        assert other.app_settings.theme is theme
+        assert other.applied_app_settings.theme is theme

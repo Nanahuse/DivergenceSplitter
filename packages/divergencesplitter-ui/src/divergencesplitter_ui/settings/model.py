@@ -1,9 +1,10 @@
 """Editable Profile and App Settings state with projection to validated values.
 
 The editable state is split by responsibility: :class:`EditableProfile` owns the
-source, instances, and Profile path, while :class:`EditableAppSettings` owns the
-log level and reaction time. ``SettingsModel`` coordinates both without merging
-them, so App Settings edits never mark the Profile dirty.
+source, instances, and Profile path, while the App Settings state owns the log
+level, reaction time, and theme. ``SettingsModel`` keeps the *applied* App
+Settings and the *draft* the settings screen is editing apart, so App Settings
+edits never mark the Profile dirty and are only persisted on an explicit Apply.
 """
 
 from __future__ import annotations
@@ -206,11 +207,25 @@ class EditableProfile:
 
 @dataclass
 class EditableAppSettings:
-    """The editable App Settings state shown by the settings controls."""
+    """A validated, currently applied App Settings value."""
 
     log_level: str = "OFF"
     reaction_time_ms: int = 0
     theme: Theme = Theme.LIGHT
+
+
+@dataclass
+class AppSettingsDraft:
+    """The App Settings values the settings screen is editing.
+
+    Reaction time is kept as the raw text the user typed so partial or invalid
+    input survives every periodic sync; it is parsed and validated only when the
+    settings are accepted by an explicit Apply.
+    """
+
+    theme: Theme = Theme.LIGHT
+    log_level: str = "OFF"
+    reaction_time_text: str = "0"
 
 
 def editable_profile_from(configuration: Profile, path: Path) -> EditableProfile:
@@ -419,6 +434,12 @@ class EditPermission:
     reaction_time: bool
     theme: bool
 
+    @property
+    def settings(self) -> bool:
+        """Whether the Settings screen, including its Apply button, is editable."""
+
+        return self.theme and self.log_level and self.reaction_time
+
 
 def edit_permission(state: SessionState) -> EditPermission:
     editable = state not in {
@@ -432,16 +453,19 @@ def edit_permission(state: SessionState) -> EditPermission:
 class SettingsModel:
     """Own the editable Profile draft and the App Settings state separately.
 
-    Profile edits drive :attr:`is_dirty`; log level and reaction time live in the
-    App Settings state and never mark the Profile dirty. ``last_profile`` is
-    lifecycle-owned: it tracks the last Profile that was successfully opened or
-    saved so it can be persisted as part of App Settings.
+    Profile edits drive :attr:`is_dirty`; App Settings edits live in the
+    :attr:`app_settings_draft` and never mark the Profile dirty. Only
+    :meth:`apply_app_settings` moves the draft into the applied state used by
+    :meth:`app_settings_document`. ``last_profile`` is lifecycle-owned: it tracks
+    the last Profile that was successfully opened or saved so it can be persisted
+    as part of App Settings.
     """
 
     def __init__(self, camera_enumerator: CameraEnumerator) -> None:
         self._camera_enumerator = camera_enumerator
         self._profile: EditableProfile | None = None
-        self._app_settings = EditableAppSettings()
+        self._applied_app_settings = EditableAppSettings()
+        self._app_settings_draft = AppSettingsDraft()
         self._last_profile: Path | None = None
         self._dirty = False
         self._ndi_available = False
@@ -466,20 +490,50 @@ class SettingsModel:
         return self._dirty
 
     @property
-    def app_settings(self) -> EditableAppSettings:
-        return self._app_settings
+    def applied_app_settings(self) -> EditableAppSettings:
+        """The App Settings values that are currently saved and applied."""
+
+        return self._applied_app_settings
+
+    @property
+    def app_settings_draft(self) -> AppSettingsDraft:
+        """The App Settings values the settings screen is editing."""
+
+        return self._app_settings_draft
+
+    @property
+    def app_settings_dirty(self) -> bool:
+        """Whether the draft differs from the applied App Settings.
+
+        An unparseable reaction time counts as a change so Apply stays enabled
+        and can report the validation error instead of silently ignoring it.
+        """
+
+        draft = self._app_settings_draft
+        applied = self._applied_app_settings
+        if draft.theme is not applied.theme or draft.log_level != applied.log_level:
+            return True
+        try:
+            reaction_time = int(draft.reaction_time_text.strip())
+        except TypeError, ValueError:
+            return True
+        return reaction_time != applied.reaction_time_ms
 
     @property
     def last_profile(self) -> Path | None:
         return self._last_profile
 
     def load_app_settings(self, settings: AppSettings) -> None:
-        """Seed the App Settings state from a loaded (or default) document."""
+        """Seed the applied and draft App Settings from a loaded document."""
 
-        self._app_settings = EditableAppSettings(
-            "OFF" if settings.log_level == "OFF" else "DEBUG",
+        log_level = "OFF" if settings.log_level == "OFF" else "DEBUG"
+        self._applied_app_settings = EditableAppSettings(
+            log_level,
             settings.reaction_time_ms,
             settings.ui.theme,
+        )
+        self._app_settings_draft = AppSettingsDraft(
+            settings.ui.theme, log_level, str(settings.reaction_time_ms)
         )
         self._last_profile = (
             None if settings.last_profile is None else Path(settings.last_profile)
@@ -690,38 +744,75 @@ class SettingsModel:
         self._dirty = True
         return self._profile
 
-    def set_log_level(self, level: str) -> EditableAppSettings:
+    def edit_log_level(self, level: str) -> AppSettingsDraft:
+        """Update the draft log level; never dirties the Profile or the file."""
+
         if level not in LOG_LEVELS:
             raise ValueError(f"unsupported logging mode: {level!r}")
-        self._app_settings.log_level = level
-        return self._app_settings
+        self._app_settings_draft.log_level = level
+        return self._app_settings_draft
 
-    def set_reaction_time_ms(self, value: int) -> EditableAppSettings:
-        if type(value) is not int or value < 0:
-            raise ValueError("reaction time must be a non-negative integer")
-        self._app_settings.reaction_time_ms = value
-        return self._app_settings
+    def edit_reaction_time(self, text: str) -> AppSettingsDraft:
+        """Store raw reaction time input; validation is deferred to Apply."""
 
-    def set_theme(self, theme: Theme) -> EditableAppSettings:
-        """Set the App Settings theme; App Settings never dirty the Profile."""
+        self._app_settings_draft.reaction_time_text = "" if text is None else str(text)
+        return self._app_settings_draft
+
+    def edit_theme(self, theme: Theme) -> AppSettingsDraft:
+        """Update the draft theme; never dirties the Profile or the file."""
 
         if not isinstance(theme, Theme):
             raise TypeError(f"unsupported theme: {theme!r}")
-        self._app_settings.theme = theme
-        return self._app_settings
+        self._app_settings_draft.theme = theme
+        return self._app_settings_draft
+
+    def validate_app_settings(self) -> EditableAppSettings:
+        """Project the draft into a validated App Settings value.
+
+        Raises :class:`ValueError` when the reaction time is not a non-negative
+        integer or a value is otherwise unsupported.
+        """
+
+        draft = self._app_settings_draft
+        try:
+            reaction_time_ms = int(draft.reaction_time_text.strip())
+        except (TypeError, ValueError) as error:
+            raise ValueError("reaction time must be a non-negative integer") from error
+        if reaction_time_ms < 0:
+            raise ValueError("reaction time must be a non-negative integer")
+        if draft.log_level not in LOG_LEVELS:
+            raise ValueError(f"unsupported logging mode: {draft.log_level!r}")
+        if not isinstance(draft.theme, Theme):
+            raise TypeError(f"unsupported theme: {draft.theme!r}")
+        return EditableAppSettings(draft.log_level, reaction_time_ms, draft.theme)
+
+    def apply_app_settings(self, settings: EditableAppSettings) -> None:
+        """Commit validated settings as applied and reset the draft to match."""
+
+        self._applied_app_settings = EditableAppSettings(
+            settings.log_level, settings.reaction_time_ms, settings.theme
+        )
+        self._app_settings_draft = AppSettingsDraft(
+            settings.theme, settings.log_level, str(settings.reaction_time_ms)
+        )
 
     def profile_document(self) -> Profile | None:
         return (
             profile_from_editable(self._profile) if self._profile is not None else None
         )
 
-    def app_settings_document(self) -> AppSettings:
+    def app_settings_document(
+        self, settings: EditableAppSettings | None = None
+    ) -> AppSettings:
+        """Build the App Settings document; defaults to the applied settings."""
+
+        values = self._applied_app_settings if settings is None else settings
         return AppSettings(
             version=APP_SETTINGS_VERSION,
-            log_level=self._app_settings.log_level,
-            reaction_time_ms=self._app_settings.reaction_time_ms,
+            log_level=values.log_level,
+            reaction_time_ms=values.reaction_time_ms,
             last_profile=(
                 None if self._last_profile is None else str(self._last_profile)
             ),
-            ui=UiSettings(self._app_settings.theme),
+            ui=UiSettings(values.theme),
         )
