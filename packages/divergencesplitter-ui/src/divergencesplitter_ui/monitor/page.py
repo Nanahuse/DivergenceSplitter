@@ -60,7 +60,10 @@ class Monitor:
                 ft.Container(
                     content=self.scenario_overview.control,
                     expand=True,
-                    padding=12,
+                    # No top padding: the Overview title must share its top edge
+                    # with Global Status in the left column. Left/right/bottom
+                    # insets are kept so the scroll region stays off the divider.
+                    padding=ft.Padding.only(left=12, right=12, bottom=12),
                 ),
             ],
             expand=True,

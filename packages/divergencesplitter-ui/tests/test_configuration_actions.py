@@ -155,6 +155,7 @@ def make_actions(
     dialogs: FakeDialogs | None = None,
     controller: FakeController | None = None,
     settings_path: Path = Path("settings.json"),
+    on_status=None,
 ):
     controller = controller or FakeController()
     model = model or make_model()
@@ -165,6 +166,7 @@ def make_actions(
             model,
             dialogs,
             settings_path=settings_path,
+            on_status=on_status,
         ),
         controller,
         model,
@@ -534,3 +536,56 @@ class TestAppSettingsPersistence:
         assert model.draft is not None
         assert not model.is_dirty
         assert "could not save app settings" in actions.status
+
+
+class TestStatusNotifications:
+    def test_save_reports_a_notification(self, tmp_path: Path) -> None:
+        model = make_model(tmp_path / "config.json")
+        events: list[str] = []
+        actions, _, _, _ = make_actions(
+            model=model,
+            settings_path=tmp_path / "settings.json",
+            on_status=events.append,
+        )
+
+        assert asyncio.run(actions.save(SessionState.IDLE)) is True
+
+        assert "saved config.json" in events
+
+    def test_open_reports_a_notification(self, tmp_path: Path) -> None:
+        path = tmp_path / "config.json"
+        save_profile(path, video_profile())
+        events: list[str] = []
+        actions, _, _, _ = make_actions(
+            dialogs=FakeDialogs(open_result=path),
+            settings_path=tmp_path / "settings.json",
+            on_status=events.append,
+        )
+
+        assert asyncio.run(actions.open(SessionState.IDLE)) is True
+
+        assert f"opened {path.name}" in events
+
+    def test_error_status_reports_a_notification(self, tmp_path: Path) -> None:
+        directory = tmp_path / "a-directory"
+        directory.mkdir()
+        model = make_model(directory)
+        events: list[str] = []
+        actions, _, _, _ = make_actions(
+            model=model,
+            settings_path=tmp_path / "settings.json",
+            on_status=events.append,
+        )
+
+        assert asyncio.run(actions.save(SessionState.IDLE)) is False
+
+        assert any("could not save" in event for event in events)
+
+    def test_same_status_is_reported_every_time(self) -> None:
+        events: list[str] = []
+        actions, _, _, _ = make_actions(on_status=events.append)
+
+        actions.set_status("saved config.json")
+        actions.set_status("saved config.json")
+
+        assert events == ["saved config.json", "saved config.json"]

@@ -402,3 +402,28 @@ class TestApplyErrors:
 
         assert not model.app_settings_dirty
         assert model.app_settings_draft.reaction_time_text == "30"
+
+
+class TestStatusCallback:
+    def test_apply_error_reaches_on_status(self, tmp_path: Path) -> None:
+        events: list[str] = []
+        actions, _controller, model = make_actions(
+            model=make_model(tmp_path / "config.json"),
+            settings_path=tmp_path / "settings.json",
+            on_status=events.append,
+        )
+        model.edit_reaction_time("abc")
+
+        assert actions.apply() is False
+
+        assert any("reaction time" in event for event in events)
+
+    def test_apply_without_changes_emits_an_empty_status(self, tmp_path: Path) -> None:
+        events: list[str] = []
+        actions, _controller, _model = make_actions(
+            settings_path=tmp_path / "settings.json", on_status=events.append
+        )
+
+        assert actions.apply() is True
+
+        assert events == [""]

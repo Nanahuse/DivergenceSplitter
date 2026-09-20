@@ -293,9 +293,13 @@ class TestShutdown:
 class _RecordingPage:
     def __init__(self) -> None:
         self.updates: list[tuple] = []
+        self.dialogs: list[ft.Control] = []
 
     def update(self, *controls) -> None:
         self.updates.append(controls)
+
+    def show_dialog(self, dialog: ft.Control) -> None:
+        self.dialogs.append(dialog)
 
 
 def _views() -> dict[AppView, ft.Container]:
@@ -798,3 +802,44 @@ class TestProfilePreviewTargets:
         asyncio.run(application._apply_profile_preview())
 
         assert page.updates == []
+
+
+class TestNotifications:
+    def test_message_shows_a_floating_snackbar(self) -> None:
+        page = _RecordingPage()
+        application = _application_with(page, _FakeMonitor())
+
+        application._show_notification("saved profile.json")
+
+        assert len(page.dialogs) == 1
+        notification = page.dialogs[0]
+        assert isinstance(notification, ft.SnackBar)
+        assert notification.behavior is ft.SnackBarBehavior.FLOATING
+        assert cast(ft.Text, notification.content).value == "saved profile.json"
+        assert application.notification is notification
+
+    def test_empty_message_shows_nothing(self) -> None:
+        page = _RecordingPage()
+        application = _application_with(page, _FakeMonitor())
+
+        application._show_notification("")
+
+        assert page.dialogs == []
+        assert application.notification is None
+
+    def test_same_message_is_shown_again(self) -> None:
+        page = _RecordingPage()
+        application = _application_with(page, _FakeMonitor())
+
+        application._show_notification("saved profile.json")
+        application._show_notification("saved profile.json")
+
+        assert len(page.dialogs) == 2
+        assert page.dialogs[0] is not page.dialogs[1]
+
+    def test_missing_page_is_ignored(self) -> None:
+        application, _ = make_application()
+
+        application._show_notification("saved profile.json")
+
+        assert application.notification is None
