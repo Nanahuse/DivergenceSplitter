@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import flet as ft
+import pytest
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter_runtime.configuration.app_settings_json import (
     load_app_settings,
@@ -261,14 +262,25 @@ class TestApplyButton:
 
         assert page.apply.disabled is True
 
-    def test_disabled_during_a_transition_state(self) -> None:
+    @pytest.mark.parametrize("state", [SessionState.LOADING, SessionState.STOPPING])
+    def test_disabled_during_a_transition_state(self, state: SessionState) -> None:
+        page, model, _controller, _actions = make_page()
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
+
+        page.sync(model.app_settings_draft, edit_permission(state))
+
+        assert page.apply.disabled is True
+
+    def test_enabled_while_connecting(self) -> None:
         page, model, _controller, _actions = make_page()
         page.reaction_time.value = "30"
         fire(page._on_reaction_time_changed, page.reaction_time)
 
         page.sync(model.app_settings_draft, edit_permission(SessionState.CONNECTING))
 
-        assert page.apply.disabled is True
+        assert page.reaction_time.disabled is False
+        assert page.apply.disabled is False
 
     def test_apply_persists_app_settings_once(self, tmp_path: Path) -> None:
         settings_path = tmp_path / "settings.json"

@@ -442,9 +442,17 @@ class EditPermission:
 
 
 def edit_permission(state: SessionState) -> EditPermission:
+    """Return which draft edits ``state`` allows.
+
+    Only the short-lived transitions that own no stable configuration,
+    ``LOADING`` and ``STOPPING``, disable editing. ``CONNECTING`` is active in
+    the runtime lifecycle but still lets the draft be edited; the changes stay
+    in the draft and only reach the runtime through the existing save-time
+    reload.
+    """
+
     editable = state not in {
         SessionState.LOADING,
-        SessionState.CONNECTING,
         SessionState.STOPPING,
     }
     return EditPermission(editable, editable, editable, editable, editable)
