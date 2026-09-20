@@ -110,6 +110,7 @@ class InstanceDiagnostics(LiveSplitBridgeDiagnostics, Protocol):
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_duration_ns: int,
     ) -> None: ...
 
     def instance_reset(self, scenario_index: int) -> None: ...
@@ -409,15 +410,22 @@ class InstanceRuntime:
         if runtime is None:
             return None
         context = FrameContext(shared=shared)
+        evaluation_started_at = self._time_provider.now()
         try:
             action = runtime.evaluate(context)
         except Exception as error:  # noqa: BLE001
             self._diagnostics.scenario_evaluation_failed(self.scenario_index, error)
             return None
-        # Evaluation latency ends the moment evaluate() returned, before any
-        # action validity check, late event drain, or RPC.
-        completed_at = self._time_provider.now()
-        self._publish_observations(context, completed_at)
+        # Evaluation duration covers only runtime.evaluate(). It ends the moment
+        # evaluate() returned, before any action validity check, late event
+        # drain, reaction wait, or RPC.
+        evaluation_completed_at = self._time_provider.now()
+        evaluation_duration_ns = (
+            evaluation_completed_at.nanoseconds - evaluation_started_at.nanoseconds
+        )
+        self._publish_observations(
+            context, evaluation_completed_at, evaluation_duration_ns
+        )
         if action is not None and action.operation in ("start", "reset"):
             # A new Start/Reset decision begins a fresh evaluation period.
             self._publish_reset()
@@ -683,10 +691,14 @@ class InstanceRuntime:
         self,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_duration_ns: int,
     ) -> None:
         try:
             self._diagnostics.instance_evaluated(
-                self.scenario_index, context, completed_at
+                self.scenario_index,
+                context,
+                completed_at,
+                evaluation_duration_ns,
             )
         except Exception:  # noqa: BLE001, S110
             # Diagnostics must never break the evaluation cycle.

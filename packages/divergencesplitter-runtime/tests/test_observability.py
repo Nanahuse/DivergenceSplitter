@@ -315,7 +315,7 @@ class TestConditionObservations:
         diagnostics.bind_runtime((make_instance(scenario),), make_frame_source())
         diagnostics.take_condition_observations()
         assert condition.evaluate(context) is False
-        diagnostics.instance_evaluated(0, context, MonotonicTime(150))
+        diagnostics.instance_evaluated(0, context, MonotonicTime(150), 0)
 
         observations = {
             item.condition: item for item in diagnostics.take_condition_observations()
@@ -343,7 +343,7 @@ class TestConditionObservations:
             context = make_context()
             if current is not None:
                 current.evaluate(context)
-            diagnostics.instance_evaluated(0, context, MonotonicTime(150))
+            diagnostics.instance_evaluated(0, context, MonotonicTime(150), 0)
             observations = diagnostics.take_condition_observations()
             assert {id(item.condition) for item in observations if item.active} == (
                 {id(current)} if current is not None else set()
@@ -389,7 +389,7 @@ class TestMultiScenarioObservations:
 
         context = make_context()
         first.evaluate(context)
-        diagnostics.instance_evaluated(0, context, MonotonicTime(150))
+        diagnostics.instance_evaluated(0, context, MonotonicTime(150), 0)
 
         observations = {
             item.condition: item for item in diagnostics.take_condition_observations()
@@ -401,7 +401,7 @@ class TestMultiScenarioObservations:
 
         context = make_context()
         second.evaluate(context)
-        diagnostics.instance_evaluated(1, context, MonotonicTime(160))
+        diagnostics.instance_evaluated(1, context, MonotonicTime(160), 0)
 
         observations = {
             item.condition: item for item in diagnostics.take_condition_observations()
@@ -416,13 +416,13 @@ class TestMultiScenarioObservations:
 
         context = make_context()
         first.evaluate(context)
-        diagnostics.instance_evaluated(0, context, MonotonicTime(150))
+        diagnostics.instance_evaluated(0, context, MonotonicTime(150), 0)
 
         context = make_context()
         second.evaluate(context)
-        diagnostics.instance_evaluated(1, context, MonotonicTime(160))
+        diagnostics.instance_evaluated(1, context, MonotonicTime(160), 0)
 
-        diagnostics.instance_evaluated(0, make_context(), MonotonicTime(170))
+        diagnostics.instance_evaluated(0, make_context(), MonotonicTime(170), 0)
 
         observations = {
             item.condition: item for item in diagnostics.take_condition_observations()
@@ -440,7 +440,7 @@ class TestMultiScenarioObservations:
 
         context = make_context()
         second.evaluate(context)
-        diagnostics.instance_evaluated(1, context, MonotonicTime(160))
+        diagnostics.instance_evaluated(1, context, MonotonicTime(160), 0)
 
         observations = diagnostics.take_condition_observations()
         assert {item.condition for item in observations} == {first, second}

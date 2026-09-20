@@ -422,9 +422,12 @@ class OperationalDiagnostics:
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_duration_ns: int,
     ) -> None:
-        """Record one instance's evaluation latency and condition activity."""
-        self._record_evaluation_latency(scenario_index, context, completed_at)
+        """Record one instance's evaluation duration and condition activity."""
+        self._record_evaluation_latency(
+            scenario_index, completed_at, evaluation_duration_ns
+        )
         with self._observable_lock:
             if scenario_index >= len(self._instances):
                 return
@@ -443,16 +446,17 @@ class OperationalDiagnostics:
     def _record_evaluation_latency(
         self,
         scenario_index: int,
-        context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_duration_ns: int,
     ) -> None:
-        latency_ns = completed_at.nanoseconds - context.frame.captured_at.nanoseconds
+        # Only the runtime.evaluate() duration is recorded, never the time spent
+        # from frame capture to evaluation start.
         with self._metrics_lock:
             window = self._instance_latency.get(scenario_index)
             if window is None:
                 window = _LatencyWindow()
                 self._instance_latency[scenario_index] = window
-            window.record(completed_at.nanoseconds, latency_ns)
+            window.record(completed_at.nanoseconds, evaluation_duration_ns)
 
     def instance_reset(self, scenario_index: int) -> None:
         """Clear one instance's latency window on a new Start/Reset decision."""

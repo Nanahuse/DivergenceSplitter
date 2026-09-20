@@ -173,6 +173,7 @@ class RecordingDiagnostics:
         self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
         self.evaluated: list[int] = []
         self.completions: list[int] = []
+        self.evaluation_durations_ns: list[int] = []
         self.resets: list[int] = []
         self.reactions: list[tuple[int, Action, int, int, int]] = []
         self.cancellations: list[tuple[int, Action, str]] = []
@@ -206,9 +207,11 @@ class RecordingDiagnostics:
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_duration_ns: int,
     ) -> None:
         self.evaluated.append(scenario_index)
         self.completions.append(completed_at.nanoseconds)
+        self.evaluation_durations_ns.append(evaluation_duration_ns)
 
     def instance_reset(self, scenario_index: int) -> None:
         self.resets.append(scenario_index)
@@ -762,7 +765,7 @@ def test_evaluation_latency_ends_at_evaluate_return() -> None:
         def execute_action(
             self, action: Action, expected_snapshot: LiveSplitSnapshot
         ) -> ActionExecution:
-            # Action/RPC time must never be added to the evaluation latency.
+            # Action/RPC time must never be added to the evaluation duration.
             clock.nanoseconds = 999_999_999
             return super().execute_action(action, expected_snapshot)
 
@@ -775,6 +778,7 @@ def test_evaluation_latency_ends_at_evaluate_return() -> None:
     harness.start()
     try:
         harness.wait_ready()
+        # Frame captured at 100 ns; evaluation starts at 0 and returns at 250 ns.
         harness.instance.publish_frame(shared_frame(100))
         assert entered.wait(3)
         clock.nanoseconds = 250
@@ -785,6 +789,98 @@ def test_evaluation_latency_ends_at_evaluate_return() -> None:
         harness.stop()
 
     assert harness.diagnostics.completions == [250]
+    assert harness.diagnostics.evaluation_durations_ns == [250]
+
+
+def test_evaluation_duration_excludes_capture_to_start_wait() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        # evaluate() has already started; advance 5 ms to emulate its own work.
+        clock.nanoseconds = 105_000_000
+        entered.set()
+        assert release.wait(3)
+
+    clock = ManualClock(100_000_000)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=clock,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        # 100 ms elapse between capture and evaluation start; they are excluded.
+        harness.instance.publish_frame(shared_frame(100))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_durations_ns == [5_000_000]
+
+
+def test_evaluation_duration_records_evaluate_time() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        clock.nanoseconds = 10_000_000
+        entered.set()
+        assert release.wait(3)
+
+    clock = ManualClock(0)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=clock,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_durations_ns == [10_000_000]
+
+
+def test_reaction_time_is_excluded_from_evaluation_duration() -> None:
+    clock = ManualClock(0)
+    entered, release = threading.Event(), threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        clock.nanoseconds = 5_000_000
+        entered.set()
+        assert release.wait(3)
+
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+    harness = Harness(
+        make_scenario(RecordingCondition(True, on_evaluate=on_evaluate)),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=100,
+        reaction_wait=_advance_to_deadline(clock),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        release.set()
+        harness.stop()
+
+    # evaluate() ran for 5 ms; the 100 ms reaction wait is not evaluation.
+    assert harness.diagnostics.evaluation_durations_ns == [5_000_000]
+    assert adapter.dispatch_times == [100_000_000]
 
 
 def test_unknown_rpc_result_recovers_without_resend() -> None:
@@ -962,6 +1058,9 @@ def test_frames_during_reaction_wait_are_latest_only() -> None:
         harness.stop()
 
     assert condition.captured_at == [1, 4]
+    # The latest frame (captured_at=4) is evaluated only after the 30 ms
+    # reaction wait, but that wait is never charged to the evaluation duration.
+    assert harness.diagnostics.evaluation_durations_ns == [0, 0]
 
 
 def test_periodic_update_during_reaction_follows_expected_snapshot() -> None:
