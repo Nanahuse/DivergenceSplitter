@@ -10,6 +10,7 @@ save reloads it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -62,11 +63,13 @@ class ProfileActions:
         dialogs: FileDialogs,
         *,
         settings_path: Path,
+        on_status: Callable[[str], None] | None = None,
     ) -> None:
         self._controller = controller
         self._model = model
         self._dialogs = dialogs
         self._settings_path = settings_path
+        self._on_status = on_status
         self._status = ""
         self._settings_error: str | None = None
         self._pending_reload_path: Path | None = None
@@ -76,7 +79,15 @@ class ProfileActions:
         return self._status
 
     def set_status(self, message: str) -> None:
+        """Record a status and emit it as a notification event.
+
+        Each call is a new event even when the message is unchanged, so a
+        repeated Save always produces a fresh notification.
+        """
+
         self._status = message
+        if self._on_status is not None:
+            self._on_status(message)
 
     def _can_edit(self, state: SessionState) -> bool:
         return edit_permission(state).instances
@@ -123,7 +134,7 @@ class ProfileActions:
             )
         # A new Profile is only a draft: last_profile is not updated until the
         # first successful write.
-        self._status = "new profile; save to apply it"
+        self.set_status("new profile; save to apply it")
         return True
 
     async def open(self, state: SessionState) -> bool:
@@ -143,10 +154,10 @@ class ProfileActions:
             profile = load_profile(path)
         except (ConfigurationFileError, ConfigurationValidationError) as error:
             # A bad file must not disturb the Profile already in use.
-            self._status = profile_error_message(error)
+            self.set_status(profile_error_message(error))
             return False
         self._model.open_profile(profile, path)
-        self._status = f"opened {path.name}"
+        self.set_status(f"opened {path.name}")
         self._remember_last_profile(path)
         self.reload(path)
         return True
@@ -158,12 +169,12 @@ class ProfileActions:
             return False
         draft = self._model.draft
         if draft is None:
-            self._status = "open a profile file first"
+            self.set_status("open a profile file first")
             return False
         try:
             profile = self._model.profile_document()
         except ValueError as error:
-            self._status = str(error)
+            self.set_status(str(error))
             return False
         if profile is None:
             return False
@@ -171,10 +182,10 @@ class ProfileActions:
             save_profile(draft.profile_path, profile)
         except OSError as error:
             # A failed save must leave the running session untouched.
-            self._status = f"could not save: {error}"
+            self.set_status(f"could not save: {error}")
             return False
         self._model.mark_saved()
-        self._status = f"saved {draft.profile_path.name}"
+        self.set_status(f"saved {draft.profile_path.name}")
         self._remember_last_profile(draft.profile_path)
         self.reload(draft.profile_path)
         return True
@@ -195,17 +206,17 @@ class ProfileActions:
         try:
             profile = self._model.profile_document()
         except ValueError as error:
-            self._status = str(error)
+            self.set_status(str(error))
             return False
         if profile is None:
             return False
         try:
             save_profile(path, profile)
         except OSError as error:
-            self._status = f"could not save: {error}"
+            self.set_status(f"could not save: {error}")
             return False
         self._model.mark_saved(path)
-        self._status = f"saved {path.name}"
+        self.set_status(f"saved {path.name}")
         self._remember_last_profile(path)
         self.reload(path)
         return True
@@ -220,7 +231,7 @@ class ProfileActions:
         error = persist_app_settings(self._model, self._settings_path)
         if error is not None:
             self._settings_error = error
-            self._status = error
+            self.set_status(error)
             return False
         self._settings_error = None
         return True
@@ -231,7 +242,7 @@ class ProfileActions:
         self._pending_reload_path = path
         if is_active(self._controller.state):
             self._controller.request_stop()
-            self._status = "Reloading profile..."
+            self.set_status("Reloading profile...")
             return
         self.advance(self._controller.state)
 
@@ -256,5 +267,5 @@ class ProfileActions:
         message = f"started {path.name}"
         if self._settings_error is not None:
             message = f"{message} ({self._settings_error})"
-        self._status = message
+        self.set_status(message)
         return True

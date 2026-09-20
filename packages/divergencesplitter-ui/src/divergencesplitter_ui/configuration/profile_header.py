@@ -1,9 +1,10 @@
 """Shared Profile header for the Flet application.
 
 The header is the always-visible Profile context, shown above every Current
-View: the current Profile path, its dirty marker, the New/Open/Save/Save As
-buttons, and the shared global status. It only renders the values the
-application computes; every Profile operation stays in ``ProfileActions``.
+View: the current Profile path, its dirty marker, and the New/Open/Save/Save As
+buttons. It only renders the values the application computes; every Profile
+operation stays in ``ProfileActions``. Status messages are transient
+notifications owned by the application, so the header stays a single row.
 """
 
 from __future__ import annotations
@@ -13,13 +14,11 @@ from collections.abc import Callable
 import flet as ft
 from divergencesplitter_runtime.configuration.models import Theme
 
-from divergencesplitter_ui.theme import semantic_colors
-
 NO_PROFILE_TEXT = "No profile selected"
 
 
 class ProfileHeader:
-    """Present the current Profile path, dirty marker, actions, and status."""
+    """Present the current Profile path, dirty marker, and actions."""
 
     def __init__(
         self,
@@ -28,9 +27,7 @@ class ProfileHeader:
         on_open: Callable[[ft.Event[ft.OutlinedButton]], object],
         on_save: Callable[[ft.Event[ft.OutlinedButton]], object],
         on_save_as: Callable[[ft.Event[ft.OutlinedButton]], object],
-        theme: Theme = Theme.LIGHT,
     ) -> None:
-        self._colors = semantic_colors(theme)
         self._profile_path = ft.TextField(
             value=NO_PROFILE_TEXT,
             read_only=True,
@@ -49,22 +46,15 @@ class ProfileHeader:
         self._save_as_button = ft.OutlinedButton(
             content="Save As", on_click=on_save_as, disabled=True, key="profile-save-as"
         )
-        self._status = ft.Text("", color=self._colors.primary, key="profile-status")
-        self._control = ft.Column(
+        self._control = ft.Row(
             controls=[
-                ft.Row(
-                    controls=[
-                        self._profile_path,
-                        self._new_button,
-                        self._open_button,
-                        self._save_button,
-                        self._save_as_button,
-                    ],
-                    spacing=8,
-                ),
-                self._status,
+                self._profile_path,
+                self._new_button,
+                self._open_button,
+                self._save_button,
+                self._save_as_button,
             ],
-            spacing=4,
+            spacing=8,
         )
 
     @property
@@ -91,32 +81,27 @@ class ProfileHeader:
     def save_as_button(self) -> ft.OutlinedButton:
         return self._save_as_button
 
-    @property
-    def status(self) -> ft.Text:
-        return self._status
-
     def set_theme(self, theme: Theme) -> None:
-        self._colors = semantic_colors(theme)
-        self._status.color = self._colors.primary
+        """Accept a theme; the header has no theme-dependent controls."""
 
     def sync(
         self,
         *,
         path_text: str,
-        status: str,
         new_enabled: bool,
         open_enabled: bool,
         save_enabled: bool,
         save_as_enabled: bool,
     ) -> bool:
-        """Render the page's Profile state; return whether anything changed."""
+        """Render the page's Profile state; return whether anything changed.
+
+        Status is intentionally absent: it is transient notification state, not
+        part of the header.
+        """
 
         changed = False
         if self._profile_path.value != path_text:
             self._profile_path.value = path_text
-            changed = True
-        if self._status.value != status:
-            self._status.value = status
             changed = True
         changed |= _set_enabled(self._new_button, new_enabled)
         changed |= _set_enabled(self._open_button, open_enabled)

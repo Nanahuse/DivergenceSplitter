@@ -170,6 +170,25 @@ class TestLayout:
         assert isinstance(right, ft.Container)
         assert right.expand is True
 
+    def test_overview_title_shares_the_global_status_top_edge(self) -> None:
+        monitor = Monitor()
+        control = monitor.control
+        assert isinstance(control, ft.Column)
+        top = cast(ft.Row, control.controls[0])
+        left = cast(ft.Column, top.controls[0])
+        right = cast(ft.Container, top.controls[2])
+
+        # Global Status starts the left column with no inset, so the Overview
+        # container must have no top padding either while keeping its other
+        # insets for the scroll region.
+        assert left.controls[0] is monitor.global_status.control
+        padding = right.padding
+        assert isinstance(padding, ft.Padding)
+        assert padding.top == 0
+        assert padding.left == 12
+        assert padding.right == 12
+        assert padding.bottom == 12
+
     def test_no_control_uses_the_old_fixed_width(self) -> None:
         monitor = Monitor()
 

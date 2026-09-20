@@ -60,6 +60,7 @@ WINDOW_HEIGHT = 900
 WINDOW_TITLE = "DivergenceSplitter"
 MONITOR_INTERVAL_SECONDS = 0.1
 PROFILE_PREVIEW_SECONDS = 1.0 / 15.0
+NOTIFICATION_SECONDS = 3.0
 _MAIN_POLL_SECONDS = 0.1
 
 
@@ -107,6 +108,7 @@ class FletApplication:
         self._header: ProfileHeader | None = None
         self._profile_actions: ProfileActions | None = None
         self._app_settings_actions: AppSettingsActions | None = None
+        self._notification: ft.SnackBar | None = None
         self._navigation: Navigation | None = None
         self._views: dict[AppView, ft.Container] = {}
         self._active_view = AppView.MONITOR
@@ -154,6 +156,12 @@ class FletApplication:
 
         return self._monitor
 
+    @property
+    def notification(self) -> ft.SnackBar | None:
+        """The most recent status notification, exposed for UI assertions."""
+
+        return self._notification
+
     def _load_app_settings(self) -> None:
         """Load App Settings at startup, discarding an invalid file entirely.
 
@@ -190,6 +198,27 @@ class FletApplication:
     def _set_startup_status(self, message: str) -> None:
         if self._profile_actions is not None:
             self._profile_actions.set_status(message)
+
+    def _show_notification(self, message: str) -> None:
+        """Show one transient status message near the bottom of the window.
+
+        The application owns the single notification surface, so Profile and
+        App Settings operations share it. An empty message is ignored, and the
+        same text can be shown again because every call builds a fresh
+        ``SnackBar`` instead of diffing the previous string. Showing a
+        notification never blocks the event loop.
+        """
+
+        if not message or self._page is None:
+            return
+        notification = ft.SnackBar(
+            content=ft.Text(message),
+            behavior=ft.SnackBarBehavior.FLOATING,
+            duration=int(NOTIFICATION_SECONDS * 1000),
+            show_close_icon=True,
+        )
+        self._notification = notification
+        self._page.show_dialog(notification)
 
     def _apply_theme(self, theme: Theme) -> None:
         """Apply one theme to the page and every theme-aware panel.
@@ -285,7 +314,11 @@ class FletApplication:
         self._monitor = Monitor(theme)
         self._diagnostics = DiagnosticsPanel(theme)
         self._profile_actions = ProfileActions(
-            self._controller, self._model, dialogs, settings_path=self._settings_path
+            self._controller,
+            self._model,
+            dialogs,
+            settings_path=self._settings_path,
+            on_status=self._show_notification,
         )
         self._app_settings_actions = AppSettingsActions(
             self._controller,
@@ -293,7 +326,7 @@ class FletApplication:
             settings_path=self._settings_path,
             on_theme_applied=self._apply_theme,
             on_reload=self._profile_actions.reload,
-            on_status=self._profile_actions.set_status,
+            on_status=self._show_notification,
         )
         self._profile_page = ProfilePage(
             self._controller,
@@ -434,8 +467,8 @@ class FletApplication:
         """Sync the shared Profile header; return whether anything changed.
 
         The header is refreshed from ``FletApplication`` rather than from the
-        Profile page, so the path, dirty marker, button availability, and status
-        stay current on every Current View.
+        Profile page, so the path, dirty marker, and button availability stay
+        current on every Current View.
         """
 
         header = self._header
@@ -453,10 +486,8 @@ class FletApplication:
                 path_text += " *"
             save_enabled = permission.instances
             save_as_enabled = permission.instances
-        status = self._profile_actions.status if self._profile_actions else ""
         return header.sync(
             path_text=path_text,
-            status=status,
             new_enabled=permission.instances,
             open_enabled=permission.instances,
             save_enabled=save_enabled,
