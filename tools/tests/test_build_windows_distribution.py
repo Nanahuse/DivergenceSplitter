@@ -32,6 +32,7 @@ def make_tree(root: Path) -> None:
     ndilib.mkdir(parents=True, exist_ok=True)
     (ndilib / "NDIlib.cp314-win_amd64.pyd").write_bytes(b"pyd")
     (ndilib / "Processing.NDI.Lib.x64.dll").write_bytes(b"dll")
+    (ndilib / "Processing.NDI.Lib.Licenses.txt").write_bytes(b"notices")
     capture = site_packages / "windows_capture_device_list"
     capture.mkdir(parents=True, exist_ok=True)
     (capture / "core.cp314-win_amd64.pyd").write_bytes(b"pyd")
@@ -127,6 +128,16 @@ class TestVerification:
         make_tree(tmp_path)
         cv2 = tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT / bwd.SITE_PACKAGES / "cv2"
         (cv2 / "config-3.py").unlink()
+
+        with pytest.raises(RuntimeError, match="Missing required file"):
+            bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
+
+    def test_rejects_missing_ndi_license_notice(self, tmp_path: Path) -> None:
+        make_tree(tmp_path)
+        ndilib = (
+            tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT / bwd.SITE_PACKAGES / "NDIlib"
+        )
+        (ndilib / "Processing.NDI.Lib.Licenses.txt").unlink()
 
         with pytest.raises(RuntimeError, match="Missing required file"):
             bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)

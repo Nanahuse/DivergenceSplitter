@@ -70,7 +70,7 @@ def ui_distribution(*, requires: Iterable[str] = ()) -> FakeDistribution:
         "divergencesplitter-ui",
         "0.1.0",
         requires=requires,
-        license_expression="GPL-3.0-only",
+        license_expression="MIT",
     )
 
 
@@ -95,7 +95,7 @@ class TestReleaseClosure:
             "divergencesplitter-runtime",
             "0.1.0",
             requires=["core-package"],
-            license_expression="GPL-3.0-only",
+            license_expression="MIT",
         )
         core = FakeDistribution(
             "core-package",
@@ -132,7 +132,7 @@ class TestReleaseClosure:
                 "mac-only; sys_platform == 'darwin'",
                 "extra-only; extra == 'dev'",
             ],
-            license_expression="GPL-3.0-only",
+            license_expression="MIT",
         )
         windows = FakeDistribution(
             "windows-only", "1.0.0", license="MIT", license_files={"LICENSE": "t"}
@@ -182,22 +182,51 @@ class TestReleaseClosure:
             invgen.release_closure(closure_source)
 
 
-class TestLicenseText:
-    def test_ndi_includes_runtime_notices_outside_dist_info(
+class TestNdiLicenseBoundary:
+    def ndi_distribution(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    ) -> FakeDistribution:
         dist = FakeDistribution(
-            "ndi-python", "6.3.2.4", license_files={"LICENSE": "binding MIT text"}
+            "ndi-python",
+            "6.3.2.4",
+            license="MIT",
+            license_files={"licenses/LICENSE": "binding MIT text"},
         )
         notice = tmp_path / "NDIlib" / "Processing.NDI.Lib.Licenses.txt"
         notice.parent.mkdir()
         notice.write_text("NDI runtime notices", encoding="utf-8")
         monkeypatch.setattr(dist, "locate_file", lambda path: tmp_path / path)
+        return dist
+
+    def test_binding_license_text_excludes_runtime_notices(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        dist = self.ndi_distribution(tmp_path, monkeypatch)
 
         text = invgen.license_text(dist)
-        assert "binding MIT text" in text
-        assert "NDI runtime notices" in text
 
+        assert "binding MIT text" in text
+        assert "NDI runtime notices" not in text
+
+    def test_runtime_notices_stay_outside_dist_info(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        dist = self.ndi_distribution(tmp_path, monkeypatch)
+
+        assets = invgen.ndi_runtime_assets({"ndi-python": dist})
+
+        assert [asset["name"] for asset in assets] == [
+            invgen.NDI_RUNTIME_ASSET_NAME,
+            invgen.NDI_RUNTIME_NOTICES_ASSET_NAME,
+        ]
+        assert all(asset["license"] == invgen.NDI_SDK_LICENSE for asset in assets)
+        assert "NDI runtime notices" in assets[1]["license_text"]
+
+    def test_absent_binding_emits_no_assets(self) -> None:
+        assert invgen.ndi_runtime_assets({}) == []
+
+
+class TestLicenseText:
     def test_declared_license_files_are_bundled(self) -> None:
         dist = FakeDistribution(
             "mine",
@@ -277,6 +306,29 @@ class TestLicenseText:
         with pytest.raises(RuntimeError, match="cannot collect"):
             invgen.license_text(dist)
 
+    def test_mpl_component_carries_source_availability(self) -> None:
+        dist = FakeDistribution(
+            "certifi",
+            "2026.7.22",
+            license_expression="MPL-2.0",
+            license_files={"LICENSE": "MPL text"},
+        )
+
+        text = invgen.license_text(dist)
+
+        assert "=== MPL-2.0 Source Availability ===" in text
+        assert "https://pypi.org/project/certifi/2026.7.22/#files" in text
+
+    def test_non_mpl_component_has_no_source_note(self) -> None:
+        dist = FakeDistribution(
+            "mine",
+            "1.0.0",
+            license_expression="MIT",
+            license_files={"LICENSE": "MIT text"},
+        )
+
+        assert "Source Availability" not in invgen.license_text(dist)
+
 
 class TestBuildInventory:
     def test_packages_are_sorted_by_normalized_name(self) -> None:
@@ -291,7 +343,7 @@ class TestBuildInventory:
             FakeDistribution(
                 "divergencesplitter-runtime",
                 "0.1.0",
-                license_expression="GPL-3.0-only",
+                license_expression="MIT",
             ),
             FakeDistribution(
                 "numpy",
@@ -356,12 +408,12 @@ class TestBuildInventory:
                 "divergencesplitter-runtime",
                 "0.1.0",
                 requires=["divergencesplitter"],
-                license_expression="GPL-3.0-only",
+                license_expression="MIT",
             ),
             FakeDistribution(
                 "divergencesplitter",
                 "0.1.0",
-                license_expression="GPL-3.0-only",
+                license_expression="MIT",
             ),
             FakeDistribution(
                 "numpy",
@@ -376,6 +428,46 @@ class TestBuildInventory:
         names = [entry["name"] for entry in inventory["packages"]]
 
         assert names == ["numpy"]
+
+    def test_ndi_runtime_is_assets_not_part_of_binding_license(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ndi = FakeDistribution(
+            "ndi-python",
+            "6.3.2.4",
+            license="MIT",
+            license_files={"licenses/LICENSE": "binding MIT text"},
+        )
+        notice = tmp_path / "NDIlib" / "Processing.NDI.Lib.Licenses.txt"
+        notice.parent.mkdir()
+        notice.write_text("NDI runtime notices", encoding="utf-8")
+        monkeypatch.setattr(ndi, "locate_file", lambda path: tmp_path / path)
+        dists = [ui_distribution(requires=["ndi-python"]), ndi]
+
+        inventory = invgen.build_inventory(invgen.release_closure(installed(*dists)))
+
+        binding = next(
+            entry for entry in inventory["packages"] if entry["name"] == "ndi-python"
+        )
+        assert binding["license"] == "MIT"
+        assert "NDI runtime notices" not in binding["license_text"]
+        assert [asset["name"] for asset in inventory["assets"]] == [
+            invgen.NDI_RUNTIME_ASSET_NAME,
+            invgen.NDI_RUNTIME_NOTICES_ASSET_NAME,
+        ]
+        assert "NDI runtime notices" in inventory["assets"][1]["license_text"]
+
+
+class TestApplicationEntry:
+    def test_application_is_mit_and_matches_root_license(self) -> None:
+        entry = invgen.application_entry()
+
+        assert entry["name"] == "DivergenceSplitter"
+        assert entry["license"] == "MIT"
+        assert entry["license_text"] == invgen.APPLICATION_LICENSE_PATH.read_text(
+            encoding="utf-8"
+        )
+        assert "MIT License" in entry["license_text"]
 
 
 class TestResolveLicense:
@@ -440,8 +532,8 @@ class TestCheckInventory:
             "schema_version": 3,
             "application": {
                 "name": "DivergenceSplitter",
-                "license": "GPL-3.0-only",
-                "license_text": "the GPL text",
+                "license": "MIT",
+                "license_text": "the MIT text",
             },
             "packages": [
                 {
@@ -514,7 +606,7 @@ class TestCheckInventory:
 
     def test_application_difference_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()
-        stored["application"]["license_text"] = "edited GPL text"
+        stored["application"]["license_text"] = "edited MIT text"
         self.write_stored(tmp_path, stored)
 
         assert invgen.check_inventory(self.make_expected()) is False

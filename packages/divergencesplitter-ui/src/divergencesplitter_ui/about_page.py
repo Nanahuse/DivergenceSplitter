@@ -13,6 +13,7 @@ import flet as ft
 
 from divergencesplitter_ui.about import about_info
 from divergencesplitter_ui.license_page import LicenseView
+from divergencesplitter_ui.ndi_branding import NDI_TRADEMARK_NOTICE, NDI_WEBSITE_URL
 
 GITHUB_URL = "https://github.com/Nanahuse/DivergenceSplitter"
 
@@ -24,12 +25,15 @@ class AboutView:
         info = about_info()
         self._license_view = LicenseView()
         self._github_button = ft.TextButton(content="GitHub ↗", url=GITHUB_URL)
+        self._ndi_button = ft.TextButton(content="NDI website ↗", url=NDI_WEBSITE_URL)
         self._control = ft.Column(
             controls=[
                 ft.Text(info.application_name, size=22),
                 ft.Text(f"Version: {info.version}"),
                 ft.Container(height=4),
                 self._github_button,
+                self._ndi_button,
+                ft.Text(NDI_TRADEMARK_NOTICE, size=11),
                 ft.Divider(),
                 self._license_view.control,
             ],
@@ -44,3 +48,7 @@ class AboutView:
     @property
     def github_button(self) -> ft.TextButton:
         return self._github_button
+
+    @property
+    def ndi_button(self) -> ft.TextButton:
+        return self._ndi_button

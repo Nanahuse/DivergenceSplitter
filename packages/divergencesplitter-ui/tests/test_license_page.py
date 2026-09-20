@@ -62,7 +62,7 @@ class TestLicenseView:
         texts = collect_text(view.control)
         assert sections[0].title in texts
         assert any("numpy" in text for text in texts)
-        assert any("GNU GENERAL PUBLIC LICENSE" in text for text in texts)
+        assert any("MIT License" in text for text in texts)
 
     def test_body_is_scrollable(self) -> None:
         view = LicenseView()
