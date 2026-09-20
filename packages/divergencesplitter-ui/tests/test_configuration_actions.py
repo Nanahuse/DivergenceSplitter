@@ -6,9 +6,6 @@ from types import SimpleNamespace
 from typing import cast
 
 from divergencesplitter import LiveSplitConnection
-from divergencesplitter_runtime.configuration.app_settings_json import (
-    load_app_settings,
-)
 from divergencesplitter_runtime.configuration.models import (
     AppSettings,
     CameraBackend,
@@ -17,7 +14,6 @@ from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     InstanceConfiguration,
     Profile,
-    Theme,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.profile_json import (
@@ -215,30 +211,6 @@ class TestNew:
 
         assert result is False
         assert dialogs.confirm_calls == 1
-
-
-class TestSetTheme:
-    def test_set_theme_applies_and_persists_immediately(self, tmp_path: Path) -> None:
-        applied: list[Theme] = []
-        model = make_model(tmp_path / "config.json")
-        controller = FakeController()
-        settings_path = tmp_path / "settings.json"
-        actions = ProfileActions(
-            cast(SessionController, controller),
-            model,
-            FakeDialogs(),
-            settings_path=settings_path,
-            on_theme_applied=applied.append,
-        )
-
-        actions.set_theme(Theme.DARK)
-
-        assert applied == [Theme.DARK]
-        assert model.app_settings.theme is Theme.DARK
-        assert not model.is_dirty
-        assert controller.request_stop_calls == 0
-        assert controller.started == []
-        assert load_app_settings(settings_path).ui.theme is Theme.DARK
 
 
 class TestOpen:
@@ -543,59 +515,7 @@ class TestPermissions:
         assert load_profile(path) == video_profile()
 
 
-class TestAppSettingsOperations:
-    def test_log_level_is_persisted_and_never_restarts(self, tmp_path: Path) -> None:
-        model = make_model()
-        settings_path = tmp_path / "settings.json"
-        actions, controller, _, _ = make_actions(
-            model=model, settings_path=settings_path
-        )
-
-        actions.set_log_level("DEBUG")
-
-        assert settings_path.exists()
-        assert controller.request_stop_calls == 0
-        assert controller.started == []
-        assert not model.is_dirty
-
-    def test_reaction_time_persists_and_reloads_when_profile_exists(
-        self, tmp_path: Path
-    ) -> None:
-        model = make_model(tmp_path / "config.json")
-        settings_path = tmp_path / "settings.json"
-        actions, controller, _, _ = make_actions(
-            model=model, settings_path=settings_path
-        )
-
-        actions.commit_reaction_time(30)
-
-        assert settings_path.exists()
-        assert controller.started == [tmp_path / "config.json"]
-        assert not model.is_dirty
-
-    def test_reaction_time_without_profile_does_not_start(self, tmp_path: Path) -> None:
-        model = SettingsModel(FakeCameraEnumerator())
-        settings_path = tmp_path / "settings.json"
-        actions, controller, _, _ = make_actions(
-            model=model, settings_path=settings_path
-        )
-
-        actions.commit_reaction_time(30)
-
-        assert settings_path.exists()
-        assert controller.started == []
-
-    def test_app_settings_save_failure_is_reported(self, tmp_path: Path) -> None:
-        # A directory is not a writable settings file path.
-        settings_path = tmp_path / "settings-dir"
-        settings_path.mkdir()
-        model = make_model()
-        actions, _, _, _ = make_actions(model=model, settings_path=settings_path)
-
-        actions.set_log_level("DEBUG")
-
-        assert "could not save app settings" in actions.status
-
+class TestAppSettingsPersistence:
     def test_profile_write_succeeds_even_when_settings_write_fails(
         self, tmp_path: Path
     ) -> None:

@@ -17,12 +17,15 @@ from divergencesplitter_runtime.configuration.models import (
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.profile_json import save_profile
-from divergencesplitter_ui.configuration.page import ConfigurationPage
+from divergencesplitter_ui.configuration.actions import ProfileActions
+from divergencesplitter_ui.configuration.profile_header import ProfileHeader
 from divergencesplitter_ui.error_dialog import ErrorDialog
-from divergencesplitter_ui.flet_application import AppView, FletApplication
+from divergencesplitter_ui.flet_application import FletApplication
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
 from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.page import Monitor, MonitorUpdate
+from divergencesplitter_ui.navigation import AppView, Navigation
+from divergencesplitter_ui.profile.page import ProfilePage
 from divergencesplitter_ui.session import SessionController, SessionState
 
 BASE = Path.cwd()
@@ -282,75 +285,74 @@ class TestShutdown:
         assert len(fake.join_calls) == 1
 
 
+class _RecordingPage:
+    def __init__(self) -> None:
+        self.updates: list[tuple] = []
+
+    def update(self, *controls) -> None:
+        self.updates.append(controls)
+
+
+def _views() -> dict[AppView, ft.Container]:
+    return {view: ft.Container(visible=view is AppView.MONITOR) for view in AppView}
+
+
 class TestNavigation:
-    def test_view_order_includes_diagnostics_after_monitor(self) -> None:
+    def test_view_order_starts_with_monitor(self) -> None:
         assert [view.value for view in AppView] == [
             "monitor",
             "diagnostics",
-            "configuration",
+            "profile",
+            "settings",
             "about",
         ]
 
-    def test_switching_to_diagnostics_does_not_stop_runtime(self) -> None:
-        application, fake = make_application()
-        application._monitor_view = ft.Container()
-        application._diagnostics_view = ft.Container(visible=False)
-        application._configuration_view = ft.Container(visible=False)
-        rail = ft.NavigationRail(selected_index=1)
+    def test_settings_and_about_sit_below_the_spacer(self) -> None:
+        navigation = Navigation(on_select=lambda view: None)
 
-        application._on_navigate(ft.Event("change", rail))
+        column = cast(ft.Column, navigation.control.content)
+        controls = column.controls
+
+        spacer_index = controls.index(navigation.spacer)
+        assert controls.index(navigation.items[AppView.PROFILE]) < spacer_index
+        assert controls.index(navigation.items[AppView.SETTINGS]) > spacer_index
+        assert controls.index(navigation.items[AppView.ABOUT]) > spacer_index
+
+    def test_selecting_profile_does_not_stop_runtime(self) -> None:
+        application, fake = make_application()
+        application._views = _views()
+        application._page = cast(ft.Page, _RecordingPage())
+
+        application._select_view(AppView.PROFILE)
 
         assert fake.request_stop_calls == 0
-        assert application.active_view == "diagnostics"
-        assert application._diagnostics_view.visible is True
-        assert application._monitor_view.visible is False
-        assert application._configuration_view.visible is False
+        assert application.active_view is AppView.PROFILE
+        assert application._views[AppView.PROFILE].visible is True
+        assert application._views[AppView.MONITOR].visible is False
 
-    def test_switching_to_configuration_does_not_stop_runtime(self) -> None:
+    def test_selecting_settings_does_not_stop_runtime(self) -> None:
         application, fake = make_application()
-        application._monitor_view = ft.Container()
-        application._diagnostics_view = ft.Container(visible=False)
-        application._configuration_view = ft.Container(visible=False)
-        rail = ft.NavigationRail(selected_index=2)
+        application._views = _views()
+        application._page = cast(ft.Page, _RecordingPage())
 
-        application._on_navigate(ft.Event("change", rail))
+        application._select_view(AppView.SETTINGS)
 
         assert fake.request_stop_calls == 0
-        assert application.active_view == "configuration"
-        assert application._configuration_view.visible is True
-        assert application._monitor_view.visible is False
-        assert application._diagnostics_view.visible is False
+        assert application.active_view is AppView.SETTINGS
+        assert application._views[AppView.SETTINGS].visible is True
+        assert application._views[AppView.PROFILE].visible is False
 
-    def test_switching_to_about_does_not_stop_runtime(self) -> None:
+    def test_selecting_about_does_not_stop_runtime(self) -> None:
         application, fake = make_application()
-        application._monitor_view = ft.Container()
-        application._diagnostics_view = ft.Container(visible=False)
-        application._configuration_view = ft.Container(visible=False)
-        application._about_view = ft.Container(visible=False)
-        rail = ft.NavigationRail(selected_index=3)
+        application._views = _views()
+        application._page = cast(ft.Page, _RecordingPage())
 
-        application._on_navigate(ft.Event("change", rail))
+        application._select_view(AppView.ABOUT)
 
         assert fake.request_stop_calls == 0
-        assert application.active_view == "about"
-        assert application._about_view.visible is True
-        assert application._monitor_view.visible is False
-        assert application._configuration_view.visible is False
-        assert application._diagnostics_view.visible is False
-
-    def test_switching_back_to_monitor_restores_visibility(self) -> None:
-        application, _ = make_application()
-        application._monitor_view = ft.Container(visible=False)
-        application._diagnostics_view = ft.Container(visible=False)
-        application._configuration_view = ft.Container()
-        rail = ft.NavigationRail(selected_index=0)
-
-        application._on_navigate(ft.Event("change", rail))
-
-        assert application.active_view == "monitor"
-        assert application._monitor_view.visible is True
-        assert application._configuration_view.visible is False
-        assert application._diagnostics_view.visible is False
+        assert application.active_view is AppView.ABOUT
+        assert application._views[AppView.ABOUT].visible is True
+        assert application._views[AppView.MONITOR].visible is False
 
 
 class _FakeSnapshot:
@@ -382,15 +384,7 @@ class _FakeMonitor:
         return self._controls
 
 
-class _RecordingPage:
-    def __init__(self) -> None:
-        self.updates: list[tuple] = []
-
-    def update(self, *controls) -> None:
-        self.updates.append(controls)
-
-
-class _StubConfiguration:
+class _StubProfilePage:
     def __init__(
         self,
         *,
@@ -401,16 +395,52 @@ class _StubConfiguration:
         self._changed = changed
         self._preview_changed = preview_changed
         self._preview_targets = preview_targets
-        self.control = ft.Text("configuration")
+        self.control = ft.Text("profile")
+        self.populate_calls = 0
+        self.ticks: list[bool] = []
 
     def tick(self, state, *, visible: bool) -> bool:
-        return self._changed
+        self.ticks.append(visible)
+        return self._changed if visible else False
+
+    def populate(self) -> None:
+        self.populate_calls += 1
 
     async def pump_preview(self) -> bool:
         return self._preview_changed
 
     def preview_update_targets(self) -> tuple:
         return self._preview_targets
+
+
+class _StubHeader:
+    def __init__(self, *, changed: bool = False) -> None:
+        self._changed = changed
+        self.control = ft.Text("header")
+        self.calls = 0
+        self.last: dict = {}
+
+    def sync(self, **kwargs) -> bool:
+        self.calls += 1
+        self.last = kwargs
+        return self._changed
+
+    def set_theme(self, theme: Theme) -> None:
+        self.themes = getattr(self, "themes", [])
+        self.themes.append(theme)
+
+
+class _StubActions:
+    def __init__(self) -> None:
+        self.status = ""
+        self.calls: list[tuple] = []
+
+    def set_status(self, message: str) -> None:
+        self.status = message
+
+    def advance(self, state) -> bool:
+        self.calls.append(("advance", state))
+        return False
 
 
 class _StubDialog:
@@ -433,46 +463,36 @@ class _StubDiagnostics:
         self.calls.append(visible)
         return self._changed if visible else False
 
+    def set_theme(self, theme: Theme) -> None:
+        self.themes = getattr(self, "themes", [])
+        self.themes.append(theme)
+
 
 def _application_with(
     page: _RecordingPage,
     monitor: _FakeMonitor,
     *,
-    configuration: _StubConfiguration | None = None,
-    dialog: _StubDialog | None = None,
     diagnostics: _StubDiagnostics | None = None,
+    profile: _StubProfilePage | None = None,
+    header: _StubHeader | None = None,
+    actions: _StubActions | None = None,
+    dialog: _StubDialog | None = None,
 ) -> FletApplication:
     application, _ = make_application()
     application._page = cast(ft.Page, page)
     application._monitor = cast(Monitor, monitor)
     application._coordinator = cast(MonitorUpdateCoordinator, _FakeCoordinator())
-    if configuration is not None:
-        application._configuration = cast(ConfigurationPage, configuration)
-    if dialog is not None:
-        application._error_dialog = cast(ErrorDialog, dialog)
     if diagnostics is not None:
         application._diagnostics = cast(DiagnosticsPanel, diagnostics)
+    if profile is not None:
+        application._profile_page = cast(ProfilePage, profile)
+    if header is not None:
+        application._header = cast(ProfileHeader, header)
+    if actions is not None:
+        application._profile_actions = cast(ProfileActions, actions)
+    if dialog is not None:
+        application._error_dialog = cast(ErrorDialog, dialog)
     return application
-
-
-class TestErrorWiring:
-    def test_result_is_polled_into_the_error_dialog(self) -> None:
-        application, fake = make_application()
-        fake.result = "terminal-result"
-        recorded: list[object] = []
-
-        class RecordingDialog:
-            def tick(self, result) -> bool:
-                recorded.append(result)
-                return False
-
-        application._monitor = cast(Monitor, _FakeMonitor())
-        application._coordinator = cast(MonitorUpdateCoordinator, _FakeCoordinator())
-        application._error_dialog = cast(ErrorDialog, RecordingDialog())
-
-        asyncio.run(application._apply_monitor())
-
-        assert recorded == ["terminal-result"]
 
 
 class TestTargetedMonitorUpdates:
@@ -490,15 +510,45 @@ class TestTargetedMonitorUpdates:
 
         assert page.updates == [(first, second)]
 
-    def test_no_patch_when_nothing_changed(self) -> None:
+    def test_header_change_patches_only_the_header(self) -> None:
         page = _RecordingPage()
-        application = _application_with(
-            page, _FakeMonitor(), configuration=_StubConfiguration()
-        )
+        header = _StubHeader(changed=True)
+        application = _application_with(page, _FakeMonitor(), header=header)
 
         asyncio.run(application._apply_monitor())
 
+        assert header.calls == 1
+        assert page.updates == [(header.control,)]
+
+    def test_header_is_synced_on_every_view(self) -> None:
+        page = _RecordingPage()
+        header = _StubHeader()
+        application = _application_with(page, _FakeMonitor(), header=header)
+        application._active_view = AppView.SETTINGS
+
+        asyncio.run(application._apply_monitor())
+
+        assert header.calls == 1
+
+    def test_hidden_profile_page_change_is_not_targeted(self) -> None:
+        page = _RecordingPage()
+        profile = _StubProfilePage(changed=True)
+        application = _application_with(page, _FakeMonitor(), profile=profile)
+
+        asyncio.run(application._apply_monitor())
+
+        assert profile.ticks == [False]
         assert page.updates == []
+
+    def test_active_profile_page_change_targets_its_control(self) -> None:
+        page = _RecordingPage()
+        profile = _StubProfilePage(changed=True)
+        application = _application_with(page, _FakeMonitor(), profile=profile)
+        application._active_view = AppView.PROFILE
+
+        asyncio.run(application._apply_monitor())
+
+        assert page.updates == [(profile.control,)]
 
     def test_shown_error_dialog_does_not_force_a_panel_repaint(self) -> None:
         page = _RecordingPage()
@@ -510,62 +560,54 @@ class TestTargetedMonitorUpdates:
         assert dialog.tick_calls == 1
         assert page.updates == []
 
-    def test_hidden_configuration_change_is_not_targeted(self) -> None:
+
+class TestProfileHeaderState:
+    def test_dirty_marker_is_synced_while_monitor_is_showing(self) -> None:
         page = _RecordingPage()
-        configuration = _StubConfiguration(changed=True)
+        header = _StubHeader()
+        application = _application_with(page, _FakeMonitor(), header=header)
+        application._model.create_default_profile(Path("draft.json"))
+
+        asyncio.run(application._apply_monitor())
+
+        assert header.last["path_text"].endswith(" *")
+        assert header.last["save_enabled"] is True
+
+    def test_advance_runs_on_every_view(self) -> None:
+        page = _RecordingPage()
+        actions = _StubActions()
+        application = _application_with(page, _FakeMonitor(), actions=actions)
+        application._active_view = AppView.ABOUT
+
+        asyncio.run(application._apply_monitor())
+
+        assert actions.calls == [("advance", SessionState.IDLE)]
+
+
+class TestProfileActionsOutsideProfileView:
+    def test_run_profile_action_works_from_monitor(self) -> None:
+        page = _RecordingPage()
+        profile = _StubProfilePage()
+        header = _StubHeader(changed=True)
+        actions = _StubActions()
         application = _application_with(
-            page, _FakeMonitor(), configuration=configuration
+            page, _FakeMonitor(), profile=profile, header=header, actions=actions
         )
+        called: list[SessionState] = []
 
-        asyncio.run(application._apply_monitor())
+        async def action(state):
+            called.append(state)
+            return True
 
-        assert page.updates == []
+        application._active_view = AppView.MONITOR
+        asyncio.run(application._run_profile_action(action))
 
-    def test_active_configuration_change_targets_its_control(self) -> None:
-        page = _RecordingPage()
-        configuration = _StubConfiguration(changed=True)
-        application = _application_with(
-            page, _FakeMonitor(), configuration=configuration
-        )
-        application._active_view = AppView.CONFIGURATION
-
-        asyncio.run(application._apply_monitor())
-
-        assert page.updates == [(configuration.control,)]
-
-
-class TestDiagnosticsUpdates:
-    def test_hidden_diagnostics_is_applied_as_hidden(self) -> None:
-        page = _RecordingPage()
-        diagnostics = _StubDiagnostics(changed=True)
-        application = _application_with(page, _FakeMonitor(), diagnostics=diagnostics)
-
-        asyncio.run(application._apply_monitor())
-
-        assert diagnostics.calls == [False]
-        assert page.updates == []
-
-    def test_active_diagnostics_change_targets_its_control(self) -> None:
-        page = _RecordingPage()
-        diagnostics = _StubDiagnostics(changed=True)
-        application = _application_with(page, _FakeMonitor(), diagnostics=diagnostics)
-        application._active_view = AppView.DIAGNOSTICS
-
-        asyncio.run(application._apply_monitor())
-
-        assert diagnostics.calls == [True]
-        assert page.updates == [(diagnostics.control,)]
-
-    def test_active_diagnostics_without_change_does_not_patch(self) -> None:
-        page = _RecordingPage()
-        diagnostics = _StubDiagnostics(changed=False)
-        application = _application_with(page, _FakeMonitor(), diagnostics=diagnostics)
-        application._active_view = AppView.DIAGNOSTICS
-
-        asyncio.run(application._apply_monitor())
-
-        assert diagnostics.calls == [True]
-        assert page.updates == []
+        assert called == [SessionState.IDLE]
+        assert profile.populate_calls == 1
+        assert header.calls == 1
+        # The hidden Profile page is not repainted; only the always-visible
+        # header is targeted while the Monitor is showing.
+        assert page.updates == [(header.control,)]
 
 
 class _ThemePage:
@@ -588,16 +630,16 @@ class _ThemePanel:
 
 
 class TestThemeApplication:
-    def test_apply_theme_sets_the_page_and_panels(self) -> None:
+    def test_apply_theme_sets_the_page_header_and_panels(self) -> None:
         application, _ = make_application()
         page = _ThemePage()
         application._page = cast(ft.Page, page)
         monitor = _ThemePanel()
         diagnostics = _ThemePanel()
-        configuration = _ThemePanel()
+        header = _ThemePanel()
         application._monitor = cast(Monitor, monitor)
         application._diagnostics = cast(DiagnosticsPanel, diagnostics)
-        application._configuration = cast(ConfigurationPage, configuration)
+        application._header = cast(ProfileHeader, header)
 
         application._apply_theme(Theme.DARK)
 
@@ -606,57 +648,31 @@ class TestThemeApplication:
         assert isinstance(page.dark_theme, ft.Theme)
         assert monitor.themes == [Theme.DARK]
         assert diagnostics.themes == [Theme.DARK]
-        assert configuration.themes == [Theme.DARK]
+        assert header.themes == [Theme.DARK]
         assert page.update_calls == 1
 
-    def test_apply_light_theme_keeps_standard_light(self) -> None:
-        application, _ = make_application()
-        page = _ThemePage()
-        application._page = cast(ft.Page, page)
 
-        application._apply_theme(Theme.LIGHT)
-
-        assert page.theme_mode is ft.ThemeMode.LIGHT
-        assert page.theme is None
-
-
-class TestConfigurationPreviewTargets:
+class TestProfilePreviewTargets:
     def test_preview_change_patches_only_preview_targets(self) -> None:
         page = _RecordingPage()
         preview_control = ft.Text("preview")
-        configuration = _StubConfiguration(
+        profile = _StubProfilePage(
             preview_changed=True, preview_targets=(preview_control,)
         )
-        application = _application_with(
-            page, _FakeMonitor(), configuration=configuration
-        )
-        application._active_view = AppView.CONFIGURATION
+        application = _application_with(page, _FakeMonitor(), profile=profile)
+        application._active_view = AppView.PROFILE
 
-        asyncio.run(application._apply_configuration_preview())
+        asyncio.run(application._apply_profile_preview())
 
         assert page.updates == [(preview_control,)]
 
-    def test_preview_without_change_does_not_patch(self) -> None:
+    def test_preview_skipped_when_profile_hidden(self) -> None:
         page = _RecordingPage()
-        configuration = _StubConfiguration(preview_changed=False)
-        application = _application_with(
-            page, _FakeMonitor(), configuration=configuration
-        )
-        application._active_view = AppView.CONFIGURATION
-
-        asyncio.run(application._apply_configuration_preview())
-
-        assert page.updates == []
-
-    def test_preview_skipped_when_configuration_hidden(self) -> None:
-        page = _RecordingPage()
-        configuration = _StubConfiguration(
+        profile = _StubProfilePage(
             preview_changed=True, preview_targets=(ft.Text("preview"),)
         )
-        application = _application_with(
-            page, _FakeMonitor(), configuration=configuration
-        )
+        application = _application_with(page, _FakeMonitor(), profile=profile)
 
-        asyncio.run(application._apply_configuration_preview())
+        asyncio.run(application._apply_profile_preview())
 
         assert page.updates == []
