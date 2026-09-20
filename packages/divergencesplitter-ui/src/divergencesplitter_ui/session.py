@@ -131,9 +131,13 @@ _ACTIVE_STATES = frozenset(
 def is_active(state: SessionState) -> bool:
     """Return whether ``state`` still owns an in-progress session.
 
-    Active states disable source and scenario edits so a session never changes
-    its input or scenario mid-flight; terminal and idle states allow a new
-    configuration to be confirmed.
+    Active means the Runtime session is in progress and is managed by the
+    lifecycle: it can be stopped, and a save-time reload waits for it to end.
+    It is a separate concept from UI edit permission: ``CONNECTING`` is active
+    yet still allows editing the Profile draft. Use
+    :func:`divergencesplitter_ui.settings.model.edit_permission` to decide
+    whether the draft may be edited, and this only to reason about the session
+    lifecycle.
     """
 
     return state in _ACTIVE_STATES

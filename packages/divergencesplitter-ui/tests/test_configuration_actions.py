@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter_runtime.configuration.models import (
     AppSettings,
@@ -384,6 +385,29 @@ class TestReloadTiming:
         assert actions.advance(controller.state) is True
         assert controller.started == [tmp_path / "config.json"]
 
+    def test_save_while_connecting_stops_then_restarts_with_new_profile(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "config.json"
+        model = make_model(path)
+        model.set_instance_scenario(0, p("other.py"))
+        controller = FakeController()
+        controller.state = SessionState.CONNECTING
+        actions, _, _, _ = make_actions(
+            model=model,
+            controller=controller,
+            settings_path=tmp_path / "settings.json",
+        )
+
+        assert asyncio.run(actions.save(SessionState.CONNECTING)) is True
+        assert controller.request_stop_calls == 1
+        assert controller.state is SessionState.STOPPING
+        assert controller.started == []
+
+        controller.state = SessionState.STOPPED
+        assert actions.advance(controller.state) is True
+        assert controller.started == [path]
+
     def test_advance_without_pending_is_noop(self) -> None:
         actions, controller, _, _ = make_actions()
 
@@ -491,17 +515,34 @@ class TestOpenWhileRunning:
 
 
 class TestPermissions:
-    def test_transition_state_blocks_new(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("state", [SessionState.LOADING, SessionState.STOPPING])
+    def test_transition_state_blocks_new(
+        self, state: SessionState, tmp_path: Path
+    ) -> None:
         actions, _, model, dialogs = make_actions(
             dialogs=FakeDialogs(save_results=(tmp_path / "x.json",)),
             settings_path=tmp_path / "settings.json",
         )
 
-        result = asyncio.run(actions.new(SessionState.STOPPING))
+        result = asyncio.run(actions.new(state))
 
         assert result is False
         assert dialogs.save_calls == 0
         assert model.draft is not None
+
+    def test_connecting_state_allows_new(self, tmp_path: Path) -> None:
+        target = tmp_path / "x.json"
+        actions, _, model, dialogs = make_actions(
+            dialogs=FakeDialogs(save_results=(target,)),
+            settings_path=tmp_path / "settings.json",
+        )
+
+        result = asyncio.run(actions.new(SessionState.CONNECTING))
+
+        assert result is True
+        assert dialogs.save_calls == 1
+        assert model.draft is not None
+        assert model.draft.profile_path == target
 
     def test_loaded_profile_round_trips(self, tmp_path: Path) -> None:
         path = tmp_path / "config.json"

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import flet as ft
+import pytest
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter.frame.ndi import NdiSupport
 from divergencesplitter_runtime.configuration.models import (
@@ -598,13 +599,24 @@ class TestTick:
         page.tick(SessionState.IDLE, visible=True)
         assert page._model.is_dirty
 
-    def test_transition_state_disables_source_editing(self) -> None:
+    @pytest.mark.parametrize("state", [SessionState.LOADING, SessionState.STOPPING])
+    def test_transition_state_disables_source_editing(
+        self, state: SessionState
+    ) -> None:
+        page = make_page()
+        page.tick(SessionState.IDLE, visible=True)
+
+        page.tick(state, visible=True)
+
+        assert page._source._source_type.disabled is True
+
+    def test_connecting_keeps_source_editable(self) -> None:
         page = make_page()
         page.tick(SessionState.IDLE, visible=True)
 
         page.tick(SessionState.CONNECTING, visible=True)
 
-        assert page._source._source_type.disabled is True
+        assert page._source._source_type.disabled is False
 
     def test_hidden_tick_is_cheap_and_stops_preview(self) -> None:
         preview = FakePreviewController()

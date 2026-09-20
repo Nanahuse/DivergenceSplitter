@@ -801,12 +801,30 @@ class TestSettingsDecisions:
         assert permission.instances
         assert permission.log_level
 
-    def test_transition_session_disables_all_configuration_edits(self) -> None:
-        permission = edit_permission(SessionState.STOPPING)
+    def test_connecting_session_allows_profile_edits(self) -> None:
+        permission = edit_permission(SessionState.CONNECTING)
+
+        assert permission.source
+        assert permission.instances
+
+    def test_connecting_session_allows_settings_edits(self) -> None:
+        permission = edit_permission(SessionState.CONNECTING)
+
+        assert permission.log_level
+        assert permission.reaction_time
+        assert permission.theme
+        assert permission.settings
+
+    @pytest.mark.parametrize("state", [SessionState.LOADING, SessionState.STOPPING])
+    def test_transition_session_disables_all_configuration_edits(
+        self, state: SessionState
+    ) -> None:
+        permission = edit_permission(state)
 
         assert not permission.source
         assert not permission.instances
         assert not permission.log_level
+        assert not permission.settings
 
     def test_session_activity_matches_in_progress_states(self) -> None:
         for state in (
