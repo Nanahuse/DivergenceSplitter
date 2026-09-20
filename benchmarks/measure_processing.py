@@ -329,9 +329,11 @@ class _BenchmarkDiagnostics(OperationalDiagnostics):
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None:
         completed = completed_at.nanoseconds
-        latency = completed - context.frame.captured_at.nanoseconds
+        latency = evaluation_cpu_duration_ns
         with self._lock:
             self.evaluated_counts[scenario_index] = (
                 self.evaluated_counts.get(scenario_index, 0) + 1
@@ -348,7 +350,13 @@ class _BenchmarkDiagnostics(OperationalDiagnostics):
                 self.preprocessing_entries_max,
                 context.cache.preprocessing_count(),
             )
-        super().instance_evaluated(scenario_index, context, completed_at)
+        super().instance_evaluated(
+            scenario_index,
+            context,
+            completed_at,
+            evaluation_cpu_duration_ns,
+            evaluation_wall_duration_ns,
+        )
 
 
 class _StubSubscriber:
