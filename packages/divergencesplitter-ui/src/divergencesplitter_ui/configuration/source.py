@@ -368,6 +368,12 @@ class SourceSection:
             return
         if self._model.set_source_type(source_type) is None:
             return
+        if source_type is SourceType.CAMERA:
+            # Enumerate cameras only when Camera becomes the source type; the
+            # draft object is unchanged, so ProfilePage will not re-populate the
+            # section on its own and the dropdown would otherwise stay empty.
+            camera = self._model.draft.source.camera
+            self._populate_cameras(camera.device, camera.mode)
         self._show_group(source_type)
         self._on_input_changed()
         if source_type is SourceType.NDI:
