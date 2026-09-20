@@ -283,10 +283,14 @@ class FakeRuntime:
         self.ran = threading.Event()
         self._release = threading.Event()
         self.request_stop_calls = 0
+        self.request_reset_all_calls = 0
 
     def request_stop(self) -> None:
         self.request_stop_calls += 1
         self._release.set()
+
+    def request_reset_all(self) -> None:
+        self.request_reset_all_calls += 1
 
     def release(self) -> None:
         self._release.set()

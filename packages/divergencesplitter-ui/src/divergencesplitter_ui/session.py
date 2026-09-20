@@ -213,6 +213,8 @@ class Runtime(Protocol):
 
     def request_stop(self) -> None: ...
 
+    def request_reset_all(self) -> None: ...
+
 
 class RuntimeFactory(Protocol):
     def create(
@@ -362,6 +364,22 @@ class SessionController:
             SessionState.RUNNING,
         }:
             runtime.request_stop()
+
+    def request_reset_all(self) -> None:
+        """Forward one manual Reset All request to the running runtime.
+
+        The UI never reaches into the runtime's instances; the controller only
+        calls the runtime when one exists for a session that has not finished.
+        A missing runtime, an idle controller, or a terminal session is a safe
+        no-op.
+        """
+
+        with self._lock:
+            runtime = self._runtime
+            state = self._state
+        if runtime is None or state is SessionState.IDLE or state in _TERMINAL_STATES:
+            return
+        runtime.request_reset_all()
 
     def join(self, timeout: float | None = None) -> bool:
         thread = self._thread

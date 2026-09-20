@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import cast
 
 import numpy as np
+import pytest
 from divergencesplitter import (
     Action,
     Detected,
@@ -1402,3 +1403,108 @@ def test_unknown_after_reaction_recovers_without_resend() -> None:
     assert harness.adapters[0].attempts
     assert harness.adapters[1].attempts == []
     assert harness.instance.generation == 1
+
+
+# -- Manual Reset --------------------------------------------------------------
+
+
+def phase_update(phase: TimerPhase) -> LiveSplitUpdate:
+    if phase is TimerPhase.NOT_RUNNING:
+        split_index = -1
+    elif phase is TimerPhase.ENDED:
+        split_index = 1
+    else:
+        split_index = 0
+    return LiveSplitUpdate(
+        LiveSplitUpdateKind.INITIAL,
+        snapshot(phase=phase, split_index=split_index),
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [TimerPhase.RUNNING, TimerPhase.PAUSED, TimerPhase.ENDED],
+)
+def test_manual_reset_runs_for_resettable_phases(phase: TimerPhase) -> None:
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        initial=phase_update(phase),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: bool(harness.adapter.attempts))
+    finally:
+        harness.stop()
+
+    assert [action.operation for action, _ in harness.adapter.attempts] == ["reset"]
+    assert harness.adapter.attempts[0][1].phase is phase
+    assert harness.diagnostics.resets == [0]
+
+
+def test_manual_reset_is_noop_when_not_running() -> None:
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        initial=phase_update(TimerPhase.NOT_RUNNING),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
+    finally:
+        harness.stop()
+
+    assert harness.adapter.attempts == []
+    assert harness.diagnostics.resets == []
+
+
+def test_manual_reset_uses_snapshot_at_processing_time() -> None:
+    harness = Harness(make_scenario(RecordingCondition(False)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        # The transition is already queued when the request is made: the request
+        # must be judged against the state drained in this cycle, not request time.
+        harness.push_event(
+            LiveSplitUpdate(
+                LiveSplitUpdateKind.TRANSITION,
+                snapshot(
+                    event_sequence=1,
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                ),
+            )
+        )
+        harness.instance.request_reset()
+        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
+    finally:
+        harness.stop()
+
+    assert harness.adapter.attempts == []
+    assert harness.diagnostics.resets == []
+
+
+def test_manual_reset_ignores_reaction_time() -> None:
+    waits: list[int] = []
+    adapter = ScriptedAdapter(initial_update())
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        adapter=adapter,
+        reaction_time_ms=100,
+        reaction_wait=waits.append,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        harness.stop()
+
+    assert waits == []
+    assert harness.diagnostics.reactions == []
+    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert harness.diagnostics.resets == [0]

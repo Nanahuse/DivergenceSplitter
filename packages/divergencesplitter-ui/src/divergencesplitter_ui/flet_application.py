@@ -311,7 +311,7 @@ class FletApplication:
             if self._dialogs_factory is not None
             else FletFileDialogs(page, ft.FilePicker())
         )
-        self._monitor = Monitor(theme)
+        self._monitor = Monitor(theme, on_reset_all=self._request_reset_all)
         self._diagnostics = DiagnosticsPanel(theme)
         self._profile_actions = ProfileActions(
             self._controller,
@@ -398,6 +398,15 @@ class FletApplication:
             asyncio.create_task(self._input_preview_loop()),
             asyncio.create_task(self._profile_preview_loop()),
         ]
+
+    def _request_reset_all(self) -> None:
+        """Ask the controller to Reset every resettable instance.
+
+        The Monitor only knows the callback; the controller owns the runtime,
+        so no UI control reaches into the runtime or its instance list.
+        """
+
+        self._controller.request_reset_all()
 
     def _select_view(self, view: AppView) -> None:
         self._active_view = view
@@ -570,6 +579,8 @@ class FletApplication:
         self._shutdown_started = True
         self._stopping = True
         await self._stop_tasks()
+        if self._monitor is not None:
+            self._monitor.dispose()
         if self._profile_page is not None:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(self._profile_page.teardown)

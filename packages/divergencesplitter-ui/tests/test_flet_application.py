@@ -46,6 +46,7 @@ class FakeController:
         self.started: list[Path] = []
         self.started_settings: list[AppSettings] = []
         self.request_stop_calls = 0
+        self.request_reset_all_calls = 0
         self.join_calls: list[int] = []
 
     def start(self, profile: Path, *, app_settings: AppSettings) -> None:
@@ -54,6 +55,9 @@ class FakeController:
 
     def request_stop(self) -> None:
         self.request_stop_calls += 1
+
+    def request_reset_all(self) -> None:
+        self.request_reset_all_calls += 1
 
     def join(self, timeout: float | None = None) -> bool:
         self.join_calls.append(threading.get_ident())
@@ -843,3 +847,11 @@ class TestNotifications:
         application._show_notification("saved profile.json")
 
         assert application.notification is None
+
+
+def test_reset_all_callback_forwards_to_the_controller() -> None:
+    application, fake = make_application()
+
+    application._request_reset_all()
+
+    assert fake.request_reset_all_calls == 1

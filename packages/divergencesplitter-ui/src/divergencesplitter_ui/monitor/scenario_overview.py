@@ -9,9 +9,12 @@ card. The card list is the only scrollable region of the Monitor.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import flet as ft
 from divergencesplitter_runtime.configuration.models import Theme
 
+from divergencesplitter_ui.monitor.reset_all import ResetAllButton
 from divergencesplitter_ui.presentation_overview import (
     ConditionEvaluationView,
     EvaluationGroupView,
@@ -226,13 +229,32 @@ class _ScenarioCard:
 class ScenarioOverviewPanel:
     """Display one card per scenario inside a scrollable list."""
 
-    def __init__(self, theme: Theme = Theme.LIGHT) -> None:
+    def __init__(
+        self,
+        theme: Theme = Theme.LIGHT,
+        *,
+        on_reset_all: Callable[[], None] | None = None,
+        reset_all: ResetAllButton | None = None,
+    ) -> None:
         self._cards: dict[int, _ScenarioCard] = {}
         self._theme = theme
         self._colors = semantic_colors(theme)
         self._list = ft.ListView(controls=[], spacing=10, expand=True)
+        self.reset_all = (
+            reset_all if reset_all is not None else ResetAllButton(on_reset_all)
+        )
         self._control = ft.Column(
-            controls=[ft.Text("Scenario Overview"), self._list],
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Text("Scenario Overview"),
+                        ft.Container(expand=True),
+                        self.reset_all.control,
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                self._list,
+            ],
             expand=True,
             spacing=8,
         )
@@ -242,6 +264,11 @@ class ScenarioOverviewPanel:
         """The root control to add to the page."""
 
         return self._control
+
+    def dispose(self) -> None:
+        """Cancel an in-flight hold so no task outlives the panel."""
+
+        self.reset_all.dispose()
 
     def set_theme(self, theme: Theme) -> None:
         """Switch the semantic colors; the next ``apply`` repaints the cards."""
