@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Protocol
 
-from divergencesplitter import Action, LiveSplitConnection, MonotonicTime
+from divergencesplitter import (
+    Action,
+    LiveSplitConnection,
+    MonotonicTime,
+    ThreadTimeProvider,
+)
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter.frame.models import FrameContext, SharedFrameEvaluation
 from divergencesplitter.scenario.models import Scenario
@@ -110,7 +115,8 @@ class InstanceDiagnostics(LiveSplitBridgeDiagnostics, Protocol):
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
-        evaluation_duration_ns: int,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None: ...
 
     def instance_reset(self, scenario_index: int) -> None: ...
@@ -177,6 +183,7 @@ class InstanceRuntime:
         heartbeat_timeout_ms: int = 3000,
         reaction_time_ms: int = 0,
         time_provider: TimeProvider | None = None,
+        cpu_time_provider: ThreadTimeProvider | None = None,
         reaction_wait: Callable[[int], None] | None = None,
         subscriber_factory: Callable[[], BridgeEventSubscriberLike] | None = None,
         adapter_factory: Callable[[], LiveSplitBridgeAdapter] | None = None,
@@ -204,6 +211,7 @@ class InstanceRuntime:
         self._heartbeat_timeout_ms = heartbeat_timeout_ms
         self._reaction_time_ns = reaction_time_ms * 1_000_000
         self._time_provider = time_provider or TimeProvider()
+        self._cpu_time_provider = cpu_time_provider or ThreadTimeProvider()
         self._reaction_wait = reaction_wait or self._wait_for_reaction
         self._subscriber_factory = subscriber_factory or self._create_subscriber
         self._adapter_factory = adapter_factory or self._create_adapter
@@ -410,21 +418,32 @@ class InstanceRuntime:
         if runtime is None:
             return None
         context = FrameContext(shared=shared)
-        evaluation_started_at = self._time_provider.now()
+        evaluation_wall_started_at = self._time_provider.now()
+        evaluation_cpu_started_at = self._cpu_time_provider.now()
         try:
             action = runtime.evaluate(context)
         except Exception as error:  # noqa: BLE001
             self._diagnostics.scenario_evaluation_failed(self.scenario_index, error)
             return None
-        # Evaluation duration covers only runtime.evaluate(). It ends the moment
-        # evaluate() returned, before any action validity check, late event
-        # drain, reaction wait, or RPC.
-        evaluation_completed_at = self._time_provider.now()
-        evaluation_duration_ns = (
-            evaluation_completed_at.nanoseconds - evaluation_started_at.nanoseconds
+        # Evaluation ends the moment evaluate() returned, before any action
+        # validity check, late event drain, reaction wait, or RPC. The reported
+        # value is the thread CPU time the instance actually spent evaluating;
+        # wall-clock time the thread was stopped is kept only for investigation.
+        evaluation_cpu_completed_at = self._cpu_time_provider.now()
+        evaluation_wall_completed_at = self._time_provider.now()
+        evaluation_cpu_duration_ns = (
+            evaluation_cpu_completed_at.nanoseconds
+            - evaluation_cpu_started_at.nanoseconds
+        )
+        evaluation_wall_duration_ns = (
+            evaluation_wall_completed_at.nanoseconds
+            - evaluation_wall_started_at.nanoseconds
         )
         self._publish_observations(
-            context, evaluation_completed_at, evaluation_duration_ns
+            context,
+            evaluation_wall_completed_at,
+            evaluation_cpu_duration_ns,
+            evaluation_wall_duration_ns,
         )
         if action is not None and action.operation in ("start", "reset"):
             # A new Start/Reset decision begins a fresh evaluation period.
@@ -691,14 +710,16 @@ class InstanceRuntime:
         self,
         context: FrameContext,
         completed_at: MonotonicTime,
-        evaluation_duration_ns: int,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None:
         try:
             self._diagnostics.instance_evaluated(
                 self.scenario_index,
                 context,
                 completed_at,
-                evaluation_duration_ns,
+                evaluation_cpu_duration_ns,
+                evaluation_wall_duration_ns,
             )
         except Exception:  # noqa: BLE001, S110
             # Diagnostics must never break the evaluation cycle.

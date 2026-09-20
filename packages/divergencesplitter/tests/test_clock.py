@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from divergencesplitter.clock import TimeProvider
+from divergencesplitter.clock import ThreadTimeProvider, TimeProvider
 
 _BASELINE_NS = 1_000_000_000
 
@@ -22,6 +22,20 @@ class TimeProviderTest(unittest.TestCase):
             monotonic_ns.return_value = _BASELINE_NS + 500
             second = provider.now()
         self.assertLess(first, second)
+
+
+class ThreadTimeProviderTest(unittest.TestCase):
+    def test_now_stores_thread_time_ns_exactly(self):
+        provider = ThreadTimeProvider()
+        with mock.patch("divergencesplitter.clock.time.thread_time_ns") as thread_time:
+            thread_time.return_value = _BASELINE_NS
+            now = provider.now()
+        self.assertEqual(now.nanoseconds, _BASELINE_NS)
+
+    def test_monotonic_and_thread_cpu_time_are_distinct_types(self):
+        wall = TimeProvider()
+        cpu = ThreadTimeProvider()
+        self.assertIsNot(type(wall.now()), type(cpu.now()))
 
 
 if __name__ == "__main__":
