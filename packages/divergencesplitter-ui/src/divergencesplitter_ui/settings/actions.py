@@ -2,9 +2,12 @@
 
 App Settings (theme, logging level, reaction time) are deliberately separate
 from Profile files: they are written to the App Settings file, never mark the
-Profile dirty, and never rewrite a Profile. Only the reaction time reloads a
-running Profile, because the runtime reads it from App Settings at startup.
-These operations are GUI-independent so the settings screen stays presentation.
+Profile dirty, and never rewrite a Profile. Editing the settings screen only
+updates a draft; :meth:`AppSettingsActions.apply` validates the whole draft,
+persists it once, and only then reflects it: the theme is applied to the UI and
+a running runtime is restarted exactly once with the new reaction time and log
+level. These operations are GUI-independent so the settings screen stays
+presentation.
 """
 
 from __future__ import annotations
@@ -15,24 +18,32 @@ from pathlib import Path
 from divergencesplitter_runtime.configuration.app_settings_json import (
     save_app_settings,
 )
-from divergencesplitter_runtime.configuration.models import Theme
+from divergencesplitter_runtime.configuration.models import AppSettings, Theme
 
-from divergencesplitter_ui.session import SessionController
+from divergencesplitter_ui.session import SessionController, is_active
 from divergencesplitter_ui.settings.model import SettingsModel
 
 
-def persist_app_settings(model: SettingsModel, settings_path: Path) -> str | None:
-    """Write the App Settings document; return an error message on failure."""
+def save_app_settings_document(
+    settings_path: Path, document: AppSettings
+) -> str | None:
+    """Write one App Settings document; return an error message on failure."""
 
     try:
-        save_app_settings(settings_path, model.app_settings_document())
+        save_app_settings(settings_path, document)
     except OSError as error:
         return f"could not save app settings: {error}"
     return None
 
 
+def persist_app_settings(model: SettingsModel, settings_path: Path) -> str | None:
+    """Write the applied App Settings document; return an error on failure."""
+
+    return save_app_settings_document(settings_path, model.app_settings_document())
+
+
 class AppSettingsActions:
-    """Persist and apply App Settings without touching the Profile file."""
+    """Persist and apply the App Settings draft without touching a Profile."""
 
     def __init__(
         self,
@@ -62,47 +73,52 @@ class AppSettingsActions:
         if self._on_status is not None:
             self._on_status(message)
 
-    def set_theme(self, theme: Theme) -> None:
-        """Persist the theme to App Settings and apply it live.
+    def apply(self) -> bool:
+        """Validate, save, and reflect the App Settings draft in one step.
 
-        The theme lives in its own settings file, not in a Profile, so it is
-        written immediately and never restarts the runtime.
+        Validation and persistence complete before anything is reflected, so a
+        failure applies nothing: the applied settings, the theme, and the running
+        runtime are all left untouched and the draft is kept for correction.
         """
 
-        self._model.set_theme(theme)
-        self._persist()
-        if self._on_theme_applied is not None:
-            self._on_theme_applied(self._model.app_settings.theme)
-
-    def set_log_level(self, level: str) -> None:
-        """Persist the log level and apply it live; never restarts the runtime."""
-
-        self._model.set_log_level(level)
-        self._controller.set_log_level(level)
-        self._persist()
-
-    def set_reaction_time(self, value: int) -> None:
-        """Persist a committed reaction time and reload the running Profile.
-
-        Only a committed value reaches here, so typing a partial number in the
-        field never restarts the runtime. The Profile file itself is not touched.
-        """
+        if not self._model.app_settings_dirty:
+            # Nothing changed: never write or reflect anything.
+            self.set_status("")
+            return True
 
         try:
-            self._model.set_reaction_time_ms(value)
+            settings = self._model.validate_app_settings()
         except ValueError as error:
             self.set_status(str(error))
-            return
-        self._persist()
-        draft = self._model.draft
-        if draft is not None and self._on_reload is not None:
-            self._on_reload(draft.profile_path)
+            return False
 
-    def _persist(self) -> bool:
-        error = persist_app_settings(self._model, self._settings_path)
+        applied = self._model.applied_app_settings
+        theme_changed = settings.theme is not applied.theme
+        runtime_changed = (
+            settings.log_level != applied.log_level
+            or settings.reaction_time_ms != applied.reaction_time_ms
+        )
+
+        error = save_app_settings_document(
+            self._settings_path, self._model.app_settings_document(settings)
+        )
         if error is not None:
             self._settings_error = error
             self.set_status(error)
             return False
         self._settings_error = None
+
+        # Only a successful save reaches here; commit the applied state first so
+        # a queued runtime restart starts with the new reaction time and level.
+        self._model.apply_app_settings(settings)
+        if theme_changed and self._on_theme_applied is not None:
+            self._on_theme_applied(settings.theme)
+        if runtime_changed and self._on_reload is not None:
+            draft = self._model.draft
+            if draft is not None and is_active(self._controller.state):
+                # A single reload covers both reaction time and log level. A
+                # stopped runtime is never started by Apply; it picks the new
+                # settings up on its next start.
+                self._on_reload(draft.profile_path)
+        self.set_status("")
         return True

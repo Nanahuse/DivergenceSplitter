@@ -10,6 +10,7 @@ from divergencesplitter_runtime.configuration.app_settings_json import (
     load_app_settings,
 )
 from divergencesplitter_runtime.configuration.models import (
+    AppSettings,
     CameraBackend,
     CameraDeviceConfiguration,
     CameraModeConfiguration,
@@ -54,16 +55,18 @@ class FakeCameraEnumerator:
 
 
 class FakeController:
-    def __init__(self) -> None:
-        self.state = SessionState.IDLE
+    def __init__(self, state: SessionState = SessionState.IDLE) -> None:
+        self.state = state
         self.diagnostics = None
         self.started: list[Path] = []
+        self.started_settings: list[AppSettings] = []
         self.request_stop_calls = 0
         self.join_calls = 0
         self.log_levels: list[str] = []
 
     def start(self, path, *, app_settings) -> None:
         self.started.append(Path(path))
+        self.started_settings.append(app_settings)
 
     def request_stop(self) -> None:
         self.request_stop_calls += 1
@@ -146,132 +149,285 @@ class TestBuild:
 
         assert "Application Settings" in collect_text(page.control)
 
-    def test_states_that_every_change_applies_immediately(self) -> None:
+    def test_states_that_apply_is_explicit(self) -> None:
         page, _model, _controller, _actions = make_page()
 
         labels = collect_text(page.control)
-        assert "Changes are applied immediately and saved to App Settings." in labels
-        assert "Theme is saved to App Settings immediately." not in labels
+        assert "Edit the values, then select Apply to save and apply them." in labels
+        assert (
+            "Changes are applied immediately and saved to App Settings." not in labels
+        )
 
-
-class TestThemeSelection:
-    def test_dropdown_lists_light_and_dark_and_defaults_to_light(self) -> None:
+    def test_apply_starts_disabled(self) -> None:
         page, _model, _controller, _actions = make_page()
 
-        labels = [option.text or option.key for option in page.theme.options]
+        assert page.apply.disabled is True
 
-        assert labels == ["Light", "Dark"]
-        assert page.theme.value == "light"
 
-    def test_dropdown_applies_theme_immediately(self, tmp_path: Path) -> None:
-        applied: list[Theme] = []
-        page, model, _controller, _actions = make_page(
-            settings_path=tmp_path / "settings.json", applied=applied
-        )
+class TestEditOnly:
+    def test_reaction_time_edit_updates_draft_without_saving(
+        self, tmp_path: Path
+    ) -> None:
+        settings_path = tmp_path / "settings.json"
+        page, model, _controller, _actions = make_page(settings_path=settings_path)
 
-        page.theme.value = "dark"
-        fire(page._on_theme, page.theme)
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
 
-        assert model.app_settings.theme is Theme.DARK
-        assert applied == [Theme.DARK]
+        assert model.app_settings_draft.reaction_time_text == "30"
+        assert not settings_path.exists()
         assert not model.is_dirty
 
-    def test_theme_is_persisted_without_saving_a_profile(self, tmp_path: Path) -> None:
-        settings_path = tmp_path / "settings.json"
+    def test_reaction_time_edit_does_not_restart_runtime(self, tmp_path: Path) -> None:
+        controller = FakeController(SessionState.RUNNING)
+        reloaded: list[Path] = []
         page, _model, _controller, _actions = make_page(
-            profile=False, settings_path=settings_path
+            controller=controller,
+            settings_path=tmp_path / "settings.json",
+            reloaded=reloaded,
         )
 
-        page.theme.value = "dark"
-        fire(page._on_theme, page.theme)
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
 
-        assert load_app_settings(settings_path).ui.theme is Theme.DARK
-
-    def test_theme_change_does_not_restart_the_runtime(self, tmp_path: Path) -> None:
-        controller = FakeController()
-        page, _model, _controller, _actions = make_page(
-            controller=controller, settings_path=tmp_path / "settings.json"
-        )
-
-        page.theme.value = "dark"
-        fire(page._on_theme, page.theme)
-
+        assert reloaded == []
         assert controller.request_stop_calls == 0
         assert controller.started == []
 
-    def test_transition_state_disables_the_theme_dropdown(self) -> None:
-        page, model, _controller, _actions = make_page()
+    def test_reaction_time_field_has_no_commit_handlers(self) -> None:
+        page, _model, _controller, _actions = make_page()
 
-        page.sync(model.app_settings, edit_permission(SessionState.CONNECTING))
+        assert page.reaction_time.on_submit is None
+        assert page.reaction_time.on_blur is None
 
-        assert page.theme.disabled is True
-
-
-class TestLogLevel:
-    def test_applies_live_without_restart(self, tmp_path: Path) -> None:
-        controller = FakeController()
-        page, model, _controller, _actions = make_page(
-            controller=controller, settings_path=tmp_path / "settings.json"
-        )
+    def test_log_level_edit_updates_draft_without_applying(
+        self, tmp_path: Path
+    ) -> None:
+        settings_path = tmp_path / "settings.json"
+        page, model, controller, _actions = make_page(settings_path=settings_path)
 
         page.log_level.value = "DEBUG"
         fire(page._on_log_level, page.log_level)
 
-        assert model.app_settings.log_level == "DEBUG"
-        assert controller.log_levels == ["DEBUG"]
-        assert not model.is_dirty
-        assert controller.request_stop_calls == 0
+        assert model.app_settings_draft.log_level == "DEBUG"
+        assert not settings_path.exists()
+        assert controller.log_levels == []
         assert controller.started == []
+        assert not model.is_dirty
 
-
-class TestReactionTime:
-    def test_commit_reloads_running_profile(self, tmp_path: Path) -> None:
-        reloaded: list[Path] = []
+    def test_theme_edit_updates_draft_without_switching_theme(
+        self, tmp_path: Path
+    ) -> None:
+        applied: list[Theme] = []
+        settings_path = tmp_path / "settings.json"
         page, model, _controller, _actions = make_page(
-            settings_path=tmp_path / "settings.json", reloaded=reloaded
+            settings_path=settings_path, applied=applied
         )
+
+        page.theme.value = "dark"
+        fire(page._on_theme, page.theme)
+
+        assert model.app_settings_draft.theme is Theme.DARK
+        assert model.applied_app_settings.theme is Theme.LIGHT
+        assert applied == []
+        assert not settings_path.exists()
+        assert not model.is_dirty
+
+
+class TestApplyButton:
+    def test_disabled_without_changes(self) -> None:
+        page, model, _controller, _actions = make_page()
+
+        page.sync(model.app_settings_draft, edit_permission(SessionState.IDLE))
+
+        assert page.apply.disabled is True
+
+    def test_enabled_after_a_change(self) -> None:
+        page, _model, _controller, _actions = make_page()
 
         page.reaction_time.value = "30"
-        fire(page._on_reaction_time_committed, page.reaction_time)
+        fire(page._on_reaction_time_changed, page.reaction_time)
 
-        assert model.app_settings.reaction_time_ms == 30
-        assert not model.is_dirty
-        assert reloaded == [Path("config.json")]
+        assert page.apply.disabled is False
 
-    def test_invalid_reaction_time_does_not_reload(self, tmp_path: Path) -> None:
-        reloaded: list[Path] = []
-        page, model, _controller, _actions = make_page(
-            settings_path=tmp_path / "settings.json", reloaded=reloaded
+    def test_disabled_again_after_a_successful_apply(self, tmp_path: Path) -> None:
+        page, _model, _controller, _actions = make_page(
+            settings_path=tmp_path / "settings.json"
         )
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
 
-        page.reaction_time.value = "abc"
-        fire(page._on_reaction_time_committed, page.reaction_time)
+        fire(page._on_apply, page.apply)
 
-        assert reloaded == []
-        assert model.app_settings.reaction_time_ms == 0
+        assert page.apply.disabled is True
+
+    def test_disabled_during_a_transition_state(self) -> None:
+        page, model, _controller, _actions = make_page()
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
+
+        page.sync(model.app_settings_draft, edit_permission(SessionState.CONNECTING))
+
+        assert page.apply.disabled is True
+
+    def test_apply_persists_app_settings_once(self, tmp_path: Path) -> None:
+        settings_path = tmp_path / "settings.json"
+        page, _model, _controller, _actions = make_page(settings_path=settings_path)
+        page.log_level.value = "DEBUG"
+        fire(page._on_log_level, page.log_level)
+
+        fire(page._on_apply, page.apply)
+
+        assert load_app_settings(settings_path).log_level == "DEBUG"
+        assert page.apply.disabled is True
 
 
-class TestNoProfile:
-    def test_editable_without_profile(self, tmp_path: Path) -> None:
+class TestApplyRuntime:
+    def test_reaction_time_apply_restarts_once(self, tmp_path: Path) -> None:
         reloaded: list[Path] = []
-        page, model, controller, _actions = make_page(
-            profile=False,
+        controller = FakeController(SessionState.RUNNING)
+        page, _model, _controller, _actions = make_page(
+            controller=controller,
             settings_path=tmp_path / "settings.json",
             reloaded=reloaded,
         )
-        page.sync(model.app_settings, edit_permission(SessionState.IDLE))
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
+
+        fire(page._on_apply, page.apply)
+
+        assert reloaded == [Path("config.json")]
+
+    def test_theme_only_apply_does_not_restart(self, tmp_path: Path) -> None:
+        reloaded: list[Path] = []
+        applied: list[Theme] = []
+        controller = FakeController(SessionState.RUNNING)
+        page, _model, _controller, _actions = make_page(
+            controller=controller,
+            settings_path=tmp_path / "settings.json",
+            applied=applied,
+            reloaded=reloaded,
+        )
+        page.theme.value = "dark"
+        fire(page._on_theme, page.theme)
+
+        fire(page._on_apply, page.apply)
+
+        assert applied == [Theme.DARK]
+        assert reloaded == []
+
+    def test_apply_while_stopped_does_not_start_runtime(self, tmp_path: Path) -> None:
+        reloaded: list[Path] = []
+        controller = FakeController(SessionState.IDLE)
+        page, _model, _controller, _actions = make_page(
+            controller=controller,
+            settings_path=tmp_path / "settings.json",
+            reloaded=reloaded,
+        )
+        page.log_level.value = "DEBUG"
+        fire(page._on_log_level, page.log_level)
+
+        fire(page._on_apply, page.apply)
+
+        assert reloaded == []
+        assert controller.started == []
+
+
+class TestApplyErrors:
+    def test_invalid_reaction_time_applies_nothing_and_keeps_draft(
+        self, tmp_path: Path
+    ) -> None:
+        applied: list[Theme] = []
+        reloaded: list[Path] = []
+        settings_path = tmp_path / "settings.json"
+        controller = FakeController(SessionState.RUNNING)
+        page, model, _controller, _actions = make_page(
+            controller=controller,
+            settings_path=settings_path,
+            applied=applied,
+            reloaded=reloaded,
+        )
+        page.theme.value = "dark"
+        fire(page._on_theme, page.theme)
+        page.reaction_time.value = "abc"
+        fire(page._on_reaction_time_changed, page.reaction_time)
+
+        fire(page._on_apply, page.apply)
+
+        assert not settings_path.exists()
+        assert applied == []
+        assert reloaded == []
+        assert model.applied_app_settings.theme is Theme.LIGHT
+        assert model.app_settings_draft.theme is Theme.DARK
+        assert model.app_settings_draft.reaction_time_text == "abc"
+        assert "reaction time" in page.status.value
+
+    def test_save_failure_keeps_draft_and_reports_error(self, tmp_path: Path) -> None:
+        settings_path = tmp_path / "settings-dir"
+        settings_path.mkdir()
+        page, model, _controller, _actions = make_page(settings_path=settings_path)
+        page.log_level.value = "DEBUG"
+        fire(page._on_log_level, page.log_level)
+
+        fire(page._on_apply, page.apply)
+
+        assert "could not save app settings" in page.status.value
+        assert model.applied_app_settings.log_level == "OFF"
+        assert model.app_settings_draft.log_level == "DEBUG"
+
+
+class TestDraftRetention:
+    def test_periodic_sync_does_not_revert_the_draft(self) -> None:
+        page, model, _controller, _actions = make_page()
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
+
+        page.sync(model.app_settings_draft, edit_permission(SessionState.IDLE))
+
+        assert page.reaction_time.value == "30"
+        assert model.app_settings_draft.reaction_time_text == "30"
+
+    def test_sync_restores_the_draft_after_a_reload(self) -> None:
+        page, model, _controller, _actions = make_page()
+        model.edit_theme(Theme.DARK)
+        model.edit_reaction_time("30")
+        page.theme.value = "light"
+        page.reaction_time.value = "0"
+
+        page.sync(model.app_settings_draft, edit_permission(SessionState.IDLE))
+
+        assert page.theme.value == "dark"
+        assert page.reaction_time.value == "30"
+
+    def test_editing_does_not_dirty_the_profile(self) -> None:
+        page, model, _controller, _actions = make_page()
+        model.mark_saved()
+        assert not model.is_dirty
+
+        page.theme.value = "dark"
+        fire(page._on_theme, page.theme)
+        page.reaction_time.value = "30"
+        fire(page._on_reaction_time_changed, page.reaction_time)
+
+        assert not model.is_dirty
+
+
+class TestNoProfile:
+    def test_editable_without_profile_and_apply_works(self, tmp_path: Path) -> None:
+        settings_path = tmp_path / "settings.json"
+        page, model, controller, _actions = make_page(
+            profile=False, settings_path=settings_path
+        )
+        page.sync(model.app_settings_draft, edit_permission(SessionState.IDLE))
 
         assert page.log_level.disabled is False
         assert page.reaction_time.disabled is False
 
         page.log_level.value = "DEBUG"
         fire(page._on_log_level, page.log_level)
-        page.reaction_time.value = "50"
-        fire(page._on_reaction_time_committed, page.reaction_time)
+        fire(page._on_apply, page.apply)
 
-        assert model.app_settings.log_level == "DEBUG"
-        assert model.app_settings.reaction_time_ms == 50
+        assert load_app_settings(settings_path).log_level == "DEBUG"
         assert not model.is_dirty
         assert controller.request_stop_calls == 0
         assert controller.started == []
-        assert reloaded == []
