@@ -124,6 +124,17 @@ class ApplicationRuntime:
         for instance in self._instances:
             instance.request_stop()
 
+    def request_reset_all(self) -> None:
+        """Ask every instance to evaluate a manual Reset on its own thread.
+
+        No phase filtering happens here: each ``InstanceRuntime`` decides
+        against its latest snapshot, so one instance that cannot Reset never
+        blocks the others.
+        """
+
+        for instance in self._instances:
+            instance.request_reset()
+
     def run(self) -> None:
         instance_threads = tuple(
             threading.Thread(target=instance.run, name=f"instance-{index}")

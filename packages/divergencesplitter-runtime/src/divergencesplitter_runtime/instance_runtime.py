@@ -57,6 +57,7 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
+    TimerPhase,
 )
 from divergencesplitter_runtime.scenario import ScenarioRuntime
 
@@ -229,6 +230,10 @@ class InstanceRuntime:
 
         self._wakeup = threading.Event()
         self._stop_requested = threading.Event()
+        # A pending manual Reset request is consumed by the instance thread,
+        # never executed on the requesting (UI) thread. It carries no snapshot:
+        # the decision uses whatever LiveSplit state is current when processed.
+        self._manual_reset_requested = threading.Event()
 
         # Owned exclusively by the instance thread.
         self._scenario_runtime: ScenarioRuntime | None = None
@@ -280,6 +285,21 @@ class InstanceRuntime:
 
     def request_stop(self) -> None:
         self._stop_requested.set()
+        self._wakeup.set()
+
+    def request_reset(self) -> None:
+        """Queue one manual Reset for the instance thread to decide.
+
+        No Bridge RPC happens here. The request only flags a pending manual
+        Reset and wakes the worker, which evaluates the Reset precondition
+        against the latest LiveSplit snapshot on its own thread. A request that
+        is never processed before teardown or reconnect is dropped rather than
+        replayed against a later connection.
+        """
+
+        if self._stop_requested.is_set():
+            return
+        self._manual_reset_requested.set()
         self._wakeup.set()
 
     def stop(self) -> None:
@@ -351,6 +371,9 @@ class InstanceRuntime:
         return self._serve()
 
     def _establish(self, initial: LiveSplitUpdate) -> bool:
+        # A manual Reset requested before this connection existed is not carried
+        # over: once connected, only a fresh request may Reset.
+        self._manual_reset_requested.clear()
         try:
             validate_split_count(self.scenario, initial.snapshot)
         except ValueError as error:
@@ -402,6 +425,13 @@ class InstanceRuntime:
                 outcome = self._apply_event(adapter, message.event)
                 if outcome is not None:
                     return outcome
+        if self._manual_reset_requested.is_set():
+            # Consume the request even when the phase forbids a Reset: a stale
+            # request must never survive into a later state.
+            self._manual_reset_requested.clear()
+            outcome = self._handle_manual_reset(adapter)
+            if outcome is not None:
+                return outcome
         if self.state is not InstanceRuntimeState.READY:
             return None
         shared = self._take_frame()
@@ -451,6 +481,36 @@ class InstanceRuntime:
         if action is None:
             return None
         return self._dispatch_action(adapter, runtime, action, context)
+
+    def _handle_manual_reset(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+    ) -> _Attempt | None:
+        # A manual Reset is decided on the instance thread against the current
+        # snapshot and is never delayed by reaction_time. Phases that cannot be
+        # Reset are a normal no-op.
+        runtime = self._scenario_runtime
+        if runtime is None:
+            return None
+        expected = runtime.current_snapshot
+        if expected is None:
+            return None
+        if expected.phase not in (
+            TimerPhase.RUNNING,
+            TimerPhase.PAUSED,
+            TimerPhase.ENDED,
+        ):
+            return None
+        action = Action("reset")
+        result = adapter.execute_action(action, expected)
+        if result is ActionExecution.NOT_DISPATCHED:
+            runtime.action_not_dispatched(action)
+        elif result is ActionExecution.UNKNOWN:
+            self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
+            return _Attempt.CONNECTION_LOST
+        else:
+            self._publish_reset()
+        return None
 
     def _dispatch_action(
         self,
@@ -733,6 +793,7 @@ class InstanceRuntime:
             pass
 
     def _connection_lost(self, error: Exception) -> None:
+        self._manual_reset_requested.clear()
         self._scenario_runtime = None
         self._set_run_info(None)
         with self._state_lock:
@@ -743,6 +804,7 @@ class InstanceRuntime:
         self._diagnostics.connection_lost(self.connection, error)
 
     def _fail(self, error: Exception) -> None:
+        self._manual_reset_requested.clear()
         self._set_error(error)
         self._scenario_runtime = None
         self._set_run_info(None)
@@ -760,6 +822,7 @@ class InstanceRuntime:
         self._diagnostics.worker_stopped(self.connection)
 
     def _release_transport(self) -> None:
+        self._manual_reset_requested.clear()
         receiver = self._receiver
         self._receiver = None
         if receiver is not None:

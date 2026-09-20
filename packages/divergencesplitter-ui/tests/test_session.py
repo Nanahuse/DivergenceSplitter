@@ -185,10 +185,14 @@ class FakeRuntime:
         self.ran = threading.Event()
         self._release = threading.Event()
         self.request_stop_calls = 0
+        self.request_reset_all_calls = 0
 
     def request_stop(self) -> None:
         self.request_stop_calls += 1
         self._release.set()
+
+    def request_reset_all(self) -> None:
+        self.request_reset_all_calls += 1
 
     def release(self) -> None:
         self._release.set()
@@ -702,3 +706,39 @@ def test_reaction_time_is_forwarded_to_the_runtime_factory() -> None:
     controller.join()
 
     assert runtime_factory.reaction_time_ms == 30
+
+
+class TestRequestResetAll:
+    def test_forwards_to_a_running_runtime(self) -> None:
+        controller, runtime_factory, _ = make_controller(
+            runtime_factory=FakeRuntimeFactory(release_on_run=False),
+        )
+
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
+        try:
+            assert wait_until(lambda: controller.state is SessionState.RUNNING)
+            controller.request_reset_all()
+
+            assert runtime_factory.runtimes[0].request_reset_all_calls == 1
+        finally:
+            controller.request_stop()
+            runtime_factory.runtimes[0].release()
+            controller.join()
+
+    def test_without_a_runtime_is_a_noop(self) -> None:
+        controller, runtime_factory, _ = make_controller()
+
+        controller.request_reset_all()
+
+        assert runtime_factory.runtimes == []
+
+    def test_after_completion_is_a_noop(self) -> None:
+        controller, runtime_factory, _ = make_controller()
+
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
+        controller.join()
+        assert controller.state is SessionState.COMPLETED
+
+        controller.request_reset_all()
+
+        assert runtime_factory.runtimes[0].request_reset_all_calls == 0
