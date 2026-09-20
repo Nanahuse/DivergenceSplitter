@@ -1,13 +1,12 @@
-"""Flet Configuration page composing the Profile header and three tabs.
+"""Flet Profile page composing the Input and Scenarios & Connections tabs.
 
-The page uses the single shared ``SettingsModel`` and never keeps a second
-settings state. The always-visible Profile header owns the Profile path, dirty
-marker, New/Open/Save/Save As, and the global status; New/Open/Save/Save As are
-delegated to ``ProfileActions``. The three tabs split the body by
-responsibility: Input (``Profile.source``), Scenarios & Connections
-(``Profile.instances``), and System (App Settings). The Configuration preview
-runs only while the Input tab is active. Runtime restart happens only through
-``SessionController`` after a successful save.
+The page edits only what a Profile file stores: ``Profile.source`` and
+``Profile.instances``. Application Settings (theme, log level, reaction time)
+live on the separate Settings screen. The always-visible Profile header and the
+New/Open/Save/Save As operations are owned by ``FletApplication``, so they stay
+available on every Current View and every status message is routed back through
+``on_status``. The preview runs only while the Profile view is active. The
+runtime restarts only through ``ProfileActions`` after a successful save.
 """
 
 from __future__ import annotations
@@ -15,33 +14,25 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from enum import StrEnum
-from pathlib import Path
 
 import flet as ft
 from divergencesplitter.frame.models import Frame
-from divergencesplitter_runtime.configuration.app_settings_json import (
-    default_app_settings_path,
-)
 from divergencesplitter_runtime.configuration.models import (
     CameraSourceConfiguration,
     NdiSourceConfiguration,
     SourceTransformConfiguration,
-    Theme,
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
 )
 
-from divergencesplitter_ui.configuration.actions import ProfileActions
 from divergencesplitter_ui.configuration.dialogs import FileDialogs
 from divergencesplitter_ui.configuration.input_tab import InputTab
 from divergencesplitter_ui.configuration.preview import (
     ConfigurationPreview,
     PreviewController,
 )
-from divergencesplitter_ui.configuration.profile_header import ProfileHeader
 from divergencesplitter_ui.configuration.scenarios_tab import ScenariosTab
-from divergencesplitter_ui.configuration.system_tab import SystemTab
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.session import SessionController, SessionState, is_active
 from divergencesplitter_ui.settings import (
@@ -53,28 +44,22 @@ from divergencesplitter_ui.settings import (
 )
 
 
-class ConfigurationTab(StrEnum):
-    """The body tab the Configuration page is showing."""
+class ProfileTab(StrEnum):
+    """The body tab the Profile page is showing."""
 
     INPUT = "input"
     SCENARIOS = "scenarios"
-    SYSTEM = "system"
 
 
-_TAB_ORDER = (
-    ConfigurationTab.INPUT,
-    ConfigurationTab.SCENARIOS,
-    ConfigurationTab.SYSTEM,
-)
+_TAB_ORDER = (ProfileTab.INPUT, ProfileTab.SCENARIOS)
 _TAB_LABELS = {
-    ConfigurationTab.INPUT: "Input",
-    ConfigurationTab.SCENARIOS: "Scenarios & Connections",
-    ConfigurationTab.SYSTEM: "System",
+    ProfileTab.INPUT: "Input",
+    ProfileTab.SCENARIOS: "Scenarios & Connections",
 }
 
 
-class ConfigurationPage:
-    """Own the Configuration page, its tabs, and their preview and actions."""
+class ProfilePage:
+    """Own the Profile page, its tabs, and their preview."""
 
     def __init__(
         self,
@@ -82,25 +67,14 @@ class ConfigurationPage:
         model: SettingsModel,
         dialogs: FileDialogs,
         *,
+        on_status: Callable[[str], None],
         ndi_discovery: NdiDiscovery | None = None,
         preview: ConfigurationPreview | None = None,
         preview_controller: PreviewController | None = None,
-        settings_path: Path | None = None,
-        on_apply_theme: Callable[[Theme], None] | None = None,
     ) -> None:
         self._controller = controller
         self._model = model
-        self._dialogs = dialogs
-        self._settings_path = (
-            settings_path if settings_path is not None else default_app_settings_path()
-        )
-        self._actions = ProfileActions(
-            controller,
-            model,
-            dialogs,
-            settings_path=self._settings_path,
-            on_theme_applied=on_apply_theme,
-        )
+        self._on_status = on_status
         preview_control = preview if preview is not None else ConfigurationPreview()
         self._preview_controller = (
             preview_controller
@@ -109,12 +83,6 @@ class ConfigurationPage:
                 runtime_frame_provider=self._take_runtime_frame,
                 runtime_active=lambda: is_active(self._controller.state),
             )
-        )
-        self._header = ProfileHeader(
-            on_new=self._on_new,
-            on_open=self._on_open,
-            on_save=self._on_save,
-            on_save_as=self._on_save_as,
         )
         self._input = InputTab(
             model,
@@ -127,25 +95,12 @@ class ConfigurationPage:
         self._scenarios = ScenariosTab(
             model, dialogs, on_changed=self._sync_preview_now
         )
-        self._system = SystemTab(
-            on_theme=self._on_theme,
-            on_log_level=self._on_log_level,
-            on_reaction_time_committed=self._on_reaction_time_committed,
-        )
         # Kept as convenience aliases for the composed sections and controls.
         self._source = self._input.source
         self._frame_processing = self._input.frame_processing
         self._instances = self._scenarios.section
-        self._theme = self._system.theme
-        self._log_level = self._system.log_level
-        self._reaction_time = self._system.reaction_time
-        self._profile_path = self._header.profile_path
-        self._new_button = self._header.new_button
-        self._open_button = self._header.open_button
-        self._save_button = self._header.save_button
-        self._save_as_button = self._header.save_as_button
 
-        self._active_tab = ConfigurationTab.INPUT
+        self._active_tab = ProfileTab.INPUT
         self._tabs = ft.Tabs(
             content=ft.Column(
                 controls=[
@@ -153,11 +108,7 @@ class ConfigurationPage:
                         tabs=[ft.Tab(label=_TAB_LABELS[tab]) for tab in _TAB_ORDER]
                     ),
                     ft.TabBarView(
-                        controls=[
-                            self._input.control,
-                            self._scenarios.control,
-                            self._system.control,
-                        ],
+                        controls=[self._input.control, self._scenarios.control],
                         expand=True,
                     ),
                 ],
@@ -170,8 +121,7 @@ class ConfigurationPage:
         )
         self._control = ft.Column(
             controls=[
-                ft.Text("Configuration", size=20),
-                self._header.control,
+                ft.Text("Profile", size=20),
                 ft.Divider(),
                 self._tabs,
             ],
@@ -189,28 +139,19 @@ class ConfigurationPage:
         return self._control
 
     @property
-    def actions(self) -> ProfileActions:
-        return self._actions
-
-    @property
     def preview(self) -> ConfigurationPreview:
         return self._input.preview
 
     @property
-    def active_tab(self) -> ConfigurationTab:
+    def active_tab(self) -> ProfileTab:
         return self._active_tab
 
-    def select_tab(self, tab: ConfigurationTab) -> None:
+    def select_tab(self, tab: ProfileTab) -> None:
         """Switch the active tab without touching the Profile or runtime."""
 
         self._active_tab = tab
         self._tabs.selected_index = _TAB_ORDER.index(tab)
         self.tick(self._controller.state, visible=True)
-
-    def set_theme(self, theme: Theme) -> None:
-        """Apply a theme to the Configuration page's own controls."""
-
-        self._header.set_theme(theme)
 
     def preview_update_targets(self) -> tuple[ft.Control, ...]:
         """The controls one ``pump_preview`` cycle can change.
@@ -231,40 +172,34 @@ class ConfigurationPage:
             try:
                 await asyncio.to_thread(command)
             except Exception as error:  # noqa: BLE001 - surfaced as preview status
-                self._actions.set_status(f"preview: {error}")
+                self._on_status(f"preview: {error}")
         changed = await self._input.preview.pump(self._preview_controller)
         changed |= self._input.set_capture_settings(
             self._preview_controller.capture_settings
         )
         error = self._preview_controller.error
-        if error is not None and self._actions.status != f"preview: {error}":
-            self._actions.set_status(f"preview: {error}")
+        if error is not None:
+            self._on_status(f"preview: {error}")
         return changed
 
     def tick(self, state: SessionState, *, visible: bool) -> bool:
         """Sync the page from the model; return whether anything changed."""
 
-        changed = self._actions.advance(state)
-        if changed:
-            state = self._controller.state
         if not visible:
             self._deactivate_preview()
             self._was_visible = False
-            return changed
+            return False
         self._was_visible = True
         permission = edit_permission(state)
         draft = self._model.draft
-        changed |= self._sync_header(draft, permission)
-        if self._active_tab is ConfigurationTab.INPUT:
+        changed = False
+        if self._active_tab is ProfileTab.INPUT:
             changed |= self._sync_input(draft, permission)
         else:
             self._deactivate_preview()
-            if self._active_tab is ConfigurationTab.SCENARIOS:
-                changed |= self._scenarios.set_profile_present(draft is not None)
-                if draft is not None:
-                    changed |= self._instances.apply(draft, permission)
-            else:
-                changed |= self._system.sync(self._model.app_settings, permission)
+            changed |= self._scenarios.set_profile_present(draft is not None)
+            if draft is not None:
+                changed |= self._instances.apply(draft, permission)
         return changed
 
     def populate(self) -> None:
@@ -279,7 +214,7 @@ class ConfigurationPage:
         self._scenarios.set_profile_present(True)
         self._populate_input(draft)
         self._instances.apply(draft, edit_permission(self._controller.state))
-        if self._active_tab is ConfigurationTab.INPUT:
+        if self._active_tab is ProfileTab.INPUT:
             self._sync_preview(draft)
 
     def teardown(self) -> None:
@@ -287,26 +222,6 @@ class ConfigurationPage:
 
         self._preview_controller.stop()
         self._input.stop_ndi()
-
-    def _sync_header(self, draft: EditableProfile | None, permission) -> bool:
-        if draft is None:
-            path_text = "No profile selected"
-            save_enabled = False
-            save_as_enabled = False
-        else:
-            path_text = str(draft.profile_path)
-            if self._model.is_dirty:
-                path_text += " *"
-            save_enabled = permission.instances
-            save_as_enabled = permission.instances
-        return self._header.sync(
-            path_text=path_text,
-            status=self._actions.status,
-            new_enabled=permission.instances,
-            open_enabled=permission.instances,
-            save_enabled=save_enabled,
-            save_as_enabled=save_as_enabled,
-        )
 
     def _sync_input(self, draft: EditableProfile | None, permission) -> bool:
         if not self._preview_was_active:
@@ -340,7 +255,7 @@ class ConfigurationPage:
 
     def _sync_preview_now(self) -> None:
         draft = self._model.draft
-        if draft is not None and self._active_tab is ConfigurationTab.INPUT:
+        if draft is not None and self._active_tab is ProfileTab.INPUT:
             self._sync_preview(draft)
 
     def _sync_preview(self, draft: EditableProfile) -> None:
@@ -361,7 +276,7 @@ class ConfigurationPage:
         try:
             configuration = self._preview_configuration(draft, transform)
         except (SourceConfigurationError, ValueError) as error:
-            self._actions.set_status(f"preview: {error}")
+            self._on_status(f"preview: {error}")
             return
         self._pending_preview_command = lambda: self._preview_controller.start_draft(
             configuration
@@ -414,66 +329,13 @@ class ConfigurationPage:
 
         Editing the draft only changes the draft and synchronizes the preview;
         it never stops or restarts the session. While a session runs, the
-        Configuration preview keeps showing its raw input frame, so the draft
-        change is deferred until Save. Only ``ProfileActions`` reloads the
-        controlled runtime, and only after a successful save.
+        Profile preview keeps showing its raw input frame, so the draft change
+        is deferred until Save. Only ``ProfileActions`` reloads the controlled
+        runtime, and only after a successful save.
         """
 
         self._sync_preview_now()
-        self._actions.set_status("Input changed; save to apply.")
-
-    async def _on_new(self, event: ft.Event[ft.OutlinedButton]) -> None:
-        await self._run_action(self._actions.new)
-
-    async def _on_open(self, event: ft.Event[ft.OutlinedButton]) -> None:
-        await self._run_action(self._actions.open)
-
-    async def _on_save(self, event: ft.Event[ft.OutlinedButton]) -> None:
-        await self._run_action(self._actions.save)
-
-    async def _on_save_as(self, event: ft.Event[ft.OutlinedButton]) -> None:
-        await self._run_action(self._actions.save_as)
-
-    async def _run_action(self, action) -> None:
-        state = self._controller.state
-        try:
-            await action(state)
-        except Exception as error:  # noqa: BLE001 - surfaced as status, not swallowed
-            self._actions.set_status(str(error))
-        self.populate()
-        self.tick(self._controller.state, visible=True)
-        self._request_update()
-
-    def _on_theme(self, event: ft.Event[ft.Dropdown]) -> None:
-        # Theme is App Settings, so it is persisted to its own file and applied
-        # live; it never marks the Profile dirty or restarts the runtime.
-        try:
-            theme = Theme(self._theme.value or Theme.LIGHT.value)
-        except ValueError:
-            self._actions.set_status("unsupported theme")
-            self._request_update()
-            return
-        self._actions.set_theme(theme)
-        self._request_update()
-
-    def _on_log_level(self, event: ft.Event[ft.Dropdown]) -> None:
-        # Log level is App Settings: it is persisted and applied live, and it
-        # never marks the Profile dirty or restarts the runtime.
-        level = self._log_level.value or "DEBUG"
-        self._actions.set_log_level(level)
-        self._request_update()
-
-    def _on_reaction_time_committed(self, event: ft.Event[ft.TextField]) -> None:
-        # Reaction time is App Settings too. Only a committed value (submit or
-        # blur) is applied, so a partial number never restarts the runtime.
-        try:
-            value = int((self._reaction_time.value or "").strip())
-        except ValueError:
-            self._actions.set_status("reaction time must be a non-negative integer")
-            self._request_update()
-            return
-        self._actions.commit_reaction_time(value)
-        self._request_update()
+        self._on_status("Input changed; save to apply.")
 
     def _request_update(self) -> None:
         try:

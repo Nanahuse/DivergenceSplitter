@@ -1,0 +1,81 @@
+"""Editable Profile and App Settings state plus their Flet presentation.
+
+The package keeps the pure editable state (:mod:`settings.model`) separate from
+the Application Settings screen (:mod:`settings.page`) and its operations
+(:mod:`settings.actions`). The editable state is re-exported here so existing
+``divergencesplitter_ui.settings`` imports keep working unchanged.
+"""
+
+from __future__ import annotations
+
+from divergencesplitter_ui.settings.model import (
+    LOG_LEVELS,
+    SOURCE_TYPE_BY_LABEL,
+    SOURCE_TYPE_LABELS,
+    CameraDevice,
+    CameraEnumerator,
+    CameraMode,
+    EditableAppSettings,
+    EditableCameraSourceConfiguration,
+    EditableCropConfiguration,
+    EditableInstanceConfiguration,
+    EditableNdiSourceConfiguration,
+    EditableProfile,
+    EditableResizeConfiguration,
+    EditableSourceSettings,
+    EditableSourceTransform,
+    EditableVideoSourceConfiguration,
+    EditPermission,
+    SettingsModel,
+    SourceType,
+    WindowsCameraEnumerator,
+    camera_backend,
+    camera_backend_display,
+    camera_backend_value,
+    camera_device_label,
+    camera_mode_label,
+    camera_source,
+    edit_permission,
+    editable_profile_from,
+    ndi_source,
+    profile_from_editable,
+    select_configured_camera,
+    source_transform_from_editable,
+    validate_instances_draft,
+)
+
+__all__ = [
+    "LOG_LEVELS",
+    "SOURCE_TYPE_BY_LABEL",
+    "SOURCE_TYPE_LABELS",
+    "CameraDevice",
+    "CameraEnumerator",
+    "CameraMode",
+    "EditPermission",
+    "EditableAppSettings",
+    "EditableCameraSourceConfiguration",
+    "EditableCropConfiguration",
+    "EditableInstanceConfiguration",
+    "EditableNdiSourceConfiguration",
+    "EditableProfile",
+    "EditableResizeConfiguration",
+    "EditableSourceSettings",
+    "EditableSourceTransform",
+    "EditableVideoSourceConfiguration",
+    "SettingsModel",
+    "SourceType",
+    "WindowsCameraEnumerator",
+    "camera_backend",
+    "camera_backend_display",
+    "camera_backend_value",
+    "camera_device_label",
+    "camera_mode_label",
+    "camera_source",
+    "edit_permission",
+    "editable_profile_from",
+    "ndi_source",
+    "profile_from_editable",
+    "select_configured_camera",
+    "source_transform_from_editable",
+    "validate_instances_draft",
+]

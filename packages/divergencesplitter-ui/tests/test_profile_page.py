@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -9,9 +8,6 @@ from typing import cast
 import flet as ft
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter.frame.ndi import NdiSupport
-from divergencesplitter_runtime.configuration.app_settings_json import (
-    load_app_settings,
-)
 from divergencesplitter_runtime.configuration.models import (
     CameraBackend,
     CameraDeviceConfiguration,
@@ -20,19 +16,14 @@ from divergencesplitter_runtime.configuration.models import (
     InstanceConfiguration,
     Profile,
     ResizeInterpolation,
-    Theme,
     VideoSourceConfiguration,
-)
-from divergencesplitter_runtime.configuration.profile_json import load_profile
-from divergencesplitter_ui.configuration.page import (
-    ConfigurationPage,
-    ConfigurationTab,
 )
 from divergencesplitter_ui.configuration.preview import PreviewController
 from divergencesplitter_ui.monitor.input_preview import (
     PREVIEW_INTERVAL_SECONDS,  # noqa: F401
 )
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
+from divergencesplitter_ui.profile.page import ProfilePage, ProfileTab
 from divergencesplitter_ui.session import (
     SessionAlreadyActiveError,
     SessionController,
@@ -80,7 +71,6 @@ class FakeController:
         self.started: list[Path] = []
         self.request_stop_calls = 0
         self.join_calls = 0
-        self.log_levels: list[str] = []
 
     def start(self, path, *, app_settings) -> None:
         if self.state in {
@@ -99,9 +89,6 @@ class FakeController:
     def join(self, timeout: float | None = None) -> bool:
         self.join_calls += 1
         return True
-
-    def set_log_level(self, level: str) -> None:
-        self.log_levels.append(level)
 
 
 class FakeDialogs:
@@ -193,21 +180,21 @@ def make_page(
     ndi: FakeNdiDiscovery | None = None,
     controller: FakeController | None = None,
     preview: FakePreviewController | None = None,
-    on_apply_theme=None,
-) -> ConfigurationPage:
+    statuses: list[str] | None = None,
+) -> ProfilePage:
     model = SettingsModel(FakeCameraEnumerator())
     if not empty:
         model.open_profile(
             profile or camera_profile(), profile_path or Path("config.json")
         )
-    return ConfigurationPage(
+    recorded = statuses if statuses is not None else []
+    return ProfilePage(
         cast(SessionController, controller or FakeController()),
         model,
         FakeDialogs(),
+        on_status=recorded.append,
         ndi_discovery=cast(NdiDiscovery, ndi or FakeNdiDiscovery()),
         preview_controller=cast(PreviewController, preview or FakePreviewController()),
-        settings_path=Path(tempfile.mkdtemp()) / "settings.json",
-        on_apply_theme=on_apply_theme,
     )
 
 
@@ -261,7 +248,16 @@ class TestPageBuild:
     def test_page_renders_title(self) -> None:
         page = make_page()
 
-        assert "Configuration" in collect_text(page.control)
+        assert "Profile" in collect_text(page.control)
+
+    def test_page_has_no_system_settings(self) -> None:
+        page = make_page()
+
+        labels = collect_text(page.control)
+        assert "System" not in labels
+        assert "Theme" not in labels
+        assert "Reaction time (ms)" not in labels
+        assert "Log level (OFF / DEBUG: all details)" not in labels
 
 
 class TestSourceType:
@@ -460,8 +456,8 @@ class TestTick:
         page.tick(SessionState.IDLE, visible=True)
         page.tick(SessionState.IDLE, visible=True)
         assert discovery.refresh_calls == 1
-        page.select_tab(ConfigurationTab.SYSTEM)
-        page.select_tab(ConfigurationTab.INPUT)
+        page.select_tab(ProfileTab.SCENARIOS)
+        page.select_tab(ProfileTab.INPUT)
         assert discovery.refresh_calls == 2
         page.tick(SessionState.IDLE, visible=False)
         page.tick(SessionState.IDLE, visible=True)
@@ -481,41 +477,26 @@ class TestTick:
         assert page._source._video_path.value == p("second.mp4")
         assert page.tick(SessionState.IDLE, visible=True) is False
 
-    def test_reload_uses_started_session_permissions_in_same_tick(self) -> None:
-        controller = FakeController()
-        page = make_page(controller=controller)
-        controller.state = SessionState.RUNNING
-        page.actions.reload(Path("next.json"))
-        controller.state = SessionState.STOPPED
-
-        assert page.tick(SessionState.STOPPED, visible=True) is True
-
-        assert controller.state is SessionState.LOADING
-        assert page._new_button.disabled is True
-        assert page._source._source_type.disabled is True
-
     def test_tab_switch_restores_permissions_after_connection(self) -> None:
         controller = FakeController()
         page = make_page(controller=controller)
         controller.state = SessionState.CONNECTING
-        for tab in ConfigurationTab:
+        for tab in ProfileTab:
             page.select_tab(tab)
         controller.state = SessionState.RUNNING
-        page.select_tab(ConfigurationTab.INPUT)
+        page.select_tab(ProfileTab.INPUT)
         assert page._source._source_type.disabled is False
-        page.select_tab(ConfigurationTab.SCENARIOS)
+        page.select_tab(ProfileTab.SCENARIOS)
         assert page._instances._rows[0].rpc.disabled is False
-        page.select_tab(ConfigurationTab.SYSTEM)
-        assert page._reaction_time.disabled is False
 
-    def test_dirty_indicator_and_permissions(self) -> None:
+    def test_permissions_and_dirty_state(self) -> None:
         page = make_page()
         assert page.tick(SessionState.IDLE, visible=True) is True
-        assert page._profile_path.value == "config.json"
+        assert not page._model.is_dirty
 
         page._model.set_instance_scenario(0, p("other.py"))
         page.tick(SessionState.IDLE, visible=True)
-        assert page._profile_path.value.endswith(" *")
+        assert page._model.is_dirty
 
     def test_transition_state_disables_source_editing(self) -> None:
         page = make_page()
@@ -524,7 +505,6 @@ class TestTick:
         page.tick(SessionState.CONNECTING, visible=True)
 
         assert page._source._source_type.disabled is True
-        assert page._new_button.disabled is True
 
     def test_hidden_tick_is_cheap_and_stops_preview(self) -> None:
         preview = FakePreviewController()
@@ -665,41 +645,16 @@ class TestUnsavedEditsDoNotStopRuntime:
         assert page._model.is_dirty
 
     def test_status_reports_unsaved_input_change(self) -> None:
-        page, _ = self._running_page()
+        statuses: list[str] = []
+        controller = FakeController()
+        controller.state = SessionState.RUNNING
+        page = make_page(controller=controller, statuses=statuses)
+        page.populate()
+        page.tick(SessionState.RUNNING, visible=True)
 
         page._on_input_changed()
 
-        assert page._actions.status == "Input changed; save to apply."
-
-    def test_log_level_applies_live_without_restart(self) -> None:
-        page, controller = self._running_page()
-
-        page._log_level.value = "OFF"
-        fire(page._on_log_level, page._log_level)
-
-        assert page._model.app_settings.log_level == "OFF"
-        assert controller.log_levels == ["OFF"]
-        assert not page._model.is_dirty
-        self._assert_runtime_untouched(controller)
-
-    def test_reaction_time_commit_reloads_running_profile(self) -> None:
-        page, controller = self._running_page()
-
-        page._reaction_time.value = "30"
-        fire(page._on_reaction_time_committed, page._reaction_time)
-
-        assert page._model.app_settings.reaction_time_ms == 30
-        assert not page._model.is_dirty
-        assert controller.request_stop_calls == 1
-
-    def test_invalid_reaction_time_does_not_reload(self) -> None:
-        page, controller = self._running_page()
-
-        page._reaction_time.value = "abc"
-        fire(page._on_reaction_time_committed, page._reaction_time)
-
-        assert controller.request_stop_calls == 0
-        assert page._model.app_settings.reaction_time_ms == 0
+        assert statuses == ["Input changed; save to apply."]
 
     def test_draft_change_does_not_transition_session_state(self) -> None:
         page, controller = self._running_page()
@@ -721,45 +676,8 @@ class TestTeardown:
         assert preview.stop_calls == 1
 
 
-class TestProfileHeader:
-    def test_path_buttons_and_status(self) -> None:
-        page = make_page()
-        page.tick(SessionState.IDLE, visible=True)
-
-        labels = collect_text(page.control)
-        assert "New Profile..." in labels
-        assert "Open Profile..." in labels
-        assert "Save" in labels
-        assert "Save Profile As..." in labels
-        assert page._profile_path.value == "config.json"
-
-        page._actions.set_status("saved config.json")
-        page.tick(SessionState.IDLE, visible=True)
-        assert page._header.status.value == "saved config.json"
-
-    def test_dirty_marker_tracks_profile_edits(self) -> None:
-        page = make_page()
-        page.tick(SessionState.IDLE, visible=True)
-        assert not page._profile_path.value.endswith(" *")
-
-        page._model.set_instance_scenario(0, p("other.py"))
-        page.tick(SessionState.IDLE, visible=True)
-
-        assert page._profile_path.value.endswith(" *")
-
-    def test_no_profile_disables_save(self) -> None:
-        page = make_page(empty=True)
-        page.tick(SessionState.IDLE, visible=True)
-
-        assert page._profile_path.value == "No profile selected"
-        assert page._header.save_button.disabled is True
-        assert page._header.save_as_button.disabled is True
-        assert page._header.new_button.disabled is False
-        assert page._header.open_button.disabled is False
-
-
 class TestTabStructure:
-    def test_three_tabs_with_input_initial(self) -> None:
+    def test_two_tabs_with_input_initial(self) -> None:
         page = make_page()
 
         content = page._tabs.content
@@ -775,36 +693,16 @@ class TestTabStructure:
         assert labels == [
             "Input",
             "Scenarios & Connections",
-            "System",
         ]
         assert page._tabs.selected_index == 0
-        assert page.active_tab is ConfigurationTab.INPUT
-
-    def test_switching_tabs_does_not_change_draft_or_runtime(self) -> None:
-        controller = FakeController()
-        page = make_page(controller=controller)
-        page.tick(SessionState.IDLE, visible=True)
-        assert page._model.draft is not None
-        draft = page._model.draft
-
-        for tab in (
-            ConfigurationTab.SYSTEM,
-            ConfigurationTab.SCENARIOS,
-            ConfigurationTab.INPUT,
-        ):
-            page.select_tab(tab)
-
-        assert page._model.draft is draft
-        assert not page._model.is_dirty
-        assert controller.request_stop_calls == 0
-        assert controller.started == []
+        assert page.active_tab is ProfileTab.INPUT
 
     def test_tab_change_event_selects_tab(self) -> None:
         page = make_page()
-        page._tabs.selected_index = 2
+        page._tabs.selected_index = 1
         fire(page._on_tab_change, page._tabs)
 
-        assert page.active_tab is ConfigurationTab.SYSTEM
+        assert page.active_tab is ProfileTab.SCENARIOS
 
 
 class TestInputTab:
@@ -832,29 +730,29 @@ class TestInputTab:
 
 
 class TestPreviewLifecycle:
-    def test_input_to_system_stops_and_returning_resyncs(self) -> None:
+    def test_input_to_scenarios_stops_and_returning_resyncs(self) -> None:
         preview = FakePreviewController()
         page = make_page(preview=preview)
         page.tick(SessionState.IDLE, visible=True)
         asyncio.run(page.pump_preview())
         assert len(preview.started) == 1
 
-        page.select_tab(ConfigurationTab.SYSTEM)
+        page.select_tab(ProfileTab.SCENARIOS)
         asyncio.run(page.pump_preview())
         assert preview.stop_calls >= 1
         stopped = preview.stop_calls
 
-        page.select_tab(ConfigurationTab.INPUT)
+        page.select_tab(ProfileTab.INPUT)
         asyncio.run(page.pump_preview())
         assert len(preview.started) == 2
         assert preview.stop_calls == stopped
 
-    def test_system_tab_does_not_schedule_preview(self) -> None:
+    def test_scenarios_tab_does_not_schedule_preview(self) -> None:
         preview = FakePreviewController()
         page = make_page(preview=preview)
         page.tick(SessionState.IDLE, visible=True)
         asyncio.run(page.pump_preview())
-        page.select_tab(ConfigurationTab.SYSTEM)
+        page.select_tab(ProfileTab.SCENARIOS)
         asyncio.run(page.pump_preview())
 
         assert len(preview.started) == 1
@@ -864,7 +762,7 @@ class TestScenariosTab:
     def test_cards_use_scenario_terminology(self) -> None:
         page = make_page()
         page.tick(SessionState.IDLE, visible=True)
-        page.select_tab(ConfigurationTab.SCENARIOS)
+        page.select_tab(ProfileTab.SCENARIOS)
 
         labels = collect_text(page._scenarios.control)
         assert "Scenarios & Connections" in labels
@@ -878,7 +776,7 @@ class TestScenariosTab:
     def test_edit_add_remove(self) -> None:
         page = make_page()
         page.tick(SessionState.IDLE, visible=True)
-        page.select_tab(ConfigurationTab.SCENARIOS)
+        page.select_tab(ProfileTab.SCENARIOS)
         section = page._instances
 
         section._rows[0].rpc.value = "tcp://127.0.0.1:54000"
@@ -903,7 +801,7 @@ class TestScenariosTab:
     def test_no_profile_shows_empty_state(self) -> None:
         page = make_page(empty=True)
         page.tick(SessionState.IDLE, visible=True)
-        page.select_tab(ConfigurationTab.SCENARIOS)
+        page.select_tab(ProfileTab.SCENARIOS)
 
         assert page._scenarios._empty.visible is True
         assert page._scenarios._body.visible is False
@@ -911,140 +809,3 @@ class TestScenariosTab:
             "Create or open a Profile to configure scenarios and connections."
             in collect_text(page._scenarios.control)
         )
-
-
-class TestSystemTab:
-    def test_editable_without_profile(self) -> None:
-        controller = FakeController()
-        page = make_page(empty=True, controller=controller)
-        page.select_tab(ConfigurationTab.SYSTEM)
-
-        assert page._log_level.disabled is False
-        assert page._reaction_time.disabled is False
-
-        page._log_level.value = "DEBUG"
-        fire(page._on_log_level, page._log_level)
-        page._reaction_time.value = "50"
-        fire(page._on_reaction_time_committed, page._reaction_time)
-
-        assert page._model.app_settings.log_level == "DEBUG"
-        assert page._model.app_settings.reaction_time_ms == 50
-        assert not page._model.is_dirty
-        assert controller.request_stop_calls == 0
-        assert controller.started == []
-
-    def test_app_settings_changes_keep_profile_clean(self) -> None:
-        page = make_page()
-        page.select_tab(ConfigurationTab.SYSTEM)
-        assert not page._model.is_dirty
-
-        page._log_level.value = "DEBUG"
-        fire(page._on_log_level, page._log_level)
-        assert not page._model.is_dirty
-
-        page._reaction_time.value = "25"
-        fire(page._on_reaction_time_committed, page._reaction_time)
-        assert not page._model.is_dirty
-
-
-class TestSaveSemantics:
-    def test_input_edit_saved_from_system_tab(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.json"
-        page = make_page(profile_path=path)
-        page.tick(SessionState.IDLE, visible=True)
-        section = page._frame_processing
-        section._crop_enabled.value = True
-        fire(section._on_crop_enabled_changed, section._crop_enabled, data=True)
-
-        page.select_tab(ConfigurationTab.SYSTEM)
-        result = asyncio.run(page._actions.save(SessionState.IDLE))
-
-        assert result is True
-        saved = load_profile(path)
-        assert saved.source.transform.crop is not None
-
-    def test_scenario_edit_saved_from_system_tab(self, tmp_path: Path) -> None:
-        path = tmp_path / "config.json"
-        page = make_page(profile_path=path)
-        page.tick(SessionState.IDLE, visible=True)
-        page.select_tab(ConfigurationTab.SCENARIOS)
-        section = page._instances
-        section._rows[0].scenario.value = p("next.py")
-        fire(section._rows[0].scenario.on_change, section._rows[0].scenario)
-
-        page.select_tab(ConfigurationTab.SYSTEM)
-        result = asyncio.run(page._actions.save(SessionState.IDLE))
-
-        assert result is True
-        saved = load_profile(path)
-        assert saved.instances[0].scenario == p("next.py")
-
-    def test_inactive_tab_edits_are_preserved(self) -> None:
-        page = make_page()
-        page.tick(SessionState.IDLE, visible=True)
-        section = page._frame_processing
-        section._resize_enabled.value = True
-        fire(section._on_resize_enabled_changed, section._resize_enabled, data=True)
-
-        page.select_tab(ConfigurationTab.SCENARIOS)
-        page.select_tab(ConfigurationTab.INPUT)
-
-        assert page._model.draft is not None
-        assert page._model.draft.source.transform.resize is not None
-
-
-class TestThemeSelection:
-    def test_dropdown_lists_light_and_dark_and_defaults_to_light(self) -> None:
-        page = make_page()
-        page.select_tab(ConfigurationTab.SYSTEM)
-        page.tick(SessionState.IDLE, visible=True)
-
-        labels = [option.text or option.key for option in page._theme.options]
-
-        assert labels == ["Light", "Dark"]
-        assert page._theme.value == "light"
-
-    def test_dropdown_applies_theme_immediately(self) -> None:
-        applied: list[Theme] = []
-        page = make_page(on_apply_theme=applied.append)
-        page.select_tab(ConfigurationTab.SYSTEM)
-        page.tick(SessionState.IDLE, visible=True)
-
-        page._theme.value = "dark"
-        fire(page._on_theme, page._theme)
-
-        assert page._model.app_settings.theme is Theme.DARK
-        assert applied == [Theme.DARK]
-        assert not page._model.is_dirty
-
-    def test_theme_is_persisted_without_saving_a_profile(self) -> None:
-        page = make_page(empty=True)
-        page.select_tab(ConfigurationTab.SYSTEM)
-        page.tick(SessionState.IDLE, visible=True)
-        settings_path = page._actions._settings_path
-
-        page._theme.value = "dark"
-        fire(page._on_theme, page._theme)
-
-        assert load_app_settings(settings_path).ui.theme is Theme.DARK
-
-    def test_theme_change_does_not_restart_the_runtime(self) -> None:
-        controller = FakeController()
-        page = make_page(controller=controller)
-        page.select_tab(ConfigurationTab.SYSTEM)
-        page.tick(SessionState.IDLE, visible=True)
-
-        page._theme.value = "dark"
-        fire(page._on_theme, page._theme)
-
-        assert controller.request_stop_calls == 0
-        assert controller.started == []
-
-    def test_transition_state_disables_the_theme_dropdown(self) -> None:
-        page = make_page()
-        page.select_tab(ConfigurationTab.SYSTEM)
-        page.tick(SessionState.IDLE, visible=True)
-
-        page.tick(SessionState.CONNECTING, visible=True)
-
-        assert page._theme.disabled is True

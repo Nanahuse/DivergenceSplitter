@@ -1,9 +1,9 @@
-"""Profile header for the Flet Configuration page.
+"""Shared Profile header for the Flet application.
 
-The header is the always-visible Configuration context: the current Profile
-path, its dirty marker, the New/Open/Save/Save As buttons, and the shared
-global status. It only renders the values the page computes; every Profile
-operation stays in ``ProfileActions``.
+The header is the always-visible Profile context, shown above every Current
+View: the current Profile path, its dirty marker, the New/Open/Save/Save As
+buttons, and the shared global status. It only renders the values the
+application computes; every Profile operation stays in ``ProfileActions``.
 """
 
 from __future__ import annotations
@@ -36,20 +36,17 @@ class ProfileHeader:
             read_only=True,
             expand=True,
         )
-        self._new_button = ft.OutlinedButton(content="New Profile...", on_click=on_new)
-        self._open_button = ft.OutlinedButton(
-            content="Open Profile...", on_click=on_open
-        )
+        self._new_button = ft.OutlinedButton(content="New", on_click=on_new)
+        self._open_button = ft.OutlinedButton(content="Open", on_click=on_open)
         self._save_button = ft.OutlinedButton(
             content="Save", on_click=on_save, disabled=True
         )
         self._save_as_button = ft.OutlinedButton(
-            content="Save Profile As...", on_click=on_save_as, disabled=True
+            content="Save As", on_click=on_save_as, disabled=True
         )
         self._status = ft.Text("", color=self._colors.primary)
         self._control = ft.Column(
             controls=[
-                ft.Text("Profile", size=16, weight=ft.FontWeight.BOLD),
                 ft.Row(
                     controls=[
                         self._profile_path,
@@ -62,7 +59,7 @@ class ProfileHeader:
                 ),
                 self._status,
             ],
-            spacing=6,
+            spacing=4,
         )
 
     @property

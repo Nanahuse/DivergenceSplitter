@@ -4,7 +4,7 @@ from collections.abc import Iterator
 
 import flet as ft
 from divergencesplitter_ui.about import VERSION, about_info
-from divergencesplitter_ui.about_page import AboutView
+from divergencesplitter_ui.about_page import GITHUB_URL, AboutView
 from divergencesplitter_ui.licenses import bundled_inventory, license_sections
 
 
@@ -71,3 +71,14 @@ class TestAboutView:
         ]
         assert "Licenses..." not in labels
         assert "Back to About" not in labels
+
+    def test_links_to_the_github_repository(self) -> None:
+        view = AboutView()
+
+        urls = [
+            item.url
+            for item in iter_controls(view.control)
+            if isinstance(item, ft.TextButton)
+        ]
+        assert GITHUB_URL in urls
+        assert GITHUB_URL == "https://github.com/Nanahuse/DivergenceSplitter"
