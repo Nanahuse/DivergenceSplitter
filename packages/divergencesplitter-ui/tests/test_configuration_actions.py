@@ -361,6 +361,29 @@ class TestSave:
 
 
 class TestReloadTiming:
+    def test_reload_retries_until_terminal_session_thread_exits(self) -> None:
+        class FinishingController(FakeController):
+            thread_alive = True
+
+            def start(self, path, *, app_settings) -> None:
+                if self.thread_alive:
+                    raise SessionAlreadyActiveError(str(path))
+                super().start(path, app_settings=app_settings)
+
+        controller = FinishingController()
+        controller.state = SessionState.RUNNING
+        actions, _, _, _ = make_actions(controller=controller)
+        actions.reload(Path("next.json"))
+        controller.state = SessionState.STOPPED
+
+        assert actions.advance(controller.state) is False
+        assert controller.started == []
+        controller.thread_alive = False
+        assert actions.advance(controller.state) is True
+        assert controller.started == [Path("next.json")]
+        assert actions.advance(controller.state) is False
+        assert controller.join_calls == 0
+
     def test_editing_alone_does_not_start(self) -> None:
         _actions, controller, model, _ = make_actions()
 

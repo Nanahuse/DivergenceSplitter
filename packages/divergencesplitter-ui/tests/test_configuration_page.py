@@ -21,6 +21,7 @@ from divergencesplitter_runtime.configuration.models import (
     Profile,
     ResizeInterpolation,
     Theme,
+    VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.profile_json import load_profile
 from divergencesplitter_ui.configuration.page import (
@@ -432,6 +433,81 @@ class TestInstances:
 
 
 class TestTick:
+    def test_input_starts_ndi_detection_and_enables_available_source(self) -> None:
+        discovery = NdiDiscovery(
+            support_probe=lambda: NdiSupport(True),
+            source_lister=lambda timeout: ("Gaming PC (OBS)",),
+        )
+        page = make_page(ndi=cast(FakeNdiDiscovery, discovery))
+        assert discovery.support() is None
+
+        page.tick(SessionState.IDLE, visible=True)
+        discovery.join(2)
+        page.tick(SessionState.IDLE, visible=True)
+
+        assert discovery.support() == NdiSupport(True)
+        assert page._model.ndi_available is True
+        option = next(
+            item for item in page._source._source_type.options if item.key == "NDI"
+        )
+        assert option.disabled is False
+
+    def test_ndi_refresh_runs_on_input_entry_not_every_tick(self) -> None:
+        discovery = FakeNdiDiscovery()
+        page = make_page(ndi=discovery)
+        page.tick(SessionState.IDLE, visible=False)
+        assert discovery.refresh_calls == 0
+        page.tick(SessionState.IDLE, visible=True)
+        page.tick(SessionState.IDLE, visible=True)
+        assert discovery.refresh_calls == 1
+        page.select_tab(ConfigurationTab.SYSTEM)
+        page.select_tab(ConfigurationTab.INPUT)
+        assert discovery.refresh_calls == 2
+        page.tick(SessionState.IDLE, visible=False)
+        page.tick(SessionState.IDLE, visible=True)
+        assert discovery.refresh_calls == 3
+
+    def test_reopened_profile_reports_populated_input_changes(self) -> None:
+        instances = camera_profile().instances
+        page = make_page(
+            profile=Profile(1, VideoSourceConfiguration(p("first.mp4")), instances)
+        )
+        page.tick(SessionState.IDLE, visible=True)
+        assert page.tick(SessionState.IDLE, visible=True) is False
+        profile = Profile(1, VideoSourceConfiguration(p("second.mp4")), instances)
+        page._model.open_profile(profile, Path("config.json"))
+
+        assert page.tick(SessionState.IDLE, visible=True) is True
+        assert page._source._video_path.value == p("second.mp4")
+        assert page.tick(SessionState.IDLE, visible=True) is False
+
+    def test_reload_uses_started_session_permissions_in_same_tick(self) -> None:
+        controller = FakeController()
+        page = make_page(controller=controller)
+        controller.state = SessionState.RUNNING
+        page.actions.reload(Path("next.json"))
+        controller.state = SessionState.STOPPED
+
+        assert page.tick(SessionState.STOPPED, visible=True) is True
+
+        assert controller.state is SessionState.LOADING
+        assert page._new_button.disabled is True
+        assert page._source._source_type.disabled is True
+
+    def test_tab_switch_restores_permissions_after_connection(self) -> None:
+        controller = FakeController()
+        page = make_page(controller=controller)
+        controller.state = SessionState.CONNECTING
+        for tab in ConfigurationTab:
+            page.select_tab(tab)
+        controller.state = SessionState.RUNNING
+        page.select_tab(ConfigurationTab.INPUT)
+        assert page._source._source_type.disabled is False
+        page.select_tab(ConfigurationTab.SCENARIOS)
+        assert page._instances._rows[0].rpc.disabled is False
+        page.select_tab(ConfigurationTab.SYSTEM)
+        assert page._reaction_time.disabled is False
+
     def test_dirty_indicator_and_permissions(self) -> None:
         page = make_page()
         assert page.tick(SessionState.IDLE, visible=True) is True

@@ -270,31 +270,33 @@ class ProfileActions:
     def reload(self, path: Path) -> None:
         """Stop the running session before restarting it with ``path``."""
 
+        self._pending_reload_path = path
         if is_active(self._controller.state):
-            self._pending_reload_path = path
             self._controller.request_stop()
             self._status = "Reloading profile..."
             return
-        self._start(path)
+        self.advance(self._controller.state)
 
     def advance(self, state: SessionState) -> bool:
         """Start a pending reload once the previous session has stopped."""
 
         if self._pending_reload_path is not None and not is_active(state):
             path = self._pending_reload_path
-            self._pending_reload_path = None
-            self._start(path)
-            return True
+            if self._start(path):
+                self._pending_reload_path = None
+                return True
         return False
 
-    def _start(self, path: Path) -> None:
+    def _start(self, path: Path) -> bool:
         settings = replace(self._model.app_settings_document(), last_profile=None)
         try:
             self._controller.start(path, app_settings=settings)
         except SessionAlreadyActiveError:
-            self._status = "a session is already running"
-            return
+            # A terminal state can be published before the session thread exits.
+            # Keep the reload queued for the next tick without blocking the UI.
+            return False
         message = f"started {path.name}"
         if self._settings_error is not None:
             message = f"{message} ({self._settings_error})"
         self._status = message
+        return True
