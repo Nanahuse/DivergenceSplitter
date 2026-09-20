@@ -235,11 +235,12 @@ selected backend must also return from synchronous `read()` in finite time,
 because stopping waits for an in-progress read and the source does not add a
 reader thread or a generic read timeout.
 
-## NDI input
+## NDI® input
 
 NDI is a third input source alongside Camera and Video File. It selects a
 sender by its advertised NDI name, never by list position, so reordering the
-network source list cannot connect to a different sender:
+network source list cannot connect to a different sender. Learn more about the
+technology at [ndi.video](https://ndi.video/):
 
 ```json
 {
@@ -281,15 +282,20 @@ install the optional extra:
 uv add "divergencesplitter[ndi] @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter"
 ```
 
-`ndi-python` redistributes the NDI runtime under its own license (MIT binding,
-NDI runtime notices included in the wheel). The Windows distribution CI builds
-from the normal UI dependencies and includes the binding and runtime license
-notices. For the same build environment locally, use
+`ndi-python` is the MIT-licensed Python binding. The NDI Runtime that it ships
+is licensed separately by Vizrt NDI AB under the NDI SDK License Agreement and
+is not covered by the MIT License. See
+[`THIRD_PARTY_LICENSES/NDI.md`](THIRD_PARTY_LICENSES/NDI.md) for the boundary
+and the applicable conditions. The Windows distribution CI builds from the
+normal UI dependencies and includes the binding and runtime license notices.
+For the same build environment locally, use
 `uv sync --locked --all-packages --group build` and run build tools
 with `uv run --no-sync`. A temporary
 loss of the sender does not stop the session; the receiver resumes when the same
 source name returns. NDI receive uses a bounded timeout, so shutdown stays
 responsive.
+
+NDI® is a registered trademark of Vizrt NDI AB.
 
 ## LiveSplit Bridge constraints
 

@@ -7,8 +7,10 @@ target, and resolves each requirement to a distribution installed in the
 current environment. It never queries a network and never lists every
 installed package.
 
-The Windows build also explicitly includes ``ndi-python`` as a release root,
-including the NDI runtime notices stored outside its distribution metadata.
+The Windows build also explicitly includes ``ndi-python`` as a release root.
+The NDI runtime notices stored outside its distribution metadata are emitted as
+separate ``assets`` rather than folded into the ``ndi-python`` MIT entry, so the
+MIT binding and the separately licensed NDI Runtime stay distinguishable.
 
 For each inventoried component the generator also bundles the full license
 text files shipped by the installed distribution, so the license screen can
@@ -17,9 +19,9 @@ redistributed inside the executable. Some releases declare an SPDX expression
 in metadata but omit every license file from the wheel (``flet`` is one such
 distribution); for those a canonical text vendored under ``tools/licenses`` is
 used so the inventory still reproduces the license rather than failing. The
-application's own GPL-3.0 text from the repository ``LICENSE`` is included as
-the ``application`` section, which is required when conveying a GPL-3.0
-program.
+application's own MIT text from the repository ``LICENSE`` is included as the
+``application`` section. Components under MPL-2.0 also carry a short note
+pointing at where their upstream source can be obtained.
 
 Generation is deterministic: packages are emitted sorted by their normalized
 name, license files are sorted by their normalized sub-path, and every run
@@ -58,9 +60,31 @@ INVENTORY_PATH = UI_MODULE_ROOT / "license_inventory.json"
 ROOT_DISTRIBUTION = "divergencesplitter-ui"
 SCHEMA_VERSION = 3
 APPLICATION_NAME = "DivergenceSplitter"
-APPLICATION_LICENSE = "GPL-3.0-only"
+APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
+
+# The NDI runtime is conveyed alongside the MIT-licensed ``ndi-python`` binding
+# but is licensed separately by Vizrt NDI AB. It is emitted as assets instead
+# of being folded into the ``ndi-python`` package so the two are never confused.
+NDI_PACKAGE = "ndi-python"
+NDI_RUNTIME_ASSET_NAME = "NDI Runtime"
+NDI_RUNTIME_NOTICES_ASSET_NAME = "NDI Runtime Third-Party Notices"
+NDI_SDK_LICENSE = "NDI SDK License Agreement"
+NDI_RUNTIME_NOTICES_PATH = "NDIlib/Processing.NDI.Lib.Licenses.txt"
+NDI_LICENSE_DOCUMENT_PATH = REPO_ROOT / "THIRD_PARTY_LICENSES" / "NDI.md"
+
+# MPL-2.0 requires that the Corresponding Source be made available. Rather than
+# building a dependency metadata system, MPL components get a short pointer to
+# their upstream source appended to their bundled license text.
+MPL_LICENSE_ID = "MPL-2.0"
+MPL_SOURCE_NOTE = (
+    "=== MPL-2.0 Source Availability ===\n"
+    "{name} {version} is distributed under the Mozilla Public License 2.0.\n"
+    "The Corresponding Source for this component is available from its\n"
+    "upstream project and from the Python Package Index:\n"
+    "https://pypi.org/project/{name}/{version}/#files"
+)
 
 # Canonical license texts vendored for distributions that declare an SPDX
 # expression but ship no license file in their wheel, keyed by that expression.
@@ -305,37 +329,99 @@ def _vendored_license_text(dist: metadata.Distribution) -> str | None:
     return f"=== {relative} ===\n{path.read_text(encoding='utf-8')}"
 
 
+def _contains_mpl(expression: str) -> bool:
+    """Return whether an SPDX expression includes MPL-2.0."""
+
+    tokens = expression.replace("(", " ").replace(")", " ").split()
+    return MPL_LICENSE_ID in tokens
+
+
+def _source_availability_note(dist: metadata.Distribution) -> str | None:
+    """Return an MPL-2.0 source-availability note when the component needs one.
+
+    The note is best-effort: a component whose license cannot be resolved is
+    not treated as MPL, because its own license-text collection already fails
+    loudly when it is genuinely broken.
+    """
+
+    try:
+        expression = resolve_license(dist)
+    except RuntimeError:
+        return None
+    if not _contains_mpl(expression):
+        return None
+    return MPL_SOURCE_NOTE.format(
+        name=dist.metadata["Name"],
+        version=dist.metadata["Version"],
+    )
+
+
 def license_text(dist: metadata.Distribution) -> str:
-    """Collect every license text shipped by the installed distribution."""
+    """Collect every license text shipped by the installed distribution.
+
+    The NDI runtime notices are deliberately not collected here: they license
+    the separately distributed NDI Runtime, not the MIT-licensed ``ndi-python``
+    binding, and are emitted as their own assets by ``ndi_runtime_assets``.
+    """
 
     entries: dict[str, str] = {}
     for read_path, content in _declared_license_files(dist):
         entries[read_path] = content
     for read_path, content in _scanned_license_files(dist):
         entries[read_path] = content
-    if canonicalize_name(dist.metadata["Name"]) == "ndi-python":
-        runtime_notice = "NDIlib/Processing.NDI.Lib.Licenses.txt"
-        entries[runtime_notice] = dist.locate_file(runtime_notice).read_text(
-            encoding="utf-8"
-        )
     if not entries:
         vendored = _vendored_license_text(dist)
-        if vendored is not None:
-            return vendored
-        raise RuntimeError(
-            f"cannot collect any license text for {dist.metadata['Name']!r}"
-        )
-    blocks = [
-        f"=== {read_path} ===\n{entries[read_path]}" for read_path in sorted(entries)
+        if vendored is None:
+            raise RuntimeError(
+                f"cannot collect any license text for {dist.metadata['Name']!r}"
+            )
+        text = vendored
+    else:
+        blocks = [
+            f"=== {read_path} ===\n{entries[read_path]}"
+            for read_path in sorted(entries)
+        ]
+        text = "\n\n".join(blocks)
+    source_note = _source_availability_note(dist)
+    if source_note is not None:
+        return f"{text}\n\n{source_note}"
+    return text
+
+
+def ndi_runtime_assets(
+    closure: dict[str, metadata.Distribution],
+) -> list[AssetEntry]:
+    """Return the NDI Runtime assets when the NDI binding is in the closure.
+
+    ``ndi-python`` is MIT, but it ships the NDI Runtime, which is licensed by
+    Vizrt NDI AB under the NDI SDK License Agreement. These assets keep the
+    runtime and its third-party notices distinct from the MIT binding on the
+    license screen.
+    """
+
+    dist = closure.get(canonicalize_name(NDI_PACKAGE))
+    if dist is None:
+        return []
+    notices = dist.locate_file(NDI_RUNTIME_NOTICES_PATH).read_text(encoding="utf-8")
+    return [
+        {
+            "name": NDI_RUNTIME_ASSET_NAME,
+            "license": NDI_SDK_LICENSE,
+            "license_text": NDI_LICENSE_DOCUMENT_PATH.read_text(encoding="utf-8"),
+        },
+        {
+            "name": NDI_RUNTIME_NOTICES_ASSET_NAME,
+            "license": NDI_SDK_LICENSE,
+            "license_text": notices,
+        },
     ]
-    return "\n\n".join(blocks)
 
 
 def application_entry() -> ApplicationEntry:
     """Return the application's own license section from the repo ``LICENSE``.
 
-    The GPL-3.0 text must accompany the conveyed program, so it is bundled
-    alongside the third-party inventory.
+    The MIT text is bundled alongside the third-party inventory so the license
+    screen carries the application's own terms as well.
     """
 
     return {
@@ -351,7 +437,8 @@ def build_inventory(
     """Emit one inventory entry per non-excluded package.
 
     The own DivergenceSplitter distributions are excluded because their
-    licenses are not part of the third-party license screen.
+    licenses are not part of the third-party license screen. Components that
+    are not Python distributions (the NDI Runtime) are emitted as assets.
     """
 
     packages: list[PackageEntry] = []
@@ -371,7 +458,7 @@ def build_inventory(
         "schema_version": SCHEMA_VERSION,
         "application": application_entry(),
         "packages": packages,
-        "assets": [],
+        "assets": ndi_runtime_assets(closure),
     }
 
 

@@ -3,7 +3,7 @@ name = "divergencesplitter-runtime"
 version = "0.1.0"
 description = "Runtime services for DivergenceSplitter"
 requires-python = ">=3.14"
-license = "GPL-3.0-only"
+license = "MIT"
 dependencies = [
     "divergencesplitter",
     "livesplit-bridge-client @ git+https://github.com/Nanahuse/livesplit-bridge-client.git@v0.2.0",

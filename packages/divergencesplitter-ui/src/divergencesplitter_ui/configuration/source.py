@@ -20,6 +20,7 @@ from divergencesplitter_runtime.configuration.source_builder import (
 )
 
 from divergencesplitter_ui.configuration.dialogs import VIDEO_EXTENSIONS, FileDialogs
+from divergencesplitter_ui.ndi_branding import NDI_TRADEMARK_NOTICE, NDI_WEBSITE_URL
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.settings import (
     SOURCE_TYPE_LABELS,
@@ -130,17 +131,19 @@ class SourceSection:
         )
 
         self._ndi_source = ft.Dropdown(
-            label="NDI source",
+            label="NDI® source",
             options=[],
             on_select=self._on_ndi_source_selected,
         )
         self._ndi_status = ft.Text("")
         self._ndi_group = ft.Column(
             controls=[
-                ft.Text("NDI source"),
+                ft.Text("NDI® source"),
                 self._ndi_source,
                 self._ndi_status,
                 ft.OutlinedButton(content="Refresh", on_click=self._on_refresh_ndi),
+                ft.TextButton(content="Learn about NDI ↗", url=NDI_WEBSITE_URL),
+                ft.Text(NDI_TRADEMARK_NOTICE, size=11),
             ],
             spacing=4,
         )

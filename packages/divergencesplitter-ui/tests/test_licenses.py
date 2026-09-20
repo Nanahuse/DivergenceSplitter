@@ -29,8 +29,8 @@ def document(
         "application": application
         or {
             "name": "DivergenceSplitter",
-            "license": "GPL-3.0-only",
-            "license_text": "GPL text",
+            "license": "MIT",
+            "license_text": "MIT text",
         },
         "packages": packages,
         "assets": assets or [],
@@ -95,8 +95,8 @@ class TestLoadInventory:
             schema_version=3,
             application=ApplicationLicense(
                 "DivergenceSplitter",
-                "GPL-3.0-only",
-                "GPL text",
+                "MIT",
+                "MIT text",
             ),
             packages=(
                 LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "full BSD text"),
@@ -195,7 +195,7 @@ class TestLoadInventory:
                 [],
                 application={
                     "name": "DivergenceSplitter",
-                    "license": "GPL-3.0-only",
+                    "license": "MIT",
                     "license_text": "",
                 },
             )
@@ -207,8 +207,8 @@ class TestLicenseSections:
             schema_version=3,
             application=ApplicationLicense(
                 "DivergenceSplitter",
-                "GPL-3.0-only",
-                "the GPL text",
+                "MIT",
+                "the MIT text",
             ),
             packages=(LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "the BSD text"),),
             assets=(AssetLicense("sample-asset", "MIT", "the asset license text"),),
@@ -218,8 +218,8 @@ class TestLicenseSections:
         sections = license_sections(self.make_inventory())
 
         assert sections[0] == LicenseSection(
-            title="DivergenceSplitter — GPL-3.0-only",
-            text="the GPL text",
+            title="DivergenceSplitter — MIT",
+            text="the MIT text",
         )
 
     def test_every_package_is_a_section(self) -> None:

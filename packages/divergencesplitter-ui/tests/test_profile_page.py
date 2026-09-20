@@ -22,6 +22,7 @@ from divergencesplitter_ui.configuration.preview import PreviewController
 from divergencesplitter_ui.monitor.input_preview import (
     PREVIEW_INTERVAL_SECONDS,  # noqa: F401
 )
+from divergencesplitter_ui.ndi_branding import NDI_TRADEMARK_NOTICE, NDI_WEBSITE_URL
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.profile.page import ProfilePage, ProfileTab
 from divergencesplitter_ui.session import (
@@ -355,6 +356,25 @@ class TestNdiAvailability:
         assert labels[-1].endswith("(Unavailable)")
         assert source._source_type.options[-1].disabled is True
         assert "not available" in source._ndi_status.value
+
+
+class TestNdiBranding:
+    def test_ndi_area_shows_branded_label_trademark_and_link(self) -> None:
+        page = make_page()
+        source = page._source
+        page.tick(SessionState.IDLE, visible=True)
+
+        texts = collect_text(source._ndi_group)
+        assert "NDI® source" in texts
+        assert NDI_TRADEMARK_NOTICE in texts
+
+        urls = [
+            item.url
+            for item in collect_controls(source._ndi_group)
+            if isinstance(item, ft.TextButton)
+        ]
+        assert NDI_WEBSITE_URL in urls
+        assert NDI_WEBSITE_URL == "https://ndi.video/"
 
 
 class TestFrameProcessing:
