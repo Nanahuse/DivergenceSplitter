@@ -118,6 +118,7 @@ class ProfilePage:
             selected_index=0,
             on_change=self._on_tab_change,
             expand=True,
+            key="profile-tabs",
         )
         self._control = ft.Column(
             controls=[
@@ -142,6 +143,18 @@ class ProfilePage:
     @property
     def preview(self) -> ConfigurationPreview:
         return self._input.preview
+
+    @property
+    def input(self) -> InputTab:
+        """The Input tab, exposed for read-only UI assertions."""
+
+        return self._input
+
+    @property
+    def scenarios(self) -> ScenariosTab:
+        """The Scenarios & Connections tab, exposed for read-only assertions."""
+
+        return self._scenarios
 
     @property
     def active_tab(self) -> ProfileTab:

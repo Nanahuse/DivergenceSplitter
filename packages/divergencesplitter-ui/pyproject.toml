@@ -48,6 +48,11 @@ dev = [
     "ruff",
     "ty",
 ]
+integration = [
+    "flet[test]>=1.0,<2",
+    "flet-cli>=1.0,<2",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

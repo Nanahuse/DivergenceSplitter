@@ -155,6 +155,7 @@ class Navigation:
             padding=ft.Padding.symmetric(horizontal=12, vertical=10),
             border_radius=8,
             on_click=lambda event, view=view: self.select(view, notify=True),
+            key=f"nav-{view.value}",
         )
         self._items[view] = container
         self._labels[view] = label

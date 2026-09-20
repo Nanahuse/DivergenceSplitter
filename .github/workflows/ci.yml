@@ -27,3 +27,52 @@ jobs:
         run: uv run ty check --error-on-warning .
       - name: Test
         run: uv run pytest -q
+
+  ui-integration:
+    # In-process Flet UI integration suite: real components, Flet controls, and
+    # event flow with the external boundaries faked. Runs without Flutter or a
+    # display, so it is the required, stable integration layer.
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          python-version: "3.14"
+      - name: Sync locked environment
+        run: uv sync --locked --all-packages
+      - name: Generate UI version module
+        run: uv run python tools/generate_ui_version.py
+      - name: Run UI integration tests
+        working-directory: packages/divergencesplitter-ui
+        run: uv run pytest integration_tests -q
+
+  ui-flet-smoke:
+    # Official `flet test` smoke: builds the app with embedded Python and drives
+    # the real Flutter client. Separate from the Windows distribution build.
+    # Non-blocking because the current Flet embedded-Python toolchain can crash
+    # importing numpy on Python 3.14; see the PR notes.
+    runs-on: windows-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          python-version: "3.14"
+      - name: Cache Flutter and Flet
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/flutter/3.44.8
+            ~/.flet/cache
+          key: flet-test-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
+      - name: Sync locked environment
+        run: uv sync --locked --all-packages --all-groups
+      - name: Generate UI version module
+        run: uv run python tools/generate_ui_version.py
+      - name: Run official Flet smoke tests
+        working-directory: packages/divergencesplitter-ui
+        run: uv run flet test --tests-dir integration_smoke

@@ -35,16 +35,21 @@ class ProfileHeader:
             value=NO_PROFILE_TEXT,
             read_only=True,
             expand=True,
+            key="profile-path",
         )
-        self._new_button = ft.OutlinedButton(content="New", on_click=on_new)
-        self._open_button = ft.OutlinedButton(content="Open", on_click=on_open)
+        self._new_button = ft.OutlinedButton(
+            content="New", on_click=on_new, key="profile-new"
+        )
+        self._open_button = ft.OutlinedButton(
+            content="Open", on_click=on_open, key="profile-open"
+        )
         self._save_button = ft.OutlinedButton(
-            content="Save", on_click=on_save, disabled=True
+            content="Save", on_click=on_save, disabled=True, key="profile-save"
         )
         self._save_as_button = ft.OutlinedButton(
-            content="Save As", on_click=on_save_as, disabled=True
+            content="Save As", on_click=on_save_as, disabled=True, key="profile-save-as"
         )
-        self._status = ft.Text("", color=self._colors.primary)
+        self._status = ft.Text("", color=self._colors.primary, key="profile-status")
         self._control = ft.Column(
             controls=[
                 ft.Row(

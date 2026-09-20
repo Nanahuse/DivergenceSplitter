@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -33,7 +34,8 @@ from divergencesplitter_runtime.configuration.strict_json import (
 
 from divergencesplitter_ui.about_page import AboutView
 from divergencesplitter_ui.configuration.actions import ProfileActions
-from divergencesplitter_ui.configuration.dialogs import FletFileDialogs
+from divergencesplitter_ui.configuration.dialogs import FileDialogs, FletFileDialogs
+from divergencesplitter_ui.configuration.preview import PreviewController
 from divergencesplitter_ui.configuration.profile_header import ProfileHeader
 from divergencesplitter_ui.error_dialog import ErrorDialog
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
@@ -41,6 +43,7 @@ from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.input_preview import PREVIEW_INTERVAL_SECONDS
 from divergencesplitter_ui.monitor.page import Monitor
 from divergencesplitter_ui.navigation import AppView, Navigation
+from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.profile.page import ProfilePage
 from divergencesplitter_ui.session import SessionAlreadyActiveError, SessionController
 from divergencesplitter_ui.settings import (
@@ -71,6 +74,9 @@ class FletApplication:
         coordinator: MonitorUpdateCoordinator | None = None,
         settings_model: SettingsModel | None = None,
         settings_path: Path | None = None,
+        dialogs_factory: Callable[[ft.Page], FileDialogs] | None = None,
+        ndi_discovery: NdiDiscovery | None = None,
+        preview_controller: PreviewController | None = None,
     ) -> None:
         self._controller = controller
         self._initial_profile = initial_profile
@@ -83,6 +89,12 @@ class FletApplication:
         self._settings_path = (
             settings_path if settings_path is not None else default_app_settings_path()
         )
+        # Injectable external boundaries. The desktop entry point leaves them
+        # unset so production builds the real file dialogs, NDI discovery, and
+        # preview controller; integration tests supply test doubles instead.
+        self._dialogs_factory = dialogs_factory
+        self._ndi_discovery = ndi_discovery
+        self._preview_controller = preview_controller
         self._startup_error: str | None = None
         self._load_app_settings()
         self._page: ft.Page | None = None
@@ -111,6 +123,36 @@ class FletApplication:
     @property
     def active_view(self) -> AppView:
         return self._active_view
+
+    @property
+    def header(self) -> ProfileHeader | None:
+        """The shared Profile header, exposed for read-only UI assertions."""
+
+        return self._header
+
+    @property
+    def profile_page(self) -> ProfilePage | None:
+        """The Profile page, exposed for read-only UI assertions."""
+
+        return self._profile_page
+
+    @property
+    def settings_page(self) -> SettingsPage | None:
+        """The Settings page, exposed for read-only UI assertions."""
+
+        return self._settings_page
+
+    @property
+    def navigation(self) -> Navigation | None:
+        """The navigation bar, exposed for read-only UI assertions."""
+
+        return self._navigation
+
+    @property
+    def monitor(self) -> Monitor | None:
+        """The Monitor page, exposed for read-only UI assertions."""
+
+        return self._monitor
 
     def _load_app_settings(self) -> None:
         """Load App Settings at startup, discarding an invalid file entirely.
@@ -212,6 +254,21 @@ class FletApplication:
         return True
 
     async def _main(self, page: ft.Page) -> None:
+        await self.mount(page)
+        try:
+            while not self._stopping:
+                await asyncio.sleep(_MAIN_POLL_SECONDS)
+        finally:
+            await self.shutdown()
+
+    async def mount(self, page: ft.Page) -> None:
+        """Build the UI, wire the session, and start the background loops.
+
+        Kept separate from :meth:`_main` so an integration test can mount the
+        real application on a page it owns and drive it through the regular
+        update path without entering the blocking run loop.
+        """
+
         self._page = page
         page.title = WINDOW_TITLE
         page.window.width = WINDOW_WIDTH
@@ -220,8 +277,11 @@ class FletApplication:
         page.window.on_event = self._on_window_event
 
         theme = self._model.applied_app_settings.theme
-        file_picker = ft.FilePicker()
-        dialogs = FletFileDialogs(page, file_picker)
+        dialogs = (
+            self._dialogs_factory(page)
+            if self._dialogs_factory is not None
+            else FletFileDialogs(page, ft.FilePicker())
+        )
         self._monitor = Monitor(theme)
         self._diagnostics = DiagnosticsPanel(theme)
         self._profile_actions = ProfileActions(
@@ -240,6 +300,8 @@ class FletApplication:
             self._model,
             dialogs,
             on_status=self._profile_actions.set_status,
+            ndi_discovery=self._ndi_discovery,
+            preview_controller=self._preview_controller,
         )
         self._header = ProfileHeader(
             on_new=self._on_new,
@@ -303,11 +365,6 @@ class FletApplication:
             asyncio.create_task(self._input_preview_loop()),
             asyncio.create_task(self._profile_preview_loop()),
         ]
-        try:
-            while not self._stopping:
-                await asyncio.sleep(_MAIN_POLL_SECONDS)
-        finally:
-            await self.shutdown()
 
     def _select_view(self, view: AppView) -> None:
         self._active_view = view
