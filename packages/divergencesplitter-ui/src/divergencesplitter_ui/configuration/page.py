@@ -245,6 +245,8 @@ class ConfigurationPage:
         """Sync the page from the model; return whether anything changed."""
 
         changed = self._actions.advance(state)
+        if changed:
+            state = self._controller.state
         if not visible:
             self._deactivate_preview()
             self._was_visible = False
@@ -307,20 +309,27 @@ class ConfigurationPage:
         )
 
     def _sync_input(self, draft: EditableProfile | None, permission) -> bool:
+        if not self._preview_was_active:
+            # Probe before NDI can be selected: until discovery finishes its
+            # source-type option is disabled. Refresh again when Input reopens.
+            self._source.refresh_ndi()
         if draft is None:
             changed = self._input.set_profile_present(False)
         else:
-            self._populate_input(draft)
-            changed = self._input.apply(draft, permission)
+            changed = self._populate_input(draft)
+            changed |= self._input.apply(draft, permission)
             self._sync_preview(draft)
         self._preview_was_active = True
         return changed
 
-    def _populate_input(self, draft: EditableProfile) -> None:
+    def _populate_input(self, draft: EditableProfile) -> bool:
         if self._populated_draft is draft:
-            return
+            return False
         self._input.populate(draft)
         self._populated_draft = draft
+        # populate() mutates values and options before apply() compares them.
+        # Preserve that change so the application sends the populated controls.
+        return True
 
     def _deactivate_preview(self) -> None:
         if not self._preview_was_active:
