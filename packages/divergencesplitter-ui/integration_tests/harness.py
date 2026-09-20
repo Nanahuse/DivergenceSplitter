@@ -8,8 +8,7 @@ dialogs). It then mounts that application on a recording page, so a test drives
 the same event and update path the desktop application uses.
 
 The app runs entirely in-process, which is what lets a test inject doubles and
-read the real control state. Actual Flutter rendering is covered separately by
-the official ``flet test`` smoke suite in ``integration_smoke``.
+read the real control state.
 """
 
 from __future__ import annotations

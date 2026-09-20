@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
 
 jobs:
   check:
@@ -48,39 +47,3 @@ jobs:
       - name: Run UI integration tests
         working-directory: packages/divergencesplitter-ui
         run: uv run pytest integration_tests -q
-
-  ui-flet-smoke:
-    # Official `flet test` smoke: builds the app with embedded Python and drives
-    # the real Flutter client. Separate from the Windows distribution build.
-    #
-    # Manual only (`workflow_dispatch`): the current Flet embedded-Python
-    # toolchain crashes importing numpy on Python 3.14 (serious_python stack
-    # overflow), so this job cannot pass on PR CI yet. Kept runnable on demand
-    # until the toolchain issue is resolved. See the PR notes.
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    permissions:
-      contents: read
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: "utf-8"
-      FLET_CLI_NO_RICH_OUTPUT: "1"
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
-        with:
-          python-version: "3.14"
-      - name: Cache Flutter and Flet
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/flutter/3.44.8
-            ~/.flet/cache
-          key: flet-test-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
-      - name: Sync locked environment
-        run: uv sync --locked --all-packages --all-groups
-      - name: Generate UI version module
-        run: uv run python tools/generate_ui_version.py
-      - name: Run official Flet smoke tests
-        working-directory: packages/divergencesplitter-ui
-        run: uv run flet test --tests-dir integration_smoke --yes --no-rich-output

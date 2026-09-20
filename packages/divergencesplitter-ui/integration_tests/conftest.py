@@ -1,8 +1,7 @@
 """Fixtures for the in-process Flet UI integration suite.
 
 Each test composes the real application with test doubles and mounts it on a
-recording page. Nothing here needs Flutter or a display; the official
-``flet test`` smoke suite lives in ``integration_smoke`` instead.
+recording page. Nothing here needs Flutter or a display.
 """
 
 from __future__ import annotations

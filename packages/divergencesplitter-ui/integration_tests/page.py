@@ -4,8 +4,7 @@ These integration tests mount the real ``FletApplication`` on a recording page:
 every control is a genuine Flet control and every interaction is dispatched
 through the control's own public event handler (``on_click`` / ``on_select`` /
 ``on_change``), so the real event and synchronization path runs. The page object
-only records ``update`` calls instead of sending patches to a Flutter client;
-rendering itself is covered by the separate official ``flet test`` smoke suite.
+only records ``update`` calls instead of sending patches to a Flutter client.
 """
 
 from __future__ import annotations
