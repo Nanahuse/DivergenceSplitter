@@ -24,7 +24,12 @@ from divergencesplitter_ui.flet_application import FletApplication
 from divergencesplitter_ui.monitor.coordinator import MonitorUpdateCoordinator
 from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
 from divergencesplitter_ui.monitor.page import Monitor, MonitorUpdate
-from divergencesplitter_ui.navigation import AppView, Navigation
+from divergencesplitter_ui.navigation import (
+    COLLAPSED_NAVIGATION_WIDTH,
+    EXPANDED_NAVIGATION_WIDTH,
+    AppView,
+    Navigation,
+)
 from divergencesplitter_ui.profile.page import ProfilePage
 from divergencesplitter_ui.session import SessionController, SessionState
 
@@ -297,6 +302,20 @@ def _views() -> dict[AppView, ft.Container]:
     return {view: ft.Container(visible=view is AppView.MONITOR) for view in AppView}
 
 
+def _item_icon(navigation: Navigation, view: AppView) -> ft.Icon:
+    row = cast(ft.Row, navigation.items[view].content)
+    return cast(ft.Icon, row.controls[0])
+
+
+def _item_label(navigation: Navigation, view: AppView) -> ft.Text:
+    row = cast(ft.Row, navigation.items[view].content)
+    return cast(ft.Text, row.controls[1])
+
+
+def _toggle_icon(navigation: Navigation) -> ft.Icon:
+    return cast(ft.Icon, navigation.toggle.content)
+
+
 class TestNavigation:
     def test_view_order_starts_with_monitor(self) -> None:
         assert [view.value for view in AppView] == [
@@ -353,6 +372,109 @@ class TestNavigation:
         assert application.active_view is AppView.ABOUT
         assert application._views[AppView.ABOUT].visible is True
         assert application._views[AppView.MONITOR].visible is False
+
+
+class TestNavigationCollapse:
+    def test_starts_collapsed_with_icon_only_items(self) -> None:
+        navigation = Navigation(on_select=lambda view: None)
+
+        assert navigation.expanded is False
+        assert navigation.control.width == COLLAPSED_NAVIGATION_WIDTH
+        for view in AppView:
+            label = _item_label(navigation, view)
+            assert label.visible is False
+            assert navigation.items[view].tooltip == label.value
+
+    def test_expand_reveals_labels_and_drops_item_tooltips(self) -> None:
+        navigation = Navigation(on_select=lambda view: None)
+
+        navigation.toggle_expanded()
+
+        assert navigation.expanded is True
+        assert navigation.control.width == EXPANDED_NAVIGATION_WIDTH
+        for view in AppView:
+            assert _item_label(navigation, view).visible is True
+            assert navigation.items[view].tooltip is None
+        assert navigation.toggle.tooltip == "Collapse navigation"
+
+    def test_toggle_icon_follows_the_expand_state(self) -> None:
+        navigation = Navigation(on_select=lambda view: None)
+
+        assert _toggle_icon(navigation).icon == ft.Icons.CHEVRON_RIGHT
+        assert navigation.toggle.tooltip == "Expand navigation"
+
+        navigation.toggle_expanded()
+
+        assert _toggle_icon(navigation).icon == ft.Icons.CHEVRON_LEFT
+
+    def test_collapse_restores_the_starting_layout(self) -> None:
+        navigation = Navigation(on_select=lambda view: None)
+
+        navigation.toggle_expanded()
+        navigation.toggle_expanded()
+
+        assert navigation.expanded is False
+        assert navigation.control.width == COLLAPSED_NAVIGATION_WIDTH
+        for view in AppView:
+            label = _item_label(navigation, view)
+            assert label.visible is False
+            assert navigation.items[view].tooltip == label.value
+        assert navigation.toggle.tooltip == "Expand navigation"
+        assert _toggle_icon(navigation).icon == ft.Icons.CHEVRON_RIGHT
+
+    def test_toggling_reuses_the_same_item_controls(self) -> None:
+        navigation = Navigation(on_select=lambda view: None)
+        before = dict(navigation.items)
+        labels_before = {view: _item_label(navigation, view) for view in AppView}
+
+        navigation.toggle_expanded()
+        navigation.toggle_expanded()
+
+        assert navigation.items == before
+        for view in AppView:
+            assert _item_label(navigation, view) is labels_before[view]
+
+    def test_toggling_does_not_change_the_selected_view(self) -> None:
+        navigation = Navigation(on_select=lambda view: None, selected=AppView.MONITOR)
+
+        navigation.toggle_expanded()
+        navigation.toggle_expanded()
+
+        assert navigation.selected is AppView.MONITOR
+
+    def test_selected_view_stays_highlighted_in_both_states(self) -> None:
+        navigation = Navigation(on_select=lambda view: None, selected=AppView.PROFILE)
+        highlight = ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
+
+        assert navigation.items[AppView.PROFILE].bgcolor == highlight
+        assert _item_icon(navigation, AppView.PROFILE).color == ft.Colors.PRIMARY
+        assert _item_label(navigation, AppView.PROFILE).color == ft.Colors.PRIMARY
+
+        navigation.toggle_expanded()
+
+        assert navigation.items[AppView.PROFILE].bgcolor == highlight
+        assert _item_icon(navigation, AppView.PROFILE).color == ft.Colors.PRIMARY
+        assert _item_label(navigation, AppView.PROFILE).color == ft.Colors.PRIMARY
+        assert navigation.selected is AppView.PROFILE
+
+    def test_toggle_and_item_order_are_preserved_across_states(self) -> None:
+        navigation = Navigation(on_select=lambda view: None)
+        column = cast(ft.Column, navigation.control.content)
+        controls = column.controls
+        spacer_index = controls.index(navigation.spacer)
+
+        assert controls.index(navigation.toggle) < spacer_index
+        for view in (AppView.MONITOR, AppView.DIAGNOSTICS, AppView.PROFILE):
+            assert controls.index(navigation.items[view]) < spacer_index
+        for view in (AppView.SETTINGS, AppView.ABOUT):
+            assert controls.index(navigation.items[view]) > spacer_index
+
+        navigation.toggle_expanded()
+
+        for view in (AppView.MONITOR, AppView.DIAGNOSTICS, AppView.PROFILE):
+            assert controls.index(navigation.items[view]) < spacer_index
+        for view in (AppView.SETTINGS, AppView.ABOUT):
+            assert controls.index(navigation.items[view]) > spacer_index
 
 
 class _FakeSnapshot:
