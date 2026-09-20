@@ -1,6 +1,6 @@
 """Press-and-hold ``Reset All`` control for the Monitor Scenario Overview.
 
-The three-second hold runs as a UI-only asyncio task, independent of the
+The two-second hold runs as a UI-only asyncio task, independent of the
 Monitor snapshot cadence, so the animation is never driven by the Runtime
 evaluation loop. A single task owns one press: it reports progress about
 thirty times a second and fires the callback exactly once when the deadline is
@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable
 
 import flet as ft
 
-HOLD_TO_RESET_SECONDS = 3.0
+HOLD_TO_RESET_SECONDS = 2.0
 HOLD_UPDATE_SECONDS = 1 / 30
 RESET_LABEL = "Reset All"
 HOLD_LABEL = "Hold to reset..."
