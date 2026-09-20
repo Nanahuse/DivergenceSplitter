@@ -55,10 +55,10 @@ class SettingsPage:
         self._control = ft.Column(
             controls=[
                 ft.Text(TITLE, size=20, weight=ft.FontWeight.BOLD),
+                ft.Text("Changes are applied immediately and saved to App Settings."),
                 ft.Text("Appearance", size=16, weight=ft.FontWeight.BOLD),
                 ft.Divider(),
                 self._theme,
-                ft.Text("Theme is saved to App Settings immediately."),
                 ft.Text("Runtime", size=16, weight=ft.FontWeight.BOLD),
                 ft.Divider(),
                 self._reaction_time,

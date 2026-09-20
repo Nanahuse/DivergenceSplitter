@@ -146,6 +146,13 @@ class TestBuild:
 
         assert "Application Settings" in collect_text(page.control)
 
+    def test_states_that_every_change_applies_immediately(self) -> None:
+        page, _model, _controller, _actions = make_page()
+
+        labels = collect_text(page.control)
+        assert "Changes are applied immediately and saved to App Settings." in labels
+        assert "Theme is saved to App Settings immediately." not in labels
+
 
 class TestThemeSelection:
     def test_dropdown_lists_light_and_dark_and_defaults_to_light(self) -> None:
