@@ -88,6 +88,7 @@ class SourceSection:
             options=source_type_options(False),
             value=SOURCE_TYPE_LABELS[SourceType.CAMERA],
             on_select=self._on_source_type_selected,
+            key="profile-source-type",
         )
         self._device = ft.Dropdown(
             label="Camera",
@@ -121,6 +122,7 @@ class SourceSection:
             value="",
             on_change=self._on_video_path_changed,
             expand=True,
+            key="profile-video-path",
         )
         self._video_group = ft.Row(
             controls=[
@@ -162,6 +164,30 @@ class SourceSection:
     @property
     def control(self) -> ft.Control:
         return self._control
+
+    @property
+    def type_dropdown(self) -> ft.Dropdown:
+        """The Source type selector, exposed for read-only UI assertions."""
+
+        return self._source_type
+
+    @property
+    def video_path_field(self) -> ft.TextField:
+        """The Video file path field, exposed for read-only UI assertions."""
+
+        return self._video_path
+
+    @property
+    def device_dropdown(self) -> ft.Dropdown:
+        """The Camera device selector, exposed for read-only UI assertions."""
+
+        return self._device
+
+    @property
+    def mode_dropdown(self) -> ft.Dropdown:
+        """The camera Capture mode selector, exposed for read-only assertions."""
+
+        return self._mode
 
     def refresh_ndi(self) -> None:
         self._ndi_discovery.refresh()

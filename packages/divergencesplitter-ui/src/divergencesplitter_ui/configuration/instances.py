@@ -22,7 +22,7 @@ from divergencesplitter_ui.settings import (
 
 
 @dataclass
-class _InstanceRow:
+class InstanceRow:
     number: int
     rpc: ft.TextField
     event: ft.TextField
@@ -44,7 +44,7 @@ class InstancesSection:
         self._model = model
         self._dialogs = dialogs
         self._on_changed = on_changed
-        self._rows: list[_InstanceRow] = []
+        self._rows: list[InstanceRow] = []
         self._rows_group = ft.Column(controls=[], spacing=12)
         self._count = -1
         self._control = ft.Column(
@@ -59,6 +59,12 @@ class InstancesSection:
     @property
     def control(self) -> ft.Control:
         return self._control
+
+    @property
+    def rows(self) -> tuple[InstanceRow, ...]:
+        """The current Scenario cards, exposed for read-only UI assertions."""
+
+        return tuple(self._rows)
 
     def apply(
         self,
@@ -92,7 +98,7 @@ class InstancesSection:
         ]
 
     @staticmethod
-    def _row_controls(row: _InstanceRow) -> list[ft.Control]:
+    def _row_controls(row: InstanceRow) -> list[ft.Control]:
         return [
             ft.Container(
                 content=ft.Column(
@@ -119,8 +125,8 @@ class InstancesSection:
             )
         ]
 
-    def _build_row(self, index: int, instance) -> _InstanceRow:
-        return _InstanceRow(
+    def _build_row(self, index: int, instance) -> InstanceRow:
+        return InstanceRow(
             number=index + 1,
             rpc=ft.TextField(
                 label="RPC endpoint",
@@ -128,6 +134,7 @@ class InstancesSection:
                 on_change=lambda e, i=index: self._model.set_instance_rpc_endpoint(
                     i, e.control.value
                 ),
+                key=f"profile-rpc-{index}",
             ),
             event=ft.TextField(
                 label="Event endpoint",
@@ -135,6 +142,7 @@ class InstancesSection:
                 on_change=lambda e, i=index: self._model.set_instance_event_endpoint(
                     i, e.control.value
                 ),
+                key=f"profile-event-{index}",
             ),
             scenario=ft.TextField(
                 label="Scenario file",
@@ -143,6 +151,7 @@ class InstancesSection:
                 on_change=lambda e, i=index: self._model.set_instance_scenario(
                     i, e.control.value
                 ),
+                key=f"profile-scenario-{index}",
             ),
             browse=ft.OutlinedButton(
                 content="Browse...",

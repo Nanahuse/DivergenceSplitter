@@ -41,12 +41,14 @@ class SettingsPage:
             ],
             value=Theme.LIGHT.value,
             on_select=self._on_theme,
+            key="settings-theme",
         )
         self._log_level = ft.Dropdown(
             label="Log level (OFF / DEBUG: all details)",
             options=[ft.DropdownOption(key="OFF"), ft.DropdownOption(key="DEBUG")],
             value="OFF",
             on_select=self._on_log_level,
+            key="settings-log-level",
         )
         self._reaction_time = ft.TextField(
             label="Reaction time (ms)",
@@ -54,11 +56,13 @@ class SettingsPage:
             width=200,
             keyboard_type=ft.KeyboardType.NUMBER,
             on_change=self._on_reaction_time_changed,
+            key="settings-reaction-time",
         )
         self._apply = ft.FilledButton(
             content="Apply",
             on_click=self._on_apply,
             disabled=True,
+            key="settings-apply",
         )
         self._status = ft.Text("")
         self._control = ft.Column(
