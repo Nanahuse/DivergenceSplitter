@@ -30,9 +30,11 @@ jobs:
         run: uv run --no-sync python tools/generate_ui_version.py
       - name: Build and verify Windows distribution
         run: uv run --no-sync python tools/build_windows_distribution.py
-      - name: Upload Windows distribution archive
+      - name: Upload Windows distribution
         uses: actions/upload-artifact@v7
         with:
-          path: dist/DivergenceSplitter-windows-x64.7z
-          archive: false
+          name: DivergenceSplitter-windows-x64
+          path: dist/windows
+          archive: true
+          compression-level: 6
           if-no-files-found: error

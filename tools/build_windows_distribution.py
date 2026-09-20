@@ -1,8 +1,8 @@
-"""Build and verify the Windows distribution archive.
+"""Build and verify the Windows distribution.
 
 This module is the production build orchestrator. GitHub Actions only prepares
 the environment (setup ``uv`` and ``uv sync``) and then runs this script; every
-build, validation, and archive step lives here so it can be tested without a
+build, validation, and smoke test step lives here so it can be tested without a
 real Flet/Flutter build.
 
 Order of work:
@@ -11,7 +11,6 @@ Order of work:
 2. Build the AutoSplit converter with PyInstaller.
 3. Validate the UI and converter output trees.
 4. Smoke test the UI executable (bounded GUI launch).
-5. Create and verify the 7z distribution archive.
 
 The workflow generates the UI version module (``tools/generate_ui_version.py``)
 immediately before this script. The Flet metadata in
@@ -35,7 +34,6 @@ UI_PACKAGE = Path("packages") / "divergencesplitter-ui"
 UI_ARTIFACT = "DivergenceSplitter"
 CONVERTER_ARTIFACT = "autosplit-converter"
 DIST_ROOT = Path("dist") / "windows"
-ARCHIVE_PATH = Path("dist") / "DivergenceSplitter-windows-x64.7z"
 
 SITE_PACKAGES = "site-packages"
 APPLICATION_STARTUP_SECONDS = 5.0
@@ -113,25 +111,6 @@ def converter_build_command() -> list[str]:
         (Path("build") / "converter-pyinstaller").as_posix(),
         (Path("tools") / "converter_entry.py").as_posix(),
     ]
-
-
-def archive_create_command(archive: Path) -> list[str]:
-    """7z the two built directory distributions into one archive."""
-
-    return [
-        "7z",
-        "a",
-        "-t7z",
-        archive.as_posix(),
-        UI_ARTIFACT,
-        CONVERTER_ARTIFACT,
-    ]
-
-
-def archive_test_command(archive: Path) -> list[str]:
-    """Verify the created archive with the 7z test command."""
-
-    return ["7z", "t", archive.as_posix()]
 
 
 def require_file(path: Path) -> None:
@@ -247,10 +226,7 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
 
     smoke_test_application(ui_dir / f"{UI_ARTIFACT}.exe")
 
-    archive = root / ARCHIVE_PATH
-    run_command(archive_create_command(archive), cwd=root / DIST_ROOT)
-    run_command(archive_test_command(archive), cwd=root / DIST_ROOT)
-    print(f"Built and verified {archive}")
+    print(f"Built and verified {root / DIST_ROOT}")
 
 
 def main() -> None:
