@@ -250,6 +250,13 @@ class TestPageBuild:
 
         assert "Profile" in collect_text(page.control)
 
+    def test_explains_changes_apply_only_after_save(self) -> None:
+        page = make_page()
+
+        assert "Changes are not reflected until you save the Profile." in collect_text(
+            page.control
+        )
+
     def test_page_has_no_system_settings(self) -> None:
         page = make_page()
 

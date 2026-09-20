@@ -122,6 +122,7 @@ class ProfilePage:
         self._control = ft.Column(
             controls=[
                 ft.Text("Profile", size=20),
+                ft.Text("Changes are not reflected until you save the Profile."),
                 ft.Divider(),
                 self._tabs,
             ],

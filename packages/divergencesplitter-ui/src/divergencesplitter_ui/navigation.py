@@ -40,7 +40,7 @@ _LABELS = {
 _ICONS = {
     AppView.MONITOR: ft.Icons.MONITOR,
     AppView.DIAGNOSTICS: ft.Icons.TROUBLESHOOT,
-    AppView.PROFILE: ft.Icons.PERSON,
+    AppView.PROFILE: ft.Icons.DESCRIPTION,
     AppView.SETTINGS: ft.Icons.SETTINGS,
     AppView.ABOUT: ft.Icons.INFO,
 }
