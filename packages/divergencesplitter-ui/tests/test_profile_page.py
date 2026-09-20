@@ -14,6 +14,7 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
+    NdiSourceConfiguration,
     Profile,
     ResizeInterpolation,
     VideoSourceConfiguration,
@@ -170,6 +171,22 @@ def camera_profile() -> Profile:
                 LiveSplitConnection("rpc", "event"), p("scenario.py")
             ),
         ),
+    )
+
+
+def video_profile() -> Profile:
+    return Profile(
+        version=1,
+        source=VideoSourceConfiguration(p("clip.mp4")),
+        instances=camera_profile().instances,
+    )
+
+
+def ndi_profile() -> Profile:
+    return Profile(
+        version=1,
+        source=NdiSourceConfiguration("OBS"),
+        instances=camera_profile().instances,
     )
 
 
@@ -330,6 +347,62 @@ class TestCamera:
 
         assert page._model.draft is not None
         assert page._model.draft.source.camera.request_60_fps is True
+
+
+class TestCameraSelectionOnSourceTypeSwitch:
+    def _switch_to_camera(self, page: ProfilePage) -> None:
+        source = page._source
+        source._source_type.value = "Camera"
+        fire(source._on_source_type_selected, source._source_type)
+
+    def test_video_to_camera_lists_cameras(self) -> None:
+        page = make_page(profile=video_profile())
+        source = page._source
+        page.tick(SessionState.IDLE, visible=True)
+        assert source._device.options == []
+
+        self._switch_to_camera(page)
+
+        assert page._model.draft is not None
+        assert page._model.draft.source.selected_type is SourceType.CAMERA
+        assert source._device.options
+        assert any(
+            "USB Camera" in (option.key or "") for option in source._device.options
+        )
+
+    def test_ndi_to_camera_lists_cameras(self) -> None:
+        page = make_page(
+            profile=ndi_profile(),
+            ndi=FakeNdiDiscovery(available=True, sources=("OBS",)),
+        )
+        source = page._source
+        page.tick(SessionState.IDLE, visible=True)
+        assert source._device.options == []
+
+        self._switch_to_camera(page)
+
+        assert page._model.draft is not None
+        assert page._model.draft.source.selected_type is SourceType.CAMERA
+        assert source._device.options
+        assert any(
+            "USB Camera" in (option.key or "") for option in source._device.options
+        )
+
+    def test_camera_settings_restored_after_leaving_and_returning(self) -> None:
+        page = make_page()
+        source = page._source
+        page.tick(SessionState.IDLE, visible=True)
+        device_label = source._device.value
+        mode_label = source._mode.value
+        assert device_label is not None
+        assert mode_label is not None
+
+        source._source_type.value = "Video File"
+        fire(source._on_source_type_selected, source._source_type)
+        self._switch_to_camera(page)
+
+        assert source._device.value == device_label
+        assert source._mode.value == mode_label
 
 
 class TestVideo:
