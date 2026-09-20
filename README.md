@@ -235,11 +235,12 @@ selected backend must also return from synchronous `read()` in finite time,
 because stopping waits for an in-progress read and the source does not add a
 reader thread or a generic read timeout.
 
-## NDI input (optional)
+## NDI® input
 
 NDI is a third input source alongside Camera and Video File. It selects a
 sender by its advertised NDI name, never by list position, so reordering the
-network source list cannot connect to a different sender:
+network source list cannot connect to a different sender. Learn more about the
+technology at [ndi.video](https://ndi.video/):
 
 ```json
 {
@@ -264,29 +265,37 @@ network source list cannot connect to a different sender:
 }
 ```
 
-NDI is optional and never required by DivergenceSplitter itself. The NDI
-runtime and its Python binding load lazily, so an environment without NDI still
-starts, still lists NDI configurations, and still uses Camera and Video File
-normally. When NDI is unavailable the desktop UI shows the NDI source type as
-`NDI (Unavailable)` and refuses to select it, but an already-open NDI
-configuration keeps its source name and can be switched to Camera or Video.
+NDI is optional for the core libraries: `divergencesplitter` and
+`divergencesplitter-runtime` never require it. The NDI runtime and its Python
+binding load lazily, so an environment without NDI still starts, still lists NDI
+configurations, and still uses Camera and Video File normally. When NDI is
+unavailable the desktop UI shows the NDI source type as `NDI (Unavailable)` and
+refuses to select it, but an already-open NDI configuration keeps its source name
+and can be switched to Camera or Video.
 
-To enable NDI, install the optional extra:
+The Windows desktop UI includes NDI support by default. Installing
+`divergencesplitter-ui` on Windows pulls in `ndi-python`, so Windows UI users do
+not need to request the `ndi` extra. To use NDI from the core libraries alone,
+install the optional extra:
 
 ```console
 uv add "divergencesplitter[ndi] @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter"
 ```
 
-`ndi-python` redistributes the NDI runtime under its own license (MIT binding,
-NDI runtime notices included in the wheel). A frozen Windows build that should
-support NDI must install the extra and collect the `NDIlib` package. The Windows
-distribution CI does both and includes the binding and runtime license notices.
+`ndi-python` is the MIT-licensed Python binding. The NDI Runtime that it ships
+is licensed separately by Vizrt NDI AB under the NDI SDK License Agreement and
+is not covered by the MIT License. See
+[`THIRD_PARTY_LICENSES/NDI.md`](THIRD_PARTY_LICENSES/NDI.md) for the boundary
+and the applicable conditions. The Windows distribution CI builds from the
+normal UI dependencies and includes the binding and runtime license notices.
 For the same build environment locally, use
-`uv sync --locked --all-packages --group build --extra ndi` and run build tools
-with `uv run --no-sync` to preserve the optional dependency. A temporary
+`uv sync --locked --all-packages --group build` and run build tools
+with `uv run --no-sync`. A temporary
 loss of the sender does not stop the session; the receiver resumes when the same
 source name returns. NDI receive uses a bounded timeout, so shutdown stays
 responsive.
+
+NDI® is a registered trademark of Vizrt NDI AB.
 
 ## LiveSplit Bridge constraints
 

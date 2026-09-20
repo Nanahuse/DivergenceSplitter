@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import flet as ft
+from divergencesplitter_runtime.configuration.models import Theme
 
 from divergencesplitter_ui.monitor.coordinator import MonitorSnapshot
 from divergencesplitter_ui.monitor.global_status import GlobalStatusPanel
@@ -41,10 +42,10 @@ class MonitorUpdate:
 class Monitor:
     """Compose the Monitor panels and apply one snapshot to them."""
 
-    def __init__(self) -> None:
+    def __init__(self, theme: Theme = Theme.LIGHT) -> None:
         self.global_status = GlobalStatusPanel()
         self.input_preview = InputPreviewPanel()
-        self.scenario_overview = ScenarioOverviewPanel()
+        self.scenario_overview = ScenarioOverviewPanel(theme)
         top = ft.Row(
             controls=[
                 ft.Column(
@@ -59,7 +60,10 @@ class Monitor:
                 ft.Container(
                     content=self.scenario_overview.control,
                     expand=True,
-                    padding=12,
+                    # No top padding: the Overview title must share its top edge
+                    # with Global Status in the left column. Left/right/bottom
+                    # insets are kept so the scroll region stays off the divider.
+                    padding=ft.Padding.only(left=12, right=12, bottom=12),
                 ),
             ],
             expand=True,
@@ -76,6 +80,11 @@ class Monitor:
         """The root control to add to the page."""
 
         return self._control
+
+    def set_theme(self, theme: Theme) -> None:
+        """Re-target the Monitor's semantic status colors."""
+
+        self.scenario_overview.set_theme(theme)
 
     def apply(self, snapshot: MonitorSnapshot) -> MonitorUpdate:
         """Push one snapshot to the Monitor panels; report which panels changed."""

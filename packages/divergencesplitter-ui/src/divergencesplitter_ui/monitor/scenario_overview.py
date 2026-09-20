@@ -10,7 +10,7 @@ card. The card list is the only scrollable region of the Monitor.
 from __future__ import annotations
 
 import flet as ft
-from divergencesplitter_runtime.instance_runtime import InstanceRuntimeState
+from divergencesplitter_runtime.configuration.models import Theme
 
 from divergencesplitter_ui.presentation_overview import (
     ConditionEvaluationView,
@@ -18,16 +18,14 @@ from divergencesplitter_ui.presentation_overview import (
     ScenarioCardView,
     ScenarioOverviewView,
 )
+from divergencesplitter_ui.theme import (
+    SemanticColors,
+    instance_status_color,
+    semantic_colors,
+)
 
 _INDENT_WIDTH = 14
 _EMPTY_EVALUATING = "—"
-
-_STATUS_COLORS = {
-    InstanceRuntimeState.READY: ft.Colors.GREEN_400,
-    InstanceRuntimeState.CONNECTING: ft.Colors.AMBER_400,
-    InstanceRuntimeState.FAILED: ft.Colors.RED_400,
-    InstanceRuntimeState.STOPPED: ft.Colors.GREY_500,
-}
 
 
 def _condition_signature(view: ConditionEvaluationView) -> tuple:
@@ -199,7 +197,7 @@ class _ScenarioCard:
     def scenario_index(self) -> int:
         return self._scenario_index
 
-    def apply(self, view: ScenarioCardView) -> bool:
+    def apply(self, view: ScenarioCardView, colors: SemanticColors) -> bool:
         self._scenario_index = view.scenario_index
         changed = False
         title = f"Scenario {view.scenario_index}"
@@ -210,7 +208,7 @@ class _ScenarioCard:
         if self._status.value != status_text:
             self._status.value = status_text
             changed = True
-        color = _STATUS_COLORS.get(view.status.state)
+        color = instance_status_color(view.status.state, colors)
         if self._status.color != color:
             self._status.color = color
             changed = True
@@ -228,8 +226,10 @@ class _ScenarioCard:
 class ScenarioOverviewPanel:
     """Display one card per scenario inside a scrollable list."""
 
-    def __init__(self) -> None:
+    def __init__(self, theme: Theme = Theme.LIGHT) -> None:
         self._cards: dict[int, _ScenarioCard] = {}
+        self._theme = theme
+        self._colors = semantic_colors(theme)
         self._list = ft.ListView(controls=[], spacing=10, expand=True)
         self._control = ft.Column(
             controls=[ft.Text("Scenario Overview"), self._list],
@@ -242,6 +242,12 @@ class ScenarioOverviewPanel:
         """The root control to add to the page."""
 
         return self._control
+
+    def set_theme(self, theme: Theme) -> None:
+        """Switch the semantic colors; the next ``apply`` repaints the cards."""
+
+        self._theme = theme
+        self._colors = semantic_colors(theme)
 
     def apply(self, view: ScenarioOverviewView) -> bool:
         changed = False
@@ -257,7 +263,7 @@ class ScenarioOverviewPanel:
                 card = _ScenarioCard()
                 self._cards[card_view.scenario_index] = card
                 changed = True
-            if card.apply(card_view):
+            if card.apply(card_view, self._colors):
                 changed = True
         ordered = [self._cards[item.scenario_index].control for item in view.scenarios]
         if [id(control) for control in self._list.controls] != [

@@ -20,12 +20,13 @@ from divergencesplitter_runtime.configuration.source_builder import (
 )
 
 from divergencesplitter_ui.configuration.dialogs import VIDEO_EXTENSIONS, FileDialogs
+from divergencesplitter_ui.ndi_branding import NDI_TRADEMARK_NOTICE, NDI_WEBSITE_URL
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.settings import (
     SOURCE_TYPE_LABELS,
     CameraDevice,
     CameraMode,
-    EditableApplicationConfiguration,
+    EditableProfile,
     EditPermission,
     SettingsModel,
     SourceType,
@@ -87,6 +88,7 @@ class SourceSection:
             options=source_type_options(False),
             value=SOURCE_TYPE_LABELS[SourceType.CAMERA],
             on_select=self._on_source_type_selected,
+            key="profile-source-type",
         )
         self._device = ft.Dropdown(
             label="Camera",
@@ -120,6 +122,7 @@ class SourceSection:
             value="",
             on_change=self._on_video_path_changed,
             expand=True,
+            key="profile-video-path",
         )
         self._video_group = ft.Row(
             controls=[
@@ -130,17 +133,19 @@ class SourceSection:
         )
 
         self._ndi_source = ft.Dropdown(
-            label="NDI source",
+            label="NDI® source",
             options=[],
             on_select=self._on_ndi_source_selected,
         )
         self._ndi_status = ft.Text("")
         self._ndi_group = ft.Column(
             controls=[
-                ft.Text("NDI source"),
+                ft.Text("NDI® source"),
                 self._ndi_source,
                 self._ndi_status,
                 ft.OutlinedButton(content="Refresh", on_click=self._on_refresh_ndi),
+                ft.TextButton(content="Learn about NDI ↗", url=NDI_WEBSITE_URL),
+                ft.Text(NDI_TRADEMARK_NOTICE, size=11),
             ],
             spacing=4,
         )
@@ -160,13 +165,37 @@ class SourceSection:
     def control(self) -> ft.Control:
         return self._control
 
+    @property
+    def type_dropdown(self) -> ft.Dropdown:
+        """The Source type selector, exposed for read-only UI assertions."""
+
+        return self._source_type
+
+    @property
+    def video_path_field(self) -> ft.TextField:
+        """The Video file path field, exposed for read-only UI assertions."""
+
+        return self._video_path
+
+    @property
+    def device_dropdown(self) -> ft.Dropdown:
+        """The Camera device selector, exposed for read-only UI assertions."""
+
+        return self._device
+
+    @property
+    def mode_dropdown(self) -> ft.Dropdown:
+        """The camera Capture mode selector, exposed for read-only assertions."""
+
+        return self._mode
+
     def refresh_ndi(self) -> None:
         self._ndi_discovery.refresh()
 
     def stop_ndi(self) -> None:
         self._ndi_discovery.join(2.0)
 
-    def populate(self, draft: EditableApplicationConfiguration) -> None:
+    def populate(self, draft: EditableProfile) -> None:
         """Refresh camera modes and NDI sources from the draft."""
 
         self._video_path.value = draft.source.video.path
@@ -181,7 +210,7 @@ class SourceSection:
 
     def apply(
         self,
-        draft: EditableApplicationConfiguration,
+        draft: EditableProfile,
         permission: EditPermission,
     ) -> bool:
         """Sync values and enablement from the draft; return whether it changed."""
@@ -339,6 +368,12 @@ class SourceSection:
             return
         if self._model.set_source_type(source_type) is None:
             return
+        if source_type is SourceType.CAMERA:
+            # Enumerate cameras only when Camera becomes the source type; the
+            # draft object is unchanged, so ProfilePage will not re-populate the
+            # section on its own and the dropdown would otherwise stay empty.
+            camera = self._model.draft.source.camera
+            self._populate_cameras(camera.device, camera.mode)
         self._show_group(source_type)
         self._on_input_changed()
         if source_type is SourceType.NDI:

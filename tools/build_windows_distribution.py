@@ -2,7 +2,7 @@
 
 This module is the production build orchestrator. GitHub Actions only prepares
 the environment (setup ``uv`` and ``uv sync``) and then runs this script; every
-build, validation, and archive step lives here so it can be tested without a
+build, validation, and smoke test step lives here so it can be tested without a
 real Flet/Flutter build.
 
 Order of work:
@@ -161,6 +161,7 @@ def verify_ui_distribution(ui_dir: Path) -> None:
     ndilib = site_packages / "NDIlib"
     require_glob(ndilib, "NDIlib*.pyd", "NDI extension module")
     require_glob(ndilib, "*.dll", "NDI runtime DLL")
+    require_file(ndilib / "Processing.NDI.Lib.Licenses.txt")
 
     capture = site_packages / "windows_capture_device_list"
     require_glob(capture, "core*.pyd", "capture-device extension module")

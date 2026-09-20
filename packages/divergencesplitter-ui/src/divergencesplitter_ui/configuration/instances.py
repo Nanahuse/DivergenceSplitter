@@ -1,9 +1,9 @@
 """Scenario instances editor for the Flet Configuration page.
 
-Each row edits one ``EditableInstanceConfiguration`` through ``SettingsModel``;
-add and remove rebuild the rows so index mapping never drifts. Scenario files
-are chosen with the shared file dialog using the same extensions as the Dear
-PyGui picker.
+Each card edits one ``EditableInstanceConfiguration`` through ``SettingsModel``:
+its scenario file and the LiveSplit connection endpoints. Add and remove rebuild
+the cards so index mapping never drifts. The internal ``instances`` model
+terminology is kept; the UI presents each entry as a Scenario.
 """
 
 from __future__ import annotations
@@ -15,14 +15,15 @@ import flet as ft
 
 from divergencesplitter_ui.configuration.dialogs import SCENARIO_EXTENSIONS, FileDialogs
 from divergencesplitter_ui.settings import (
-    EditableApplicationConfiguration,
+    EditableProfile,
     EditPermission,
     SettingsModel,
 )
 
 
 @dataclass
-class _InstanceRow:
+class InstanceRow:
+    number: int
     rpc: ft.TextField
     event: ft.TextField
     scenario: ft.TextField
@@ -31,7 +32,7 @@ class _InstanceRow:
 
 
 class InstancesSection:
-    """Edit the list of LiveSplit-bound scenario instances."""
+    """Edit the list of LiveSplit-bound scenario instances as cards."""
 
     def __init__(
         self,
@@ -43,14 +44,14 @@ class InstancesSection:
         self._model = model
         self._dialogs = dialogs
         self._on_changed = on_changed
-        self._rows: list[_InstanceRow] = []
-        self._rows_group = ft.Column(controls=[], spacing=8)
+        self._rows: list[InstanceRow] = []
+        self._rows_group = ft.Column(controls=[], spacing=12)
         self._count = -1
         self._control = ft.Column(
             controls=[
-                ft.Text("Instances"),
+                ft.Text("Scenarios & Connections", size=16, weight=ft.FontWeight.BOLD),
                 self._rows_group,
-                ft.OutlinedButton(content="Add instance", on_click=self._on_add),
+                ft.OutlinedButton(content="Add Scenario", on_click=self._on_add),
             ],
             spacing=8,
         )
@@ -59,9 +60,15 @@ class InstancesSection:
     def control(self) -> ft.Control:
         return self._control
 
+    @property
+    def rows(self) -> tuple[InstanceRow, ...]:
+        """The current Scenario cards, exposed for read-only UI assertions."""
+
+        return tuple(self._rows)
+
     def apply(
         self,
-        draft: EditableApplicationConfiguration,
+        draft: EditableProfile,
         permission: EditPermission,
     ) -> bool:
         changed = False
@@ -80,7 +87,7 @@ class InstancesSection:
                 changed |= self._set_enabled(control, enabled)
         return changed
 
-    def _rebuild(self, draft: EditableApplicationConfiguration) -> None:
+    def _rebuild(self, draft: EditableProfile) -> None:
         self._count = len(draft.instances)
         self._rows = [
             self._build_row(index, instance)
@@ -91,47 +98,70 @@ class InstancesSection:
         ]
 
     @staticmethod
-    def _row_controls(row: _InstanceRow) -> list[ft.Control]:
+    def _row_controls(row: InstanceRow) -> list[ft.Control]:
         return [
-            ft.Row(controls=[row.rpc, row.event], spacing=8),
-            ft.Row(controls=[row.scenario, row.browse, row.remove], spacing=8),
-            ft.Divider(),
+            ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            f"Scenario {row.number}",
+                            size=15,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                        ft.Row(controls=[row.scenario, row.browse], spacing=8),
+                        ft.Text("LiveSplit Connection", weight=ft.FontWeight.BOLD),
+                        row.rpc,
+                        row.event,
+                        ft.Row(
+                            controls=[row.remove],
+                            alignment=ft.MainAxisAlignment.END,
+                        ),
+                    ],
+                    spacing=6,
+                ),
+                border=ft.Border.all(1, ft.Colors.OUTLINE),
+                border_radius=8,
+                padding=12,
+            )
         ]
 
-    def _build_row(self, index: int, instance) -> _InstanceRow:
-        rpc = ft.TextField(
-            label="RPC endpoint",
-            value=instance.rpc_endpoint,
-            expand=True,
-            on_change=lambda e, i=index: self._model.set_instance_rpc_endpoint(
-                i, e.control.value
+    def _build_row(self, index: int, instance) -> InstanceRow:
+        return InstanceRow(
+            number=index + 1,
+            rpc=ft.TextField(
+                label="RPC endpoint",
+                value=instance.rpc_endpoint,
+                on_change=lambda e, i=index: self._model.set_instance_rpc_endpoint(
+                    i, e.control.value
+                ),
+                key=f"profile-rpc-{index}",
+            ),
+            event=ft.TextField(
+                label="Event endpoint",
+                value=instance.event_endpoint,
+                on_change=lambda e, i=index: self._model.set_instance_event_endpoint(
+                    i, e.control.value
+                ),
+                key=f"profile-event-{index}",
+            ),
+            scenario=ft.TextField(
+                label="Scenario file",
+                value=instance.scenario,
+                expand=True,
+                on_change=lambda e, i=index: self._model.set_instance_scenario(
+                    i, e.control.value
+                ),
+                key=f"profile-scenario-{index}",
+            ),
+            browse=ft.OutlinedButton(
+                content="Browse...",
+                on_click=lambda e, i=index: self._on_browse(i),
+            ),
+            remove=ft.OutlinedButton(
+                content="Remove",
+                on_click=lambda e, i=index: self._on_remove(i),
             ),
         )
-        event = ft.TextField(
-            label="Event endpoint",
-            value=instance.event_endpoint,
-            expand=True,
-            on_change=lambda e, i=index: self._model.set_instance_event_endpoint(
-                i, e.control.value
-            ),
-        )
-        scenario = ft.TextField(
-            label="Scenario",
-            value=instance.scenario,
-            expand=True,
-            on_change=lambda e, i=index: self._model.set_instance_scenario(
-                i, e.control.value
-            ),
-        )
-        browse = ft.OutlinedButton(
-            content="Browse...",
-            on_click=lambda e, i=index: self._on_browse(i),
-        )
-        remove = ft.OutlinedButton(
-            content="Remove",
-            on_click=lambda e, i=index: self._on_remove(i),
-        )
-        return _InstanceRow(rpc, event, scenario, browse, remove)
 
     def _on_add(self, event: ft.Event[ft.OutlinedButton]) -> None:
         draft = self._model.add_instance()

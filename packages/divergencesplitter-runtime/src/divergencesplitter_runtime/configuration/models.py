@@ -1,8 +1,19 @@
-"""Typed values loaded from a DivergenceSplitter JSON configuration file."""
+"""Typed values loaded from DivergenceSplitter JSON files.
+
+Two independent documents share these types:
+
+* :class:`AppSettings` is the application-wide settings the application itself
+  persists (log level, reaction time, and the last used Profile path).
+* :class:`Profile` is the per-game/category/environment document holding the
+  frame source and the LiveSplit-bound instances.
+
+Both have their own schema version and never embed each other's fields.
+"""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 
 from divergencesplitter.frame.normalizer import (
     CropMargins,
@@ -135,25 +146,85 @@ class InstanceConfiguration:
             raise ValueError("scenario path must not be empty")
 
 
+APP_SETTINGS_VERSION = 1
+PROFILE_VERSION = 1
+
+_LOG_LEVELS = frozenset({"OFF", "DEBUG", "INFO", "WARNING", "ERROR"})
+
+
+class Theme(StrEnum):
+    """The appearance theme selected in App Settings."""
+
+    LIGHT = "light"
+    DARK = "dark"
+
+
 @dataclass(frozen=True)
-class RuntimeConfiguration:
-    log_level: str
-    reaction_time_ms: int = 0
+class UiSettings:
+    """Application appearance settings, independent of any Profile."""
+
+    theme: Theme = Theme.LIGHT
 
     def __post_init__(self) -> None:
-        if self.log_level not in {"OFF", "DEBUG", "INFO", "WARNING", "ERROR"}:
+        if not isinstance(self.theme, Theme):
+            raise TypeError(f"unsupported theme: {self.theme!r}")
+
+
+def _is_absolute_path(value: str) -> bool:
+    try:
+        return Path(value).is_absolute()
+    except OSError, ValueError:
+        return False
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    """Application-wide settings persisted by the application itself.
+
+    These values are independent of any Profile: changing the selected Profile
+    never rewrites them, and they stay valid across Profile changes.
+    """
+
+    version: int
+    log_level: str
+    reaction_time_ms: int = 0
+    last_profile: str | None = None
+    ui: UiSettings = field(default_factory=UiSettings)
+
+    def __post_init__(self) -> None:
+        if self.version != APP_SETTINGS_VERSION:
+            raise ValueError(f"unsupported app settings version: {self.version!r}")
+        if self.log_level not in _LOG_LEVELS:
             raise ValueError(f"unsupported log level: {self.log_level!r}")
         if type(self.reaction_time_ms) is not int or self.reaction_time_ms < 0:
             raise ValueError("reaction_time_ms must be a non-negative integer")
+        if self.last_profile is not None:
+            if type(self.last_profile) is not str:
+                raise TypeError("last_profile must be a string or null")
+            if not _is_absolute_path(self.last_profile):
+                raise ValueError("last_profile must be an absolute path")
 
 
 @dataclass(frozen=True)
-class ApplicationConfiguration:
+class Profile:
+    """One game/category/environment profile, independent of App Settings.
+
+    Every file path a Profile owns is absolute; a Profile is never resolved
+    against the directory that contains the Profile document. Only paths inside
+    a Scenario YAML keep their own relative-reference semantics.
+    """
+
     version: int
     source: SourceConfiguration
     instances: tuple[InstanceConfiguration, ...]
-    runtime: RuntimeConfiguration
 
     def __post_init__(self) -> None:
-        if self.version != 1:
-            raise ValueError(f"unsupported configuration version: {self.version!r}")
+        if self.version != PROFILE_VERSION:
+            raise ValueError(f"unsupported profile version: {self.version!r}")
+        if isinstance(self.source, VideoSourceConfiguration) and not _is_absolute_path(
+            self.source.path
+        ):
+            raise ValueError("video source path must be an absolute path")
+        for instance in self.instances:
+            if not _is_absolute_path(instance.scenario):
+                raise ValueError("scenario path must be an absolute path")

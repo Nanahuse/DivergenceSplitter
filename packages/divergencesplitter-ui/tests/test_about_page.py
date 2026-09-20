@@ -4,8 +4,9 @@ from collections.abc import Iterator
 
 import flet as ft
 from divergencesplitter_ui.about import VERSION, about_info
-from divergencesplitter_ui.about_page import AboutView
+from divergencesplitter_ui.about_page import GITHUB_URL, AboutView
 from divergencesplitter_ui.licenses import bundled_inventory, license_sections
+from divergencesplitter_ui.ndi_branding import NDI_TRADEMARK_NOTICE, NDI_WEBSITE_URL
 
 
 def iter_controls(control: ft.Control) -> Iterator[ft.Control]:
@@ -71,3 +72,28 @@ class TestAboutView:
         ]
         assert "Licenses..." not in labels
         assert "Back to About" not in labels
+
+    def test_links_to_the_github_repository(self) -> None:
+        view = AboutView()
+
+        urls = [
+            item.url
+            for item in iter_controls(view.control)
+            if isinstance(item, ft.TextButton)
+        ]
+        assert GITHUB_URL in urls
+        assert GITHUB_URL == "https://github.com/Nanahuse/DivergenceSplitter"
+
+    def test_shows_ndi_trademark_and_website_link(self) -> None:
+        view = AboutView()
+
+        texts = collect_text(view.control)
+        assert NDI_TRADEMARK_NOTICE in texts
+
+        urls = [
+            item.url
+            for item in iter_controls(view.control)
+            if isinstance(item, ft.TextButton)
+        ]
+        assert NDI_WEBSITE_URL in urls
+        assert NDI_WEBSITE_URL == "https://ndi.video/"

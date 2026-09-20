@@ -32,6 +32,7 @@ def make_tree(root: Path) -> None:
     ndilib.mkdir(parents=True, exist_ok=True)
     (ndilib / "NDIlib.cp314-win_amd64.pyd").write_bytes(b"pyd")
     (ndilib / "Processing.NDI.Lib.x64.dll").write_bytes(b"dll")
+    (ndilib / "Processing.NDI.Lib.Licenses.txt").write_bytes(b"notices")
     capture = site_packages / "windows_capture_device_list"
     capture.mkdir(parents=True, exist_ok=True)
     (capture / "core.cp314-win_amd64.pyd").write_bytes(b"pyd")
@@ -121,6 +122,16 @@ class TestVerification:
         with pytest.raises(RuntimeError, match="Missing required file"):
             bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
 
+    def test_rejects_missing_ndi_license_notice(self, tmp_path: Path) -> None:
+        make_tree(tmp_path)
+        ndilib = (
+            tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT / bwd.SITE_PACKAGES / "NDIlib"
+        )
+        (ndilib / "Processing.NDI.Lib.Licenses.txt").unlink()
+
+        with pytest.raises(RuntimeError, match="Missing required file"):
+            bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
+
     def test_rejects_empty_converter_executable(self, tmp_path: Path) -> None:
         make_tree(tmp_path)
         exe = (
@@ -168,6 +179,7 @@ class TestOrchestration:
         commands = [call[0] for call in runner.calls]
         assert any("flet" in command and "build" in command for command in commands)
         assert any("pyinstaller" in command for command in commands)
+        assert all(command[0] != "7z" for command in commands)
 
     def test_propagates_build_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

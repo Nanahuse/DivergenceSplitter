@@ -19,6 +19,8 @@ from divergencesplitter import (
     ReferenceImage,
     Rule,
     Scenario,
+    ThreadCpuTime,
+    ThreadTimeProvider,
     TimeProvider,
 )
 from divergencesplitter.frame.models import SharedFrameEvaluation
@@ -173,6 +175,8 @@ class RecordingDiagnostics:
         self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
         self.evaluated: list[int] = []
         self.completions: list[int] = []
+        self.evaluation_cpu_durations_ns: list[int] = []
+        self.evaluation_wall_durations_ns: list[int] = []
         self.resets: list[int] = []
         self.reactions: list[tuple[int, Action, int, int, int]] = []
         self.cancellations: list[tuple[int, Action, str]] = []
@@ -206,9 +210,13 @@ class RecordingDiagnostics:
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None:
         self.evaluated.append(scenario_index)
         self.completions.append(completed_at.nanoseconds)
+        self.evaluation_cpu_durations_ns.append(evaluation_cpu_duration_ns)
+        self.evaluation_wall_durations_ns.append(evaluation_wall_duration_ns)
 
     def instance_reset(self, scenario_index: int) -> None:
         self.resets.append(scenario_index)
@@ -369,6 +377,14 @@ class ManualClock(TimeProvider):
         return MonotonicTime(self.nanoseconds)
 
 
+class ManualThreadTimeProvider(ThreadTimeProvider):
+    def __init__(self, nanoseconds: int = 0) -> None:
+        self.nanoseconds = nanoseconds
+
+    def now(self) -> ThreadCpuTime:
+        return ThreadCpuTime(self.nanoseconds)
+
+
 class Harness:
     def __init__(
         self,
@@ -380,6 +396,7 @@ class Harness:
         diagnostics: RecordingDiagnostics | None = None,
         log: list[str] | None = None,
         time_provider: TimeProvider | None = None,
+        cpu_time_provider: ThreadTimeProvider | None = None,
         reaction_time_ms: int = 0,
         reaction_wait: Callable[[int], None] | None = None,
     ) -> None:
@@ -399,6 +416,7 @@ class Harness:
             receive_timeout_ms=1,
             reaction_time_ms=reaction_time_ms,
             time_provider=time_provider,
+            cpu_time_provider=cpu_time_provider,
             reaction_wait=reaction_wait,
             adapter_factory=self._new_adapter,
             receiver_factory=self._new_receiver,
@@ -616,6 +634,74 @@ def test_shared_cache_detects_once_across_instances() -> None:
     assert calls == [1]
 
 
+def test_shared_cache_waiter_cpu_excludes_the_wait() -> None:
+    owner_started = threading.Event()
+    release = threading.Event()
+    waiter_started = threading.Event()
+
+    class BlockingDetector:
+        @property
+        def reference_images(self) -> tuple[ReferenceImage, ...]:
+            return ()
+
+        def detect(self, context: FrameContext) -> DetectionResult:
+            owner_started.set()
+            assert release.wait(3)
+            return DetectionResult(score=1.0)
+
+        def __eq__(self, other: object) -> bool:
+            return isinstance(other, BlockingDetector)
+
+        def __hash__(self) -> int:
+            return hash("BlockingDetector")
+
+    class SignallingCpuTimeProvider(ThreadTimeProvider):
+        def now(self) -> ThreadCpuTime:
+            waiter_started.set()
+            return super().now()
+
+    def scenario() -> Scenario:
+        condition = Detected(BlockingDetector(), 0.5)
+        return Scenario(
+            start_condition=condition,
+            reset_condition=None,
+            incomplete_condition=None,
+            splits=((Rule(condition, Action("split")),),),
+        )
+
+    owner = Harness(scenario())
+    waiter = Harness(scenario(), cpu_time_provider=SignallingCpuTimeProvider())
+    owner.start()
+    waiter.start()
+    try:
+        owner.wait_ready()
+        waiter.wait_ready()
+        shared = shared_frame(1)
+        owner.instance.publish_frame(shared)
+        assert owner_started.wait(3)
+        # The waiter hits the same cache key and blocks on the owner's event.
+        waiter.instance.publish_frame(shared)
+        assert waiter_started.wait(3)
+        # Hold the owner so the waiter accumulates wall-clock time but no CPU.
+        time.sleep(0.2)
+        release.set()
+        wait_for(
+            lambda: (
+                bool(owner.diagnostics.evaluated) and bool(waiter.diagnostics.evaluated)
+            )
+        )
+    finally:
+        release.set()
+        owner.stop()
+        waiter.stop()
+
+    waiter_wall = waiter.diagnostics.evaluation_wall_durations_ns[0]
+    waiter_cpu = waiter.diagnostics.evaluation_cpu_durations_ns[0]
+    assert waiter_wall >= 100_000_000
+    assert waiter_cpu < 50_000_000
+    assert waiter_cpu < waiter_wall
+
+
 # -- Event ordering and Action semantics --------------------------------------
 
 
@@ -747,7 +833,7 @@ def test_start_or_reset_decision_resets_evaluation_metrics() -> None:
     assert harness.diagnostics.resets == [0]
 
 
-def test_evaluation_latency_ends_at_evaluate_return() -> None:
+def test_evaluation_duration_ends_at_evaluate_return() -> None:
     entered = threading.Event()
     release = threading.Event()
 
@@ -756,28 +842,33 @@ def test_evaluation_latency_ends_at_evaluate_return() -> None:
             entered.set()
             assert release.wait(3)
 
-    clock = ManualClock(0)
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
 
     class SlowActionAdapter(ScriptedAdapter):
         def execute_action(
             self, action: Action, expected_snapshot: LiveSplitSnapshot
         ) -> ActionExecution:
-            # Action/RPC time must never be added to the evaluation latency.
-            clock.nanoseconds = 999_999_999
+            # Action/RPC time must never be added to the evaluation duration.
+            wall.nanoseconds = 999_999_999
+            cpu.nanoseconds = 999_999_999
             return super().execute_action(action, expected_snapshot)
 
     condition = RecordingCondition(True, on_evaluate=on_evaluate)
     harness = Harness(
         make_scenario(condition),
         adapter=SlowActionAdapter(initial_update()),
-        time_provider=clock,
+        time_provider=wall,
+        cpu_time_provider=cpu,
     )
     harness.start()
     try:
         harness.wait_ready()
+        # Frame captured at 100 ns; evaluation starts at 0 and returns at 250 ns.
         harness.instance.publish_frame(shared_frame(100))
         assert entered.wait(3)
-        clock.nanoseconds = 250
+        wall.nanoseconds = 250
+        cpu.nanoseconds = 250
         release.set()
         wait_for(lambda: bool(harness.diagnostics.completions))
     finally:
@@ -785,6 +876,145 @@ def test_evaluation_latency_ends_at_evaluate_return() -> None:
         harness.stop()
 
     assert harness.diagnostics.completions == [250]
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [250]
+    assert harness.diagnostics.evaluation_wall_durations_ns == [250]
+
+
+def test_evaluation_duration_records_evaluate_time() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        wall.nanoseconds = 5_000_000
+        cpu.nanoseconds = 5_000_000
+        entered.set()
+        assert release.wait(3)
+
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=wall,
+        cpu_time_provider=cpu,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_cpu_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+    assert harness.diagnostics.evaluation_wall_durations_ns == [5_000_000]
+
+
+def test_evaluation_duration_excludes_capture_to_start_wait() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        wall.nanoseconds = 105_000_000
+        cpu.nanoseconds = 5_000_000
+        entered.set()
+        assert release.wait(3)
+
+    # 100 ms elapse between capture and evaluation start without consuming CPU.
+    wall = ManualClock(100_000_000)
+    cpu = ManualThreadTimeProvider(0)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=wall,
+        cpu_time_provider=cpu,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(100))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_cpu_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+
+
+def test_evaluation_duration_excludes_thread_stop_time() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        # 3 ms of work, then the thread is stopped for 100 ms (CPU frozen), then
+        # 2 ms more work: thread CPU 5 ms, wall-clock 105 ms.
+        wall.nanoseconds += 3_000_000
+        cpu.nanoseconds += 3_000_000
+        wall.nanoseconds += 100_000_000
+        wall.nanoseconds += 2_000_000
+        cpu.nanoseconds += 2_000_000
+        entered.set()
+        assert release.wait(3)
+
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=wall,
+        cpu_time_provider=cpu,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_cpu_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+    assert harness.diagnostics.evaluation_wall_durations_ns == [105_000_000]
+
+
+def test_reaction_time_is_excluded_from_evaluation_duration() -> None:
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
+    entered, release = threading.Event(), threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        wall.nanoseconds = 5_000_000
+        cpu.nanoseconds = 5_000_000
+        entered.set()
+        assert release.wait(3)
+
+    adapter = ScriptedAdapter(initial_update(), clock=wall)
+    harness = Harness(
+        make_scenario(RecordingCondition(True, on_evaluate=on_evaluate)),
+        adapter=adapter,
+        time_provider=wall,
+        cpu_time_provider=cpu,
+        reaction_time_ms=100,
+        reaction_wait=_advance_to_deadline(wall),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        release.set()
+        harness.stop()
+
+    # evaluate() consumed 5 ms of CPU; the 100 ms reaction wait is not CPU time.
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+    assert adapter.dispatch_times == [100_000_000]
 
 
 def test_unknown_rpc_result_recovers_without_resend() -> None:
@@ -933,6 +1163,7 @@ def test_zero_reaction_time_dispatches_immediately_without_waiting() -> None:
 
 def test_frames_during_reaction_wait_are_latest_only() -> None:
     clock = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
     condition = RecordingCondition(True)
     adapter = ScriptedAdapter(
         initial_update(), execute_result=ActionExecution.NOT_DISPATCHED, clock=clock
@@ -950,6 +1181,7 @@ def test_frames_during_reaction_wait_are_latest_only() -> None:
         make_scenario(condition),
         adapter=adapter,
         time_provider=clock,
+        cpu_time_provider=cpu,
         reaction_time_ms=30,
         reaction_wait=wait,
     )
@@ -962,6 +1194,10 @@ def test_frames_during_reaction_wait_are_latest_only() -> None:
         harness.stop()
 
     assert condition.captured_at == [1, 4]
+    # The latest frame (captured_at=4) is evaluated only after the 30 ms
+    # reaction wait, but neither that wait nor the frame staleness is charged
+    # to the evaluation CPU duration.
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [0, 0]
 
 
 def test_periodic_update_during_reaction_follows_expected_snapshot() -> None:

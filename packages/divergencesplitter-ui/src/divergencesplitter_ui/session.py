@@ -1,9 +1,12 @@
 """Pure session control owning one non-daemon runtime thread.
 
-The controller turns a confirmed configuration path into one runtime execution
-and reports its terminal outcome. It reuses the shared configuration, scenario,
-source, and runtime construction path; it only adds ownership, stop, and result
-reporting. GUI and screen presentation live elsewhere in this package.
+The controller turns a confirmed Profile path plus App Settings into one runtime
+execution and reports its terminal outcome. The Profile contributes the source
+and instances, App Settings contribute the log level and reaction time, and
+``last_profile`` is never handed to the runtime. It reuses the shared profile,
+scenario, source, and runtime construction path; it only adds ownership, stop,
+and result reporting. GUI and screen presentation live elsewhere in this
+package.
 """
 
 from __future__ import annotations
@@ -24,14 +27,13 @@ from divergencesplitter_runtime.application import (
     ApplicationRuntime,
     ApplicationStartupValidationError,
 )
-from divergencesplitter_runtime.configuration.json_file import (
-    ConfigurationFileError,
-    ConfigurationValidationError,
-    load_configuration,
-)
 from divergencesplitter_runtime.configuration.models import (
-    ApplicationConfiguration,
+    AppSettings,
+    Profile,
     SourceConfiguration,
+)
+from divergencesplitter_runtime.configuration.profile_json import (
+    load_profile,
 )
 from divergencesplitter_runtime.configuration.reference_resize import (
     resize_scenario_references,
@@ -47,7 +49,10 @@ from divergencesplitter_runtime.configuration.scenario_module import (
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
     build_frame_source,
-    resolve_configuration_path,
+)
+from divergencesplitter_runtime.configuration.strict_json import (
+    ConfigurationFileError,
+    ConfigurationValidationError,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instance_runtime import (
@@ -147,8 +152,8 @@ class SessionAlreadyActiveError(RuntimeError):
     """start() was called while a session is still in progress."""
 
 
-class ConfigurationLoader(Protocol):
-    def load(self, path: Path) -> ApplicationConfiguration: ...
+class ProfileLoader(Protocol):
+    def load(self, path: Path) -> Profile: ...
 
 
 class ScenarioLoader(Protocol):
@@ -156,12 +161,7 @@ class ScenarioLoader(Protocol):
 
 
 class SourceBuilder(Protocol):
-    def build(
-        self,
-        configuration: SourceConfiguration,
-        *,
-        base_directory: Path,
-    ) -> FrameSource: ...
+    def build(self, configuration: SourceConfiguration) -> FrameSource: ...
 
 
 class SessionDiagnostics(ApplicationDiagnostics, Protocol):
@@ -221,9 +221,9 @@ class RuntimeFactory(Protocol):
     ) -> Runtime: ...
 
 
-class DefaultConfigurationLoader:
-    def load(self, path: Path) -> ApplicationConfiguration:
-        return load_configuration(path)
+class DefaultProfileLoader:
+    def load(self, path: Path) -> Profile:
+        return load_profile(path)
 
 
 class DefaultScenarioLoader:
@@ -232,13 +232,8 @@ class DefaultScenarioLoader:
 
 
 class DefaultSourceBuilder:
-    def build(
-        self,
-        configuration: SourceConfiguration,
-        *,
-        base_directory: Path,
-    ) -> FrameSource:
-        return build_frame_source(configuration, base_directory=base_directory)
+    def build(self, configuration: SourceConfiguration) -> FrameSource:
+        return build_frame_source(configuration)
 
 
 class OperationalDiagnosticsFactory:
@@ -275,13 +270,13 @@ class SessionController:
     def __init__(
         self,
         *,
-        configuration_loader: ConfigurationLoader,
+        profile_loader: ProfileLoader,
         scenario_loader: ScenarioLoader,
         source_builder: SourceBuilder,
         runtime_factory: RuntimeFactory,
         diagnostics_factory: DiagnosticsFactory,
     ) -> None:
-        self._configuration_loader = configuration_loader
+        self._profile_loader = profile_loader
         self._scenario_loader = scenario_loader
         self._source_builder = source_builder
         self._runtime_factory = runtime_factory
@@ -323,8 +318,8 @@ class SessionController:
         with self._lock:
             return self._diagnostics
 
-    def start(self, configuration_path: str | Path) -> None:
-        path = Path(configuration_path)
+    def start(self, profile_path: str | Path, *, app_settings: AppSettings) -> None:
+        path = Path(profile_path)
         with self._lock:
             if (self._thread is not None and self._thread.is_alive()) or (
                 self._state is not SessionState.IDLE
@@ -340,7 +335,7 @@ class SessionController:
             self._diagnostics = None
             self._thread = threading.Thread(
                 target=self._run,
-                args=(path,),
+                args=(path, app_settings),
                 name="session",
                 daemon=False,
             )
@@ -378,7 +373,7 @@ class SessionController:
         if diagnostics is not None:
             diagnostics.set_level(_LOG_LEVELS[level])
 
-    def _run(self, path: Path) -> None:
+    def _run(self, path: Path, app_settings: AppSettings) -> None:
         diagnostics: SessionDiagnostics | None = None
         try:
             diagnostics = self._diagnostics_factory.create()
@@ -392,7 +387,7 @@ class SessionController:
                 diagnostics.configuration_failed(error)
                 self._fail(SessionFailureKind.CONFIGURATION_FILE, error)
                 return
-            self._run_session(resolved_path, diagnostics)
+            self._run_session(resolved_path, diagnostics, app_settings)
         except BaseException as error:  # noqa: BLE001
             if diagnostics is not None:
                 diagnostics.runtime_failed(error)
@@ -404,28 +399,23 @@ class SessionController:
 
     def _load_instances(
         self,
-        configuration: ApplicationConfiguration,
+        profile: Profile,
         scenario_loader: ScenarioLoader,
-        base_directory: Path,
     ) -> tuple[ScenarioInstance, ...]:
         instances: list[ScenarioInstance] = []
-        for instance in configuration.instances:
-            scenario_path = resolve_configuration_path(
-                instance.scenario,
-                base_directory=base_directory,
-            )
-            scenario = scenario_loader.load(scenario_path)
-            scenario = resize_scenario_references(
-                scenario, configuration.source.transform
-            )
+        for instance in profile.instances:
+            scenario = scenario_loader.load(Path(instance.scenario))
+            scenario = resize_scenario_references(scenario, profile.source.transform)
             instances.append(
                 ScenarioInstance(connection=instance.connection, scenario=scenario)
             )
         return tuple(instances)
 
-    def _run_session(self, path: Path, diagnostics: SessionDiagnostics) -> None:
+    def _run_session(
+        self, path: Path, diagnostics: SessionDiagnostics, app_settings: AppSettings
+    ) -> None:
         try:
-            configuration = self._configuration_loader.load(path)
+            profile = self._profile_loader.load(path)
         except ConfigurationFileError as error:
             diagnostics.configuration_failed(error.error)
             self._fail(SessionFailureKind.CONFIGURATION_FILE, error)
@@ -442,13 +432,9 @@ class SessionController:
         if self._finish_if_stopped():
             return
 
-        diagnostics.set_level(_LOG_LEVELS[configuration.runtime.log_level])
+        diagnostics.set_level(_LOG_LEVELS[app_settings.log_level])
         try:
-            instances = self._load_instances(
-                configuration,
-                self._scenario_loader,
-                path.parent,
-            )
+            instances = self._load_instances(profile, self._scenario_loader)
         except ScenarioModuleExecutionError as error:
             diagnostics.scenario_module_failed(error.error)
             self._fail(SessionFailureKind.SCENARIO_EXECUTION, error)
@@ -470,10 +456,7 @@ class SessionController:
             return
 
         try:
-            frame_source = self._source_builder.build(
-                configuration.source,
-                base_directory=path.parent,
-            )
+            frame_source = self._source_builder.build(profile.source)
         except (SourceConfigurationError, ValueError) as error:
             diagnostics.startup_validation_failed(error)
             self._fail(SessionFailureKind.SOURCE_CONFIGURATION, error)
@@ -494,7 +477,7 @@ class SessionController:
                 instances,
                 frame_source,
                 diagnostics=diagnostics,
-                reaction_time_ms=configuration.runtime.reaction_time_ms,
+                reaction_time_ms=app_settings.reaction_time_ms,
             )
         except ExceptionGroup as error:
             frame_source.close()

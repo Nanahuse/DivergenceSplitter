@@ -204,8 +204,8 @@ def _evaluation_performance(
             max_label=UNMEASURED_LATENCY,
         )
     return EvaluationPerformanceView(
-        average_label=format_latency_ms(metrics.average_latency_ns),
-        max_label=format_latency_ms(metrics.max_latency_ns),
+        average_label=format_latency_ms(metrics.average_duration_ns),
+        max_label=format_latency_ms(metrics.max_duration_ns),
     )
 
 

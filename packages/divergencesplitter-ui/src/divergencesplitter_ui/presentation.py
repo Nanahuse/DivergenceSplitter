@@ -107,8 +107,8 @@ def evaluation_latency_label(metrics: InstanceEvaluationMetrics) -> str:
 
     return (
         f"Scenario {metrics.scenario_index + 1}:  "
-        f"Ave {format_latency_ms(metrics.average_latency_ns)}  "
-        f"Max {format_latency_ms(metrics.max_latency_ns)}"
+        f"Ave {format_latency_ms(metrics.average_duration_ns)}  "
+        f"Max {format_latency_ms(metrics.max_duration_ns)}"
     )
 
 
