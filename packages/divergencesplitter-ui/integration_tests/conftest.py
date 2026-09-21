@@ -27,12 +27,14 @@ async def start_test_app(tmp_path: Path) -> AsyncIterator[StartApp]:
         with_initial_profile: bool = False,
         release_on_run: bool = False,
         ndi_available: bool = False,
+        ndi_sources: tuple[str, ...] = (),
     ) -> Harness:
         harness = build_harness(
             tmp_path,
             with_initial_profile=with_initial_profile,
             release_on_run=release_on_run,
             ndi_available=ndi_available,
+            ndi_sources=ndi_sources,
         )
         await harness.mount()
         running.append(harness)

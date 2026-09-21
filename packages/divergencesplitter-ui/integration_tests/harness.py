@@ -164,6 +164,11 @@ class Harness:
     async def enter_text(self, key: str, value: str) -> None:
         await enter_text(cast(ft.TextField, self.find(key)), value)
 
+    async def toggle(self, key: str, value: bool) -> None:
+        control = cast(ft.Switch, self.find(key))
+        control.value = value
+        await dispatch_event(control.on_change, control, "change")
+
 
 def _write_profile(path: Path, video: Path, scenario: Path) -> None:
     from divergencesplitter_runtime.configuration.profile_json import save_profile
@@ -177,6 +182,7 @@ def build_harness(
     with_initial_profile: bool = False,
     release_on_run: bool = False,
     ndi_available: bool = False,
+    ndi_sources: tuple[str, ...] = (),
 ) -> Harness:
     """Compose one application with doubles, ready to be mounted."""
 
@@ -209,7 +215,7 @@ def build_harness(
         diagnostics_factory=diagnostics_factory,
         runtime_factory=runtime_factory,
         dialogs=FakeDialogs(),
-        ndi_discovery=FakeNdiDiscovery(available=ndi_available),
+        ndi_discovery=FakeNdiDiscovery(available=ndi_available, sources=ndi_sources),
         preview_controller=FakePreviewController(),
         settings_path=tmp_path / "app_settings.json",
         profile_a=profile_a,

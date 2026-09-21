@@ -24,13 +24,16 @@ _INTERPOLATION_BY_LABEL = {
 }
 
 
-def _int_field(label: str, value: int, on_change, *, width: int = 140) -> ft.TextField:
+def _int_field(
+    label: str, value: int, on_change, *, width: int = 140, key: str
+) -> ft.TextField:
     return ft.TextField(
         label=label,
         value=str(value),
         width=width,
         keyboard_type=ft.KeyboardType.NUMBER,
         on_change=on_change,
+        key=key,
     )
 
 
@@ -53,12 +56,23 @@ class FrameProcessingSection:
         self._model = model
         self._on_changed = on_changed
         self._crop_enabled = ft.Switch(
-            label="Crop", value=False, on_change=self._on_crop_enabled_changed
+            label="Crop",
+            value=False,
+            on_change=self._on_crop_enabled_changed,
+            key="profile-crop-enabled",
         )
-        self._crop_left = _int_field("Left", 0, self._on_crop_changed)
-        self._crop_right = _int_field("Right", 0, self._on_crop_changed)
-        self._crop_top = _int_field("Top", 0, self._on_crop_changed)
-        self._crop_bottom = _int_field("Bottom", 0, self._on_crop_changed)
+        self._crop_left = _int_field(
+            "Left", 0, self._on_crop_changed, key="profile-crop-left"
+        )
+        self._crop_right = _int_field(
+            "Right", 0, self._on_crop_changed, key="profile-crop-right"
+        )
+        self._crop_top = _int_field(
+            "Top", 0, self._on_crop_changed, key="profile-crop-top"
+        )
+        self._crop_bottom = _int_field(
+            "Bottom", 0, self._on_crop_changed, key="profile-crop-bottom"
+        )
         self._crop_fields = (
             self._crop_left,
             self._crop_right,
@@ -66,20 +80,29 @@ class FrameProcessingSection:
             self._crop_bottom,
         )
         self._resize_enabled = ft.Switch(
-            label="Resize", value=False, on_change=self._on_resize_enabled_changed
+            label="Resize",
+            value=False,
+            on_change=self._on_resize_enabled_changed,
+            key="profile-resize-enabled",
         )
-        self._resize_width = _int_field("Width", 640, self._on_resize_changed)
-        self._resize_height = _int_field("Height", 360, self._on_resize_changed)
+        self._resize_width = _int_field(
+            "Width", 640, self._on_resize_changed, key="profile-resize-width"
+        )
+        self._resize_height = _int_field(
+            "Height", 360, self._on_resize_changed, key="profile-resize-height"
+        )
         self._resize_interpolation = ft.Dropdown(
             label="Interpolation",
             options=[ft.DropdownOption(key=label) for label in _INTERPOLATION_BY_LABEL],
             value=ResizeInterpolation.AREA.value.title(),
             on_select=self._on_resize_interpolation_changed,
+            key="profile-resize-interpolation",
         )
         self._resize_references = ft.Switch(
             label="Resize reference images",
             value=False,
             on_change=self._on_resize_references_changed,
+            key="profile-resize-references",
         )
         self._resize_fields = (
             self._resize_width,
