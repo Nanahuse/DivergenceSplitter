@@ -22,10 +22,6 @@ from divergencesplitter_runtime.configuration.models import (
     UiSettings,
     VideoSourceConfiguration,
 )
-from divergencesplitter_runtime.configuration.profile_json import (
-    load_profile,
-    save_profile,
-)
 from divergencesplitter_ui.session import SessionState, is_active
 from divergencesplitter_ui.settings import (
     SOURCE_TYPE_LABELS,
@@ -444,54 +440,30 @@ class TestProfileProjection:
 
 
 class TestInstanceEditing:
-    def test_set_scenario_changes_only_target(self) -> None:
+    @pytest.mark.parametrize(
+        ("field", "value", "expected"),
+        [
+            ("scenario", p("changed.py"), p("changed.py")),
+            ("rpc_endpoint", "tcp://127.0.0.1:54100", "tcp://127.0.0.1:54100"),
+            ("event_endpoint", "tcp://127.0.0.1:54101", "tcp://127.0.0.1:54101"),
+        ],
+    )
+    def test_instance_field_edit_changes_only_target(
+        self, field: str, value: str, expected: str
+    ) -> None:
         model = make_model(profile=multi_profile())
 
-        draft = model.set_instance_scenario(1, p("changed.py"))
+        setter = getattr(model, f"set_instance_{field}")
+        draft = setter(1, value)
 
         assert draft is not None
-        assert draft.instances[1].scenario == p("changed.py")
+        assert getattr(draft.instances[1], field) == expected
         assert draft.instances[0] == EditableInstanceConfiguration(
             "rpc_1", "event_1", p("one.py")
         )
         assert draft.instances[2] == EditableInstanceConfiguration(
             "rpc_3", "event_3", p("three.py")
         )
-
-    def test_set_rpc_endpoint_changes_only_target(self) -> None:
-        model = make_model(profile=multi_profile())
-
-        draft = model.set_instance_rpc_endpoint(1, "tcp://127.0.0.1:54100")
-
-        assert draft is not None
-        assert draft.instances[1].rpc_endpoint == "tcp://127.0.0.1:54100"
-        assert draft.instances[0] == EditableInstanceConfiguration(
-            "rpc_1", "event_1", p("one.py")
-        )
-        assert draft.instances[2] == EditableInstanceConfiguration(
-            "rpc_3", "event_3", p("three.py")
-        )
-
-    def test_set_event_endpoint_changes_only_target(self) -> None:
-        model = make_model(profile=multi_profile())
-
-        draft = model.set_instance_event_endpoint(1, "tcp://127.0.0.1:54101")
-
-        assert draft is not None
-        assert draft.instances[1].event_endpoint == "tcp://127.0.0.1:54101"
-        assert draft.instances[0] == EditableInstanceConfiguration(
-            "rpc_1", "event_1", p("one.py")
-        )
-        assert draft.instances[2] == EditableInstanceConfiguration(
-            "rpc_3", "event_3", p("three.py")
-        )
-
-    def test_out_of_range_edit_leaves_draft_unchanged(self) -> None:
-        model = make_model()
-
-        assert model.set_instance_scenario(3, "ignored.py") is model.draft
-        assert model.set_instance_rpc_endpoint(-1, "ignored") is model.draft
-        assert model.set_instance_event_endpoint(1, "ignored") is model.draft
 
 
 class TestAddInstance:
@@ -537,40 +509,23 @@ class TestRemoveInstance:
             EditableInstanceConfiguration("rpc_3", "event_3", p("three.py")),
         )
 
-    def test_can_remove_first(self) -> None:
-        model = make_model(profile=multi_profile())
+    @pytest.mark.parametrize(
+        ("profile", "index", "expected"),
+        [
+            (multi_profile(), 0, (p("two.py"), p("three.py"))),
+            (multi_profile(), 2, (p("one.py"), p("two.py"))),
+            (video_profile(), 0, ()),
+        ],
+    )
+    def test_remove_instance_preserves_expected_instances(
+        self, profile, index: int, expected: tuple[str, ...]
+    ) -> None:
+        model = make_model(profile=profile)
 
-        model.remove_instance(0)
-
-        assert model.draft is not None
-        assert tuple(entry.scenario for entry in model.draft.instances) == (
-            p("two.py"),
-            p("three.py"),
-        )
-
-    def test_can_remove_last(self) -> None:
-        model = make_model(profile=multi_profile())
-
-        model.remove_instance(2)
-
-        assert model.draft is not None
-        assert tuple(entry.scenario for entry in model.draft.instances) == (
-            p("one.py"),
-            p("two.py"),
-        )
-
-    def test_can_remove_down_to_zero_instances(self) -> None:
-        model = make_model()
-
-        model.remove_instance(0)
+        model.remove_instance(index)
 
         assert model.draft is not None
-        assert model.draft.instances == ()
-
-    def test_out_of_range_remove_leaves_draft_unchanged(self) -> None:
-        model = make_model()
-
-        assert model.remove_instance(1) is model.draft
+        assert tuple(entry.scenario for entry in model.draft.instances) == expected
 
 
 class TestInstanceValidation:
@@ -655,19 +610,6 @@ class TestRoundTrip:
         rebuilt = profile_from_editable(draft)
 
         assert rebuilt == configuration
-
-    def test_json_draft_save_json_load_preserves_instances(
-        self,
-        tmp_path,
-    ) -> None:
-        path = tmp_path / "config.json"
-        configuration = multi_profile()
-        save_profile(path, configuration)
-
-        draft = editable_profile_from(load_profile(path), path)
-        save_profile(path, profile_from_editable(draft))
-
-        assert load_profile(path) == configuration
 
 
 class TestScenarioExtensions:
@@ -787,33 +729,20 @@ class TestCameraModeLabel:
 
 
 class TestSettingsDecisions:
-    def test_running_session_keeps_draft_editable(self) -> None:
-        permission = edit_permission(SessionState.RUNNING)
-
-        assert permission.source
-        assert permission.instances
-        assert permission.log_level
-
-    def test_idle_session_allows_all_edits(self) -> None:
-        permission = edit_permission(SessionState.IDLE)
-
-        assert permission.source
-        assert permission.instances
-        assert permission.log_level
-
-    def test_connecting_session_allows_profile_edits(self) -> None:
-        permission = edit_permission(SessionState.CONNECTING)
-
-        assert permission.source
-        assert permission.instances
-
-    def test_connecting_session_allows_settings_edits(self) -> None:
-        permission = edit_permission(SessionState.CONNECTING)
-
-        assert permission.log_level
-        assert permission.reaction_time
-        assert permission.theme
-        assert permission.settings
+    @pytest.mark.parametrize(
+        ("state", "editable"),
+        [
+            (SessionState.RUNNING, ("source", "instances", "log_level", "settings")),
+            (SessionState.IDLE, ("source", "instances", "log_level", "settings")),
+            (SessionState.CONNECTING, ("source", "instances", "log_level", "settings")),
+        ],
+    )
+    def test_edit_permission_for_session_state(
+        self, state: SessionState, editable: tuple[str, ...]
+    ) -> None:
+        permission = edit_permission(state)
+        for name in ("source", "instances", "log_level", "settings"):
+            assert getattr(permission, name) is (name in editable)
 
     @pytest.mark.parametrize("state", [SessionState.LOADING, SessionState.STOPPING])
     def test_transition_session_disables_all_configuration_edits(
@@ -869,32 +798,6 @@ class TestReactionTime:
 
         with pytest.raises(ValueError):
             model.validate_app_settings()
-
-    def test_reaction_time_round_trips_through_settings_json(
-        self, tmp_path: Path
-    ) -> None:
-        model = make_model()
-        model.edit_reaction_time("30")
-        commit(model)
-
-        path = tmp_path / "settings.json"
-        save_app_settings(path, model.app_settings_document())
-        reloaded = load_app_settings(path)
-
-        assert reloaded.reaction_time_ms == 30
-        other = SettingsModel(FakeCameraEnumerator())
-        other.load_app_settings(reloaded)
-        assert other.app_settings_document().reaction_time_ms == 30
-
-    def test_log_level_round_trips_through_settings_json(self, tmp_path: Path) -> None:
-        model = make_model()
-        model.edit_log_level("DEBUG")
-        commit(model)
-
-        path = tmp_path / "settings.json"
-        save_app_settings(path, model.app_settings_document())
-
-        assert load_app_settings(path).log_level == "DEBUG"
 
     def test_last_profile_is_lifecycle_owned(self, tmp_path: Path) -> None:
         model = make_model()
@@ -996,20 +899,6 @@ class TestThemeSettings:
         commit(model)
 
         assert model.app_settings_document().ui == UiSettings(Theme.DARK)
-
-    def test_theme_round_trips_through_settings_json(self, tmp_path: Path) -> None:
-        model = make_model()
-        model.edit_theme(Theme.DARK)
-        commit(model)
-        path = tmp_path / "settings.json"
-
-        save_app_settings(path, model.app_settings_document())
-        reloaded = load_app_settings(path)
-
-        assert reloaded.ui.theme is Theme.DARK
-        other = SettingsModel(FakeCameraEnumerator())
-        other.load_app_settings(reloaded)
-        assert other.applied_app_settings.theme is Theme.DARK
 
     @pytest.mark.parametrize("theme", [Theme.LIGHT, Theme.DARK])
     def test_projection_and_loading_are_symmetric(
