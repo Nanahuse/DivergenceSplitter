@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
-import flet as ft
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter.frame.ndi import NdiSupport
 from divergencesplitter_runtime.configuration.models import (
@@ -14,14 +13,9 @@ from divergencesplitter_runtime.configuration.models import (
     CameraModeConfiguration,
     CameraSourceConfiguration,
     InstanceConfiguration,
-    NdiSourceConfiguration,
     Profile,
-    VideoSourceConfiguration,
 )
 from divergencesplitter_ui.configuration.preview import PreviewController
-from divergencesplitter_ui.monitor.input_preview import (
-    PREVIEW_INTERVAL_SECONDS,  # noqa: F401
-)
 from divergencesplitter_ui.ndi_discovery import NdiDiscovery
 from divergencesplitter_ui.profile.page import ProfilePage, ProfileTab
 from divergencesplitter_ui.session import (
@@ -68,9 +62,6 @@ class FakeController:
     def __init__(self) -> None:
         self.state = SessionState.IDLE
         self.diagnostics = None
-        self.started: list[Path] = []
-        self.request_stop_calls = 0
-        self.join_calls = 0
 
     def start(self, path, *, app_settings) -> None:
         if self.state in {
@@ -80,14 +71,12 @@ class FakeController:
             SessionState.STOPPING,
         }:
             raise SessionAlreadyActiveError(str(path))
-        self.started.append(Path(path))
         self.state = SessionState.LOADING
 
     def request_stop(self) -> None:
-        self.request_stop_calls += 1
+        pass
 
     def join(self, timeout: float | None = None) -> bool:
-        self.join_calls += 1
         return True
 
 
@@ -173,22 +162,6 @@ def camera_profile() -> Profile:
     )
 
 
-def video_profile() -> Profile:
-    return Profile(
-        version=1,
-        source=VideoSourceConfiguration(p("clip.mp4")),
-        instances=camera_profile().instances,
-    )
-
-
-def ndi_profile() -> Profile:
-    return Profile(
-        version=1,
-        source=NdiSourceConfiguration("OBS"),
-        instances=camera_profile().instances,
-    )
-
-
 def make_model(
     *,
     profile: Profile | None = None,
@@ -226,10 +199,6 @@ def make_page(
         ndi_discovery=cast(NdiDiscovery, ndi or FakeNdiDiscovery()),
         preview_controller=cast(PreviewController, preview or FakePreviewController()),
     )
-
-
-def fire(handler, control, data=None) -> None:
-    handler(ft.Event("change", control, data=data))
 
 
 class TestPreviewLifecycle:
@@ -285,6 +254,7 @@ class TestPreviewLifecycle:
         page.tick(SessionState.IDLE, visible=True)
         asyncio.run(page.pump_preview())
         assert len(preview.started) == 2
+        assert preview.stop_calls == 1
 
         page.select_tab(ProfileTab.SCENARIOS)
         asyncio.run(page.pump_preview())
@@ -293,10 +263,12 @@ class TestPreviewLifecycle:
         page.tick(SessionState.IDLE, visible=True)
         asyncio.run(page.pump_preview())
         assert len(preview.started) == 2
+        assert preview.stop_calls == 2
 
         page.select_tab(ProfileTab.INPUT)
         asyncio.run(page.pump_preview())
         assert len(preview.started) == 3
+        assert preview.stop_calls == 2
 
 
 class TestPreviewUpdateTargets:
