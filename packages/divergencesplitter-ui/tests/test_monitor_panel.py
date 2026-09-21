@@ -99,7 +99,7 @@ def make_monitor() -> tuple[Monitor, FakeDiagnostics, MonitorUpdateCoordinator]:
 
 
 class TestTargetedUpdates:
-    def test_controls_for_update_maps_only_changed_panels(self) -> None:
+    def test_controls_for_update_returns_only_changed_controls(self) -> None:
         monitor = Monitor()
 
         assert monitor.controls_for_update(MonitorUpdate()) == ()
@@ -117,7 +117,7 @@ class TestTargetedUpdates:
             monitor.scenario_overview.control,
         )
 
-    def test_apply_reports_each_panel_independently(self) -> None:
+    def test_apply_reports_only_changed_panels(self) -> None:
         monitor, _, coordinator = make_monitor()
 
         update = monitor.apply(coordinator.snapshot())
@@ -125,15 +125,9 @@ class TestTargetedUpdates:
         assert update.global_status is True
         assert update.scenario_overview is True
         assert update.changed is True
-
-    def test_second_apply_reports_no_overview_change(self) -> None:
-        monitor, _, coordinator = make_monitor()
         monitor.apply(coordinator.snapshot())
-
-        update = monitor.apply(coordinator.snapshot())
-
-        assert update.scenario_overview is False
-        assert update.changed is False
+        stable = monitor.apply(coordinator.snapshot())
+        assert stable.changed is False
 
     def test_overview_change_targets_only_overview(self) -> None:
         monitor, diagnostics, coordinator = make_monitor()
