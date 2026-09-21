@@ -24,10 +24,6 @@ class FakePage:
         self.theme = "unset"
         self.dark_theme = "unset"
         self.theme_mode = None
-        self.update_calls = 0
-
-    def update(self, *controls: object) -> None:
-        self.update_calls += 1
 
 
 class TestApplyTheme:
