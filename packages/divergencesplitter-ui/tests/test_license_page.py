@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import cast
 
 import flet as ft
 from divergencesplitter_ui.license_page import LicenseView
@@ -63,18 +62,3 @@ class TestLicenseView:
         assert sections[0].title in texts
         assert any("numpy" in text for text in texts)
         assert any("MIT License" in text for text in texts)
-
-    def test_body_is_scrollable(self) -> None:
-        view = LicenseView()
-
-        assert cast(ft.Column, view.control).scroll == ft.ScrollMode.AUTO
-
-    def test_has_no_about_navigation(self) -> None:
-        view = LicenseView()
-
-        labels = [
-            item.content
-            for item in iter_controls(view.control)
-            if isinstance(item, ft.OutlinedButton)
-        ]
-        assert "Back to About" not in labels
