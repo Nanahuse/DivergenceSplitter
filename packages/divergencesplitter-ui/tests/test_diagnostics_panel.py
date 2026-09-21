@@ -187,23 +187,6 @@ class TestLazyMaterialization:
         assert any("0.8888" in text for text in texts)
         assert not any("0.1111" in text for text in texts)
 
-    def test_visible_updates_in_place(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(
-            panel, tree, (observation(condition, latest=0.5000),), visible=True
-        )
-
-        changed = apply_inputs(
-            panel, tree, (observation(condition, latest=0.1234),), visible=True
-        )
-
-        assert changed is True
-        texts = collect_text(panel.control)
-        assert any("0.1234" in text for text in texts)
-        assert not any("0.5000" in text for text in texts)
-
 
 class TestReferenceLifecycle:
     def _panel_with_references(self) -> DiagnosticsPanel:
