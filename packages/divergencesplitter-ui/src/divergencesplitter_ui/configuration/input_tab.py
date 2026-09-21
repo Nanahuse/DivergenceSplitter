@@ -60,6 +60,7 @@ class InputTab:
             ],
             spacing=4,
             visible=False,
+            key="profile-empty-state",
         )
         self._body = ft.Column(
             controls=[
