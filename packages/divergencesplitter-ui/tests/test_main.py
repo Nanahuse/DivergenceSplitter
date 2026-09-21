@@ -48,7 +48,7 @@ class TestEntryPoint:
 
         assert created[0].configuration is None
 
-    def test_usage_error_keeps_its_exit_code(self, capsys) -> None:
+    def test_usage_error_keeps_its_exit_code(self) -> None:
         assert main.main(["--unknown"]) == 2
 
     def test_parser_keeps_the_public_program_name(self) -> None:
