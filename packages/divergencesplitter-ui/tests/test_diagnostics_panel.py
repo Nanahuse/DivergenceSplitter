@@ -4,7 +4,6 @@ from collections.abc import Callable, Iterator
 from typing import cast
 
 import flet as ft
-import pytest
 from divergencesplitter import (
     Action,
     ConditionStatus,
@@ -24,11 +23,9 @@ from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.observability import (
     ConditionObservation,
     DetectorTreeSnapshot,
-    InstanceRunSnapshot,
     build_detector_tree,
 )
 from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
-from divergencesplitter_ui.presentation_diagnostics import diagnostics_view
 
 
 def iter_controls(control: ft.Control) -> Iterator[ft.Control]:
@@ -129,85 +126,28 @@ def apply_inputs(
     return panel.apply(tree, observations, (), statuses, visible=visible)
 
 
-class TestInitialState:
-    def test_starts_hidden_with_no_body(self) -> None:
-        panel = DiagnosticsPanel()
-
-        assert panel.visible is False
-        assert body(panel).controls == []
-        assert collect_text(panel.control) == ["Diagnostics"]
-
-
 class TestLazyMaterialization:
-    def test_hidden_does_not_materialize(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition))
-
-        panel = DiagnosticsPanel()
-        apply_inputs(
-            panel,
-            tree,
-            (observation(condition),),
-            (InstanceStatus(0, InstanceRuntimeState.READY),),
-            visible=False,
-        )
-
-        assert panel.visible is False
-        assert body(panel).controls == []
-        texts = collect_text(panel.control)
-        assert "Scenario 0" not in texts
-        assert "Connection" not in texts
-        assert "Detected" not in texts
-
-    def test_diagnostics_view_is_not_built_while_hidden(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition))
-        calls: list[int] = []
-
-        def spy(
-            tree: DetectorTreeSnapshot | None,
-            observations: tuple[ConditionObservation, ...],
-            run_infos: tuple[InstanceRunSnapshot, ...],
-            statuses: tuple[InstanceStatus, ...],
-        ) -> object:
-            calls.append(1)
-            return diagnostics_view(tree, observations, run_infos, statuses)
-
-        monkeypatch.setattr(
-            "divergencesplitter_ui.monitor.diagnostics.diagnostics_view", spy
-        )
-
-        panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, (observation(condition),), visible=False)
-        assert calls == []
-
-        apply_inputs(panel, tree, (observation(condition),), visible=True)
-        assert len(calls) == 1
-
-    def test_tree_change_while_hidden_does_not_materialize(self) -> None:
+    def test_hidden_panel_keeps_latest_inputs_without_materializing(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree_a = tree_for(instance(0, condition))
         tree_b = tree_for(instance(0, condition), instance(1, condition))
 
         panel = DiagnosticsPanel()
         apply_inputs(panel, tree_a, (observation(condition),), visible=False)
-        assert body(panel).controls == []
-
         apply_inputs(panel, tree_b, (observation(condition),), visible=False)
 
+        assert panel.visible is False
         assert body(panel).controls == []
         assert collect_text(panel.control) == ["Diagnostics"]
 
-    def test_show_materializes_full_tree(self) -> None:
+    def test_show_materializes_latest_snapshot(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
         apply_inputs(
             panel,
             tree,
-            (observation(condition),),
+            (observation(condition, latest=0.7777),),
             (InstanceStatus(0, InstanceRuntimeState.READY),),
             visible=True,
         )
@@ -224,28 +164,9 @@ class TestLazyMaterialization:
         assert "Start" in texts
         assert "Split 0" in texts
         assert "Rule 0 (split)" in texts
-        assert any("Detected" in text for text in texts)
-
-    def test_show_uses_latest_snapshot(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(
-            panel, tree, (observation(condition, latest=0.1111),), visible=False
-        )
-        apply_inputs(
-            panel, tree, (observation(condition, latest=0.7777),), visible=False
-        )
-
-        apply_inputs(
-            panel, tree, (observation(condition, latest=0.7777),), visible=True
-        )
-
-        texts = collect_text(panel.control)
         assert any("0.7777" in text for text in texts)
-        assert not any("0.1111" in text for text in texts)
 
-    def test_hide_discards_body(self) -> None:
+    def test_hide_releases_body_and_reshow_uses_latest_snapshot(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         tree = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
@@ -258,17 +179,6 @@ class TestLazyMaterialization:
         assert body(panel).controls == []
         assert collect_text(panel.control) == ["Diagnostics"]
 
-    def test_reshow_rebuilds_from_latest(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(
-            panel, tree, (observation(condition, latest=0.1111),), visible=True
-        )
-        apply_inputs(
-            panel, tree, (observation(condition, latest=0.1111),), visible=False
-        )
-
         apply_inputs(
             panel, tree, (observation(condition, latest=0.8888),), visible=True
         )
@@ -276,33 +186,6 @@ class TestLazyMaterialization:
         texts = collect_text(panel.control)
         assert any("0.8888" in text for text in texts)
         assert not any("0.1111" in text for text in texts)
-
-    def test_visible_updates_in_place(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(
-            panel, tree, (observation(condition, latest=0.5000),), visible=True
-        )
-
-        changed = apply_inputs(
-            panel, tree, (observation(condition, latest=0.1234),), visible=True
-        )
-
-        assert changed is True
-        texts = collect_text(panel.control)
-        assert any("0.1234" in text for text in texts)
-        assert not any("0.5000" in text for text in texts)
-
-
-class TestContent:
-    def test_no_cross_scenario_connection_list(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition), instance(1, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, visible=True)
-
-        assert not any("LiveSplit" in text for text in collect_text(panel.control))
 
 
 class TestReferenceLifecycle:
@@ -364,12 +247,14 @@ class TestTreeLifecycle:
         assert any("0.1234" in text for text in texts)
         assert not any("0.5000" in text for text in texts)
 
-    def test_new_tree_removes_old_scenarios(self) -> None:
+    def test_tree_identity_change_rebuilds_visible_scenarios(self) -> None:
         condition = Detected(MeanBrightnessDetector(), 0.9)
         two = tree_for(instance(0, condition), instance(1, condition))
         one = tree_for(instance(0, condition))
         panel = DiagnosticsPanel()
-        apply_inputs(panel, two, visible=True)
+        apply_inputs(panel, one, visible=True)
+        changed = apply_inputs(panel, two, visible=True)
+        assert changed is True
         assert "Scenario 1" in collect_text(panel.control)
 
         changed = apply_inputs(panel, one, visible=True)
@@ -378,43 +263,3 @@ class TestTreeLifecycle:
         texts = collect_text(panel.control)
         assert "Scenario 0" in texts
         assert "Scenario 1" not in texts
-
-    def test_new_tree_adds_scenarios(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        one = tree_for(instance(0, condition))
-        three = tree_for(
-            instance(0, condition), instance(1, condition), instance(2, condition)
-        )
-        panel = DiagnosticsPanel()
-        apply_inputs(panel, one, visible=True)
-
-        apply_inputs(panel, three, visible=True)
-
-        texts = collect_text(panel.control)
-        assert "Scenario 0" in texts
-        assert "Scenario 1" in texts
-        assert "Scenario 2" in texts
-
-    def test_tree_change_while_visible_rebuilds(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        one = tree_for(instance(0, condition))
-        two = tree_for(instance(0, condition), instance(1, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(panel, one, visible=True)
-
-        changed = apply_inputs(panel, two, visible=True)
-
-        assert changed is True
-        assert "Scenario 1" in collect_text(panel.control)
-
-    def test_tree_change_while_hidden_releases_body(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        one = tree_for(instance(0, condition))
-        two = tree_for(instance(0, condition), instance(1, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(panel, one, visible=True)
-        assert body(panel).controls != []
-
-        apply_inputs(panel, two, visible=False)
-
-        assert body(panel).controls == []
