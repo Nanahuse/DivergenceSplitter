@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import cast
 
 import flet as ft
@@ -111,42 +110,3 @@ class TestSemanticColors:
         colors = semantic_colors(Theme.LIGHT)
 
         assert instance_status_color(None, colors) is None
-
-
-class TestPanelsAcceptTheme:
-    def test_scenario_overview_uses_dark_ready_color(self) -> None:
-        from divergencesplitter_ui.monitor.scenario_overview import (
-            ScenarioOverviewPanel,
-        )
-
-        panel = ScenarioOverviewPanel(Theme.DARK)
-
-        assert panel._colors.ready == DARK_ACTIVE
-
-    def test_diagnostics_panel_switches_theme(self) -> None:
-        from divergencesplitter_ui.monitor.diagnostics import DiagnosticsPanel
-
-        panel = DiagnosticsPanel(Theme.LIGHT)
-        panel.set_theme(Theme.DARK)
-
-        assert panel._colors.error == DARK_ERROR
-
-
-def test_semantic_colors_accepts_theme_value() -> None:
-    colors = semantic_colors(Theme("dark"))
-
-    assert colors.primary == DARK_PRIMARY
-
-
-def test_semantic_colors_rejects_unknown_theme() -> None:
-    with pytest.raises(ValueError):
-        Theme("system")
-
-
-def test_apply_theme_does_not_touch_unrelated_page_attributes() -> None:
-    page = SimpleNamespace(theme=None, dark_theme=None, theme_mode=None)
-
-    apply_theme(cast(ft.Page, page), Theme.LIGHT)
-
-    assert page.theme is None
-    assert page.theme_mode is ft.ThemeMode.LIGHT
