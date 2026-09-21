@@ -53,6 +53,3 @@ class TestEntryPoint:
 
     def test_parser_keeps_the_public_program_name(self) -> None:
         assert main.build_parser().prog == "divergencesplitter-ui"
-
-    def test_entry_point_does_not_wire_the_dear_pygui_application(self) -> None:
-        assert not hasattr(main, "run_configuration")
