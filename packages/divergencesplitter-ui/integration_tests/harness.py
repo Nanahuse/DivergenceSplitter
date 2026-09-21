@@ -129,6 +129,11 @@ class Harness:
 
         return bool(getattr(self.find(key), "disabled", False))
 
+    @property
+    def navigation(self):
+        assert self.app is not None and self.app.navigation is not None
+        return self.app.navigation
+
     async def wait_until(
         self, predicate: Callable[[], bool], *, timeout: float = 8.0
     ) -> None:

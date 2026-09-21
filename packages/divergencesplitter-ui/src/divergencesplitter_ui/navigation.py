@@ -79,6 +79,7 @@ class Navigation:
             padding=ft.Padding.symmetric(horizontal=12, vertical=10),
             border_radius=8,
             on_click=self.toggle_expanded,
+            key="nav-toggle",
         )
         self._control = ft.Container(
             content=ft.Column(
