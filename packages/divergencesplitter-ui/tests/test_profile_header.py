@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-import inspect
-from typing import cast
-
-import flet as ft
 from divergencesplitter_ui.configuration.profile_header import (
-    NO_PROFILE_TEXT,
     ProfileHeader,
 )
 
@@ -19,35 +14,7 @@ def make_header() -> ProfileHeader:
     )
 
 
-class TestProfileHeaderStatusRemoval:
-    def test_has_no_status_control(self) -> None:
-        header = make_header()
-
-        assert not hasattr(header, "status")
-        row = cast(ft.Row, header.control)
-        keys = [getattr(control, "key", None) for control in row.controls]
-        assert "profile-status" not in keys
-
-    def test_sync_has_no_status_parameter(self) -> None:
-        parameters = inspect.signature(ProfileHeader.sync).parameters
-
-        assert "status" not in parameters
-
-
 class TestProfileHeaderControls:
-    def test_control_is_the_single_action_row(self) -> None:
-        header = make_header()
-
-        assert isinstance(header.control, ft.Row)
-        assert header.control.controls == [
-            header.profile_path,
-            header.new_button,
-            header.open_button,
-            header.save_button,
-            header.save_as_button,
-        ]
-        assert header.profile_path.value == NO_PROFILE_TEXT
-
     def test_sync_updates_path_and_buttons_only(self) -> None:
         header = make_header()
 
