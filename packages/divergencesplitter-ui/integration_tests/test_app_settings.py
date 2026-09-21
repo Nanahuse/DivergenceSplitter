@@ -58,3 +58,45 @@ async def test_reaction_time_change_reloads_and_returns_to_running(
     assert harness.header.profile_path.value == str(harness.profile_a)
     assert harness.app is not None
     assert harness.app.active_view is AppView.SETTINGS
+
+
+async def test_settings_apply_button_tracks_dirty_and_session_state(
+    start_test_app: StartApp,
+) -> None:
+    harness = await start_test_app(with_initial_profile=True, release_on_run=False)
+    await harness.navigate("settings")
+    assert harness.disabled("settings-apply")
+
+    await harness.select("settings-log-level", "DEBUG")
+    assert not harness.disabled("settings-apply")
+
+    await harness.tap("settings-apply")
+    await harness.wait_until(lambda: harness.disabled("settings-apply"))
+
+
+async def test_settings_draft_survives_periodic_ui_sync(
+    start_test_app: StartApp,
+) -> None:
+    harness = await start_test_app(with_initial_profile=True, release_on_run=False)
+    await harness.navigate("settings")
+
+    await harness.enter_text("settings-reaction-time", "30")
+    await harness.wait_until(lambda: harness.value("settings-reaction-time") == "30")
+    await harness.wait_until(lambda: len(harness.page.update_calls) > 0)
+
+    assert harness.value("settings-reaction-time") == "30"
+    assert harness.model.app_settings_draft.reaction_time_text == "30"
+
+
+async def test_settings_can_be_applied_without_profile(
+    start_test_app: StartApp,
+) -> None:
+    harness = await start_test_app(with_initial_profile=False, release_on_run=False)
+    await harness.navigate("settings")
+
+    await harness.select("settings-theme", Theme.DARK.value)
+    assert not harness.disabled("settings-apply")
+    await harness.tap("settings-apply")
+
+    await harness.wait_until(lambda: harness.disabled("settings-apply"))
+    assert harness.model.applied_app_settings.theme is Theme.DARK
