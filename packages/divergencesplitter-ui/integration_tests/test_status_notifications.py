@@ -54,3 +54,18 @@ async def test_app_settings_error_shows_a_notification(
     notification = harness.app.notification
     assert isinstance(notification, ft.SnackBar)
     assert "reaction time" in cast(ft.Text, notification.content).value
+
+
+async def test_same_notification_can_be_shown_repeatedly(
+    start_test_app: StartApp,
+) -> None:
+    harness = await start_test_app(with_initial_profile=True, release_on_run=False)
+    await harness.wait_until(lambda: harness.controller.state is SessionState.RUNNING)
+    await harness.navigate("settings")
+
+    await harness.enter_text("settings-reaction-time", "abc")
+    await harness.tap("settings-apply")
+    await harness.tap("settings-apply")
+
+    messages = notification_messages(harness)
+    assert messages.count("reaction time must be a non-negative integer") == 2

@@ -814,15 +814,28 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
     assert harness.diagnostics.resets == []
 
 
-def test_start_or_reset_decision_resets_evaluation_metrics() -> None:
-    reset_condition = RecordingCondition(True)
+@pytest.mark.parametrize(
+    "operation",
+    ["start", "reset"],
+    ids=["start", "reset"],
+)
+def test_start_or_reset_decision_resets_evaluation_metrics(operation: str) -> None:
+    is_start = operation == "start"
     scenario = Scenario(
-        start_condition=RecordingCondition(False),
-        reset_condition=reset_condition,
+        start_condition=RecordingCondition(is_start),
+        reset_condition=RecordingCondition(not is_start),
         incomplete_condition=None,
-        splits=((Rule(RecordingCondition(True), Action("split")),),),
+        splits=((Rule(RecordingCondition(False), Action("split")),),),
     )
-    harness = Harness(scenario)
+    initial = (
+        LiveSplitUpdate(
+            LiveSplitUpdateKind.INITIAL,
+            snapshot(phase=TimerPhase.NOT_RUNNING, split_index=-1),
+        )
+        if is_start
+        else initial_update()
+    )
+    harness = Harness(scenario, initial=initial)
     harness.start()
     try:
         harness.wait_ready()
@@ -831,6 +844,7 @@ def test_start_or_reset_decision_resets_evaluation_metrics() -> None:
     finally:
         harness.stop()
 
+    assert [action.operation for action, _ in harness.adapter.attempts] == [operation]
     assert harness.diagnostics.resets == [0]
 
 

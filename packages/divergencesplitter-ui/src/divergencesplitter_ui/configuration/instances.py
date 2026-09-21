@@ -51,7 +51,11 @@ class InstancesSection:
             controls=[
                 ft.Text("Scenarios & Connections", size=16, weight=ft.FontWeight.BOLD),
                 self._rows_group,
-                ft.OutlinedButton(content="Add Scenario", on_click=self._on_add),
+                ft.OutlinedButton(
+                    content="Add Scenario",
+                    on_click=self._on_add,
+                    key="profile-add-scenario",
+                ),
             ],
             spacing=8,
         )
@@ -160,6 +164,7 @@ class InstancesSection:
             remove=ft.OutlinedButton(
                 content="Remove",
                 on_click=lambda e, i=index: self._on_remove(i),
+                key=f"profile-remove-scenario-{index}",
             ),
         )
 

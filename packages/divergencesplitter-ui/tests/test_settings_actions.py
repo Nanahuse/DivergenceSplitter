@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from divergencesplitter import LiveSplitConnection
 from divergencesplitter_runtime.configuration.app_settings_json import (
     load_app_settings,
@@ -185,8 +186,12 @@ class TestThemeApply:
 
 
 class TestRuntimeApply:
-    def test_log_level_apply_restarts_a_running_runtime_once(
-        self, tmp_path: Path
+    @pytest.mark.parametrize(
+        ("edit", "expected"),
+        [("edit_log_level", "DEBUG"), ("edit_reaction_time", "30")],
+    )
+    def test_runtime_setting_change_restarts_running_runtime_once(
+        self, tmp_path: Path, edit: str, expected: str
     ) -> None:
         reloaded: list[Path] = []
         settings_path = tmp_path / "settings.json"
@@ -197,29 +202,15 @@ class TestRuntimeApply:
             settings_path=settings_path,
             on_reload=reloaded.append,
         )
-        model.edit_log_level("DEBUG")
+        getattr(model, edit)(expected)
 
         assert actions.apply() is True
 
         assert reloaded == [tmp_path / "config.json"]
-        assert load_app_settings(settings_path).log_level == "DEBUG"
-
-    def test_reaction_time_apply_restarts_a_running_runtime_once(
-        self, tmp_path: Path
-    ) -> None:
-        reloaded: list[Path] = []
-        controller = FakeController(SessionState.RUNNING)
-        actions, _controller, model = make_actions(
-            controller=controller,
-            model=make_model(tmp_path / "config.json"),
-            settings_path=tmp_path / "settings.json",
-            on_reload=reloaded.append,
-        )
-        model.edit_reaction_time("30")
-
-        assert actions.apply() is True
-
-        assert reloaded == [tmp_path / "config.json"]
+        saved = load_app_settings(settings_path)
+        assert (
+            saved.log_level if edit == "edit_log_level" else str(saved.reaction_time_ms)
+        ) == expected
 
     def test_reaction_time_and_log_level_restart_only_once(
         self, tmp_path: Path

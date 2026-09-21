@@ -48,11 +48,8 @@ class TestEntryPoint:
 
         assert created[0].configuration is None
 
-    def test_usage_error_keeps_its_exit_code(self, capsys) -> None:
+    def test_usage_error_keeps_its_exit_code(self) -> None:
         assert main.main(["--unknown"]) == 2
 
     def test_parser_keeps_the_public_program_name(self) -> None:
         assert main.build_parser().prog == "divergencesplitter-ui"
-
-    def test_entry_point_does_not_wire_the_dear_pygui_application(self) -> None:
-        assert not hasattr(main, "run_configuration")

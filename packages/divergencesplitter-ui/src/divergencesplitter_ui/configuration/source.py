@@ -94,17 +94,20 @@ class SourceSection:
             label="Camera",
             options=[],
             on_select=self._on_device_selected,
+            key="profile-camera-device",
         )
         self._camera_note = ft.Text("")
         self._mode = ft.Dropdown(
             label="Capture mode",
             options=[],
             on_select=self._on_mode_selected,
+            key="profile-camera-mode",
         )
         self._request_60_fps = ft.Switch(
             label="Request 60 FPS",
             value=False,
             on_change=self._on_request_60_fps_changed,
+            key="profile-request-60-fps",
         )
         self._camera_group = ft.Column(
             controls=[
@@ -136,6 +139,7 @@ class SourceSection:
             label="NDI® source",
             options=[],
             on_select=self._on_ndi_source_selected,
+            key="profile-ndi-source",
         )
         self._ndi_status = ft.Text("")
         self._ndi_group = ft.Column(
