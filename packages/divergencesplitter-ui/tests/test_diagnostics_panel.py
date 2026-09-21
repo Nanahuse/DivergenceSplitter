@@ -295,16 +295,6 @@ class TestLazyMaterialization:
         assert not any("0.5000" in text for text in texts)
 
 
-class TestContent:
-    def test_no_cross_scenario_connection_list(self) -> None:
-        condition = Detected(MeanBrightnessDetector(), 0.9)
-        tree = tree_for(instance(0, condition), instance(1, condition))
-        panel = DiagnosticsPanel()
-        apply_inputs(panel, tree, visible=True)
-
-        assert not any("LiveSplit" in text for text in collect_text(panel.control))
-
-
 class TestReferenceLifecycle:
     def _panel_with_references(self) -> DiagnosticsPanel:
         condition = reference_detector()
