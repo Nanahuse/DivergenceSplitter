@@ -106,21 +106,3 @@ def test_request_reset_all_fans_out_to_every_instance(
     runtime.request_reset_all()
 
     assert requested == [0, 1]
-
-
-def test_request_reset_all_does_not_stop_on_one_instance_state(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime = _runtime()
-    requested: list[int] = []
-    for instance in runtime.instances:
-        monkeypatch.setattr(
-            instance,
-            "request_reset",
-            lambda i=instance: requested.append(i.scenario_index),
-        )
-
-    runtime.request_reset_all()
-
-    # Both instances are asked regardless of any per-instance resettability.
-    assert sorted(requested) == [0, 1]
