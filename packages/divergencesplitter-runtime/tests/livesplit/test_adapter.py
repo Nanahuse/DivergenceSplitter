@@ -1,6 +1,6 @@
 import unittest
 from typing import Any
-from unittest.mock import create_autospec, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 from divergencesplitter import Action, LiveSplitConnection
 from divergencesplitter_runtime import (
@@ -117,6 +117,57 @@ def domain_run(
             LiveSplitSegmentInfo(index=index, name=name) for index, name in segments
         ),
     )
+
+
+def test_adapter_uses_websocket_client_for_attach_run_and_action() -> None:
+    connection = LiveSplitConnection(
+        "ws://127.0.0.1:54000/bridge/v1/rpc",
+        "ws://127.0.0.1:54000/bridge/v1/events",
+    )
+    socket = MagicMock()
+    socket.recv.side_effect = [
+        bridge_pb2.Response(
+            protocol_version=1,
+            request_id=1,
+            attach=bridge_pb2.AttachResponse(session_id=1, snapshot=proto_snapshot()),
+        ).SerializeToString(),
+        bridge_pb2.Response(
+            protocol_version=1,
+            request_id=2,
+            get_run=bridge_pb2.GetRunResponse(run=proto_run()),
+        ).SerializeToString(),
+        bridge_pb2.Response(
+            protocol_version=1,
+            request_id=3,
+            operation=common_pb2.OperationResponse(
+                success=True,
+                snapshot=proto_snapshot(split_index=1, state_revision=3),
+            ),
+        ).SerializeToString(),
+    ]
+    diagnostics = RecordingDiagnostics()
+    with (
+        patch("websocket.create_connection", return_value=socket) as connect,
+        LiveSplitBridgeAdapter(connection, diagnostics=diagnostics) as adapter,
+    ):
+        initial = adapter.attach()
+        assert initial.snapshot == domain_snapshot()
+        assert initial.run_info == domain_run()
+        assert (
+            adapter.execute_action(Action("split"), initial.snapshot)
+            is ActionExecution.DISPATCHED
+        )
+    connect.assert_called_once_with(connection.rpc_endpoint, timeout=3.0)
+    requests = [
+        bridge_pb2.Request.FromString(call.args[0])
+        for call in socket.send_binary.call_args_list
+    ]
+    assert len(requests) == 3
+    assert requests[0].HasField("attach")
+    assert requests[1].HasField("get_run")
+    assert requests[2].timer_operation.operation == common_pb2.TIMER_SPLIT
+    assert diagnostics.events[-1][0] == "action_succeeded"
+    socket.close.assert_called_once()
 
 
 class RecordingDiagnostics(LiveSplitBridgeDiagnostics):

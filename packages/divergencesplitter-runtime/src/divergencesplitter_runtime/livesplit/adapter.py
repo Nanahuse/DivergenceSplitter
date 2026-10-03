@@ -1,6 +1,6 @@
 """Runtime boundary for the official LiveSplit.Bridge client.
 
-This adapter owns only the RPC side of the connection. Raw SUB event reception
+This adapter owns only the RPC side of the connection. Raw WebSocket event reception
 is performed by :mod:`divergencesplitter_runtime.livesplit.event_receiver` on a
 dedicated thread; :meth:`LiveSplitBridgeAdapter.handle_event` applies the
 baseline/session/sequence validation to one received event.

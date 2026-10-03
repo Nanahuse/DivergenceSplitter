@@ -134,6 +134,7 @@ class InstancesSection:
             number=index + 1,
             rpc=ft.TextField(
                 label="RPC endpoint",
+                hint_text="ws://127.0.0.1:54000/bridge/v1/rpc",
                 value=instance.rpc_endpoint,
                 on_change=lambda e, i=index: self._model.set_instance_rpc_endpoint(
                     i, e.control.value
@@ -142,6 +143,7 @@ class InstancesSection:
             ),
             event=ft.TextField(
                 label="Event endpoint",
+                hint_text="ws://127.0.0.1:54000/bridge/v1/events",
                 value=instance.event_endpoint,
                 on_change=lambda e, i=index: self._model.set_instance_event_endpoint(
                     i, e.control.value

@@ -5,7 +5,7 @@ One :class:`InstanceRuntime` owns everything that belongs to a single
 frame evaluation, and action dispatch. All of it runs on the instance's own
 thread, so the ``ScenarioRuntime`` is never touched from another thread.
 
-Only raw SUB reception stays on the shared :class:`BridgeEventReceiver` thread.
+Only raw WebSocket reception stays on the shared :class:`BridgeEventReceiver` thread.
 The receiver forwards ordered Bridge events (and connection loss) to the
 instance thread through a bounded inbox and a wake event.
 """

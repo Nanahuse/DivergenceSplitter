@@ -1,4 +1,4 @@
-"""Dedicated Bridge SUB event receiver transport contracts."""
+"""Dedicated Bridge WebSocket event receiver transport contracts."""
 
 from __future__ import annotations
 
@@ -6,13 +6,19 @@ import threading
 import time
 from collections import deque
 from typing import cast
+from unittest.mock import MagicMock, patch
 
+import websocket
 from divergencesplitter_runtime.livesplit.event_receiver import (
     BridgeEventConnectionLost,
     BridgeEventReceived,
     BridgeEventReceiver,
 )
-from livesplit_bridge import BridgeConnectionLostError, common_pb2
+from livesplit_bridge import (
+    BridgeConnectionLostError,
+    BridgeEventSubscriber,
+    common_pb2,
+)
 
 
 def make_event(sequence: int) -> common_pb2.BridgeEvent:
@@ -77,6 +83,33 @@ def collect_events(
         collected.extend(receiver.drain())
         time.sleep(0.001)
     return tuple(collected)
+
+
+def test_receiver_reads_websocket_events_and_reports_disconnect() -> None:
+    endpoint = "ws://127.0.0.1:54000/bridge/v1/events"
+    event = make_event(10)
+    socket = MagicMock()
+    socket.recv.side_effect = [
+        event.SerializeToString(),
+        websocket.WebSocketConnectionClosedException("Bridge stopped"),
+    ]
+    receiver = BridgeEventReceiver(
+        subscriber_factory=lambda: BridgeEventSubscriber(endpoint),
+        wakeup=threading.Event(),
+    )
+    with patch("websocket.create_connection", return_value=socket) as connect:
+        receiver.start()
+        try:
+            receiver.wait_until_started()
+            messages = collect_events(receiver, 2)
+        finally:
+            receiver.stop()
+    connect.assert_called_once_with(endpoint)
+    assert len(messages) == 2
+    assert messages[0] == BridgeEventReceived(event)
+    assert isinstance(messages[1], BridgeEventConnectionLost)
+    assert isinstance(messages[1].error, BridgeConnectionLostError)
+    socket.close.assert_called_once()
 
 
 def test_receiver_delivers_events_in_receive_order() -> None:

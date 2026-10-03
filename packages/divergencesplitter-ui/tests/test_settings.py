@@ -444,8 +444,16 @@ class TestInstanceEditing:
         ("field", "value", "expected"),
         [
             ("scenario", p("changed.py"), p("changed.py")),
-            ("rpc_endpoint", "tcp://127.0.0.1:54100", "tcp://127.0.0.1:54100"),
-            ("event_endpoint", "tcp://127.0.0.1:54101", "tcp://127.0.0.1:54101"),
+            (
+                "rpc_endpoint",
+                "ws://127.0.0.1:54100/bridge/v1/rpc",
+                "ws://127.0.0.1:54100/bridge/v1/rpc",
+            ),
+            (
+                "event_endpoint",
+                "ws://127.0.0.1:54100/bridge/v1/events",
+                "ws://127.0.0.1:54100/bridge/v1/events",
+            ),
         ],
     )
     def test_instance_field_edit_changes_only_target(
@@ -562,10 +570,10 @@ class TestInstanceValidation:
             validate_instances_draft(
                 (
                     EditableInstanceConfiguration(
-                        "tcp://127.0.0.1:54000", "event_1", p("a.py")
+                        "ws://127.0.0.1:54000/bridge/v1/rpc", "event_1", p("a.py")
                     ),
                     EditableInstanceConfiguration(
-                        "tcp://127.0.0.1:54000", "event_2", "b.py"
+                        "ws://127.0.0.1:54000/bridge/v1/rpc", "event_2", "b.py"
                     ),
                 )
             )
@@ -578,10 +586,10 @@ class TestInstanceValidation:
             validate_instances_draft(
                 (
                     EditableInstanceConfiguration(
-                        "rpc_1", "tcp://127.0.0.1:54001", p("a.py")
+                        "rpc_1", "ws://127.0.0.1:54000/bridge/v1/events", p("a.py")
                     ),
                     EditableInstanceConfiguration(
-                        "rpc_2", "tcp://127.0.0.1:54001", "b.py"
+                        "rpc_2", "ws://127.0.0.1:54000/bridge/v1/events", "b.py"
                     ),
                 )
             )
@@ -590,10 +598,14 @@ class TestInstanceValidation:
         validate_instances_draft(
             (
                 EditableInstanceConfiguration(
-                    "tcp://127.0.0.1:54000", "tcp://127.0.0.1:54001", p("a.py")
+                    "ws://127.0.0.1:54000/bridge/v1/rpc",
+                    "ws://127.0.0.1:54000/bridge/v1/events",
+                    p("a.py"),
                 ),
                 EditableInstanceConfiguration(
-                    "tcp://127.0.0.1:54002", "tcp://127.0.0.1:54003", p("b.yaml")
+                    "ws://127.0.0.1:54002/bridge/v1/rpc",
+                    "ws://127.0.0.1:54002/bridge/v1/events",
+                    p("b.yaml"),
                 ),
             )
         )

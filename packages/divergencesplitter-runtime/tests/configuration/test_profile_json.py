@@ -65,8 +65,8 @@ def profile_document(
         else [
             {
                 "connection": {
-                    "rpc_endpoint": "tcp://127.0.0.1:54000",
-                    "event_endpoint": "tcp://127.0.0.1:54001",
+                    "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
+                    "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events",
                 },
                 "scenario": str(base / "scenario.py"),
             }
@@ -104,23 +104,29 @@ def test_loads_camera_profile(tmp_path: Path) -> None:
     )
     assert len(profile.instances) == 1
     assert profile.instances[0].scenario == str(tmp_path / "scenario.py")
-    assert profile.instances[0].connection.rpc_endpoint == "tcp://127.0.0.1:54000"
-    assert profile.instances[0].connection.event_endpoint == "tcp://127.0.0.1:54001"
+    assert (
+        profile.instances[0].connection.rpc_endpoint
+        == "ws://127.0.0.1:54000/bridge/v1/rpc"
+    )
+    assert (
+        profile.instances[0].connection.event_endpoint
+        == "ws://127.0.0.1:54000/bridge/v1/events"
+    )
 
 
 def test_loads_multiple_instances(tmp_path: Path) -> None:
     instances: list[dict[str, object]] = [
         {
             "connection": {
-                "rpc_endpoint": "tcp://127.0.0.1:54000",
-                "event_endpoint": "tcp://127.0.0.1:54001",
+                "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
+                "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events",
             },
             "scenario": str(tmp_path / "main.yaml"),
         },
         {
             "connection": {
-                "rpc_endpoint": "tcp://127.0.0.1:54100",
-                "event_endpoint": "tcp://127.0.0.1:54101",
+                "rpc_endpoint": "ws://127.0.0.1:54100/bridge/v1/rpc",
+                "event_endpoint": "ws://127.0.0.1:54100/bridge/v1/events",
             },
             "scenario": str(tmp_path / "sub.py"),
         },
@@ -134,7 +140,10 @@ def test_loads_multiple_instances(tmp_path: Path) -> None:
         str(tmp_path / "main.yaml"),
         str(tmp_path / "sub.py"),
     ]
-    assert profile.instances[1].connection.rpc_endpoint == "tcp://127.0.0.1:54100"
+    assert (
+        profile.instances[1].connection.rpc_endpoint
+        == "ws://127.0.0.1:54100/bridge/v1/rpc"
+    )
 
 
 def test_loads_video_profile(tmp_path: Path) -> None:
@@ -333,8 +342,8 @@ def test_rejects_relative_scenario_path(tmp_path: Path, scenario: str) -> None:
         instances=[
             {
                 "connection": {
-                    "rpc_endpoint": "tcp://127.0.0.1:54000",
-                    "event_endpoint": "tcp://127.0.0.1:54001",
+                    "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
+                    "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events",
                 },
                 "scenario": scenario,
             }

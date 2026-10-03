@@ -80,8 +80,8 @@ frame source and one or more connection/scenario instances independently:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
+        "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events"
       },
       "scenario": "./scenario.py"
     }
@@ -205,8 +205,8 @@ enumeration ID to disambiguate devices with the same name:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
+        "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events"
       },
       "scenario": "./scenario.py"
     }
@@ -253,8 +253,8 @@ technology at [ndi.video](https://ndi.video/):
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
+        "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events"
       },
       "scenario": "./scenario.py"
     }
@@ -299,10 +299,21 @@ NDI® is a registered trademark of Vizrt NDI AB.
 
 ## LiveSplit Bridge constraints
 
-Run a compatible LiveSplit.Bridge instance at the endpoints configured by each
-scenario. The runtime uses synchronous Bridge calls on a dedicated worker per
+Use livesplit-bridge-client v0.3.0 with a WebSocket-enabled LiveSplit.Bridge
+instance. RPC and Events use separate binary Protobuf WebSocket connections on
+the same port: `ws://127.0.0.1:54000/bridge/v1/rpc` and
+`ws://127.0.0.1:54000/bridge/v1/events` by default. Configure these URLs in each
+scenario's connection settings.
+
+When upgrading from the ZeroMQ transport, update both endpoints in existing
+profiles (including profiles saved by the UI). Old `tcp://` endpoints are no
+longer supported. Use the host and port configured in Bridge's WebSocket
+settings; the old separate event port is no longer used.
+
+The runtime uses synchronous Bridge calls on a dedicated worker per
 connection, so capture and processing do not wait for network responses.
-Actions are checked against a fresh snapshot and are never blindly retried.
+Actions are checked against the latest locally synchronized snapshot and are
+never blindly retried.
 The current protocol does not provide atomic compare-and-act, so an external
 LiveSplit operation can still race between that snapshot and the action. A
 timeout after sending an action is reported as an unknown result, not retried.

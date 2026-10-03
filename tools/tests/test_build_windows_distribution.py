@@ -20,6 +20,7 @@ def make_tree(root: Path) -> None:
         "divergencesplitter",
         "divergencesplitter_runtime",
         "livesplit_bridge",
+        "websocket",
         "numpy",
         "cv2",
     ):

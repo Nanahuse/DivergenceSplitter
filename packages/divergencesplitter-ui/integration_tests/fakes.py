@@ -45,8 +45,8 @@ def sample_profile(
     *,
     video_path: Path,
     scenario_path: Path,
-    rpc_endpoint: str = "tcp://127.0.0.1:54000",
-    event_endpoint: str = "tcp://127.0.0.1:54001",
+    rpc_endpoint: str = "ws://127.0.0.1:54000/bridge/v1/rpc",
+    event_endpoint: str = "ws://127.0.0.1:54000/bridge/v1/events",
 ) -> Profile:
     """Build a valid single-instance video Profile at absolute paths."""
 

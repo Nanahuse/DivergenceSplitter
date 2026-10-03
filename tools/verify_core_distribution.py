@@ -51,6 +51,7 @@ def main() -> None:
         "livesplit-bridge-client",
         "protobuf",
         "pyzmq",
+        "websocket-client",
     )
     forbidden = tuple(
         requirement

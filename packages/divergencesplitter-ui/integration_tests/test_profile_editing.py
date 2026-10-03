@@ -101,16 +101,16 @@ async def test_scenario_instance_editing_updates_draft(
     harness = await _profile(start_test_app)
     await harness.select_tab(1)
     await harness.tap("profile-add-scenario")
-    await harness.enter_text("profile-rpc-1", "tcp://127.0.0.1:54100")
-    await harness.enter_text("profile-event-1", "tcp://127.0.0.1:54101")
+    await harness.enter_text("profile-rpc-1", "ws://127.0.0.1:54100/bridge/v1/rpc")
+    await harness.enter_text("profile-event-1", "ws://127.0.0.1:54100/bridge/v1/events")
     await harness.enter_text("profile-scenario-1", "next.py")
     await harness.tap("profile-remove-scenario-0")
 
     draft = harness.model.draft
     assert draft is not None
     assert len(draft.instances) == 1
-    assert draft.instances[0].rpc_endpoint == "tcp://127.0.0.1:54100"
-    assert draft.instances[0].event_endpoint == "tcp://127.0.0.1:54101"
+    assert draft.instances[0].rpc_endpoint == "ws://127.0.0.1:54100/bridge/v1/rpc"
+    assert draft.instances[0].event_endpoint == "ws://127.0.0.1:54100/bridge/v1/events"
     assert draft.instances[0].scenario == "next.py"
 
 

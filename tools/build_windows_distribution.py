@@ -148,6 +148,7 @@ def verify_ui_distribution(ui_dir: Path) -> None:
         "divergencesplitter",
         "divergencesplitter_runtime",
         "livesplit_bridge",
+        "websocket",
         "numpy",
         "cv2",
     ):

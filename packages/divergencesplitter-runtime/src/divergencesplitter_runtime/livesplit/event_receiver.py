@@ -1,4 +1,4 @@
-"""Dedicated SUB event receive thread for one LiveSplit Bridge connection.
+"""Dedicated WebSocket event receive thread for one LiveSplit Bridge connection.
 
 The receiver owns the :class:`BridgeEventSubscriber` socket and drains it on
 its own thread. It performs no protocol or state interpretation: raw events and
@@ -45,7 +45,7 @@ BridgeEventMessage = BridgeEventReceived | BridgeEventConnectionLost
 
 
 class BridgeEventReceiver:
-    """Own one SUB socket and forward Bridge events in receive order."""
+    """Own one Events WebSocket and forward Bridge events in receive order."""
 
     def __init__(
         self,
