@@ -386,7 +386,33 @@ class AdapterTest(unittest.TestCase):
         )
 
         self.assertIsNone(update)
+        self.assertEqual(adapter._last_event_sequence, 1)
         client.get_run.assert_called_once_with()
+
+    def test_runtime_changed_event_requires_timer_state(self) -> None:
+        adapter, _ = self.make_attached_adapter()
+
+        with self.assertRaisesRegex(BridgeProtocolError, "timer_state"):
+            adapter.handle_event(
+                common_pb2.BridgeEvent(
+                    session_id=1,
+                    event_sequence=1,
+                    type=common_pb2.EVENT_RUNTIME_CHANGED,
+                )
+            )
+
+    def test_runtime_changed_event_rejects_session_mismatch(self) -> None:
+        adapter, _ = self.make_attached_adapter()
+
+        with self.assertRaisesRegex(BridgeProtocolError, "session IDs"):
+            adapter.handle_event(
+                proto_event(
+                    common_pb2.EVENT_RUNTIME_CHANGED,
+                    timer_state=proto_timer_state(session_id=2),
+                    session_id=1,
+                    event_sequence=1,
+                )
+            )
 
     def test_sequence_must_be_contiguous(self) -> None:
         adapter, _ = self.make_attached_adapter()

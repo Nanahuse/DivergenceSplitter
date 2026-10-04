@@ -208,10 +208,6 @@ class LiveSplitBridgeAdapter:
                 return LiveSplitResyncReason.GAP
 
         kind = event_update_kind(event.type)
-        if kind is None:
-            # Runtime-only change: advance the cursor without a scenario update.
-            self._last_event_sequence = event.event_sequence
-            return None
 
         if not event.HasField("timer_state"):
             raise BridgeProtocolError("Bridge state event has no timer_state")
@@ -220,6 +216,12 @@ class LiveSplitBridgeAdapter:
             raise BridgeProtocolError(
                 "Bridge event and timer_state session IDs do not match"
             )
+
+        if kind is None:
+            # Runtime-only change: the protocol validation above still applies,
+            # but it advances the cursor without a scenario update.
+            self._last_event_sequence = event.event_sequence
+            return None
 
         cached = self._run_info
         if cached is not None and timer_state.run_revision < cached.run_revision:
