@@ -1,14 +1,13 @@
 """Location of desktop diagnostic log files."""
 
-import sys
 from pathlib import Path
+
+from divergencesplitter_runtime.configuration.application_data import (
+    application_data_directory,
+)
 
 
 def log_file_path() -> Path:
-    """Use the executable directory for frozen builds, otherwise the working directory."""
-    root = (
-        Path(sys.executable).resolve().parent
-        if getattr(sys, "frozen", False)
-        else Path.cwd()
-    )
-    return root / "diagnostics.log"
+    """Return the fixed per-user diagnostic log file location."""
+
+    return application_data_directory() / "diagnostics.log"
