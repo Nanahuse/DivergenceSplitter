@@ -9,6 +9,9 @@ from divergencesplitter_runtime.configuration.app_settings_json import (
     load_app_settings_or_default,
     save_app_settings,
 )
+from divergencesplitter_runtime.configuration.application_data import (
+    application_data_directory,
+)
 from divergencesplitter_runtime.configuration.models import (
     AppSettings,
     Theme,
@@ -139,6 +142,7 @@ def test_load_or_default_does_not_overwrite_invalid_file(tmp_path: Path) -> None
 def test_default_path_is_under_the_application_directory() -> None:
     path = default_app_settings_path()
 
+    assert path == application_data_directory() / "settings.json"
     assert path.name == "settings.json"
     assert path.parent.name == "DivergenceSplitter"
 

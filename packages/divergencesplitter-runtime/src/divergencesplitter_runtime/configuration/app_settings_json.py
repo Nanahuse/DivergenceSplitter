@@ -8,9 +8,11 @@ location is resolved in one place and can be overridden for tests.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from divergencesplitter_runtime.configuration.application_data import (
+    application_data_directory,
+)
 from divergencesplitter_runtime.configuration.models import (
     APP_SETTINGS_VERSION,
     AppSettings,
@@ -29,7 +31,6 @@ from divergencesplitter_runtime.configuration.strict_json import (
     string_value,
 )
 
-SETTINGS_DIRECTORY = "DivergenceSplitter"
 SETTINGS_FILE_NAME = "settings.json"
 
 
@@ -45,13 +46,7 @@ def default_app_settings() -> AppSettings:
 def default_app_settings_path() -> Path:
     """Return the per-user location of the application settings file."""
 
-    if os.name == "nt":
-        base = os.environ.get("APPDATA")
-        root = Path(base) if base else Path.home() / "AppData" / "Roaming"
-    else:
-        base = os.environ.get("XDG_CONFIG_HOME")
-        root = Path(base) if base else Path.home() / ".config"
-    return root / SETTINGS_DIRECTORY / SETTINGS_FILE_NAME
+    return application_data_directory() / SETTINGS_FILE_NAME
 
 
 def load_app_settings(path: str | Path) -> AppSettings:

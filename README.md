@@ -375,11 +375,16 @@ Choose `OFF` (no log output) or `DEBUG` (all diagnostic details) in Configuratio
 Changing this setting also updates the running session immediately. Save the
 configuration to keep the choice for future sessions.
 
-The Windows desktop application writes UTF-8 logs to `diagnostics.log` in the
-same directory as `DivergenceSplitter.exe`, including when launched without a
-console. Source runs write to the current working directory instead.
-The Configuration page displays the full path.
-Logs rotate at 5 MiB with up to three backups (`.1`, `.2`, `.3`). OFF suppresses
-new output; it does not remove previously recorded logs. The CLI continues to
-write to standard error. Existing INFO, WARNING, and ERROR settings are accepted
-as compatibility aliases for DEBUG.
+The desktop application writes UTF-8 logs to
+`%APPDATA%\DivergenceSplitter\diagnostics.log` on Windows, the same per-user
+directory that stores `settings.json`. This location is fixed: source runs
+(`uv run divergencesplitter-ui`) and the packaged EXE write to the same file, and
+it never depends on the current working directory or the executable path. On
+other platforms the log lives in
+`$XDG_CONFIG_HOME/DivergenceSplitter/diagnostics.log` (or
+`~/.config/DivergenceSplitter/diagnostics.log`).
+Logs rotate at 5 MiB with up to three backups (`diagnostics.log.1`,
+`diagnostics.log.2`, `diagnostics.log.3`). OFF suppresses new output; it does not
+remove previously recorded logs. The CLI continues to write to standard error.
+Existing INFO, WARNING, and ERROR settings are accepted as compatibility aliases
+for DEBUG.

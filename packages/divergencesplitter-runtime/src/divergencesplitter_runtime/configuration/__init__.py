@@ -5,6 +5,9 @@ from divergencesplitter_runtime.configuration.app_settings_json import (
     load_app_settings_or_default,
     save_app_settings,
 )
+from divergencesplitter_runtime.configuration.application_data import (
+    application_data_directory,
+)
 from divergencesplitter_runtime.configuration.models import (
     AppSettings,
     CameraBackend,
@@ -74,6 +77,7 @@ __all__ = [
     "Theme",
     "UiSettings",
     "VideoSourceConfiguration",
+    "application_data_directory",
     "build_frame_source",
     "default_app_settings",
     "default_app_settings_path",
