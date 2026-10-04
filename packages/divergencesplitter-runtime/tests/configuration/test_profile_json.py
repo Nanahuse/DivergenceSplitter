@@ -373,8 +373,9 @@ def test_port_range_and_type_are_validated(tmp_path: Path, port: object) -> None
 def _legacy_document(
     base: Path,
     *,
-    rpc_endpoint: str = "tcp://127.0.0.1:54000",
-    event_endpoint: str = "tcp://127.0.0.1:54001",
+    endpoints: tuple[tuple[str, str], ...] = (
+        ("tcp://127.0.0.1:54000", "tcp://127.0.0.1:54001"),
+    ),
 ) -> dict[str, object]:
     return profile_document(
         base,
@@ -385,17 +386,46 @@ def _legacy_document(
                     "rpc_endpoint": rpc_endpoint,
                     "event_endpoint": event_endpoint,
                 },
-                "scenario": str(base / "scenario.py"),
+                "scenario": str(base / f"scenario_{index}.py"),
             }
+            for index, (rpc_endpoint, event_endpoint) in enumerate(endpoints)
         ],
     )
 
 
-def test_legacy_profile_migrates_rpc_port(tmp_path: Path) -> None:
-    profile = load_profile(_write_profile(tmp_path, _legacy_document(tmp_path)))
+@pytest.mark.parametrize("count", [1, 2, 3])
+def test_legacy_profile_assigns_sequential_ports(tmp_path: Path, count: int) -> None:
+    endpoints = tuple(
+        (f"tcp://127.0.0.1:{54000 + index}", f"tcp://127.0.0.1:{54001 + index}")
+        for index in range(count)
+    )
+
+    profile = load_profile(
+        _write_profile(tmp_path, _legacy_document(tmp_path, endpoints=endpoints))
+    )
 
     assert profile.version == 2
-    assert profile.instances[0].connection.port == 54000
+    assert [instance.connection.port for instance in profile.instances] == [
+        54000 + index for index in range(count)
+    ]
+
+
+def test_legacy_endpoint_values_do_not_affect_migration(tmp_path: Path) -> None:
+    endpoints = (
+        ("not-an-endpoint", ""),
+        ("tcp://host:1", "ipc:///tmp/socket"),
+        ("tcp://127.0.0.1:70000", "tcp://127.0.0.1"),
+    )
+
+    profile = load_profile(
+        _write_profile(tmp_path, _legacy_document(tmp_path, endpoints=endpoints))
+    )
+
+    assert [instance.connection.port for instance in profile.instances] == [
+        54000,
+        54001,
+        54002,
+    ]
 
 
 def test_migrated_profile_saves_only_version_2(tmp_path: Path) -> None:
@@ -409,24 +439,6 @@ def test_migrated_profile_saves_only_version_2(tmp_path: Path) -> None:
     assert document["instances"][0]["connection"] == {"port": 54000}
 
 
-@pytest.mark.parametrize(
-    "rpc_endpoint",
-    [
-        "tcp://127.0.0.1",
-        "127.0.0.1:54000",
-        "not-an-endpoint",
-        "tcp://127.0.0.1:70000",
-    ],
-)
-def test_legacy_profile_without_usable_port_is_rejected(
-    tmp_path: Path, rpc_endpoint: str
-) -> None:
-    value = _legacy_document(tmp_path, rpc_endpoint=rpc_endpoint)
-
-    with pytest.raises(ConfigurationValidationError):
-        load_profile(_write_profile(tmp_path, value))
-
-
 def test_legacy_profile_requires_both_legacy_endpoints(tmp_path: Path) -> None:
     value = _legacy_document(tmp_path)
     instance = cast(list[dict[str, object]], value["instances"])[0]
@@ -435,6 +447,23 @@ def test_legacy_profile_requires_both_legacy_endpoints(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationValidationError):
         load_profile(_write_profile(tmp_path, value))
+
+
+def test_legacy_migration_rejects_port_overflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from divergencesplitter_runtime.configuration import profile_json
+
+    monkeypatch.setattr(profile_json, "_LEGACY_MIGRATION_PORT_START", 65534)
+    endpoints = tuple(
+        (f"tcp://127.0.0.1:{54000 + index}", f"tcp://127.0.0.1:{54001 + index}")
+        for index in range(3)
+    )
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(
+            _write_profile(tmp_path, _legacy_document(tmp_path, endpoints=endpoints))
+        )
 
 
 def test_resolves_unique_name_even_when_saved_index_changed() -> None:

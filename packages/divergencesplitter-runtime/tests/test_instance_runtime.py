@@ -117,7 +117,13 @@ class ScriptedAdapter:
             self.baseline = event.snapshot
         return event
 
-    def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
+    def resync(
+        self,
+        reason: LiveSplitResyncReason,
+        *,
+        event_sequence: int | None = None,
+    ) -> LiveSplitUpdate:
+        del event_sequence
         self.resynced.append(reason)
         return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, self.baseline)
 
@@ -400,6 +406,7 @@ class Harness:
         cpu_time_provider: ThreadTimeProvider | None = None,
         reaction_time_ms: int = 0,
         reaction_wait: Callable[[int], None] | None = None,
+        preload_events: tuple[BridgeEventReceived, ...] = (),
     ) -> None:
         self.initial = initial if initial is not None else initial_update()
         self.execute_result = execute_result
@@ -408,6 +415,7 @@ class Harness:
         self.adapters: list[ScriptedAdapter] = []
         self._fixed_adapter = adapter
         self._log = log
+        self._preload_events = preload_events
         self.instance = InstanceRuntime(
             0,
             LiveSplitConnection(54100),
@@ -426,6 +434,9 @@ class Harness:
 
     def _new_receiver(self, wakeup: threading.Event) -> ControlledReceiver:
         receiver = ControlledReceiver(wakeup)
+        if not self.receivers:
+            for message in self._preload_events:
+                receiver.push(message)
         self.receivers.append(receiver)
         return receiver
 
@@ -1522,3 +1533,32 @@ def test_manual_reset_ignores_reaction_time() -> None:
     assert harness.diagnostics.reactions == []
     assert [action.operation for action, _ in adapter.attempts] == ["reset"]
     assert harness.diagnostics.resets == [0]
+
+
+def test_initial_sync_primes_baseline_from_queued_events() -> None:
+    adapter = ScriptedAdapter(initial_update())
+    duplicate = LiveSplitUpdate(
+        LiveSplitUpdateKind.TRANSITION,
+        snapshot(state_revision=0),
+    )
+    newer = LiveSplitUpdate(
+        LiveSplitUpdateKind.TRANSITION,
+        snapshot(state_revision=3, split_index=0),
+    )
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        adapter=adapter,
+        preload_events=(
+            BridgeEventReceived(cast(common_pb2.BridgeEvent, duplicate)),
+            BridgeEventReceived(cast(common_pb2.BridgeEvent, newer)),
+        ),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        wait_for(lambda: adapter.baseline == newer.snapshot and bool(adapter.handled))
+        assert harness.instance._scenario_runtime is not None
+        assert harness.instance._scenario_runtime.current_snapshot == newer.snapshot
+        assert adapter.baseline == newer.snapshot
+    finally:
+        harness.stop()

@@ -131,6 +131,11 @@ class ActionOutcome:
     update: LiveSplitUpdate | None = None
 
 
+# Bound on how many times a newer RunState may force a fresh TimerState while
+# trying to pair the two revisions. Never retried without limit.
+_MAX_STATE_SYNC_ATTEMPTS = 4
+
+
 class LiveSplitBridgeAdapter:
     def __init__(
         self,
@@ -162,13 +167,7 @@ class LiveSplitBridgeAdapter:
             raise ValueError(
                 "Bridge attach response and timer_state session IDs do not match"
             )
-        run_info = self._sync_run(timer_state, force=True)
-        if run_info is None:  # pragma: no cover - force always fetches
-            raise BridgeProtocolError("attach did not return run content")
-        snapshot = snapshot_from_timer_state(
-            timer_state,
-            split_count=len(run_info.segments),
-        )
+        snapshot, run_info = self._consistent_state(timer_state)
         self._baseline = snapshot
         self._last_event_sequence = None
         return LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot, run_info)
@@ -192,7 +191,6 @@ class LiveSplitBridgeAdapter:
                 event.session_id,
                 event.event_sequence,
             )
-            self._last_event_sequence = None
             return LiveSplitResyncReason.SESSION_CHANGED
 
         last_sequence = self._last_event_sequence
@@ -207,7 +205,6 @@ class LiveSplitBridgeAdapter:
                     event.session_id,
                     event.event_sequence,
                 )
-                self._last_event_sequence = event.event_sequence
                 return LiveSplitResyncReason.GAP
 
         kind = event_update_kind(event.type)
@@ -224,11 +221,18 @@ class LiveSplitBridgeAdapter:
                 "Bridge event and timer_state session IDs do not match"
             )
 
-        run_info = self._sync_run(timer_state, force=False)
-        split_count = (
-            len(run_info.segments) if run_info is not None else baseline.split_count
-        )
-        snapshot = snapshot_from_timer_state(timer_state, split_count=split_count)
+        cached = self._run_info
+        if cached is not None and timer_state.run_revision < cached.run_revision:
+            # Stale run reference: the event predates the current baseline.
+            self._last_event_sequence = event.event_sequence
+            return None
+
+        run_info: LiveSplitRunInfo | None
+        if cached is not None and timer_state.run_revision == cached.run_revision:
+            run_info = None
+            snapshot = self._snapshot(timer_state, cached)
+        else:
+            snapshot, run_info = self._consistent_state(timer_state)
 
         if (
             last_sequence is None
@@ -241,7 +245,6 @@ class LiveSplitBridgeAdapter:
                 event.session_id,
                 event.event_sequence,
             )
-            self._last_event_sequence = event.event_sequence
             return LiveSplitResyncReason.GAP
 
         self._last_event_sequence = event.event_sequence
@@ -270,11 +273,16 @@ class LiveSplitBridgeAdapter:
                 event.session_id,
                 event.event_sequence,
             )
-            self._last_event_sequence = None
             return LiveSplitResyncReason.SESSION_CHANGED
         last_sequence = self._last_event_sequence
-        if last_sequence is None or event.event_sequence < last_sequence:
-            # No baseline yet, or a heartbeat older than the last settled event.
+        if last_sequence is None:
+            # No state event has arrived yet. The heartbeat carries the last
+            # settled state-event sequence, so it establishes the stream
+            # baseline and makes gap detection active from startup.
+            self._last_event_sequence = event.event_sequence
+            return None
+        if event.event_sequence < last_sequence:
+            # A heartbeat older than the last settled event.
             return None
         if event.event_sequence > last_sequence:
             self._diagnostics.gap_detected(
@@ -283,28 +291,24 @@ class LiveSplitBridgeAdapter:
                 event.session_id,
                 event.event_sequence,
             )
-            self._last_event_sequence = event.event_sequence
             return LiveSplitResyncReason.GAP
         return None
 
-    def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
+    def resync(
+        self,
+        reason: LiveSplitResyncReason,
+        *,
+        event_sequence: int | None = None,
+    ) -> LiveSplitUpdate:
         previous = self._require_baseline()
         self._diagnostics.resync_started(self._connection, reason)
         timer_state = self._rpc.get_timer_state()
-        run_info = run_info_from_proto(self._rpc.get_run())
-        if run_info.session_id != timer_state.session_id:
-            raise ValueError("Bridge timer_state and run session IDs do not match")
-        if run_info.run_revision < timer_state.run_revision:
-            raise ValueError("Bridge run revision regressed behind timer_state")
-        self._run_info = run_info
-        snapshot = snapshot_from_timer_state(
-            timer_state,
-            split_count=len(run_info.segments),
-        )
+        snapshot, run_info = self._consistent_state(timer_state)
         self._baseline = snapshot
-        # The dropped or missed events cannot be reconstructed; the next event
-        # re-establishes the sequence baseline from the authoritative state.
-        self._last_event_sequence = None
+        if event_sequence is not None:
+            # Keep the sequence that triggered the resync as the new stream
+            # baseline so continuity and heartbeat gap detection stay active.
+            self._last_event_sequence = event_sequence
         self._diagnostics.resync_completed(
             self._connection,
             reason,
@@ -313,27 +317,44 @@ class LiveSplitBridgeAdapter:
         )
         return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, snapshot, run_info)
 
-    def _sync_run(
+    def _consistent_state(
         self,
         timer_state: common_pb2.TimerState,
-        *,
-        force: bool,
-    ) -> LiveSplitRunInfo | None:
-        cached = self._run_info
-        if (
-            not force
-            and cached is not None
-            and timer_state.run_revision <= cached.run_revision
-        ):
-            # Unchanged or stale run content: keep the cached segments.
-            return None
-        run = run_info_from_proto(self._rpc.get_run())
-        if run.session_id != timer_state.session_id:
-            raise ValueError("Bridge timer_state and run session IDs do not match")
-        if run.run_revision < timer_state.run_revision:
-            raise ValueError("Bridge run revision regressed behind timer_state")
-        self._run_info = run
-        return run
+    ) -> tuple[LiveSplitSnapshot, LiveSplitRunInfo]:
+        """Pair a TimerState with the RunState of its exact run revision.
+
+        ``get_run()`` can return a RunState whose ``run_revision`` is newer than
+        the TimerState that requested it. Mixing the two revisions in a single
+        :class:`LiveSplitSnapshot` is forbidden, so a newer RunState forces a
+        fresh ``get_timer_state()`` until both agree. A RunState behind the
+        TimerState, or a pair that never settles within the bounded number of
+        attempts, is a protocol error.
+        """
+        for _ in range(_MAX_STATE_SYNC_ATTEMPTS):
+            run_info = run_info_from_proto(self._rpc.get_run())
+            if run_info.session_id != timer_state.session_id:
+                raise BridgeProtocolError(
+                    "Bridge timer_state and run session IDs do not match"
+                )
+            if run_info.run_revision == timer_state.run_revision:
+                self._run_info = run_info
+                return self._snapshot(timer_state, run_info), run_info
+            if run_info.run_revision < timer_state.run_revision:
+                raise BridgeProtocolError("Bridge run revision is behind timer_state")
+            timer_state = self._rpc.get_timer_state()
+        raise BridgeProtocolError(
+            "Bridge timer_state and run revision did not stabilize"
+        )
+
+    @staticmethod
+    def _snapshot(
+        timer_state: common_pb2.TimerState,
+        run_info: LiveSplitRunInfo,
+    ) -> LiveSplitSnapshot:
+        return snapshot_from_timer_state(
+            timer_state,
+            split_count=len(run_info.segments),
+        )
 
     def _require_baseline(self) -> LiveSplitSnapshot:
         baseline = self._baseline
@@ -408,13 +429,17 @@ class LiveSplitBridgeAdapter:
             raise BridgeProtocolError(
                 "operation response session changed underneath the adapter"
             )
-        run_info = self._sync_run(timer_state, force=False)
-        split_count = (
-            len(run_info.segments)
-            if run_info is not None
-            else actual_snapshot.split_count
-        )
-        snapshot = snapshot_from_timer_state(timer_state, split_count=split_count)
+        cached = self._run_info
+        if cached is not None and timer_state.run_revision < cached.run_revision:
+            raise BridgeProtocolError(
+                "operation response run revision regressed behind timer_state"
+            )
+        run_info: LiveSplitRunInfo | None
+        if cached is not None and timer_state.run_revision == cached.run_revision:
+            run_info = None
+            snapshot = self._snapshot(timer_state, cached)
+        else:
+            snapshot, run_info = self._consistent_state(timer_state)
         self._baseline = snapshot
         self._diagnostics.action_succeeded(self._connection, action, snapshot)
         return ActionOutcome(

@@ -130,8 +130,13 @@ class BridgeScript:
             self._condition.notify_all()
         return ActionOutcome(ActionExecution.DISPATCHED, update)
 
-    def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
-        del reason
+    def resync(
+        self,
+        reason: LiveSplitResyncReason,
+        *,
+        event_sequence: int | None = None,
+    ) -> LiveSplitUpdate:
+        del reason, event_sequence
         if self._block_resync:
             self.resync_entered.set()
             if not self._resync_release.wait(5):
@@ -278,8 +283,13 @@ class ScriptedBridgeAdapter:
     ) -> ActionOutcome:
         return self._script.execute_action(action, expected_snapshot)
 
-    def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
-        return self._script.resync(reason)
+    def resync(
+        self,
+        reason: LiveSplitResyncReason,
+        *,
+        event_sequence: int | None = None,
+    ) -> LiveSplitUpdate:
+        return self._script.resync(reason, event_sequence=event_sequence)
 
     def close(self) -> None:
         self._script.close()

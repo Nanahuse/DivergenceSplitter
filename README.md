@@ -90,9 +90,10 @@ port per instance:
 }
 ```
 
-A version `1` Profile is migrated on load: the port is derived from the legacy
-RPC endpoint, and the next save writes the version `2` form. A legacy document
-whose port cannot be derived unambiguously is rejected instead of guessed.
+A version `1` Profile is migrated on load. Its Protocol v1 ZeroMQ endpoints are
+not convertible to a Protocol v2 WebSocket port, so their values are discarded
+and each instance is assigned a fresh port starting at `54000` in file order.
+The next save writes the version `2` form.
 
 A scenario may also be written as YAML (`scenario.yaml`). The loader is chosen
 from the file extension: `.py` for Python, `.yaml`/`.yml` for YAML. A YAML
@@ -300,10 +301,12 @@ scenario is configured with. The runtime connects to the RPC endpoint
 Profile. The runtime uses synchronous Bridge calls on a dedicated instance
 thread per connection, so capture and processing do not wait for network
 responses. Timer state is taken from the Protocol v2 `TimerState` and Run
-segments from `RunState`; `event_sequence` continuity is tracked by the Bridge
-adapter so scenarios only ever see an authoritative LiveSplit state. Actions
-are checked against the current state and are never blindly retried. When an
-operation succeeds, its `OperationResponse.timer_state` is applied immediately.
+segments from `RunState`; the two are paired by their exact `run_revision`, so a
+snapshot never mixes revisions. `event_sequence` continuity and heartbeat
+semantics are tracked by the Bridge adapter so scenarios only ever see an
+authoritative LiveSplit state. Actions are checked against the current state
+and are never blindly retried. When an operation succeeds, its
+`OperationResponse.timer_state` is applied immediately.
 A timeout after sending an action is reported as an unknown result, not retried.
 
 ## Performance
