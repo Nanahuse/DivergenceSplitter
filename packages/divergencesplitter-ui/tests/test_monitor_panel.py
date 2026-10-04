@@ -67,7 +67,7 @@ class FakeController:
 def make_monitor() -> tuple[Monitor, FakeDiagnostics, MonitorUpdateCoordinator]:
     condition = Detected(MeanBrightnessDetector(), 0.9)
     instance = ScenarioInstance(
-        LiveSplitConnection("tcp://rpc:0", "tcp://event:0"),
+        LiveSplitConnection("rpc", 54000),
         Scenario(
             start_condition=condition,
             reset_condition=None,

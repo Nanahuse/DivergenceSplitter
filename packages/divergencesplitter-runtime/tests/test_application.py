@@ -83,8 +83,8 @@ def _scenario() -> Scenario:
 def _runtime() -> ApplicationRuntime:
     return ApplicationRuntime(
         (
-            ScenarioInstance(LiveSplitConnection("rpc-0", "event-0"), _scenario()),
-            ScenarioInstance(LiveSplitConnection("rpc-1", "event-1"), _scenario()),
+            ScenarioInstance(LiveSplitConnection("rpc-0", 54000), _scenario()),
+            ScenarioInstance(LiveSplitConnection("rpc-1", 54000), _scenario()),
         ),
         _FakeFrameSource(),
         diagnostics=MagicMock(),

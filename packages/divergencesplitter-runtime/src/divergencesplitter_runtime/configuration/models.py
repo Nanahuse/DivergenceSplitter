@@ -147,7 +147,7 @@ class InstanceConfiguration:
 
 
 APP_SETTINGS_VERSION = 1
-PROFILE_VERSION = 1
+PROFILE_VERSION = 2
 
 _LOG_LEVELS = frozenset({"OFF", "DEBUG", "INFO", "WARNING", "ERROR"})
 

@@ -49,14 +49,14 @@ def make_scenario(
 
 
 def make_instance(
-    rpc_endpoint: str = "rpc",
-    event_endpoint: str = "event",
+    host: str = "localhost",
+    port: int = 54000,
     *,
     reset_conditions: tuple[PassiveCondition, ...] | None = None,
     slots: int = 0,
 ) -> ScenarioInstance:
     return ScenarioInstance(
-        connection=LiveSplitConnection(rpc_endpoint, event_endpoint),
+        connection=LiveSplitConnection(host, port),
         scenario=make_scenario(reset_conditions=reset_conditions, slots=slots),
     )
 
@@ -215,8 +215,9 @@ class ConfigurationValidationTest(unittest.TestCase):
 
     def test_independent_static_errors_are_aggregated(self) -> None:
         instances = (
-            make_instance("", ""),
-            make_instance("", ""),
+            make_instance("localhost", 54000),
+            make_instance("LOCALHOST", 54000),
+            make_instance("localhost", 54000),
         )
         with self.assertRaises(ExceptionGroup) as raised:
             validate_instances(
@@ -225,25 +226,17 @@ class ConfigurationValidationTest(unittest.TestCase):
                 )
             )
         messages = tuple(str(error) for error in raised.exception.exceptions)
-        self.assertEqual(len(messages), 6)
-        self.assertTrue(any("shares rpc_endpoint" in message for message in messages))
-        self.assertTrue(any("shares event_endpoint" in message for message in messages))
+        self.assertEqual(len(messages), 2)
+        self.assertTrue(all("shares host and port" in message for message in messages))
 
-    def test_connection_is_unique_when_either_endpoint_differs(self) -> None:
-        with self.assertRaises(ExceptionGroup):
-            validate_instances(
-                (
-                    (make_instance("rpc", "one").connection, make_scenario()),
-                    (make_instance("rpc", "two").connection, make_scenario()),
-                )
+    def test_connection_is_unique_when_host_or_port_differs(self) -> None:
+        validate_instances(
+            (
+                (make_instance("localhost", 54000).connection, make_scenario()),
+                (make_instance("localhost", 54100).connection, make_scenario()),
+                (make_instance("other-host", 54000).connection, make_scenario()),
             )
-        with self.assertRaises(ExceptionGroup):
-            validate_instances(
-                (
-                    (make_instance("one", "event").connection, make_scenario()),
-                    (make_instance("two", "event").connection, make_scenario()),
-                )
-            )
+        )
 
     def test_split_slots_must_not_exceed_split_count(self) -> None:
         with self.assertRaises(ValueError):

@@ -78,16 +78,14 @@ class FakeController:
 
 def camera_profile() -> Profile:
     return Profile(
-        version=1,
+        version=2,
         source=CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
             CameraModeConfiguration(1280, 720, 60.0, "MJPG"),
             False,
         ),
         instances=(
-            InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"), p("scenario.py")
-            ),
+            InstanceConfiguration(LiveSplitConnection("rpc", 54000), p("scenario.py")),
         ),
     )
 

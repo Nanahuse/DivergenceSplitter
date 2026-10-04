@@ -53,6 +53,11 @@ def load_profile(path: str | Path) -> Profile:
         root = object_value(value, "profile")
         check_keys(root, required={"version", "source", "instances"})
         version = integer_value(root["version"], "version")
+        if version == 1:
+            raise ValueError(
+                "profile version 1 uses separate endpoints; update to version 2 "
+                "and replace connection.rpc_endpoint/event_endpoint with host and port"
+            )
         if version != PROFILE_VERSION:
             raise ValueError(f"unsupported profile version: {version!r}")
         source = _source(root["source"])
@@ -81,8 +86,8 @@ def _dump(profile: Profile) -> str:
 def _instance_dict(instance: InstanceConfiguration) -> dict[str, object]:
     return {
         "connection": {
-            "rpc_endpoint": instance.connection.rpc_endpoint,
-            "event_endpoint": instance.connection.event_endpoint,
+            "host": instance.connection.host,
+            "port": instance.connection.port,
         },
         "scenario": instance.scenario,
     }
@@ -192,10 +197,10 @@ def _instance(value: object, index: int) -> InstanceConfiguration:
 
 def _connection(value: object, path: str) -> LiveSplitConnection:
     connection = object_value(value, path)
-    check_keys(connection, required={"rpc_endpoint", "event_endpoint"})
+    check_keys(connection, required={"host", "port"})
     return LiveSplitConnection(
-        string_value(connection["rpc_endpoint"], f"{path}.rpc_endpoint"),
-        string_value(connection["event_endpoint"], f"{path}.event_endpoint"),
+        string_value(connection["host"], f"{path}.host"),
+        integer_value(connection["port"], f"{path}.port"),
     )
 
 

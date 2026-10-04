@@ -17,37 +17,22 @@ def validate_scenario(scenario: Scenario) -> None:
 def validate_instances(
     instances: tuple[tuple[LiveSplitConnection, Scenario], ...],
 ) -> None:
-    """Validate connection endpoints and their uniqueness across instances."""
+    """Validate connection uniqueness across instances."""
 
     errors: list[Exception] = []
-    rpc_owners: dict[str, int] = {}
-    event_owners: dict[str, int] = {}
+    owners: dict[tuple[str, int], int] = {}
 
     for index, (connection, scenario) in enumerate(instances):
-        if not connection.rpc_endpoint:
-            errors.append(ValueError(f"instances[{index}].rpc_endpoint is empty"))
-        if not connection.event_endpoint:
-            errors.append(ValueError(f"instances[{index}].event_endpoint is empty"))
-
-        previous = rpc_owners.get(connection.rpc_endpoint)
+        address = (connection.host.casefold(), connection.port)
+        previous = owners.get(address)
         if previous is not None:
             errors.append(
                 ValueError(
-                    f"instances[{index}] shares rpc_endpoint with instances[{previous}]"
+                    f"instances[{index}] shares host and port with instances[{previous}]"
                 )
             )
         else:
-            rpc_owners[connection.rpc_endpoint] = index
-
-        previous = event_owners.get(connection.event_endpoint)
-        if previous is not None:
-            errors.append(
-                ValueError(
-                    f"instances[{index}] shares event_endpoint with instances[{previous}]"
-                )
-            )
-        else:
-            event_owners[connection.event_endpoint] = index
+            owners[address] = index
 
     if errors:
         raise ExceptionGroup("instance configuration is invalid", errors)

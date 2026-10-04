@@ -20,7 +20,7 @@ from divergencesplitter_ui.session import SessionState
 from integration_tests.conftest import StartApp
 from integration_tests.harness import Harness
 
-INSTANCE_KEYS = ("profile-scenario-0", "profile-rpc-0", "profile-event-0")
+INSTANCE_KEYS = ("profile-scenario-0", "profile-host-0", "profile-port-0")
 
 
 def _connecting() -> tuple[InstanceStatus, ...]:

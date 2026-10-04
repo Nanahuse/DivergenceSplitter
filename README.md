@@ -72,7 +72,7 @@ frame source and one or more connection/scenario instances independently:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "video",
     "path": "./run.mp4"
@@ -80,8 +80,8 @@ frame source and one or more connection/scenario instances independently:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
-        "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events"
+        "host": "127.0.0.1",
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
@@ -187,7 +187,7 @@ enumeration ID to disambiguate devices with the same name:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "camera",
     "device": {
@@ -205,8 +205,8 @@ enumeration ID to disambiguate devices with the same name:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
-        "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events"
+        "host": "127.0.0.1",
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
@@ -225,7 +225,7 @@ name match is accepted even if its index changed. If several devices have the
 same name within one backend, the saved index must match one of them. Capture
 modes must be present in the current enumeration and are never substituted.
 Relative scenario and video paths are resolved from the configuration file's
-directory. The configuration version remains `1`.
+directory. The Profile configuration version is `2`.
 
 Before using a camera/backend combination in production, manually confirm that
 it opens, continuously captures frames, releases the device on shutdown, and
@@ -244,7 +244,7 @@ technology at [ndi.video](https://ndi.video/):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "ndi",
     "name": "Gaming PC (OBS)",
@@ -253,8 +253,8 @@ technology at [ndi.video](https://ndi.video/):
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
-        "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events"
+        "host": "127.0.0.1",
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
@@ -302,13 +302,18 @@ NDI® is a registered trademark of Vizrt NDI AB.
 Use livesplit-bridge-client v0.3.0 with a WebSocket-enabled LiveSplit.Bridge
 instance. RPC and Events use separate binary Protobuf WebSocket connections on
 the same port: `ws://127.0.0.1:54000/bridge/v1/rpc` and
-`ws://127.0.0.1:54000/bridge/v1/events` by default. Configure these URLs in each
-scenario's connection settings.
+`ws://127.0.0.1:54000/bridge/v1/events` by default. Configure only the **Host**
+and **Port** in each scenario's connection settings; both URLs are generated
+automatically. Host accepts a hostname or IP address (IPv6 without brackets),
+without a scheme or path. Port must be an integer from 1 to 65535.
 
-When upgrading from the ZeroMQ transport, update both endpoints in existing
-profiles (including profiles saved by the UI). Old `tcp://` endpoints are no
-longer supported. Use the host and port configured in Bridge's WebSocket
-settings; the old separate event port is no longer used.
+When upgrading an existing Profile, set its `version` to `2` and replace each
+connection's `rpc_endpoint` / `event_endpoint` fields with `host` and `port`,
+as shown above. Use the host and port configured in Bridge's WebSocket settings;
+the old separate event port is no longer used. Version 1 profiles are rejected
+with migration instructions and are never rewritten automatically. App Settings
+and Scenario document versions are unchanged. Python callers should construct
+`LiveSplitConnection("127.0.0.1", 54000)` as well.
 
 The runtime uses synchronous Bridge calls on a dedicated worker per
 connection, so capture and processing do not wait for network responses.

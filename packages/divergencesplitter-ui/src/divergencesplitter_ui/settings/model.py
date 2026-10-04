@@ -19,6 +19,7 @@ from typing import Protocol
 from divergencesplitter.livesplit.models import LiveSplitConnection
 from divergencesplitter_runtime.configuration.models import (
     APP_SETTINGS_VERSION,
+    PROFILE_VERSION,
     AppSettings,
     CameraBackend,
     CameraDeviceConfiguration,
@@ -187,8 +188,8 @@ class EditableSourceSettings:
 
 @dataclass
 class EditableInstanceConfiguration:
-    rpc_endpoint: str
-    event_endpoint: str
+    host: str
+    port: str
     scenario: str
 
 
@@ -264,7 +265,7 @@ def editable_profile_from(configuration: Profile, path: Path) -> EditableProfile
         source_settings,
         tuple(
             EditableInstanceConfiguration(
-                i.connection.rpc_endpoint, i.connection.event_endpoint, i.scenario
+                i.connection.host, str(i.connection.port), i.scenario
             )
             for i in configuration.instances
         ),
@@ -355,26 +356,33 @@ def validate_instances_draft(
     errors: list[str] = []
     if not instances:
         errors.append("at least one instance is required")
-    rpc_owners: dict[str, int] = {}
-    event_owners: dict[str, int] = {}
+    owners: dict[tuple[str, int], int] = {}
     for index, instance in enumerate(instances):
         number = index + 1
         if not instance.scenario.strip():
             errors.append(f"Instance {number} has an empty scenario")
-        for value, label, owners in (
-            (instance.rpc_endpoint, "RPC endpoint", rpc_owners),
-            (instance.event_endpoint, "event endpoint", event_owners),
-        ):
-            if not value.strip():
-                errors.append(f"Instance {number} has an empty {label}")
-            elif value in owners:
-                errors.append(
-                    f"Instance {number} uses the same {label} as Instance {owners[value] + 1}."
-                )
-            else:
-                owners[value] = index
+        try:
+            connection = _instance_connection(instance)
+        except ValueError as error:
+            errors.append(f"Instance {number}: {error}")
+            continue
+        address = (connection.host.casefold(), connection.port)
+        if address in owners:
+            errors.append(
+                f"Instance {number} uses the same host and port as Instance {owners[address] + 1}."
+            )
+        else:
+            owners[address] = index
     if errors:
         raise ValueError("\n".join(errors))
+
+
+def _instance_connection(
+    instance: EditableInstanceConfiguration,
+) -> LiveSplitConnection:
+    if not instance.port.isascii() or not instance.port.isdecimal():
+        raise ValueError("port must be an integer between 1 and 65535")
+    return LiveSplitConnection(instance.host, int(instance.port))
 
 
 def profile_from_editable(
@@ -415,12 +423,10 @@ def profile_from_editable(
                 f"unsupported source type: {source_settings.selected_type}"
             )
     return Profile(
-        version=1,
+        version=PROFILE_VERSION,
         source=source,
         instances=tuple(
-            InstanceConfiguration(
-                LiveSplitConnection(i.rpc_endpoint, i.event_endpoint), i.scenario
-            )
+            InstanceConfiguration(_instance_connection(i), i.scenario)
             for i in editable.instances
         ),
     )
@@ -726,20 +732,18 @@ class SettingsModel:
     ) -> EditableProfile | None:
         return self._replace_instance(index, scenario=scenario)
 
-    def set_instance_rpc_endpoint(
-        self, index: int, endpoint: str
-    ) -> EditableProfile | None:
-        return self._replace_instance(index, rpc_endpoint=endpoint)
+    def set_instance_host(self, index: int, host: str) -> EditableProfile | None:
+        return self._replace_instance(index, host=host)
 
-    def set_instance_event_endpoint(
-        self, index: int, endpoint: str
-    ) -> EditableProfile | None:
-        return self._replace_instance(index, event_endpoint=endpoint)
+    def set_instance_port(self, index: int, port: str) -> EditableProfile | None:
+        return self._replace_instance(index, port=port)
 
     def add_instance(self) -> EditableProfile | None:
         if self._profile is None:
             return None
-        self._profile.instances += (EditableInstanceConfiguration("", "", ""),)
+        self._profile.instances += (
+            EditableInstanceConfiguration("127.0.0.1", "54000", ""),
+        )
         self._dirty = True
         return self._profile
 

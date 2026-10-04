@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from divergencesplitter_runtime.configuration.models import ResizeInterpolation
+from divergencesplitter_runtime.configuration.profile_json import load_profile
 from divergencesplitter_ui.session import SessionState
 
 from integration_tests.conftest import StartApp
@@ -101,17 +103,42 @@ async def test_scenario_instance_editing_updates_draft(
     harness = await _profile(start_test_app)
     await harness.select_tab(1)
     await harness.tap("profile-add-scenario")
-    await harness.enter_text("profile-rpc-1", "ws://127.0.0.1:54100/bridge/v1/rpc")
-    await harness.enter_text("profile-event-1", "ws://127.0.0.1:54100/bridge/v1/events")
+    assert harness.value("profile-host-1") == "127.0.0.1"
+    assert harness.value("profile-port-1") == "54000"
+    await harness.enter_text("profile-host-1", "localhost")
+    await harness.enter_text("profile-port-1", "54100")
     await harness.enter_text("profile-scenario-1", "next.py")
     await harness.tap("profile-remove-scenario-0")
 
     draft = harness.model.draft
     assert draft is not None
     assert len(draft.instances) == 1
-    assert draft.instances[0].rpc_endpoint == "ws://127.0.0.1:54100/bridge/v1/rpc"
-    assert draft.instances[0].event_endpoint == "ws://127.0.0.1:54100/bridge/v1/events"
+    assert draft.instances[0].host == "localhost"
+    assert draft.instances[0].port == "54100"
     assert draft.instances[0].scenario == "next.py"
+
+
+async def test_connection_host_and_port_save_and_reload(
+    start_test_app: StartApp,
+) -> None:
+    harness = await _profile(start_test_app, release_on_run=False)
+    await harness.select_tab(1)
+    await harness.enter_text("profile-host-0", "timer.local")
+    await harness.enter_text("profile-port-0", "54100")
+    await harness.tap("profile-save")
+    await harness.wait_until(
+        lambda: not harness.header.profile_path.value.endswith(" *")
+    )
+
+    document = json.loads(harness.profile_a.read_text(encoding="utf-8"))
+    assert document["version"] == 2
+    assert document["instances"][0]["connection"] == {
+        "host": "timer.local",
+        "port": 54100,
+    }
+    connection = load_profile(harness.profile_a).instances[0].connection
+    assert connection.rpc_endpoint == "ws://timer.local:54100/bridge/v1/rpc"
+    assert connection.event_endpoint == "ws://timer.local:54100/bridge/v1/events"
 
 
 async def test_entering_input_refreshes_ndi_availability(

@@ -549,7 +549,7 @@ def _execute_case(
         ScenarioInstance(
             connection=LiveSplitConnection(
                 f"benchmark-rpc-{index}",
-                f"benchmark-event-{index}",
+                54000,
             ),
             scenario=_build_scenario(case, recorders[index]),
         )

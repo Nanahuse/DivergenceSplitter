@@ -41,7 +41,7 @@ from divergencesplitter_ui.presentation_diagnostics import (
 
 def make_instance(*, start, reset=None, incomplete=None, splits=()) -> ScenarioInstance:
     return ScenarioInstance(
-        connection=LiveSplitConnection("rpc", "event"),
+        connection=LiveSplitConnection("rpc", 54000),
         scenario=Scenario(start, reset, incomplete, splits),
     )
 
@@ -110,7 +110,7 @@ def run_info(*segments: tuple[int, str]) -> LiveSplitRunInfo:
 class TestConnection:
     def test_endpoints_and_status_are_reported(self) -> None:
         instance = ScenarioInstance(
-            connection=LiveSplitConnection("tcp://rpc:1", "tcp://event:2"),
+            connection=LiveSplitConnection("rpc", 1),
             scenario=Scenario(Detected(MeanBrightnessDetector(), 0.9), None, None, ()),
         )
         tree = build_detector_tree((instance,))
@@ -120,8 +120,8 @@ class TestConnection:
 
         connection = view.scenarios[0].connection
         assert connection.status_label == "Connected"
-        assert connection.rpc_endpoint == "tcp://rpc:1"
-        assert connection.event_endpoint == "tcp://event:2"
+        assert connection.rpc_endpoint == "ws://rpc:1/bridge/v1/rpc"
+        assert connection.event_endpoint == "ws://rpc:1/bridge/v1/events"
         assert connection.error_label == "—"
         assert connection.has_error is False
 
@@ -386,11 +386,11 @@ class TestMultipleScenarios:
         second = Detected(MeanBrightnessDetector(), 0.5)
         instances = (
             ScenarioInstance(
-                LiveSplitConnection("tcp://rpc:0", "tcp://event:0"),
+                LiveSplitConnection("rpc", 54000),
                 Scenario(first, None, None, ((Rule(first, Action("split")),),)),
             ),
             ScenarioInstance(
-                LiveSplitConnection("tcp://rpc:1", "tcp://event:1"),
+                LiveSplitConnection("rpc", 1),
                 Scenario(second, None, None, ((Rule(second, Action("split")),),)),
             ),
         )
@@ -410,9 +410,11 @@ class TestMultipleScenarios:
             statuses,
         )
 
-        assert view.scenarios[0].connection.rpc_endpoint == "tcp://rpc:0"
+        assert (
+            view.scenarios[0].connection.rpc_endpoint == "ws://rpc:54000/bridge/v1/rpc"
+        )
         assert view.scenarios[0].connection.error_label == "—"
-        assert view.scenarios[1].connection.rpc_endpoint == "tcp://rpc:1"
+        assert view.scenarios[1].connection.rpc_endpoint == "ws://rpc:1/bridge/v1/rpc"
         assert view.scenarios[1].connection.error_label == "boom"
         first_detector = view.scenarios[0].groups[-1].rules[0].conditions[0].detector
         second_detector = view.scenarios[1].groups[-1].rules[0].conditions[0].detector

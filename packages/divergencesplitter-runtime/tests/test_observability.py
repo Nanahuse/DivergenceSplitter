@@ -42,7 +42,7 @@ def make_frame(captured_at: int = 100) -> Frame:
 
 def make_instance(scenario: Scenario) -> ScenarioInstance:
     return ScenarioInstance(
-        connection=LiveSplitConnection("rpc", "event"),
+        connection=LiveSplitConnection("rpc", 54000),
         scenario=scenario,
     )
 

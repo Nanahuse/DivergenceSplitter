@@ -56,11 +56,11 @@ def empty_scenario() -> Scenario:
 
 def make_profile() -> Profile:
     return Profile(
-        1,
+        2,
         VideoSourceConfiguration(str(Path.cwd() / "run.mp4")),
         (
             InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"),
+                LiveSplitConnection("rpc", 54000),
                 str(Path.cwd() / "scenario.py"),
             ),
         ),
@@ -177,7 +177,7 @@ def test_runs_loaded_instances_and_returns_completed() -> None:
     assert "cli.completed" in stderr
     assert len(stderr.splitlines()) == 1
     assert len(instances) == 1
-    assert instances[0].connection == LiveSplitConnection("rpc", "event")
+    assert instances[0].connection == LiveSplitConnection("rpc", 54000)
     assert runtime.frame_source is frame_source
     assert FakeStatusReporter.instances[0].events == ["started", "stopped"]
 
@@ -262,11 +262,11 @@ def test_source_resolution_error_prevents_runtime_construction() -> None:
 def test_missing_module_returns_scenario_module_error(tmp_path: Path) -> None:
     stderr = StringIO()
     profile = Profile(
-        1,
+        2,
         VideoSourceConfiguration(str(Path.cwd() / "run.mp4")),
         (
             InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"),
+                LiveSplitConnection("rpc", 54000),
                 str(tmp_path / "missing.py"),
             ),
         ),

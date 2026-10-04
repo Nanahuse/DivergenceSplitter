@@ -121,8 +121,8 @@ def domain_run(
 
 def test_adapter_uses_websocket_client_for_attach_run_and_action() -> None:
     connection = LiveSplitConnection(
-        "ws://127.0.0.1:54000/bridge/v1/rpc",
-        "ws://127.0.0.1:54000/bridge/v1/events",
+        "127.0.0.1",
+        54000,
     )
     socket = MagicMock()
     socket.recv.side_effect = [
@@ -393,7 +393,7 @@ class MappingTest(unittest.TestCase):
 
 class AdapterTest(unittest.TestCase):
     def test_uses_connection_rpc_endpoint_for_rpc_client(self) -> None:
-        connection = LiveSplitConnection("tcp://rpc", "tcp://event")
+        connection = LiveSplitConnection("rpc", 54000)
         with patch(
             "divergencesplitter_runtime.livesplit.adapter.BridgeRpcClient",
             autospec=True,
@@ -406,7 +406,7 @@ class AdapterTest(unittest.TestCase):
             adapter.close()
 
         client_type.assert_called_once_with(
-            "tcp://rpc",
+            "ws://rpc:54000/bridge/v1/rpc",
             response_timeout_ms=10,
         )
         client_type.return_value.close.assert_called_once_with()
@@ -421,7 +421,7 @@ class AdapterTest(unittest.TestCase):
         client.get_run.return_value = proto_run(session_id=1, run_revision=1)
 
         with LiveSplitBridgeAdapter(
-            LiveSplitConnection("rpc", "event"),
+            LiveSplitConnection("rpc", 54000),
             diagnostics=RecordingDiagnostics(),
             rpc=client,
         ) as adapter:
@@ -458,7 +458,7 @@ class AdapterTest(unittest.TestCase):
         client.snapshot.return_value = proto_snapshot(event_sequence=4)
         client.get_run.return_value = proto_run(session_id=1, run_revision=1)
         diagnostics = RecordingDiagnostics()
-        connection = LiveSplitConnection("rpc", "event")
+        connection = LiveSplitConnection("rpc", 54000)
         adapter = LiveSplitBridgeAdapter(
             connection,
             diagnostics=diagnostics,
@@ -522,7 +522,7 @@ class AdapterTest(unittest.TestCase):
     def test_close_is_idempotent(self) -> None:
         client = create_autospec(BridgeRpcClient, instance=True)
         adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection("rpc", "event"),
+            LiveSplitConnection("rpc", 54000),
             diagnostics=RecordingDiagnostics(),
             rpc=client,
         )
@@ -541,7 +541,7 @@ class AdapterTest(unittest.TestCase):
         client.snapshot.return_value = proto_snapshot(session_id=2)
         client.get_run.return_value = proto_run(session_id=1, run_revision=1)
         with LiveSplitBridgeAdapter(
-            LiveSplitConnection("rpc", "event"),
+            LiveSplitConnection("rpc", 54000),
             diagnostics=RecordingDiagnostics(),
             rpc=client,
         ) as adapter:
@@ -554,7 +554,7 @@ class AdapterTest(unittest.TestCase):
 class RunSynchronizationTest(unittest.TestCase):
     def make_adapter(self, client: Any) -> LiveSplitBridgeAdapter:
         return LiveSplitBridgeAdapter(
-            LiveSplitConnection("rpc", "event"),
+            LiveSplitConnection("rpc", 54000),
             diagnostics=RecordingDiagnostics(),
             rpc=client,
         )
@@ -693,7 +693,7 @@ class ActionExecutionTest(unittest.TestCase):
         diagnostics: LiveSplitBridgeDiagnostics,
     ) -> LiveSplitBridgeAdapter:
         adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection("rpc", "event"),
+            LiveSplitConnection("rpc", 54000),
             diagnostics=diagnostics,
             rpc=client,
         )
@@ -771,7 +771,7 @@ class ActionExecutionTest(unittest.TestCase):
                     [
                         (
                             "action_succeeded",
-                            LiveSplitConnection("rpc", "event"),
+                            LiveSplitConnection("rpc", 54000),
                             action,
                             expected,
                         )
@@ -812,7 +812,7 @@ class ActionExecutionTest(unittest.TestCase):
                     [
                         (
                             "snapshot_mismatched",
-                            LiveSplitConnection("rpc", "event"),
+                            LiveSplitConnection("rpc", 54000),
                             action,
                             expected,
                             actual,
@@ -837,7 +837,7 @@ class ActionExecutionTest(unittest.TestCase):
             [
                 (
                     "action_succeeded",
-                    LiveSplitConnection("rpc", "event"),
+                    LiveSplitConnection("rpc", 54000),
                     action,
                     actual,
                 )
@@ -874,7 +874,7 @@ class ActionExecutionTest(unittest.TestCase):
                     [
                         (
                             "action_precondition_failed",
-                            LiveSplitConnection("rpc", "event"),
+                            LiveSplitConnection("rpc", 54000),
                             action,
                             snapshot,
                         )
@@ -921,7 +921,7 @@ class ActionExecutionTest(unittest.TestCase):
                     [
                         (
                             "action_rejected",
-                            LiveSplitConnection("rpc", "event"),
+                            LiveSplitConnection("rpc", 54000),
                             action,
                             domain_snapshot(),
                             code,
@@ -949,7 +949,7 @@ class ActionExecutionTest(unittest.TestCase):
             [
                 (
                     "action_result_unknown",
-                    LiveSplitConnection("rpc", "event"),
+                    LiveSplitConnection("rpc", 54000),
                     action,
                     domain_snapshot(),
                     error,
@@ -988,7 +988,7 @@ class ActionExecutionTest(unittest.TestCase):
             [
                 (
                     "action_succeeded",
-                    LiveSplitConnection("rpc", "event"),
+                    LiveSplitConnection("rpc", 54000),
                     action,
                     domain_snapshot(state_revision=3, split_index=1),
                 )

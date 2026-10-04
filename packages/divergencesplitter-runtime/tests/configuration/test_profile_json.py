@@ -43,7 +43,7 @@ def profile_document(
     *,
     source: dict[str, object] | None = None,
     instances: list[dict[str, object]] | None = None,
-    version: object = 1,
+    version: object = 2,
 ) -> dict[str, object]:
     document: dict[str, object] = {
         "version": version,
@@ -65,8 +65,8 @@ def profile_document(
         else [
             {
                 "connection": {
-                    "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
-                    "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events",
+                    "host": "127.0.0.1",
+                    "port": 54000,
                 },
                 "scenario": str(base / "scenario.py"),
             }
@@ -77,6 +77,32 @@ def profile_document(
 
 def write_document(path: Path, value: object) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
+
+
+@pytest.mark.parametrize("port", [0, 65536, True, 54000.5, "54000"])
+def test_rejects_invalid_connection_port(tmp_path: Path, port: object) -> None:
+    path = tmp_path / "profile.json"
+    write_document(
+        path,
+        profile_document(
+            tmp_path,
+            instances=[
+                {
+                    "connection": {"host": "localhost", "port": port},
+                    "scenario": str(tmp_path / "scenario.py"),
+                }
+            ],
+        ),
+    )
+    with pytest.raises(ConfigurationValidationError, match="port"):
+        load_profile(path)
+
+
+def test_old_profile_has_actionable_migration_error(tmp_path: Path) -> None:
+    path = tmp_path / "profile.json"
+    write_document(path, profile_document(tmp_path, version=1))
+    with pytest.raises(ConfigurationValidationError, match="host and port"):
+        load_profile(path)
 
 
 def fake_device(index: int, modes: list[object] | None = None) -> SimpleNamespace:
@@ -94,7 +120,7 @@ def test_loads_camera_profile(tmp_path: Path) -> None:
 
     profile = load_profile(path)
 
-    assert profile.version == 1
+    assert profile.version == 2
     assert profile.source == CameraSourceConfiguration(
         CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
         CameraModeConfiguration(
@@ -118,15 +144,15 @@ def test_loads_multiple_instances(tmp_path: Path) -> None:
     instances: list[dict[str, object]] = [
         {
             "connection": {
-                "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
-                "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events",
+                "host": "127.0.0.1",
+                "port": 54000,
             },
             "scenario": str(tmp_path / "main.yaml"),
         },
         {
             "connection": {
-                "rpc_endpoint": "ws://127.0.0.1:54100/bridge/v1/rpc",
-                "event_endpoint": "ws://127.0.0.1:54100/bridge/v1/events",
+                "host": "127.0.0.1",
+                "port": 54100,
             },
             "scenario": str(tmp_path / "sub.py"),
         },
@@ -168,7 +194,7 @@ def test_loads_ndi_profile(tmp_path: Path) -> None:
 
     profile = load_profile(path)
 
-    assert profile.version == 1
+    assert profile.version == 2
     assert profile.source == NdiSourceConfiguration("Gaming PC (OBS)")
 
 
@@ -292,7 +318,7 @@ def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
     if mutation == "unknown root":
         value["unknown"] = 1
     elif mutation == "unknown version":
-        value["version"] = 2
+        value["version"] = 99
     elif mutation == "unknown source":
         value["source"] = {"type": "sdi"}
     elif mutation == "unknown camera field":
@@ -342,8 +368,8 @@ def test_rejects_relative_scenario_path(tmp_path: Path, scenario: str) -> None:
         instances=[
             {
                 "connection": {
-                    "rpc_endpoint": "ws://127.0.0.1:54000/bridge/v1/rpc",
-                    "event_endpoint": "ws://127.0.0.1:54000/bridge/v1/events",
+                    "host": "127.0.0.1",
+                    "port": 54000,
                 },
                 "scenario": scenario,
             }
@@ -368,12 +394,12 @@ def test_profile_model_requires_absolute_paths() -> None:
 
     with pytest.raises(ValueError):
         Profile(
-            1,
+            2,
             NdiSourceConfiguration("source"),
-            (InstanceConfiguration(LiveSplitConnection("rpc", "event"), "rel.py"),),
+            (InstanceConfiguration(LiveSplitConnection("rpc", 54000), "rel.py"),),
         )
     with pytest.raises(ValueError):
-        Profile(1, VideoSourceConfiguration("rel.mp4"), ())
+        Profile(2, VideoSourceConfiguration("rel.mp4"), ())
 
 
 def test_resolves_unique_name_even_when_saved_index_changed() -> None:

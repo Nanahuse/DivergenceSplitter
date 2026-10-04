@@ -1,7 +1,7 @@
 """Scenario instances editor for the Flet Configuration page.
 
 Each card edits one ``EditableInstanceConfiguration`` through ``SettingsModel``:
-its scenario file and the LiveSplit connection endpoints. Add and remove rebuild
+its scenario file and the LiveSplit host and port. Add and remove rebuild
 the cards so index mapping never drifts. The internal ``instances`` model
 terminology is kept; the UI presents each entry as a Scenario.
 """
@@ -24,8 +24,8 @@ from divergencesplitter_ui.settings import (
 @dataclass
 class InstanceRow:
     number: int
-    rpc: ft.TextField
-    event: ft.TextField
+    host: ft.TextField
+    port: ft.TextField
     scenario: ft.TextField
     browse: ft.OutlinedButton
     remove: ft.OutlinedButton
@@ -82,12 +82,12 @@ class InstancesSection:
         else:
             for index, row in enumerate(self._rows):
                 instance = draft.instances[index]
-                changed |= self._set(row.rpc, instance.rpc_endpoint)
-                changed |= self._set(row.event, instance.event_endpoint)
+                changed |= self._set(row.host, instance.host)
+                changed |= self._set(row.port, instance.port)
                 changed |= self._set(row.scenario, instance.scenario)
         for row in self._rows:
             enabled = permission.instances
-            for control in (row.rpc, row.event, row.scenario, row.browse, row.remove):
+            for control in (row.host, row.port, row.scenario, row.browse, row.remove):
                 changed |= self._set_enabled(control, enabled)
         return changed
 
@@ -114,8 +114,8 @@ class InstancesSection:
                         ),
                         ft.Row(controls=[row.scenario, row.browse], spacing=8),
                         ft.Text("LiveSplit Connection", weight=ft.FontWeight.BOLD),
-                        row.rpc,
-                        row.event,
+                        row.host,
+                        row.port,
                         ft.Row(
                             controls=[row.remove],
                             alignment=ft.MainAxisAlignment.END,
@@ -132,23 +132,23 @@ class InstancesSection:
     def _build_row(self, index: int, instance) -> InstanceRow:
         return InstanceRow(
             number=index + 1,
-            rpc=ft.TextField(
-                label="RPC endpoint",
-                hint_text="ws://127.0.0.1:54000/bridge/v1/rpc",
-                value=instance.rpc_endpoint,
-                on_change=lambda e, i=index: self._model.set_instance_rpc_endpoint(
+            host=ft.TextField(
+                label="Host",
+                hint_text="127.0.0.1",
+                value=instance.host,
+                on_change=lambda e, i=index: self._model.set_instance_host(
                     i, e.control.value
                 ),
-                key=f"profile-rpc-{index}",
+                key=f"profile-host-{index}",
             ),
-            event=ft.TextField(
-                label="Event endpoint",
-                hint_text="ws://127.0.0.1:54000/bridge/v1/events",
-                value=instance.event_endpoint,
-                on_change=lambda e, i=index: self._model.set_instance_event_endpoint(
+            port=ft.TextField(
+                label="Port",
+                hint_text="54000",
+                value=instance.port,
+                on_change=lambda e, i=index: self._model.set_instance_port(
                     i, e.control.value
                 ),
-                key=f"profile-event-{index}",
+                key=f"profile-port-{index}",
             ),
             scenario=ft.TextField(
                 label="Scenario file",

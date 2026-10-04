@@ -410,7 +410,7 @@ class Harness:
         self._log = log
         self.instance = InstanceRuntime(
             0,
-            LiveSplitConnection("rpc", "event"),
+            LiveSplitConnection("rpc", 54000),
             scenario,
             diagnostics=self.diagnostics,
             reconnect_delay_seconds=0.001,
