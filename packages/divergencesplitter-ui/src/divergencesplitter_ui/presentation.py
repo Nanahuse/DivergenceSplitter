@@ -353,13 +353,10 @@ def split_label(split_index: int, run_info: LiveSplitRunInfo | None) -> str:
 
 
 def scenario_label(node: ScenarioNode) -> str:
-    """Format a Scenario node with its LiveSplit destination."""
+    """Format a Scenario node with its LiveSplit Bridge port."""
 
     connection = node.connection
-    return (
-        f"Scenario {node.scenario_index}"
-        f"  rpc={connection.rpc_endpoint}  event={connection.event_endpoint}"
-    )
+    return f"Scenario {node.scenario_index}  port={connection.port}"
 
 
 def detector_label(view: ConditionView) -> str | None:

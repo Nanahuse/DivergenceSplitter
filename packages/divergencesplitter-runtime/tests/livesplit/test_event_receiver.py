@@ -19,15 +19,13 @@ def make_event(sequence: int) -> common_pb2.BridgeEvent:
     return common_pb2.BridgeEvent(
         session_id=1,
         event_sequence=sequence,
-        type=common_pb2.EVENT_STATE_SNAPSHOT,
-        snapshot=common_pb2.TimerSnapshot(
+        type=common_pb2.EVENT_TIMER_SPLIT,
+        timer_state=common_pb2.TimerState(
             session_id=1,
-            event_sequence=sequence,
             state_revision=sequence,
             run_revision=1,
             phase=common_pb2.RUNNING,
             split_index=0,
-            split_count=1,
         ),
     )
 

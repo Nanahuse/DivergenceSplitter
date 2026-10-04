@@ -2,6 +2,7 @@
 
 from divergencesplitter_runtime.livesplit.adapter import (
     ActionExecution,
+    ActionOutcome,
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
 )
@@ -11,9 +12,9 @@ from divergencesplitter_runtime.livesplit.event_receiver import (
     BridgeEventReceiver,
 )
 from divergencesplitter_runtime.livesplit.mapping import (
+    event_update_kind,
     run_info_from_proto,
-    snapshot_from_proto,
-    update_from_proto,
+    snapshot_from_timer_state,
 )
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
@@ -23,10 +24,13 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
+    event_endpoint,
+    rpc_endpoint,
 )
 
 __all__ = [
     "ActionExecution",
+    "ActionOutcome",
     "BridgeEventConnectionLost",
     "BridgeEventReceived",
     "BridgeEventReceiver",
@@ -39,7 +43,9 @@ __all__ = [
     "LiveSplitUpdate",
     "LiveSplitUpdateKind",
     "TimerPhase",
+    "event_endpoint",
+    "event_update_kind",
+    "rpc_endpoint",
     "run_info_from_proto",
-    "snapshot_from_proto",
-    "update_from_proto",
+    "snapshot_from_timer_state",
 ]

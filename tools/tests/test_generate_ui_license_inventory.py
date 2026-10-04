@@ -573,10 +573,10 @@ class TestCheckInventory:
         stored = self.make_expected()
         stored["packages"].append(
             {
-                "name": "pyzmq",
-                "version": "27.2.0",
-                "license": "BSD-3-Clause",
-                "license_text": "pyzmq text",
+                "name": "websocket-client",
+                "version": "1.9.2",
+                "license": "Apache-2.0",
+                "license_text": "websocket-client text",
             }
         )
         self.write_stored(tmp_path, stored)

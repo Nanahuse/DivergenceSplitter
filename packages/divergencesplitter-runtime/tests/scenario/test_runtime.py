@@ -98,7 +98,6 @@ def make_snapshot(
     *,
     session_id: int = 1,
     state_revision: int = 0,
-    event_sequence: int = 0,
     run_revision: int = 1,
     phase: TimerPhase = TimerPhase.RUNNING,
     split_index: int = 0,
@@ -107,7 +106,6 @@ def make_snapshot(
     return LiveSplitSnapshot(
         session_id=session_id,
         state_revision=state_revision,
-        event_sequence=event_sequence,
         run_revision=run_revision,
         phase=phase,
         split_index=split_index,
@@ -238,7 +236,6 @@ class ScenarioRuntimeEvaluationTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=1,
                     state_revision=1,
                     phase=TimerPhase.RUNNING,
                     split_index=0,
@@ -365,7 +362,6 @@ class ScenarioRuntimeEvaluationTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=1,
                     state_revision=1,
                     split_index=1,
                 ),
@@ -405,7 +401,7 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         baseline = (first.resets, second.resets)
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=1, state_revision=1, split_index=1),
+                make_snapshot(state_revision=1, split_index=1),
                 LiveSplitUpdateKind.TRANSITION,
             )
         )
@@ -416,7 +412,6 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=2,
                     state_revision=2,
                     phase=TimerPhase.ENDED,
                     split_index=2,
@@ -434,7 +429,6 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=1,
                     state_revision=1,
                     phase=TimerPhase.PAUSED,
                     split_count=1,
@@ -445,7 +439,6 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=2,
                     state_revision=2,
                     split_count=1,
                 ),
@@ -462,7 +455,6 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=1,
                     state_revision=1,
                     split_count=1,
                 ),
@@ -482,7 +474,6 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=1,
                     state_revision=1,
                     phase=TimerPhase.NOT_RUNNING,
                     split_index=-1,
@@ -497,7 +488,6 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    event_sequence=2,
                     state_revision=2,
                     split_count=1,
                 ),
@@ -515,7 +505,7 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         baseline = condition.resets
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=1, split_count=1),
+                make_snapshot(split_count=1),
                 LiveSplitUpdateKind.RESYNC,
             )
         )
@@ -533,61 +523,85 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
             )
         )
         resets = start.resets
-        for sequence in range(1, 4):
+        for revision in range(1, 4):
             runtime.apply_livesplit_update(
                 update(
                     make_snapshot(
                         phase=TimerPhase.NOT_RUNNING,
                         split_index=-1,
-                        state_revision=1,
-                        event_sequence=sequence,
+                        state_revision=revision,
                     ),
                     LiveSplitUpdateKind.PERIODIC,
                 )
             )
-            runtime.evaluate(context(sequence))
+            runtime.evaluate(context(revision))
         self.assertEqual(start.calls, 3)
         self.assertEqual(start.resets, resets)
         assert runtime.current_snapshot is not None
-        self.assertEqual(runtime.current_snapshot.state_revision, 1)
+        self.assertEqual(runtime.current_snapshot.state_revision, 3)
 
-    def test_same_sequence_resync_releases_wait_for_original_session(self) -> None:
+    def test_same_session_change_is_ignored_without_resync(self) -> None:
         start = RecordingCondition(True)
         runtime = ScenarioRuntime(make_scenario((), start_condition=start))
-        baseline = make_snapshot(phase=TimerPhase.NOT_RUNNING, split_index=-1)
+        baseline = make_snapshot(
+            state_revision=2, phase=TimerPhase.NOT_RUNNING, split_index=-1
+        )
         runtime.apply_livesplit_update(update(baseline))
+        # A mismatched session without a RESYNC must not replace the baseline.
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
                     session_id=2,
+                    state_revision=3,
                     phase=TimerPhase.NOT_RUNNING,
                     split_index=-1,
                 ),
                 LiveSplitUpdateKind.PERIODIC,
             )
         )
-        self.assertIsNone(runtime.evaluate(context()))
-        runtime.apply_livesplit_update(update(baseline, LiveSplitUpdateKind.RESYNC))
+        assert runtime.current_snapshot is not None
+        self.assertEqual(runtime.current_snapshot.session_id, 1)
         self.assertEqual(runtime.evaluate(context()), Action("start"))
+        # A same-revision RESYNC for the original session retains rule state.
+        resets = start.resets
+        runtime.apply_livesplit_update(update(baseline, LiveSplitUpdateKind.RESYNC))
+        self.assertEqual(start.resets, resets)
 
-    def test_gap_stops_evaluation_until_resync(self) -> None:
+    def test_revision_regression_is_ignored_until_resync(self) -> None:
         condition = RecordingCondition(True)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
-        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
+        runtime.apply_livesplit_update(
+            update(make_snapshot(state_revision=2, split_count=1))
+        )
+        runtime.evaluate(context())
+        runtime.action_not_dispatched(Action("split"))
+        resets = condition.resets
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=2, split_count=1),
-                LiveSplitUpdateKind.PERIODIC,
+                make_snapshot(state_revision=1, split_count=1),
+                LiveSplitUpdateKind.TRANSITION,
             )
         )
-        self.assertIsNone(runtime.evaluate(context()))
+        self.assertEqual(condition.resets, resets)
+        assert runtime.current_snapshot is not None
+        self.assertEqual(runtime.current_snapshot.state_revision, 2)
+
+    def test_resync_with_lower_revision_is_ignored(self) -> None:
+        condition = RecordingCondition(False)
+        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
+        runtime.apply_livesplit_update(
+            update(make_snapshot(state_revision=2, split_count=1))
+        )
+        baseline = condition.resets
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=2, split_count=1),
+                make_snapshot(state_revision=1, split_count=1),
                 LiveSplitUpdateKind.RESYNC,
             )
         )
-        self.assertEqual(runtime.evaluate(context()), Action(operation="split"))
+        self.assertEqual(condition.resets, baseline)
+        assert runtime.current_snapshot is not None
+        self.assertEqual(runtime.current_snapshot.state_revision, 2)
 
     def test_session_change_requires_resync_and_resets_all(self) -> None:
         condition = RecordingCondition(False)
@@ -603,38 +617,58 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         self.assertIsNone(runtime.evaluate(context()))
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(session_id=2, split_count=1),
+                make_snapshot(session_id=2, state_revision=1, split_count=1),
                 LiveSplitUpdateKind.RESYNC,
             )
         )
         self.assertEqual(condition.resets, baseline + 1)
 
-    def test_periodic_duplicate_and_out_of_order_updates_do_not_reset(self) -> None:
+    def test_duplicate_and_regressed_revision_do_not_reset(self) -> None:
         condition = RecordingCondition(False)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
         runtime.apply_livesplit_update(
-            update(make_snapshot(event_sequence=2, split_count=1))
+            update(make_snapshot(state_revision=2, split_count=1))
         )
         baseline = condition.resets
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=3, split_count=1),
+                make_snapshot(state_revision=3, split_count=1),
                 LiveSplitUpdateKind.PERIODIC,
             )
         )
+        # Same revision as already applied: ignored.
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=3, split_count=1),
+                make_snapshot(state_revision=3, split_count=1),
                 LiveSplitUpdateKind.TRANSITION,
             )
         )
+        # Revisions only advance; a lower revision is ignored.
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=1, split_count=1),
+                make_snapshot(state_revision=1, split_count=1),
                 LiveSplitUpdateKind.TRANSITION,
             )
         )
         self.assertEqual(condition.resets, baseline)
+
+    def test_same_revision_run_change_applies(self) -> None:
+        reset = RecordingCondition(False)
+        main = RecordingCondition(False)
+        runtime = ScenarioRuntime(
+            make_scenario(((make_rule(main),),), reset_conditions=(reset,))
+        )
+        runtime.apply_livesplit_update(
+            update(make_snapshot(state_revision=2, run_revision=1, split_count=1))
+        )
+        baseline = (reset.resets, main.resets)
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(state_revision=2, run_revision=2, split_count=1),
+                LiveSplitUpdateKind.PERIODIC,
+            )
+        )
+        self.assertEqual((reset.resets, main.resets), (baseline[0], baseline[1] + 1))
 
     def test_too_many_slots_stop_evaluation_until_valid_resync(self) -> None:
         condition = RecordingCondition(True)
@@ -643,7 +677,7 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         self.assertIsNone(runtime.evaluate(context()))
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=1, split_count=3),
+                make_snapshot(state_revision=1, split_count=3),
                 LiveSplitUpdateKind.RESYNC,
             )
         )
@@ -659,7 +693,7 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         baseline = (reset.resets, main.resets)
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(event_sequence=1, split_count=2),
+                make_snapshot(state_revision=1, run_revision=2, split_count=2),
                 LiveSplitUpdateKind.RESYNC,
             )
         )

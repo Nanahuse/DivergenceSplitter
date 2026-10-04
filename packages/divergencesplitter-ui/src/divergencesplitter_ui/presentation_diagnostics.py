@@ -104,12 +104,11 @@ class DiagnosticsGroupView:
 
 @dataclass(frozen=True)
 class DiagnosticsConnectionView:
-    """One scenario's LiveSplit destination and connection outcome."""
+    """One scenario's LiveSplit Bridge port and connection outcome."""
 
     state: InstanceRuntimeState | None
     status_label: str
-    rpc_endpoint: str
-    event_endpoint: str
+    port: int
     error_label: str
     has_error: bool
 
@@ -226,8 +225,7 @@ def _connection_view(
         return DiagnosticsConnectionView(
             state=None,
             status_label="—",
-            rpc_endpoint=scenario.connection.rpc_endpoint,
-            event_endpoint=scenario.connection.event_endpoint,
+            port=scenario.connection.port,
             error_label=NO_ERROR_LABEL,
             has_error=False,
         )
@@ -235,8 +233,7 @@ def _connection_view(
     return DiagnosticsConnectionView(
         state=status.state,
         status_label=instance_state_label(status.state),
-        rpc_endpoint=scenario.connection.rpc_endpoint,
-        event_endpoint=scenario.connection.event_endpoint,
+        port=scenario.connection.port,
         error_label=status.error if status.error else NO_ERROR_LABEL,
         has_error=has_error,
     )

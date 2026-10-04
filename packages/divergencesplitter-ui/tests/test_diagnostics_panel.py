@@ -88,7 +88,7 @@ def reference_detector() -> Detected:
 
 def instance(index: int, condition: Detected) -> ScenarioInstance:
     return ScenarioInstance(
-        LiveSplitConnection(f"tcp://rpc:{index}", f"tcp://event:{index}"),
+        LiveSplitConnection(54000 + index),
         Scenario(
             start_condition=Detected(MeanBrightnessDetector(), 0.9),
             reset_condition=None,
@@ -159,8 +159,8 @@ class TestLazyMaterialization:
         assert "Scenario 0" in texts
         assert "Connection" in texts
         assert "Connected" in texts
-        assert "tcp://rpc:0" in texts
-        assert "tcp://event:0" in texts
+        assert "Port" in texts
+        assert "54000" in texts
         assert "Start" in texts
         assert "Split 0" in texts
         assert "Rule 0 (split)" in texts

@@ -67,12 +67,14 @@ higher values indicating a stronger response. Custom detectors are not
 required to use this range.
 
 Scenarios do not carry a LiveSplit connection; the JSON configuration pairs
-each scenario with a connection destination. The JSON configuration selects the
-frame source and one or more connection/scenario instances independently:
+each scenario with a LiveSplit Bridge port. The JSON configuration selects the
+frame source and one or more connection/scenario instances independently. The
+Profile schema is version `2` and stores only the LiveSplit Bridge WebSocket
+port per instance:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "video",
     "path": "./run.mp4"
@@ -80,17 +82,17 @@ frame source and one or more connection/scenario instances independently:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
-  ],
-  "runtime": {
-    "log_level": "DEBUG"
-  }
+  ]
 }
 ```
+
+A version `1` Profile is migrated on load: the port is derived from the legacy
+RPC endpoint, and the next save writes the version `2` form. A legacy document
+whose port cannot be derived unambiguously is rejected instead of guessed.
 
 A scenario may also be written as YAML (`scenario.yaml`). The loader is chosen
 from the file extension: `.py` for Python, `.yaml`/`.yml` for YAML. A YAML
@@ -187,7 +189,7 @@ enumeration ID to disambiguate devices with the same name:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "camera",
     "device": {
@@ -205,15 +207,11 @@ enumeration ID to disambiguate devices with the same name:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
-  ],
-  "runtime": {
-    "log_level": "DEBUG"
-  }
+  ]
 }
 ```
 
@@ -225,7 +223,7 @@ name match is accepted even if its index changed. If several devices have the
 same name within one backend, the saved index must match one of them. Capture
 modes must be present in the current enumeration and are never substituted.
 Relative scenario and video paths are resolved from the configuration file's
-directory. The configuration version remains `1`.
+directory. The Profile version is `2`.
 
 Before using a camera/backend combination in production, manually confirm that
 it opens, continuously captures frames, releases the device on shutdown, and
@@ -244,7 +242,7 @@ technology at [ndi.video](https://ndi.video/):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "ndi",
     "name": "Gaming PC (OBS)",
@@ -253,15 +251,11 @@ technology at [ndi.video](https://ndi.video/):
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
-  ],
-  "runtime": {
-    "log_level": "DEBUG"
-  }
+  ]
 }
 ```
 
@@ -299,13 +293,18 @@ NDI® is a registered trademark of Vizrt NDI AB.
 
 ## LiveSplit Bridge constraints
 
-Run a compatible LiveSplit.Bridge instance at the endpoints configured by each
-scenario. The runtime uses synchronous Bridge calls on a dedicated worker per
-connection, so capture and processing do not wait for network responses.
-Actions are checked against a fresh snapshot and are never blindly retried.
-The current protocol does not provide atomic compare-and-act, so an external
-LiveSplit operation can still race between that snapshot and the action. A
-timeout after sending an action is reported as an unknown result, not retried.
+Run a LiveSplit.Bridge instance exposing Protocol v2 on the WebSocket port each
+scenario is configured with. The runtime connects to the RPC endpoint
+`ws://127.0.0.1:<port>/bridge/v2/rpc` and subscribes to
+`ws://127.0.0.1:<port>/bridge/v2/events`; only the port is stored in the
+Profile. The runtime uses synchronous Bridge calls on a dedicated instance
+thread per connection, so capture and processing do not wait for network
+responses. Timer state is taken from the Protocol v2 `TimerState` and Run
+segments from `RunState`; `event_sequence` continuity is tracked by the Bridge
+adapter so scenarios only ever see an authoritative LiveSplit state. Actions
+are checked against the current state and are never blindly retried. When an
+operation succeeds, its `OperationResponse.timer_state` is applied immediately.
+A timeout after sending an action is reported as an unknown result, not retried.
 
 ## Performance
 

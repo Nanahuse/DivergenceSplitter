@@ -44,7 +44,7 @@ from divergencesplitter_ui.presentation_overview import (
 
 def make_instance(*, start, reset=None, incomplete=None, splits=()) -> ScenarioInstance:
     return ScenarioInstance(
-        connection=LiveSplitConnection("rpc", "event"),
+        connection=LiveSplitConnection(54000),
         scenario=Scenario(start, reset, incomplete, splits),
     )
 

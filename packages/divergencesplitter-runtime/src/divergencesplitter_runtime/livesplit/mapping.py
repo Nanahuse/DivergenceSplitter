@@ -1,4 +1,4 @@
-"""Convert LiveSplit.Bridge protobuf messages into runtime models."""
+"""Convert LiveSplit.Bridge Protocol v2 protobuf messages into runtime models."""
 
 from livesplit_bridge import common_pb2, run_pb2
 
@@ -6,12 +6,11 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitRunInfo,
     LiveSplitSegmentInfo,
     LiveSplitSnapshot,
-    LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
 )
 
-_PHASES = {
+_PHASES: dict[int, TimerPhase] = {
     common_pb2.NOT_RUNNING: TimerPhase.NOT_RUNNING,
     common_pb2.STARTING: TimerPhase.STARTING,
     common_pb2.RUNNING: TimerPhase.RUNNING,
@@ -38,29 +37,40 @@ _PERIODIC_EVENTS = frozenset(
         common_pb2.EVENT_GAME_TIME_SET,
         common_pb2.EVENT_GAME_TIME_PAUSED,
         common_pb2.EVENT_GAME_TIME_RESUMED,
-        common_pb2.EVENT_STATE_SNAPSHOT,
     )
 )
 
+# Runtime-only changes advance the event cursor but do not change the state the
+# scenario rules evaluate, so they produce no scenario transition.
+_IGNORED_EVENTS = frozenset((common_pb2.EVENT_RUNTIME_CHANGED,))
 
-def snapshot_from_proto(snapshot: common_pb2.TimerSnapshot) -> LiveSplitSnapshot:
+
+def phase_from_proto(phase_value: int) -> TimerPhase:
     try:
-        phase = _PHASES[snapshot.phase]
+        return _PHASES[phase_value]
     except KeyError:
-        phase_name = common_pb2.TimerPhase.Name(snapshot.phase)
+        phase_name = common_pb2.TimerPhase.Name(phase_value)
         raise ValueError(f"unsupported timer phase: {phase_name}") from None
+
+
+def snapshot_from_timer_state(
+    timer_state: common_pb2.TimerState,
+    *,
+    split_count: int,
+) -> LiveSplitSnapshot:
+    """Convert a Protocol v2 ``TimerState`` plus a run-derived split count."""
+
     return LiveSplitSnapshot(
-        session_id=snapshot.session_id,
-        state_revision=snapshot.state_revision,
-        event_sequence=snapshot.event_sequence,
-        run_revision=snapshot.run_revision,
-        phase=phase,
-        split_index=snapshot.split_index,
-        split_count=snapshot.split_count,
+        session_id=timer_state.session_id,
+        state_revision=timer_state.state_revision,
+        run_revision=timer_state.run_revision,
+        phase=phase_from_proto(timer_state.phase),
+        split_index=timer_state.split_index,
+        split_count=split_count,
     )
 
 
-def run_info_from_proto(run: run_pb2.RunSnapshot) -> LiveSplitRunInfo:
+def run_info_from_proto(run: run_pb2.RunState) -> LiveSplitRunInfo:
     return LiveSplitRunInfo(
         session_id=run.session_id,
         run_revision=run.run_revision,
@@ -71,19 +81,14 @@ def run_info_from_proto(run: run_pb2.RunSnapshot) -> LiveSplitRunInfo:
     )
 
 
-def update_from_proto(event: common_pb2.BridgeEvent) -> LiveSplitUpdate:
-    if not event.HasField("snapshot"):
-        raise ValueError("Bridge event has no snapshot")
-    if event.session_id != event.snapshot.session_id:
-        raise ValueError("Bridge event and snapshot session IDs do not match")
-    if event.event_sequence != event.snapshot.event_sequence:
-        raise ValueError("Bridge event and snapshot sequences do not match")
+def event_update_kind(event_type: int) -> LiveSplitUpdateKind | None:
+    """Classify one state event, or ``None`` when it carries no scenario change."""
 
-    if event.type in _TRANSITION_EVENTS:
-        kind = LiveSplitUpdateKind.TRANSITION
-    elif event.type in _PERIODIC_EVENTS:
-        kind = LiveSplitUpdateKind.PERIODIC
-    else:
-        event_name = common_pb2.BridgeEventType.Name(event.type)
-        raise ValueError(f"unsupported Bridge event type: {event_name}")
-    return LiveSplitUpdate(kind=kind, snapshot=snapshot_from_proto(event.snapshot))
+    if event_type in _TRANSITION_EVENTS:
+        return LiveSplitUpdateKind.TRANSITION
+    if event_type in _PERIODIC_EVENTS:
+        return LiveSplitUpdateKind.PERIODIC
+    if event_type in _IGNORED_EVENTS:
+        return None
+    event_name = common_pb2.BridgeEventType.Name(event_type)
+    raise ValueError(f"unsupported Bridge event type: {event_name}")

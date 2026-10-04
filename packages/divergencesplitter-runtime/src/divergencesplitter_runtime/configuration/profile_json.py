@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import assert_never
+from urllib.parse import urlsplit
 
 from divergencesplitter.livesplit.models import LiveSplitConnection
 
@@ -46,18 +47,29 @@ from divergencesplitter_runtime.configuration.strict_json import (
 
 
 def load_profile(path: str | Path) -> Profile:
-    """Load one versioned Profile file."""
+    """Load one versioned Profile file, migrating a version 1 document.
+
+    A version 1 Profile stored the two Protocol v1 ZeroMQ endpoints. The
+    migration derives the Protocol v2 WebSocket port from the legacy RPC
+    endpoint and rejects any legacy document whose port cannot be derived
+    unambiguously. The returned value is always a version 2 Profile, so the next
+    save writes the new port form.
+    """
 
     value = load_json_document(path)
     try:
         root = object_value(value, "profile")
         check_keys(root, required={"version", "source", "instances"})
         version = integer_value(root["version"], "version")
-        if version != PROFILE_VERSION:
-            raise ValueError(f"unsupported profile version: {version!r}")
-        source = _source(root["source"])
-        instances = _instances(root["instances"])
-        return Profile(version, source, instances)
+        if version == 1:
+            source = _source(root["source"])
+            instances = _instances_v1(root["instances"])
+        else:
+            if version != PROFILE_VERSION:
+                raise ValueError(f"unsupported profile version: {version!r}")
+            source = _source(root["source"])
+            instances = _instances(root["instances"])
+        return Profile(PROFILE_VERSION, source, instances)
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationValidationError(str(error)) from error
 
@@ -81,8 +93,7 @@ def _dump(profile: Profile) -> str:
 def _instance_dict(instance: InstanceConfiguration) -> dict[str, object]:
     return {
         "connection": {
-            "rpc_endpoint": instance.connection.rpc_endpoint,
-            "event_endpoint": instance.connection.event_endpoint,
+            "port": instance.connection.port,
         },
         "scenario": instance.scenario,
     }
@@ -192,11 +203,39 @@ def _instance(value: object, index: int) -> InstanceConfiguration:
 
 def _connection(value: object, path: str) -> LiveSplitConnection:
     connection = object_value(value, path)
+    check_keys(connection, required={"port"})
+    return LiveSplitConnection(integer_value(connection["port"], f"{path}.port"))
+
+
+def _instances_v1(value: object) -> tuple[InstanceConfiguration, ...]:
+    instances = array_value(value, "instances")
+    return tuple(_instance_v1(item, index) for index, item in enumerate(instances))
+
+
+def _instance_v1(value: object, index: int) -> InstanceConfiguration:
+    prefix = f"instances[{index}]"
+    instance = object_value(value, prefix)
+    check_keys(instance, required={"connection", "scenario"})
+    connection = object_value(instance["connection"], f"{prefix}.connection")
     check_keys(connection, required={"rpc_endpoint", "event_endpoint"})
-    return LiveSplitConnection(
-        string_value(connection["rpc_endpoint"], f"{path}.rpc_endpoint"),
-        string_value(connection["event_endpoint"], f"{path}.event_endpoint"),
-    )
+    port = _legacy_port(connection["rpc_endpoint"], f"{prefix}.connection.rpc_endpoint")
+    scenario = string_value(instance["scenario"], f"{prefix}.scenario")
+    return InstanceConfiguration(LiveSplitConnection(port), scenario)
+
+
+def _legacy_port(value: object, path: str) -> int:
+    endpoint = string_value(value, path)
+    try:
+        port = urlsplit(endpoint).port
+    except ValueError as error:
+        raise ValueError(
+            f"{path} is not a usable legacy endpoint: {endpoint!r}"
+        ) from error
+    if port is None:
+        raise ValueError(
+            f"{path} does not contain a port and cannot be migrated: {endpoint!r}"
+        )
+    return port
 
 
 def _transform_dict(transform: SourceTransformConfiguration) -> dict[str, object]:

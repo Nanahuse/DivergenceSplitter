@@ -58,6 +58,7 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
+    event_endpoint,
 )
 from divergencesplitter_runtime.scenario import ScenarioRuntime
 
@@ -326,7 +327,7 @@ class InstanceRuntime:
 
     def _create_subscriber(self) -> BridgeEventSubscriber:
         return BridgeEventSubscriber(
-            self.connection.event_endpoint,
+            event_endpoint(self.connection),
             heartbeat_timeout_ms=self._heartbeat_timeout_ms,
         )
 
@@ -503,12 +504,14 @@ class InstanceRuntime:
             return None
         action = Action("reset")
         result = adapter.execute_action(action, expected)
-        if result is ActionExecution.NOT_DISPATCHED:
+        if result.execution is ActionExecution.NOT_DISPATCHED:
             runtime.action_not_dispatched(action)
-        elif result is ActionExecution.UNKNOWN:
+        elif result.execution is ActionExecution.UNKNOWN:
             self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
             return _Attempt.CONNECTION_LOST
         else:
+            if result.update is not None:
+                self._apply_update(result.update)
             self._publish_reset()
         return None
 
@@ -656,11 +659,13 @@ class InstanceRuntime:
     ) -> _Attempt | None:
         self._publish_reaction(action, captured_at_ns)
         result = adapter.execute_action(action, expected)
-        if result is ActionExecution.NOT_DISPATCHED:
+        if result.execution is ActionExecution.NOT_DISPATCHED:
             runtime.action_not_dispatched(action)
-        elif result is ActionExecution.UNKNOWN:
+        elif result.execution is ActionExecution.UNKNOWN:
             self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
             return _Attempt.CONNECTION_LOST
+        elif result.update is not None:
+            self._apply_update(result.update)
         return None
 
     def _wait_for_reaction(self, timeout_ns: int) -> None:

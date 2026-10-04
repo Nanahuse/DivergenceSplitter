@@ -45,6 +45,7 @@ from divergencesplitter_runtime.instance_runtime import (
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit import (
     ActionExecution,
+    ActionOutcome,
     BridgeEventConnectionLost,
     BridgeEventReceived,
     BridgeEventReceiver,
@@ -79,6 +80,7 @@ from divergencesplitter_runtime.scenario import ScenarioRuntime
 
 __all__ = [
     "ActionExecution",
+    "ActionOutcome",
     "AllInstancesFailedError",
     "AppSettings",
     "ApplicationDiagnostics",

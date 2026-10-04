@@ -19,6 +19,7 @@ from divergencesplitter import (
 )
 from divergencesplitter_runtime import (
     ActionExecution,
+    ActionOutcome,
     LiveSplitResyncReason,
     LiveSplitRunInfo,
     LiveSplitSnapshot,
@@ -27,6 +28,7 @@ from divergencesplitter_runtime import (
     PublishResult,
     TimerPhase,
 )
+from divergencesplitter_runtime.livesplit import event_endpoint
 from livesplit_bridge import BridgeConnectionLostError
 
 
@@ -34,7 +36,6 @@ def snapshot(
     *,
     session_id: int = 1,
     state_revision: int = 0,
-    event_sequence: int = 0,
     run_revision: int = 1,
     phase: TimerPhase = TimerPhase.RUNNING,
     split_index: int = 0,
@@ -43,7 +44,6 @@ def snapshot(
     return LiveSplitSnapshot(
         session_id=session_id,
         state_revision=state_revision,
-        event_sequence=event_sequence,
         run_revision=run_revision,
         phase=phase,
         split_index=split_index,
@@ -115,7 +115,7 @@ class BridgeScript:
         self,
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
-    ) -> ActionExecution:
+    ) -> ActionOutcome:
         with self._condition:
             actual = self._snapshot
             self.actions.append((action, expected_snapshot))
@@ -123,11 +123,12 @@ class BridgeScript:
             if expected_snapshot != actual:
                 self.snapshot_mismatches.append((expected_snapshot, actual))
                 self._condition.notify_all()
-                return ActionExecution.NOT_DISPATCHED
+                return ActionOutcome(ActionExecution.NOT_DISPATCHED)
+            update: LiveSplitUpdate | None = None
             if self._apply_actions:
-                self._apply_action_locked(action)
+                update = self._apply_action_locked(action)
             self._condition.notify_all()
-        return ActionExecution.DISPATCHED
+        return ActionOutcome(ActionExecution.DISPATCHED, update)
 
     def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
         del reason
@@ -189,7 +190,7 @@ class BridgeScript:
             self._events.append(item)
             self._condition.notify_all()
 
-    def _apply_action_locked(self, action: Action) -> None:
+    def _apply_action_locked(self, action: Action) -> LiveSplitUpdate | None:
         current = self._snapshot
         if action.operation == "split":
             destination = current.split_index + 1
@@ -198,45 +199,47 @@ class BridgeScript:
                 if destination == current.split_count
                 else TimerPhase.RUNNING
             )
-            self._publish_transition_locked(phase=phase, split_index=destination)
+            update = self._publish_transition_locked(
+                phase=phase, split_index=destination
+            )
             if phase is TimerPhase.ENDED:
                 self.ended.set()
-            return
+            return update
         if action.operation == "undo":
             destination = (
                 current.split_count - 1
                 if current.phase is TimerPhase.ENDED
                 else current.split_index - 1
             )
-            self._publish_transition_locked(
+            return self._publish_transition_locked(
                 phase=TimerPhase.RUNNING,
                 split_index=destination,
             )
-            return
         if action.operation == "reset":
-            self._publish_transition_locked(
+            return self._publish_transition_locked(
                 phase=TimerPhase.NOT_RUNNING,
                 split_index=-1,
             )
+        return None
 
     def _publish_transition_locked(
         self,
         *,
         phase: TimerPhase,
         split_index: int,
-    ) -> None:
+    ) -> LiveSplitUpdate:
         current = self._snapshot
         self._snapshot = snapshot(
             session_id=current.session_id,
             state_revision=current.state_revision + 1,
-            event_sequence=current.event_sequence + 1,
+            run_revision=current.run_revision,
             phase=phase,
             split_index=split_index,
             split_count=current.split_count,
         )
-        self._events.append(
-            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, self._snapshot)
-        )
+        update = LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, self._snapshot)
+        self._events.append(update)
+        return update
 
 
 class ScriptedBridgeAdapter:
@@ -272,7 +275,7 @@ class ScriptedBridgeAdapter:
         self,
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
-    ) -> ActionExecution:
+    ) -> ActionOutcome:
         return self._script.execute_action(action, expected_snapshot)
 
     def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
@@ -292,13 +295,13 @@ class ScriptedEventSubscriber:
 
     def __init__(
         self,
-        event_endpoint: str = "",
+        endpoint: str = "",
         **_: object,
     ) -> None:
         self._script = next(
             script
             for connection, script in ScriptedBridgeAdapter.scripts.items()
-            if connection.event_endpoint == event_endpoint
+            if event_endpoint(connection) == endpoint
         )
 
     def receive(

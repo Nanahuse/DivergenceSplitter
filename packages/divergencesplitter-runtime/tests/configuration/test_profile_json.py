@@ -43,7 +43,7 @@ def profile_document(
     *,
     source: dict[str, object] | None = None,
     instances: list[dict[str, object]] | None = None,
-    version: object = 1,
+    version: object = 2,
 ) -> dict[str, object]:
     document: dict[str, object] = {
         "version": version,
@@ -64,10 +64,7 @@ def profile_document(
         if instances is not None
         else [
             {
-                "connection": {
-                    "rpc_endpoint": "tcp://127.0.0.1:54000",
-                    "event_endpoint": "tcp://127.0.0.1:54001",
-                },
+                "connection": {"port": 54000},
                 "scenario": str(base / "scenario.py"),
             }
         ],
@@ -94,7 +91,7 @@ def test_loads_camera_profile(tmp_path: Path) -> None:
 
     profile = load_profile(path)
 
-    assert profile.version == 1
+    assert profile.version == 2
     assert profile.source == CameraSourceConfiguration(
         CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
         CameraModeConfiguration(
@@ -104,24 +101,17 @@ def test_loads_camera_profile(tmp_path: Path) -> None:
     )
     assert len(profile.instances) == 1
     assert profile.instances[0].scenario == str(tmp_path / "scenario.py")
-    assert profile.instances[0].connection.rpc_endpoint == "tcp://127.0.0.1:54000"
-    assert profile.instances[0].connection.event_endpoint == "tcp://127.0.0.1:54001"
+    assert profile.instances[0].connection.port == 54000
 
 
 def test_loads_multiple_instances(tmp_path: Path) -> None:
     instances: list[dict[str, object]] = [
         {
-            "connection": {
-                "rpc_endpoint": "tcp://127.0.0.1:54000",
-                "event_endpoint": "tcp://127.0.0.1:54001",
-            },
+            "connection": {"port": 54000},
             "scenario": str(tmp_path / "main.yaml"),
         },
         {
-            "connection": {
-                "rpc_endpoint": "tcp://127.0.0.1:54100",
-                "event_endpoint": "tcp://127.0.0.1:54101",
-            },
+            "connection": {"port": 54100},
             "scenario": str(tmp_path / "sub.py"),
         },
     ]
@@ -134,7 +124,7 @@ def test_loads_multiple_instances(tmp_path: Path) -> None:
         str(tmp_path / "main.yaml"),
         str(tmp_path / "sub.py"),
     ]
-    assert profile.instances[1].connection.rpc_endpoint == "tcp://127.0.0.1:54100"
+    assert profile.instances[1].connection.port == 54100
 
 
 def test_loads_video_profile(tmp_path: Path) -> None:
@@ -159,7 +149,7 @@ def test_loads_ndi_profile(tmp_path: Path) -> None:
 
     profile = load_profile(path)
 
-    assert profile.version == 1
+    assert profile.version == 2
     assert profile.source == NdiSourceConfiguration("Gaming PC (OBS)")
 
 
@@ -283,7 +273,7 @@ def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
     if mutation == "unknown root":
         value["unknown"] = 1
     elif mutation == "unknown version":
-        value["version"] = 2
+        value["version"] = 3
     elif mutation == "unknown source":
         value["source"] = {"type": "sdi"}
     elif mutation == "unknown camera field":
@@ -332,10 +322,7 @@ def test_rejects_relative_scenario_path(tmp_path: Path, scenario: str) -> None:
         tmp_path,
         instances=[
             {
-                "connection": {
-                    "rpc_endpoint": "tcp://127.0.0.1:54000",
-                    "event_endpoint": "tcp://127.0.0.1:54001",
-                },
+                "connection": {"port": 54000},
                 "scenario": scenario,
             }
         ],
@@ -359,12 +346,95 @@ def test_profile_model_requires_absolute_paths() -> None:
 
     with pytest.raises(ValueError):
         Profile(
-            1,
+            2,
             NdiSourceConfiguration("source"),
-            (InstanceConfiguration(LiveSplitConnection("rpc", "event"), "rel.py"),),
+            (InstanceConfiguration(LiveSplitConnection(54000), "rel.py"),),
         )
     with pytest.raises(ValueError):
-        Profile(1, VideoSourceConfiguration("rel.mp4"), ())
+        Profile(2, VideoSourceConfiguration("rel.mp4"), ())
+
+
+@pytest.mark.parametrize("port", [0, 65536, -1, "54000", 54000.0, True])
+def test_port_range_and_type_are_validated(tmp_path: Path, port: object) -> None:
+    value = profile_document(
+        tmp_path,
+        instances=[
+            {
+                "connection": {"port": port},
+                "scenario": str(tmp_path / "scenario.py"),
+            }
+        ],
+    )
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
+
+
+def _legacy_document(
+    base: Path,
+    *,
+    rpc_endpoint: str = "tcp://127.0.0.1:54000",
+    event_endpoint: str = "tcp://127.0.0.1:54001",
+) -> dict[str, object]:
+    return profile_document(
+        base,
+        version=1,
+        instances=[
+            {
+                "connection": {
+                    "rpc_endpoint": rpc_endpoint,
+                    "event_endpoint": event_endpoint,
+                },
+                "scenario": str(base / "scenario.py"),
+            }
+        ],
+    )
+
+
+def test_legacy_profile_migrates_rpc_port(tmp_path: Path) -> None:
+    profile = load_profile(_write_profile(tmp_path, _legacy_document(tmp_path)))
+
+    assert profile.version == 2
+    assert profile.instances[0].connection.port == 54000
+
+
+def test_migrated_profile_saves_only_version_2(tmp_path: Path) -> None:
+    profile = load_profile(_write_profile(tmp_path, _legacy_document(tmp_path)))
+    saved = tmp_path / "saved.json"
+
+    save_profile(saved, profile)
+
+    document = json.loads(saved.read_text(encoding="utf-8"))
+    assert document["version"] == 2
+    assert document["instances"][0]["connection"] == {"port": 54000}
+
+
+@pytest.mark.parametrize(
+    "rpc_endpoint",
+    [
+        "tcp://127.0.0.1",
+        "127.0.0.1:54000",
+        "not-an-endpoint",
+        "tcp://127.0.0.1:70000",
+    ],
+)
+def test_legacy_profile_without_usable_port_is_rejected(
+    tmp_path: Path, rpc_endpoint: str
+) -> None:
+    value = _legacy_document(tmp_path, rpc_endpoint=rpc_endpoint)
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
+
+
+def test_legacy_profile_requires_both_legacy_endpoints(tmp_path: Path) -> None:
+    value = _legacy_document(tmp_path)
+    instance = cast(list[dict[str, object]], value["instances"])[0]
+    connection = cast(dict[str, object], instance["connection"])
+    del connection["event_endpoint"]
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
 
 
 def test_resolves_unique_name_even_when_saved_index_changed() -> None:

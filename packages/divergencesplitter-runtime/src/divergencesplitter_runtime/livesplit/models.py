@@ -1,7 +1,25 @@
-"""LiveSplit runtime data models."""
+"""LiveSplit runtime data models and derived endpoint helpers."""
 
 from dataclasses import dataclass
 from enum import Enum, auto
+
+from divergencesplitter.livesplit.models import LiveSplitConnection
+
+BRIDGE_HOST = "127.0.0.1"
+RPC_PATH = "/bridge/v2/rpc"
+EVENTS_PATH = "/bridge/v2/events"
+
+
+def rpc_endpoint(connection: LiveSplitConnection) -> str:
+    """Return the Protocol v2 RPC WebSocket endpoint for one connection."""
+
+    return f"ws://{BRIDGE_HOST}:{connection.port}{RPC_PATH}"
+
+
+def event_endpoint(connection: LiveSplitConnection) -> str:
+    """Return the Protocol v2 Events WebSocket endpoint for one connection."""
+
+    return f"ws://{BRIDGE_HOST}:{connection.port}{EVENTS_PATH}"
 
 
 class TimerPhase(Enum):
@@ -21,7 +39,6 @@ def _require_non_negative_integer(name: str, value: int) -> None:
 class LiveSplitSnapshot:
     session_id: int
     state_revision: int
-    event_sequence: int
     run_revision: int
     phase: TimerPhase
     split_index: int
@@ -31,7 +48,6 @@ class LiveSplitSnapshot:
         for name in (
             "session_id",
             "state_revision",
-            "event_sequence",
             "run_revision",
             "split_count",
         ):

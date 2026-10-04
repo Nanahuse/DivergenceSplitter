@@ -45,17 +45,16 @@ def sample_profile(
     *,
     video_path: Path,
     scenario_path: Path,
-    rpc_endpoint: str = "tcp://127.0.0.1:54000",
-    event_endpoint: str = "tcp://127.0.0.1:54001",
+    port: int = 54000,
 ) -> Profile:
     """Build a valid single-instance video Profile at absolute paths."""
 
     return Profile(
-        version=1,
+        version=2,
         source=VideoSourceConfiguration(str(video_path)),
         instances=(
             InstanceConfiguration(
-                LiveSplitConnection(rpc_endpoint, event_endpoint),
+                LiveSplitConnection(port),
                 str(scenario_path),
             ),
         ),

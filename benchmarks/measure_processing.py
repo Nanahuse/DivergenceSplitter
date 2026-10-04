@@ -547,10 +547,7 @@ def _execute_case(
     recorders = tuple(_DetectorRecorder() for _ in range(case.instances))
     instances = tuple(
         ScenarioInstance(
-            connection=LiveSplitConnection(
-                f"benchmark-rpc-{index}",
-                f"benchmark-event-{index}",
-            ),
+            connection=LiveSplitConnection(54100 + index),
             scenario=_build_scenario(case, recorders[index]),
         )
         for index in range(case.instances)
@@ -564,7 +561,6 @@ def _execute_case(
     snapshot = LiveSplitSnapshot(
         session_id=1,
         state_revision=0,
-        event_sequence=0,
         run_revision=1,
         phase=TimerPhase.RUNNING,
         split_index=0,

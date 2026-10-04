@@ -79,12 +79,11 @@ class EmptyCameraEnumerator:
 
 
 def instance(
-    rpc_endpoint: str,
-    event_endpoint: str,
+    port: int,
     scenario: str,
 ) -> InstanceConfiguration:
     return InstanceConfiguration(
-        LiveSplitConnection(rpc_endpoint, event_endpoint),
+        LiveSplitConnection(port),
         scenario,
     )
 
@@ -93,7 +92,7 @@ def camera_profile(
     *instances: InstanceConfiguration,
 ) -> Profile:
     return Profile(
-        version=1,
+        version=2,
         source=CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
             CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
@@ -107,7 +106,7 @@ def video_profile(
     *instances: InstanceConfiguration,
 ) -> Profile:
     return Profile(
-        version=1,
+        version=2,
         source=VideoSourceConfiguration(p("run.mp4")),
         instances=tuple(instances),
     )
@@ -117,7 +116,7 @@ def ndi_profile(
     *instances: InstanceConfiguration,
 ) -> Profile:
     return Profile(
-        version=1,
+        version=2,
         source=NdiSourceConfiguration("Gaming PC (OBS)"),
         instances=tuple(instances),
     )
@@ -125,9 +124,9 @@ def ndi_profile(
 
 def multi_profile() -> Profile:
     return video_profile(
-        instance("rpc_1", "event_1", p("one.py")),
-        instance("rpc_2", "event_2", p("two.py")),
-        instance("rpc_3", "event_3", p("three.py")),
+        instance(54000, p("one.py")),
+        instance(54001, p("two.py")),
+        instance(54002, p("three.py")),
     )
 
 
@@ -138,7 +137,7 @@ def make_model(
 ) -> SettingsModel:
     model = SettingsModel(FakeCameraEnumerator())
     model.open_profile(
-        profile or camera_profile(instance("rpc", "event", p("scenario.py"))),
+        profile or camera_profile(instance(54000, p("scenario.py"))),
         path,
     )
     return model
@@ -201,7 +200,7 @@ class TestSettingsModel:
         model = SettingsModel(FakeCameraEnumerator())
         path = Path("config.json")
         opened = model.open_profile(
-            camera_profile(instance("rpc", "event", p("scenario.py"))),
+            camera_profile(instance(54000, p("scenario.py"))),
             path,
         )
 
@@ -224,7 +223,7 @@ class TestSettingsModel:
 
     def test_video_source_is_preserved_by_camera_edits(self) -> None:
         configuration = video_profile(
-            instance("rpc", "event", p("scenario.py")),
+            instance(54000, p("scenario.py")),
         )
         model = SettingsModel(FakeCameraEnumerator())
         draft = model.open_profile(configuration, Path("config.json"))
@@ -277,8 +276,7 @@ class TestSettingsModel:
         model.set_source_type(SourceType.VIDEO)
         model.set_video_path(p("clip.mp4"))
         model.add_instance()
-        model.set_instance_rpc_endpoint(0, "rpc")
-        model.set_instance_event_endpoint(0, "event")
+        model.set_instance_port(0, "54000")
         model.set_instance_scenario(0, p("scenario.py"))
 
         configuration = model.profile_document()
@@ -300,7 +298,7 @@ class TestNdiSource:
         assert camera_source(draft) is None
 
     def test_editable_ndi_projects_back_to_profile(self) -> None:
-        configuration = ndi_profile(instance("rpc", "event", p("s.py")))
+        configuration = ndi_profile(instance(54000, p("s.py")))
         draft = editable_profile_from(configuration, Path("config.json"))
 
         rebuilt = profile_from_editable(draft)
@@ -357,7 +355,7 @@ class TestNdiSource:
         model.set_ndi_available(False)
 
         draft = model.open_profile(
-            ndi_profile(instance("rpc", "event", p("s.py"))),
+            ndi_profile(instance(54000, p("s.py"))),
             Path("config.json"),
         )
 
@@ -393,13 +391,13 @@ class TestNdiSource:
 class TestProfileProjection:
     def test_single_instance_projects_to_one_draft(self) -> None:
         configuration = video_profile(
-            instance("rpc", "event", p("scenario.py")),
+            instance(54000, p("scenario.py")),
         )
 
         draft = editable_profile_from(configuration, Path("config.json"))
 
         assert draft.instances == (
-            EditableInstanceConfiguration("rpc", "event", p("scenario.py")),
+            EditableInstanceConfiguration("54000", p("scenario.py")),
         )
         assert draft.source.selected_type is SourceType.VIDEO
         assert draft.source.video == EditableVideoSourceConfiguration(p("run.mp4"))
@@ -409,17 +407,17 @@ class TestProfileProjection:
 
     def test_every_instance_projects_with_order_and_values(self) -> None:
         configuration = video_profile(
-            instance("rpc_a", "event_a", p("a.py")),
-            instance("rpc_b", "event_b", p("b.yaml")),
-            instance("rpc_c", "event_c", p("c.yml")),
+            instance(54000, p("a.py")),
+            instance(54001, p("b.yaml")),
+            instance(54002, p("c.yml")),
         )
 
         draft = editable_profile_from(configuration, Path("config.json"))
 
         assert draft.instances == (
-            EditableInstanceConfiguration("rpc_a", "event_a", p("a.py")),
-            EditableInstanceConfiguration("rpc_b", "event_b", p("b.yaml")),
-            EditableInstanceConfiguration("rpc_c", "event_c", p("c.yml")),
+            EditableInstanceConfiguration("54000", p("a.py")),
+            EditableInstanceConfiguration("54001", p("b.yaml")),
+            EditableInstanceConfiguration("54002", p("c.yml")),
         )
 
     def test_empty_instances_project_to_empty_draft(self) -> None:
@@ -429,8 +427,8 @@ class TestProfileProjection:
 
     def test_draft_back_to_profile_keeps_pairs_and_order(self) -> None:
         configuration = video_profile(
-            instance("rpc_a", "event_a", p("a.py")),
-            instance("rpc_b", "event_b", p("b.yaml")),
+            instance(54000, p("a.py")),
+            instance(54001, p("b.yaml")),
         )
         draft = editable_profile_from(configuration, Path("config.json"))
 
@@ -441,28 +439,25 @@ class TestProfileProjection:
 
 class TestInstanceEditing:
     @pytest.mark.parametrize(
-        ("field", "value", "expected"),
+        ("accessor", "field", "value", "expected"),
         [
-            ("scenario", p("changed.py"), p("changed.py")),
-            ("rpc_endpoint", "tcp://127.0.0.1:54100", "tcp://127.0.0.1:54100"),
-            ("event_endpoint", "tcp://127.0.0.1:54101", "tcp://127.0.0.1:54101"),
+            ("set_instance_scenario", "scenario", p("changed.py"), p("changed.py")),
+            ("set_instance_port", "port_text", "54100", "54100"),
         ],
     )
     def test_instance_field_edit_changes_only_target(
-        self, field: str, value: str, expected: str
+        self, accessor: str, field: str, value: str, expected: str
     ) -> None:
         model = make_model(profile=multi_profile())
 
-        setter = getattr(model, f"set_instance_{field}")
+        setter = getattr(model, accessor)
         draft = setter(1, value)
 
         assert draft is not None
         assert getattr(draft.instances[1], field) == expected
-        assert draft.instances[0] == EditableInstanceConfiguration(
-            "rpc_1", "event_1", p("one.py")
-        )
+        assert draft.instances[0] == EditableInstanceConfiguration("54000", p("one.py"))
         assert draft.instances[2] == EditableInstanceConfiguration(
-            "rpc_3", "event_3", p("three.py")
+            "54002", p("three.py")
         )
 
 
@@ -475,11 +470,11 @@ class TestAddInstance:
         assert model.draft is not None
         assert len(model.draft.instances) == 4
         assert model.draft.instances[:-1] == (
-            EditableInstanceConfiguration("rpc_1", "event_1", p("one.py")),
-            EditableInstanceConfiguration("rpc_2", "event_2", p("two.py")),
-            EditableInstanceConfiguration("rpc_3", "event_3", p("three.py")),
+            EditableInstanceConfiguration("54000", p("one.py")),
+            EditableInstanceConfiguration("54001", p("two.py")),
+            EditableInstanceConfiguration("54002", p("three.py")),
         )
-        assert model.draft.instances[-1] == EditableInstanceConfiguration("", "", "")
+        assert model.draft.instances[-1] == EditableInstanceConfiguration("54003", "")
 
     def test_consecutive_adds_append_in_sequence(self) -> None:
         model = make_model(profile=multi_profile())
@@ -505,8 +500,8 @@ class TestRemoveInstance:
 
         assert model.draft is not None
         assert model.draft.instances == (
-            EditableInstanceConfiguration("rpc_1", "event_1", p("one.py")),
-            EditableInstanceConfiguration("rpc_3", "event_3", p("three.py")),
+            EditableInstanceConfiguration("54000", p("one.py")),
+            EditableInstanceConfiguration("54002", p("three.py")),
         )
 
     @pytest.mark.parametrize(
@@ -537,64 +532,38 @@ class TestInstanceValidation:
     def test_empty_scenario_is_rejected(self, scenario: str) -> None:
         with pytest.raises(ValueError, match="has an empty scenario"):
             validate_instances_draft(
-                (EditableInstanceConfiguration("rpc", "event", scenario),)
+                (EditableInstanceConfiguration("54000", scenario),)
             )
 
-    @pytest.mark.parametrize("endpoint", ["", "   "])
-    def test_empty_rpc_endpoint_is_rejected(self, endpoint: str) -> None:
-        with pytest.raises(ValueError, match="has an empty RPC endpoint"):
-            validate_instances_draft(
-                (EditableInstanceConfiguration(endpoint, "event", p("s.py")),)
-            )
+    @pytest.mark.parametrize("port", ["", "   ", "abc", "1.5"])
+    def test_non_integer_port_is_rejected(self, port: str) -> None:
+        with pytest.raises(ValueError, match="WebSocket port must be a number"):
+            validate_instances_draft((EditableInstanceConfiguration(port, p("s.py")),))
 
-    @pytest.mark.parametrize("endpoint", ["", "   "])
-    def test_empty_event_endpoint_is_rejected(self, endpoint: str) -> None:
-        with pytest.raises(ValueError, match="has an empty event endpoint"):
-            validate_instances_draft(
-                (EditableInstanceConfiguration("rpc", endpoint, p("s.py")),)
-            )
+    @pytest.mark.parametrize("port", ["0", "65536", "-1"])
+    def test_out_of_range_port_is_rejected(self, port: str) -> None:
+        with pytest.raises(
+            ValueError, match="WebSocket port must be between 1 and 65535"
+        ):
+            validate_instances_draft((EditableInstanceConfiguration(port, p("s.py")),))
 
-    def test_duplicate_rpc_endpoint_is_rejected_with_owner(self) -> None:
+    def test_duplicate_port_is_rejected_with_owner(self) -> None:
         with pytest.raises(
             ValueError,
-            match="Instance 2 uses the same RPC endpoint as Instance 1.",
+            match="Instance 2 uses the same WebSocket port as Instance 1.",
         ):
             validate_instances_draft(
                 (
-                    EditableInstanceConfiguration(
-                        "tcp://127.0.0.1:54000", "event_1", p("a.py")
-                    ),
-                    EditableInstanceConfiguration(
-                        "tcp://127.0.0.1:54000", "event_2", "b.py"
-                    ),
-                )
-            )
-
-    def test_duplicate_event_endpoint_is_rejected_with_owner(self) -> None:
-        with pytest.raises(
-            ValueError,
-            match="Instance 2 uses the same event endpoint as Instance 1.",
-        ):
-            validate_instances_draft(
-                (
-                    EditableInstanceConfiguration(
-                        "rpc_1", "tcp://127.0.0.1:54001", p("a.py")
-                    ),
-                    EditableInstanceConfiguration(
-                        "rpc_2", "tcp://127.0.0.1:54001", "b.py"
-                    ),
+                    EditableInstanceConfiguration("54000", p("a.py")),
+                    EditableInstanceConfiguration("54000", "b.py"),
                 )
             )
 
     def test_valid_multiple_instances_are_accepted(self) -> None:
         validate_instances_draft(
             (
-                EditableInstanceConfiguration(
-                    "tcp://127.0.0.1:54000", "tcp://127.0.0.1:54001", p("a.py")
-                ),
-                EditableInstanceConfiguration(
-                    "tcp://127.0.0.1:54002", "tcp://127.0.0.1:54003", p("b.yaml")
-                ),
+                EditableInstanceConfiguration("54000", p("a.py")),
+                EditableInstanceConfiguration("54001", p("b.yaml")),
             )
         )
 
@@ -602,8 +571,8 @@ class TestInstanceValidation:
 class TestRoundTrip:
     def test_configuration_draft_configuration_preserves_instances(self) -> None:
         configuration = video_profile(
-            instance("rpc_1", "event_1", p("one.py")),
-            instance("rpc_2", "event_2", p("two.yaml")),
+            instance(54000, p("one.py")),
+            instance(54001, p("two.yaml")),
         )
 
         draft = editable_profile_from(configuration, Path("config.json"))
@@ -620,10 +589,6 @@ class TestScenarioExtensions:
         model.set_instance_scenario(0, p("scenario_a.py"))
         model.set_instance_scenario(1, p("scenario_b.yaml"))
         model.set_instance_scenario(2, p("scenario_c.yml"))
-        model.set_instance_rpc_endpoint(1, "rpc_2")
-        model.set_instance_event_endpoint(1, "event_2")
-        model.set_instance_rpc_endpoint(2, "rpc_3")
-        model.set_instance_event_endpoint(2, "event_3")
 
         configuration = model.profile_document()
 
