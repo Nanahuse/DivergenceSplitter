@@ -114,10 +114,7 @@ def test_exception_group_records_every_leaf_on_one_line() -> None:
 def test_runtime_context_identifies_scenario_without_exposing_credentials() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream)
-    connection = LiveSplitConnection(
-        "tcp://rpc-user:rpc-secret@localhost:16835",
-        "tcp://event-user:event-secret@localhost:16836",
-    )
+    connection = LiveSplitConnection(16835)
     condition = Detected(MeanBrightnessDetector(), 300.0)
     scenario = Scenario(condition, condition, None, ())
     diagnostics.bind_runtime(
@@ -129,12 +126,7 @@ def test_runtime_context_identifies_scenario_without_exposing_credentials() -> N
 
     output = stream.getvalue()
     assert "scenario_index=0" in output
-    assert 'rpc_endpoint="tcp://localhost:16835"' in output
-    assert 'event_endpoint="tcp://localhost:16836"' in output
-    assert "rpc-user" not in output
-    assert "rpc-secret" not in output
-    assert "event-user" not in output
-    assert "event-secret" not in output
+    assert "port=16835" in output
 
 
 def test_debug_frame_log_contains_frame_and_detector_configuration() -> None:
@@ -189,7 +181,7 @@ def test_ndi_source_fields_are_logged() -> None:
 def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream, level=logging.DEBUG)
-    connection = LiveSplitConnection("tcp://rpc", "tcp://event")
+    connection = LiveSplitConnection(54100)
     detector = MeanBrightnessDetector()
     rules = (
         Rule(Detected(detector, 300.0), Action("split")),
@@ -205,7 +197,7 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
     runtime.apply_livesplit_update(
         LiveSplitUpdate(
             LiveSplitUpdateKind.INITIAL,
-            LiveSplitSnapshot(1, 0, 0, 1, TimerPhase.RUNNING, 0, 1),
+            LiveSplitSnapshot(1, 0, 1, TimerPhase.RUNNING, 0, 1),
         )
     )
     context = FrameContext(
@@ -234,9 +226,9 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
 def test_snapshot_mismatch_names_each_different_precondition() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream)
-    connection = LiveSplitConnection("tcp://rpc", "tcp://event")
-    expected = LiveSplitSnapshot(1, 2, 3, 1, TimerPhase.RUNNING, 0, 2)
-    actual = LiveSplitSnapshot(1, 4, 5, 1, TimerPhase.RUNNING, 1, 2)
+    connection = LiveSplitConnection(54100)
+    expected = LiveSplitSnapshot(1, 2, 1, TimerPhase.RUNNING, 0, 2)
+    actual = LiveSplitSnapshot(1, 4, 1, TimerPhase.RUNNING, 1, 2)
 
     diagnostics.snapshot_mismatched(connection, Action("split"), expected, actual)
 
@@ -266,13 +258,13 @@ def test_exception_text_does_not_expose_endpoint_credentials() -> None:
     diagnostics = OperationalDiagnostics(stream)
 
     diagnostics.runtime_failed(
-        RuntimeError("connection to tcp://name:secret@localhost:16835 failed")
+        RuntimeError("connection to ws://name:secret@localhost:16835 failed")
     )
 
     output = stream.getvalue()
     assert "name" not in output
     assert "secret" not in output
-    assert "tcp://localhost:16835" in output
+    assert "ws://localhost:16835" in output
 
 
 def test_log_level_filters_debug_events() -> None:
@@ -481,7 +473,7 @@ def test_instance_snapshots_are_consistent_across_threads() -> None:
 def _latency_instance() -> ScenarioInstance:
     condition = Detected(MeanBrightnessDetector(), 300.0)
     return ScenarioInstance(
-        LiveSplitConnection("rpc", "event"),
+        LiveSplitConnection(54100),
         Scenario(condition, condition, None, ()),
     )
 

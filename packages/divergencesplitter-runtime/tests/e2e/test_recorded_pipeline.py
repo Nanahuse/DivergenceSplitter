@@ -142,7 +142,7 @@ def test_recording_is_normalized_before_scenario_evaluation(tmp_path: Path) -> N
     image = np.full((*FRAME_SIZE, 3), DARK, dtype=np.uint8)
     image[:, :4] = BRIGHT
     write_image_recording(video, image, frame_count=12, fps=20)
-    connection = LiveSplitConnection("normalized-rpc", "normalized-event")
+    connection = LiveSplitConnection(54100)
     scenario = Scenario(
         start_condition=impossible_reset_condition(),
         reset_condition=impossible_reset_condition(),
@@ -184,7 +184,7 @@ def test_recording_is_normalized_before_scenario_evaluation(tmp_path: Path) -> N
 def test_normalization_failure_stops_the_recording_pipeline(tmp_path: Path) -> None:
     video = tmp_path / "normalization-failure.avi"
     write_recording(video, ((BRIGHT, 12),), fps=20)
-    connection = LiveSplitConnection("failure-rpc", "failure-event")
+    connection = LiveSplitConnection(54101)
     scenario = Scenario(
         start_condition=impossible_reset_condition(),
         reset_condition=impossible_reset_condition(),
@@ -253,7 +253,7 @@ def test_recording_reaches_finish_and_refires_after_external_undo(
         Elapsed(duration_nanoseconds=200_000_000),
     )
     second_split = RisingEdge(Detected(detector, THRESHOLD))
-    connection = LiveSplitConnection("e2e-rpc", "e2e-event")
+    connection = LiveSplitConnection(54102)
     scenario = Scenario(
         start_condition=impossible_reset_condition(),
         reset_condition=impossible_reset_condition(),
@@ -308,7 +308,7 @@ def test_bridge_resynchronization_stops_evaluation_until_complete(
 ) -> None:
     video = tmp_path / f"{failure}.avi"
     write_recording(video, ((DARK, 20), (BRIGHT, 30)), fps=20)
-    connection = LiveSplitConnection("gap-rpc", "gap-event")
+    connection = LiveSplitConnection(54103)
     scenario = Scenario(
         start_condition=impossible_reset_condition(),
         reset_condition=impossible_reset_condition(),
@@ -365,7 +365,7 @@ def test_slow_processing_overwrites_buffer_and_returns_to_latest_frame(
     video = tmp_path / "frame-drop.avi"
     write_recording(video, ((DARK, 5), (BRIGHT, 55)), fps=60)
     blocking = BlockingDetectedCondition(THRESHOLD)
-    connection = LiveSplitConnection("drop-rpc", "drop-event")
+    connection = LiveSplitConnection(54104)
     scenario = Scenario(
         start_condition=impossible_reset_condition(),
         reset_condition=impossible_reset_condition(),
@@ -410,7 +410,7 @@ def test_missing_bridge_transition_allows_refire_only_after_scenario_timeout(
         ((DARK, 4), (BRIGHT, 4), (DARK, 36), (BRIGHT, 8)),
         fps=20,
     )
-    connection = LiveSplitConnection("timeout-rpc", "timeout-event")
+    connection = LiveSplitConnection(54105)
     scenario = Scenario(
         start_condition=impossible_reset_condition(),
         reset_condition=impossible_reset_condition(),
@@ -454,7 +454,7 @@ def test_missing_bridge_transition_allows_refire_only_after_scenario_timeout(
 def test_explicit_stop_releases_video_and_all_runtime_threads(tmp_path: Path) -> None:
     video = tmp_path / "explicit-stop.avi"
     write_recording(video, ((DARK, 120),), fps=30)
-    connection = LiveSplitConnection("stop-rpc", "stop-event")
+    connection = LiveSplitConnection(54106)
     scenario = Scenario(
         start_condition=impossible_reset_condition(),
         reset_condition=impossible_reset_condition(),
@@ -491,7 +491,7 @@ def test_independent_instances_keep_one_shared_capture_across_reconnect(
 ) -> None:
     video = tmp_path / "independent.avi"
     write_recording(video, ((BRIGHT, 600),), fps=60)
-    connections = tuple(LiveSplitConnection(f"rpc-{i}", f"event-{i}") for i in range(3))
+    connections = tuple(LiveSplitConnection(54200 + i) for i in range(3))
     allow_b = threading.Event()
 
     class LateBridge(BridgeScript):
@@ -601,7 +601,7 @@ def test_all_validation_failures_stop_capture_and_keep_failure_details(
     write_recording(video, ((BRIGHT, 600),), fps=60)
     instances = tuple(
         ScenarioInstance(
-            LiveSplitConnection(f"rpc-{i}", f"event-{i}"),
+            LiveSplitConnection(54300 + i),
             Scenario(impossible_reset_condition(), None, None, (None, None)),
         )
         for i in range(2)

@@ -49,14 +49,13 @@ def make_scenario(
 
 
 def make_instance(
-    rpc_endpoint: str = "rpc",
-    event_endpoint: str = "event",
+    port: int = 54000,
     *,
     reset_conditions: tuple[PassiveCondition, ...] | None = None,
     slots: int = 0,
 ) -> ScenarioInstance:
     return ScenarioInstance(
-        connection=LiveSplitConnection(rpc_endpoint, event_endpoint),
+        connection=LiveSplitConnection(port),
         scenario=make_scenario(reset_conditions=reset_conditions, slots=slots),
     )
 
@@ -69,7 +68,6 @@ def make_snapshot(
     return LiveSplitSnapshot(
         session_id=1,
         state_revision=0,
-        event_sequence=0,
         run_revision=1,
         phase=phase,
         split_index=-1 if phase is TimerPhase.NOT_RUNNING else 0,
@@ -213,10 +211,10 @@ class ConfigurationValidationTest(unittest.TestCase):
     def test_scenario_with_required_conditions_is_valid(self) -> None:
         validate_scenario(make_scenario())
 
-    def test_independent_static_errors_are_aggregated(self) -> None:
+    def test_duplicate_port_is_aggregated(self) -> None:
         instances = (
-            make_instance("", ""),
-            make_instance("", ""),
+            make_instance(54000),
+            make_instance(54000),
         )
         with self.assertRaises(ExceptionGroup) as raised:
             validate_instances(
@@ -225,25 +223,22 @@ class ConfigurationValidationTest(unittest.TestCase):
                 )
             )
         messages = tuple(str(error) for error in raised.exception.exceptions)
-        self.assertEqual(len(messages), 6)
-        self.assertTrue(any("shares rpc_endpoint" in message for message in messages))
-        self.assertTrue(any("shares event_endpoint" in message for message in messages))
+        self.assertEqual(len(messages), 1)
+        self.assertTrue(any("shares port 54000" in message for message in messages))
 
-    def test_connection_is_unique_when_either_endpoint_differs(self) -> None:
-        with self.assertRaises(ExceptionGroup):
-            validate_instances(
-                (
-                    (make_instance("rpc", "one").connection, make_scenario()),
-                    (make_instance("rpc", "two").connection, make_scenario()),
-                )
-            )
-        with self.assertRaises(ExceptionGroup):
-            validate_instances(
-                (
-                    (make_instance("one", "event").connection, make_scenario()),
-                    (make_instance("two", "event").connection, make_scenario()),
-                )
-            )
+    def test_distinct_ports_are_accepted(self) -> None:
+        instances = (
+            make_instance(54000),
+            make_instance(54001),
+        )
+        validate_instances(
+            tuple((instance.connection, instance.scenario) for instance in instances)
+        )
+
+    def test_livesplit_connection_rejects_port_out_of_range(self) -> None:
+        for port in (0, 65536, -1):
+            with self.subTest(port=port), self.assertRaises(ValueError):
+                LiveSplitConnection(port)
 
     def test_split_slots_must_not_exceed_split_count(self) -> None:
         with self.assertRaises(ValueError):

@@ -44,20 +44,36 @@ from divergencesplitter_runtime.configuration.strict_json import (
     string_value,
 )
 
+# A version 1 Profile stored Protocol v1 ZeroMQ endpoints. Those endpoints are
+# not convertible to a Protocol v2 WebSocket port, so the migration discards
+# their values entirely and assigns a fresh sequential port instead.
+_LEGACY_MIGRATION_PORT_START = 54000
+
 
 def load_profile(path: str | Path) -> Profile:
-    """Load one versioned Profile file."""
+    """Load one versioned Profile file, migrating a version 1 document.
+
+    A version 1 Profile stored the two Protocol v1 ZeroMQ endpoints. Those
+    values are incompatible with Protocol v2, so the migration discards them
+    without interpretation and assigns a fresh WebSocket port per instance,
+    starting at ``54000``. The returned value is always a version 2 Profile, so
+    the next save writes the new port form.
+    """
 
     value = load_json_document(path)
     try:
         root = object_value(value, "profile")
         check_keys(root, required={"version", "source", "instances"})
         version = integer_value(root["version"], "version")
-        if version != PROFILE_VERSION:
-            raise ValueError(f"unsupported profile version: {version!r}")
-        source = _source(root["source"])
-        instances = _instances(root["instances"])
-        return Profile(version, source, instances)
+        if version == 1:
+            source = _source(root["source"])
+            instances = _instances_v1(root["instances"])
+        else:
+            if version != PROFILE_VERSION:
+                raise ValueError(f"unsupported profile version: {version!r}")
+            source = _source(root["source"])
+            instances = _instances(root["instances"])
+        return Profile(PROFILE_VERSION, source, instances)
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationValidationError(str(error)) from error
 
@@ -81,8 +97,7 @@ def _dump(profile: Profile) -> str:
 def _instance_dict(instance: InstanceConfiguration) -> dict[str, object]:
     return {
         "connection": {
-            "rpc_endpoint": instance.connection.rpc_endpoint,
-            "event_endpoint": instance.connection.event_endpoint,
+            "port": instance.connection.port,
         },
         "scenario": instance.scenario,
     }
@@ -192,11 +207,37 @@ def _instance(value: object, index: int) -> InstanceConfiguration:
 
 def _connection(value: object, path: str) -> LiveSplitConnection:
     connection = object_value(value, path)
+    check_keys(connection, required={"port"})
+    return LiveSplitConnection(integer_value(connection["port"], f"{path}.port"))
+
+
+def _instances_v1(value: object) -> tuple[InstanceConfiguration, ...]:
+    instances = array_value(value, "instances")
+    migrated: list[InstanceConfiguration] = []
+    for index, item in enumerate(instances):
+        port = _LEGACY_MIGRATION_PORT_START + index
+        if port > 65535:
+            raise ValueError(
+                "cannot migrate "
+                f"{len(instances)} instances: WebSocket port {port} exceeds 65535"
+            )
+        migrated.append(_instance_v1(item, index, port))
+    return tuple(migrated)
+
+
+def _instance_v1(value: object, index: int, port: int) -> InstanceConfiguration:
+    prefix = f"instances[{index}]"
+    instance = object_value(value, prefix)
+    check_keys(instance, required={"connection", "scenario"})
+    connection = object_value(instance["connection"], f"{prefix}.connection")
     check_keys(connection, required={"rpc_endpoint", "event_endpoint"})
-    return LiveSplitConnection(
-        string_value(connection["rpc_endpoint"], f"{path}.rpc_endpoint"),
-        string_value(connection["event_endpoint"], f"{path}.event_endpoint"),
-    )
+    # The legacy endpoint values are intentionally discarded: the ZeroMQ
+    # host/scheme/port cannot be mapped to a Protocol v2 WebSocket port. Only
+    # their presence and type are validated.
+    string_value(connection["rpc_endpoint"], f"{prefix}.connection.rpc_endpoint")
+    string_value(connection["event_endpoint"], f"{prefix}.connection.event_endpoint")
+    scenario = string_value(instance["scenario"], f"{prefix}.scenario")
+    return InstanceConfiguration(LiveSplitConnection(port), scenario)
 
 
 def _transform_dict(transform: SourceTransformConfiguration) -> dict[str, object]:

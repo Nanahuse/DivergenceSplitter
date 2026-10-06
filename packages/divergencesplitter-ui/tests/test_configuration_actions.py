@@ -124,28 +124,24 @@ def make_model(path: Path = Path("config.json")) -> SettingsModel:
 
 def camera_profile() -> Profile:
     return Profile(
-        version=1,
+        version=2,
         source=CameraSourceConfiguration(
             CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
             CameraModeConfiguration(1280, 720, 60.0, "MJPG"),
             False,
         ),
         instances=(
-            InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"), p("scenario.py")
-            ),
+            InstanceConfiguration(LiveSplitConnection(54000), p("scenario.py")),
         ),
     )
 
 
 def video_profile() -> Profile:
     return Profile(
-        version=1,
+        version=2,
         source=VideoSourceConfiguration(p("run.mp4")),
         instances=(
-            InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"), p("scenario.py")
-            ),
+            InstanceConfiguration(LiveSplitConnection(54000), p("scenario.py")),
         ),
     )
 

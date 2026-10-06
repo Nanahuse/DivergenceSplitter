@@ -48,11 +48,11 @@ def write_profile(path: Path) -> None:
     save_profile(
         path,
         Profile(
-            version=1,
+            version=2,
             source=VideoSourceConfiguration(str(path.with_suffix(".mp4"))),
             instances=(
                 InstanceConfiguration(
-                    LiveSplitConnection("rpc", "event"), str(path.with_suffix(".py"))
+                    LiveSplitConnection(54000), str(path.with_suffix(".py"))
                 ),
             ),
         ),

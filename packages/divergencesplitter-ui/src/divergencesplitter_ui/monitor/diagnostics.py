@@ -300,20 +300,18 @@ class _GroupSection:
 
 
 class _ConnectionSection:
-    """One scenario's connection status, endpoints, and error."""
+    """One scenario's connection status, Bridge port, and error."""
 
     def __init__(self, view: DiagnosticsConnectionView, colors: SemanticColors) -> None:
         self._colors = colors
         self._status = ft.Text(view.status_label)
-        self._rpc = ft.Text(view.rpc_endpoint)
-        self._event = ft.Text(view.event_endpoint)
+        self._port = ft.Text(str(view.port))
         self._error = ft.Text(view.error_label)
         self._root = ft.Column(
             controls=[
                 ft.Text("Connection", weight=ft.FontWeight.BOLD),
                 self._row("Status", self._status),
-                self._row("RPC", self._rpc),
-                self._row("Event", self._event),
+                self._row("Port", self._port),
                 self._row("Error", self._error),
             ],
             spacing=2,
@@ -336,8 +334,7 @@ class _ConnectionSection:
             view.status_label,
             color=instance_status_color(view.state, self._colors),
         )
-        changed |= _set_text(self._rpc, view.rpc_endpoint)
-        changed |= _set_text(self._event, view.event_endpoint)
+        changed |= _set_text(self._port, str(view.port))
         changed |= _set_text(
             self._error,
             view.error_label,

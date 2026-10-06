@@ -51,11 +51,11 @@ APP_SETTINGS = AppSettings(1, "INFO")
 
 def make_profile() -> Profile:
     return Profile(
-        version=1,
+        version=2,
         source=VideoSourceConfiguration(str(BASE / "recording.mp4")),
         instances=(
             InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"),
+                LiveSplitConnection(54000),
                 str(BASE / "scenario.py"),
             ),
         ),
@@ -688,11 +688,11 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
 
 def test_reaction_time_is_forwarded_to_the_runtime_factory() -> None:
     profile = Profile(
-        version=1,
+        version=2,
         source=VideoSourceConfiguration(str(BASE / "recording.mp4")),
         instances=(
             InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"),
+                LiveSplitConnection(54000),
                 str(BASE / "scenario.py"),
             ),
         ),

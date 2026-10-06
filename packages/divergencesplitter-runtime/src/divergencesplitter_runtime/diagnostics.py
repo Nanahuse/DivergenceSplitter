@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, TextIO
-from urllib.parse import urlsplit, urlunsplit
 
 from divergencesplitter import (
     Action,
@@ -49,6 +48,8 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
     LiveSplitRunInfo,
     LiveSplitSnapshot,
+    event_endpoint,
+    rpc_endpoint,
 )
 from divergencesplitter_runtime.metrics import (
     InstanceEvaluationMetrics,
@@ -987,7 +988,7 @@ def _snapshot_fields(prefix: str, snapshot: LiveSplitSnapshot) -> dict[str, obje
     return {
         f"{prefix}.session_id": snapshot.session_id,
         f"{prefix}.state_revision": snapshot.state_revision,
-        f"{prefix}.event_sequence": snapshot.event_sequence,
+        f"{prefix}.run_revision": snapshot.run_revision,
         f"{prefix}.phase": snapshot.phase.name,
         f"{prefix}.split_index": snapshot.split_index,
         f"{prefix}.split_count": snapshot.split_count,
@@ -996,26 +997,10 @@ def _snapshot_fields(prefix: str, snapshot: LiveSplitSnapshot) -> dict[str, obje
 
 def _connection_fields(connection: LiveSplitConnection) -> dict[str, object]:
     return {
-        "rpc_endpoint": _sanitize_endpoint(connection.rpc_endpoint),
-        "event_endpoint": _sanitize_endpoint(connection.event_endpoint),
+        "port": connection.port,
+        "rpc_endpoint": rpc_endpoint(connection),
+        "event_endpoint": event_endpoint(connection),
     }
-
-
-def _sanitize_endpoint(endpoint: str) -> str:
-    try:
-        parsed = urlsplit(endpoint)
-        if parsed.hostname is None or parsed.username is None:
-            return endpoint
-        host = parsed.hostname
-        if ":" in host and not host.startswith("["):
-            host = f"[{host}]"
-        if parsed.port is not None:
-            host = f"{host}:{parsed.port}"
-        return urlunsplit(
-            (parsed.scheme, host, parsed.path, parsed.query, parsed.fragment)
-        )
-    except Exception:  # noqa: BLE001
-        return re.sub(r"(?<=://)[^/@\s]+@", "", endpoint)
 
 
 def _sanitize_text(value: str) -> str:

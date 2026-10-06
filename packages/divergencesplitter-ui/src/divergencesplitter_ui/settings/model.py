@@ -19,6 +19,7 @@ from typing import Protocol
 from divergencesplitter.livesplit.models import LiveSplitConnection
 from divergencesplitter_runtime.configuration.models import (
     APP_SETTINGS_VERSION,
+    PROFILE_VERSION,
     AppSettings,
     CameraBackend,
     CameraDeviceConfiguration,
@@ -44,6 +45,32 @@ from divergencesplitter_runtime.configuration.source_builder import (
 from divergencesplitter_ui.session import SessionState
 
 LOG_LEVELS = ("OFF", "DEBUG")
+
+DEFAULT_PORT_START = 54000
+MAX_PORT = 65535
+
+
+def next_available_port(
+    instances: tuple[EditableInstanceConfiguration, ...],
+) -> int:
+    """Return the first unused Bridge port at or above ``DEFAULT_PORT_START``.
+
+    Existing instances keep their configured ports; this only picks an unused
+    one for a newly added instance and never reorders or rewrites the others.
+    """
+
+    used: set[int] = set()
+    for instance in instances:
+        try:
+            used.add(int(instance.port_text.strip()))
+        except TypeError, ValueError:
+            continue
+    port = DEFAULT_PORT_START
+    while port in used:
+        port += 1
+        if port > MAX_PORT:
+            raise ValueError("no unused WebSocket port is available")
+    return port
 
 
 class SourceType(StrEnum):
@@ -187,8 +214,14 @@ class EditableSourceSettings:
 
 @dataclass
 class EditableInstanceConfiguration:
-    rpc_endpoint: str
-    event_endpoint: str
+    """One scenario's editable Bridge connection.
+
+    Only the WebSocket port and the scenario path are stored. ``port_text``
+    keeps the raw user input so partial or invalid values survive periodic
+    syncs; it is parsed and validated when the Profile is projected.
+    """
+
+    port_text: str
     scenario: str
 
 
@@ -263,9 +296,7 @@ def editable_profile_from(configuration: Profile, path: Path) -> EditableProfile
         path,
         source_settings,
         tuple(
-            EditableInstanceConfiguration(
-                i.connection.rpc_endpoint, i.connection.event_endpoint, i.scenario
-            )
+            EditableInstanceConfiguration(str(i.connection.port), i.scenario)
             for i in configuration.instances
         ),
     )
@@ -355,24 +386,28 @@ def validate_instances_draft(
     errors: list[str] = []
     if not instances:
         errors.append("at least one instance is required")
-    rpc_owners: dict[str, int] = {}
-    event_owners: dict[str, int] = {}
+    port_owners: dict[int, int] = {}
     for index, instance in enumerate(instances):
         number = index + 1
         if not instance.scenario.strip():
             errors.append(f"Instance {number} has an empty scenario")
-        for value, label, owners in (
-            (instance.rpc_endpoint, "RPC endpoint", rpc_owners),
-            (instance.event_endpoint, "event endpoint", event_owners),
-        ):
-            if not value.strip():
-                errors.append(f"Instance {number} has an empty {label}")
-            elif value in owners:
-                errors.append(
-                    f"Instance {number} uses the same {label} as Instance {owners[value] + 1}."
-                )
-            else:
-                owners[value] = index
+        try:
+            port = int(instance.port_text.strip())
+        except TypeError, ValueError:
+            errors.append(f"Instance {number} WebSocket port must be a number")
+            continue
+        if not 1 <= port <= 65535:
+            errors.append(
+                f"Instance {number} WebSocket port must be between 1 and 65535"
+            )
+            continue
+        if port in port_owners:
+            errors.append(
+                f"Instance {number} uses the same WebSocket port as "
+                f"Instance {port_owners[port] + 1}."
+            )
+        else:
+            port_owners[port] = index
     if errors:
         raise ValueError("\n".join(errors))
 
@@ -415,11 +450,11 @@ def profile_from_editable(
                 f"unsupported source type: {source_settings.selected_type}"
             )
     return Profile(
-        version=1,
+        version=PROFILE_VERSION,
         source=source,
         instances=tuple(
             InstanceConfiguration(
-                LiveSplitConnection(i.rpc_endpoint, i.event_endpoint), i.scenario
+                LiveSplitConnection(int(i.port_text.strip())), i.scenario
             )
             for i in editable.instances
         ),
@@ -726,20 +761,14 @@ class SettingsModel:
     ) -> EditableProfile | None:
         return self._replace_instance(index, scenario=scenario)
 
-    def set_instance_rpc_endpoint(
-        self, index: int, endpoint: str
-    ) -> EditableProfile | None:
-        return self._replace_instance(index, rpc_endpoint=endpoint)
-
-    def set_instance_event_endpoint(
-        self, index: int, endpoint: str
-    ) -> EditableProfile | None:
-        return self._replace_instance(index, event_endpoint=endpoint)
+    def set_instance_port(self, index: int, port_text: str) -> EditableProfile | None:
+        return self._replace_instance(index, port_text=port_text)
 
     def add_instance(self) -> EditableProfile | None:
         if self._profile is None:
             return None
-        self._profile.instances += (EditableInstanceConfiguration("", "", ""),)
+        port = next_available_port(self._profile.instances)
+        self._profile.instances += (EditableInstanceConfiguration(str(port), ""),)
         self._dirty = True
         return self._profile
 
