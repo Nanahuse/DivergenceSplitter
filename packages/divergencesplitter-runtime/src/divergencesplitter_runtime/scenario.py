@@ -50,7 +50,6 @@ class ScenarioRuntime:
             else (Rule(scenario.incomplete_condition, Action("undo")),)
         )
         self._snapshot: LiveSplitSnapshot | None = None
-        self._awaiting_resync = False
         self._configuration_valid = True
         self._pending_action: Action | None = None
         self._action_started_at: int | None = None
@@ -74,7 +73,6 @@ class ScenarioRuntime:
 
         if snapshot.session_id != current.session_id:
             if update.kind is not LiveSplitUpdateKind.RESYNC:
-                self._awaiting_resync = True
                 self._log(
                     logging.WARNING,
                     "scenario_runtime.session_resync_required",
@@ -85,51 +83,36 @@ class ScenarioRuntime:
             self._log(logging.INFO, "scenario_runtime.session_resynced")
             return
 
-        # An RPC resync can confirm the same sequence: no new event is required
-        # to release a synchronization wait or refresh the authoritative state.
+        # A resync confirms the authoritative state; it may carry the same
+        # revision and is applied even when no new transition event arrived.
         if update.kind is LiveSplitUpdateKind.RESYNC:
-            if snapshot.event_sequence < current.event_sequence:
+            if snapshot.state_revision < current.state_revision:
                 self._log(logging.DEBUG, "scenario_runtime.update_ignored")
                 return
             self._apply_resync(snapshot, current)
-            return
-
-        if snapshot.event_sequence <= current.event_sequence:
-            self._log(logging.DEBUG, "scenario_runtime.update_ignored")
             return
 
         if update.kind is LiveSplitUpdateKind.INITIAL:
             self._log(logging.WARNING, "scenario_runtime.initial_update_ignored")
             return
 
-        if self._awaiting_resync:
-            self._log(logging.DEBUG, "scenario_runtime.awaiting_resync")
-            return
-
-        if snapshot.event_sequence != current.event_sequence + 1:
-            self._awaiting_resync = True
-            self._log(
-                logging.WARNING,
-                "scenario_runtime.update_gap",
-                received_event_sequence=snapshot.event_sequence,
-            )
-            return
-
         if snapshot.state_revision < current.state_revision:
             self._log(logging.WARNING, "scenario_runtime.revision_regressed")
             return
 
-        if update.kind is LiveSplitUpdateKind.PERIODIC and self._state_changed(
-            current,
-            snapshot,
-        ):
-            self._awaiting_resync = True
-            self._log(logging.WARNING, "scenario_runtime.invalid_periodic_update")
+        run_changed = (
+            snapshot.run_revision != current.run_revision
+            or snapshot.split_count != current.split_count
+        )
+        if snapshot.state_revision == current.state_revision and not run_changed:
+            # Already applied locally, for example from an OperationResponse that
+            # preceded the matching broadcast event.
+            self._log(logging.DEBUG, "scenario_runtime.update_ignored")
             return
 
         self._snapshot = snapshot
         self._configuration_valid = self._validate_split_count(snapshot)
-        if update.kind is LiveSplitUpdateKind.TRANSITION:
+        if update.kind is LiveSplitUpdateKind.TRANSITION or run_changed:
             self._apply_transition_resets(current, snapshot)
             self._clear_pending_action()
             self._log(
@@ -139,25 +122,12 @@ class ScenarioRuntime:
                 previous_split_index=current.split_index,
                 previous_split_count=current.split_count,
                 previous_state_revision=current.state_revision,
-                previous_event_sequence=current.event_sequence,
+                previous_run_revision=current.run_revision,
             )
-
-    @staticmethod
-    def _state_changed(
-        current: LiveSplitSnapshot,
-        received: LiveSplitSnapshot,
-    ) -> bool:
-        return (
-            # Game-time events advance the revision without changing which
-            # scenario rules should run. They are valid PERIODIC updates.
-            current.phase is not received.phase
-            or current.split_index != received.split_index
-            or current.split_count != received.split_count
-        )
 
     def evaluate(self, context: FrameContext) -> Action | None:
         snapshot = self._snapshot
-        if snapshot is None or self._awaiting_resync or not self._configuration_valid:
+        if snapshot is None or not self._configuration_valid:
             return None
 
         if self._pending_action is not None and self._pending_action.operation in {
@@ -342,10 +312,12 @@ class ScenarioRuntime:
             self._log(logging.WARNING, "scenario_runtime.revision_regressed")
             return
         revision_advanced = snapshot.state_revision > current.state_revision
-        run_changed = snapshot.split_count != current.split_count
+        run_changed = (
+            snapshot.run_revision != current.run_revision
+            or snapshot.split_count != current.split_count
+        )
         self._snapshot = snapshot
         self._configuration_valid = self._validate_split_count(snapshot)
-        self._awaiting_resync = False
         self._clear_pending_action()
         if revision_advanced or run_changed:
             self._reset_all_rules()
@@ -358,7 +330,6 @@ class ScenarioRuntime:
 
     def _establish_baseline(self, snapshot: LiveSplitSnapshot) -> None:
         self._snapshot = snapshot
-        self._awaiting_resync = False
         self._configuration_valid = self._validate_split_count(snapshot)
         self._clear_pending_action()
         self._reset_all_rules()
@@ -498,7 +469,7 @@ class ScenarioRuntime:
             rule_index=rule_index,
             session_id=snapshot.session_id,
             state_revision=snapshot.state_revision,
-            event_sequence=snapshot.event_sequence,
+            run_revision=snapshot.run_revision,
             exc_info=exc_info,
             **extra,
         )
@@ -518,7 +489,7 @@ class ScenarioRuntime:
                 split_index=snapshot.split_index,
                 session_id=snapshot.session_id,
                 state_revision=snapshot.state_revision,
-                event_sequence=snapshot.event_sequence,
+                run_revision=snapshot.run_revision,
                 phase=snapshot.phase.name,
                 split_count=snapshot.split_count,
             )

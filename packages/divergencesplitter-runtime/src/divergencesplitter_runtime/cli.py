@@ -12,12 +12,14 @@ from divergencesplitter_runtime.application import (
     ApplicationRuntime,
     ApplicationStartupValidationError,
 )
-from divergencesplitter_runtime.configuration.json_file import (
-    ConfigurationFileError,
-    ConfigurationValidationError,
-    load_configuration,
+from divergencesplitter_runtime.configuration.app_settings_json import (
+    default_app_settings_path,
+    load_app_settings_or_default,
 )
-from divergencesplitter_runtime.configuration.models import ApplicationConfiguration
+from divergencesplitter_runtime.configuration.models import Profile
+from divergencesplitter_runtime.configuration.profile_json import (
+    load_profile,
+)
 from divergencesplitter_runtime.configuration.reference_resize import (
     resize_scenario_references,
 )
@@ -32,7 +34,10 @@ from divergencesplitter_runtime.configuration.scenario_module import (
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
     build_frame_source,
-    resolve_configuration_path,
+)
+from divergencesplitter_runtime.configuration.strict_json import (
+    ConfigurationFileError,
+    ConfigurationValidationError,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instances import ScenarioInstance
@@ -91,40 +96,35 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 def _load_instances(
-    configuration: ApplicationConfiguration,
-    base_directory: Path,
+    profile: Profile,
 ) -> tuple[ScenarioInstance, ...]:
     return tuple(
         ScenarioInstance(
             connection=instance.connection,
             scenario=resize_scenario_references(
-                load_scenario(
-                    resolve_configuration_path(
-                        instance.scenario,
-                        base_directory=base_directory,
-                    )
-                ),
-                configuration.source.transform,
+                load_scenario(instance.scenario),
+                profile.source.transform,
             ),
         )
-        for instance in configuration.instances
+        for instance in profile.instances
     )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run one JSON configuration and return a process exit status."""
+    """Run one JSON profile and return a process exit status."""
 
     diagnostics = OperationalDiagnostics(sys.stderr)
     parser = _ArgumentParser(diagnostics, prog="divergencesplitter")
-    parser.add_argument("configuration", type=Path)
+    parser.add_argument("profile", type=Path)
     try:
         arguments = parser.parse_args(argv)
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else EXIT_USAGE_ERROR
 
-    configuration_path = arguments.configuration.resolve()
+    app_settings = load_app_settings_or_default(default_app_settings_path())
+    profile_path = arguments.profile.resolve()
     try:
-        configuration = load_configuration(configuration_path)
+        profile = load_profile(profile_path)
     except ConfigurationFileError as error:
         diagnostics.configuration_failed(error.error)
         return EXIT_CONFIGURATION_LOAD_ERROR
@@ -132,9 +132,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         diagnostics.startup_validation_failed(error)
         return EXIT_STARTUP_VALIDATION_ERROR
 
-    diagnostics.set_level(_LOG_LEVELS[configuration.runtime.log_level])
+    diagnostics.set_level(_LOG_LEVELS[app_settings.log_level])
     try:
-        instances = _load_instances(configuration, configuration_path.parent)
+        instances = _load_instances(profile)
     except KeyboardInterrupt:
         diagnostics.interrupted()
         return EXIT_INTERRUPTED
@@ -152,10 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_STARTUP_VALIDATION_ERROR
 
     try:
-        frame_source = build_frame_source(
-            configuration.source,
-            base_directory=configuration_path.parent,
-        )
+        frame_source = build_frame_source(profile.source)
     except (SourceConfigurationError, ValueError) as error:
         diagnostics.startup_validation_failed(error)
         return EXIT_STARTUP_VALIDATION_ERROR
@@ -166,7 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             instances,
             frame_source,
             diagnostics=diagnostics,
-            reaction_time_ms=configuration.runtime.reaction_time_ms,
+            reaction_time_ms=app_settings.reaction_time_ms,
         )
     except KeyboardInterrupt:
         diagnostics.interrupted()

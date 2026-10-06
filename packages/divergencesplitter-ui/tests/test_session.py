@@ -15,14 +15,10 @@ from divergencesplitter import (
     VideoFileSource,
 )
 from divergencesplitter_runtime.application import ApplicationStartupValidationError
-from divergencesplitter_runtime.configuration.json_file import (
-    ConfigurationFileError,
-    ConfigurationValidationError,
-)
 from divergencesplitter_runtime.configuration.models import (
-    ApplicationConfiguration,
+    AppSettings,
     InstanceConfiguration,
-    RuntimeConfiguration,
+    Profile,
     VideoSourceConfiguration,
 )
 from divergencesplitter_runtime.configuration.scenario_module import (
@@ -31,6 +27,10 @@ from divergencesplitter_runtime.configuration.scenario_module import (
 )
 from divergencesplitter_runtime.configuration.source_builder import (
     SourceConfigurationError,
+)
+from divergencesplitter_runtime.configuration.strict_json import (
+    ConfigurationFileError,
+    ConfigurationValidationError,
 )
 from divergencesplitter_runtime.diagnostics import OperationalDiagnostics
 from divergencesplitter_runtime.instance_runtime import (
@@ -45,49 +45,51 @@ from divergencesplitter_ui.session import (
     SessionState,
 )
 
+BASE = Path.cwd()
+APP_SETTINGS = AppSettings(1, "INFO")
 
-def make_configuration() -> ApplicationConfiguration:
-    return ApplicationConfiguration(
-        version=1,
-        source=VideoSourceConfiguration("recording.mp4"),
+
+def make_profile() -> Profile:
+    return Profile(
+        version=2,
+        source=VideoSourceConfiguration(str(BASE / "recording.mp4")),
         instances=(
             InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"),
-                "./scenario.py",
+                LiveSplitConnection(54000),
+                str(BASE / "scenario.py"),
             ),
         ),
-        runtime=RuntimeConfiguration("INFO"),
     )
 
 
-class FakeConfigurationLoader:
+class FakeProfileLoader:
     def __init__(
         self,
         *,
-        configuration: ApplicationConfiguration | None = None,
+        profile: Profile | None = None,
         error: BaseException | None = None,
     ) -> None:
-        self._configuration = configuration or make_configuration()
+        self._profile = profile or make_profile()
         self._error = error
         self.loaded_paths: list[Path] = []
 
-    def load(self, path: Path) -> ApplicationConfiguration:
+    def load(self, path: Path) -> Profile:
         self.loaded_paths.append(path)
         if self._error is not None:
             raise self._error
-        return self._configuration
+        return self._profile
 
 
-class BlockingConfigurationLoader:
-    def __init__(self, configuration: ApplicationConfiguration) -> None:
-        self._configuration = configuration
+class BlockingProfileLoader:
+    def __init__(self, profile: Profile) -> None:
+        self._profile = profile
         self.entered = threading.Event()
         self._release = threading.Event()
 
-    def load(self, path: Path) -> ApplicationConfiguration:
+    def load(self, path: Path) -> Profile:
         self.entered.set()
         self._release.wait()
-        return self._configuration
+        return self._profile
 
     def release(self) -> None:
         self._release.set()
@@ -121,8 +123,8 @@ class FakeSourceBuilder:
         self._error = error
         self.built: list = []
 
-    def build(self, configuration, *, base_directory: Path):
-        self.built.append((configuration, base_directory))
+    def build(self, configuration):
+        self.built.append(configuration)
         if self._error is not None:
             raise self._error
         return VideoFileSource("recording.mp4")
@@ -183,10 +185,14 @@ class FakeRuntime:
         self.ran = threading.Event()
         self._release = threading.Event()
         self.request_stop_calls = 0
+        self.request_reset_all_calls = 0
 
     def request_stop(self) -> None:
         self.request_stop_calls += 1
         self._release.set()
+
+    def request_reset_all(self) -> None:
+        self.request_reset_all_calls += 1
 
     def release(self) -> None:
         self._release.set()
@@ -233,7 +239,7 @@ class FakeRuntimeFactory:
 
 def make_controller(
     *,
-    configuration_loader=None,
+    profile_loader=None,
     scenario_loader=None,
     source_builder=None,
     runtime_factory=None,
@@ -242,7 +248,7 @@ def make_controller(
     runtime_factory = runtime_factory or FakeRuntimeFactory()
     diagnostics_factory = diagnostics_factory or FakeDiagnosticsFactory()
     controller = SessionController(
-        configuration_loader=configuration_loader or FakeConfigurationLoader(),
+        profile_loader=profile_loader or FakeProfileLoader(),
         scenario_loader=scenario_loader or FakeScenarioLoader(),
         source_builder=source_builder or FakeSourceBuilder(),
         runtime_factory=runtime_factory,
@@ -265,7 +271,7 @@ class TestAutomaticStart:
         controller, runtime_factory, diagnostics_factory = make_controller()
 
         assert controller.state is SessionState.IDLE
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.COMPLETED
@@ -281,7 +287,7 @@ class TestAutomaticStart:
             runtime_factory=FakeRuntimeFactory(release_on_run=False),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         try:
             assert wait_until(lambda: controller.state is SessionState.RUNNING)
             controller.set_log_level("DEBUG")
@@ -297,7 +303,7 @@ class TestAutomaticStart:
             runtime_factory=FakeRuntimeFactory(release_on_run=False),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         assert wait_until(lambda: controller.state is SessionState.RUNNING)
 
         controller.request_stop()
@@ -311,11 +317,11 @@ class TestDoubleStart:
             runtime_factory=FakeRuntimeFactory(release_on_run=False),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         try:
             assert wait_until(lambda: controller.state is SessionState.RUNNING)
             with pytest.raises(SessionAlreadyActiveError):
-                controller.start(Path("other.json"))
+                controller.start(Path("other.json"), app_settings=APP_SETTINGS)
         finally:
             controller.request_stop()
             runtime_factory.runtimes[0].release()
@@ -328,7 +334,7 @@ class TestStop:
             runtime_factory=FakeRuntimeFactory(release_on_run=False),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         assert wait_until(lambda: controller.state is SessionState.RUNNING)
 
         controller.request_stop()
@@ -343,10 +349,10 @@ class TestStop:
         assert controller.result.state is SessionState.STOPPED
 
     def test_stop_during_loading_is_held_and_never_runs(self) -> None:
-        loader = BlockingConfigurationLoader(make_configuration())
-        controller, runtime_factory, _ = make_controller(configuration_loader=loader)
+        loader = BlockingProfileLoader(make_profile())
+        controller, runtime_factory, _ = make_controller(profile_loader=loader)
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         assert loader.entered.wait(5.0)
         assert controller.state is SessionState.LOADING
 
@@ -362,7 +368,7 @@ class TestStop:
             runtime_factory=FakeRuntimeFactory(release_on_run=False),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         try:
             assert wait_until(lambda: controller.state is SessionState.RUNNING)
             controller.request_stop()
@@ -379,10 +385,10 @@ class TestFailureClassification:
     def test_unexpected_loader_failure_reaches_terminal_state(self) -> None:
         error = RuntimeError("unexpected loader failure")
         controller, _, _ = make_controller(
-            configuration_loader=FakeConfigurationLoader(error=error),
+            profile_loader=FakeProfileLoader(error=error),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.FAILED
@@ -401,10 +407,10 @@ class TestFailureClassification:
     )
     def test_configuration_failure(self, error) -> None:
         controller, _, _ = make_controller(
-            configuration_loader=FakeConfigurationLoader(error=error),
+            profile_loader=FakeProfileLoader(error=error),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.FAILED
@@ -427,7 +433,7 @@ class TestFailureClassification:
             scenario_loader=FakeScenarioLoader(error=error),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.FAILED
@@ -450,7 +456,7 @@ class TestFailureClassification:
             source_builder=FakeSourceBuilder(error=error),
         )
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.FAILED
@@ -466,7 +472,7 @@ class TestFailureClassification:
         )
         controller, _, _ = make_controller(runtime_factory=runtime_factory)
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.FAILED
@@ -479,7 +485,7 @@ class TestFailureClassification:
         runtime_factory.runtime_error = RuntimeError("runtime blew up")
         controller, _, _ = make_controller(runtime_factory=runtime_factory)
 
-        controller.start(Path("config.json"))
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.FAILED
@@ -492,11 +498,11 @@ class TestRestart:
     def test_new_session_can_start_from_terminal_state(self) -> None:
         controller, runtime_factory, diagnostics_factory = make_controller()
 
-        controller.start(Path("first.json"))
+        controller.start(Path("first.json"), app_settings=APP_SETTINGS)
         controller.join()
         assert controller.state is SessionState.COMPLETED
 
-        controller.start(Path("second.json"))
+        controller.start(Path("second.json"), app_settings=APP_SETTINGS)
         controller.join()
 
         assert controller.state is SessionState.COMPLETED
@@ -525,7 +531,7 @@ def test_reference_resize_is_applied_before_session_starts() -> None:
         0.9,
     )
     scenario = Scenario(condition, None, None, ())
-    original = make_configuration()
+    original = make_profile()
     configuration = replace(
         original,
         source=replace(
@@ -536,10 +542,10 @@ def test_reference_resize_is_applied_before_session_starts() -> None:
         ),
     )
     controller, _, diagnostics_factory = make_controller(
-        configuration_loader=FakeConfigurationLoader(configuration=configuration),
+        profile_loader=FakeProfileLoader(profile=configuration),
         scenario_loader=FakeScenarioLoader(scenario=scenario),
     )
-    controller.start(Path("config.json"))
+    controller.start(Path("config.json"), app_settings=APP_SETTINGS)
     assert controller.join(5.0)
     assert controller.state is SessionState.COMPLETED
     instances, _ = diagnostics_factory.created[0].bind_runtime_calls[0]
@@ -574,7 +580,7 @@ def test_session_tracks_disconnect_and_reconnect_without_runtime_restart() -> No
     factory = FakeRuntimeFactory(release_on_run=False)
     factory.call_runtime_started = False
     controller, _, diagnostics_factory = make_controller(runtime_factory=factory)
-    controller.start("config.json")
+    controller.start("config.json", app_settings=APP_SETTINGS)
     try:
         assert wait_until(
             lambda: bool(factory.runtimes) and factory.runtimes[0].ran.is_set()
@@ -641,7 +647,7 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
         def __init__(self) -> None:
             self.sources: list[WaitingSource] = []
 
-        def build(self, configuration, *, base_directory):
+        def build(self, configuration):
             source = WaitingSource()
             self.sources.append(source)
             return source
@@ -663,7 +669,7 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
             "incompatible protocol"
         )
         for _ in range(2):
-            controller.start("config.json")
+            controller.start("config.json", app_settings=APP_SETTINGS)
             try:
                 assert controller.join(3)
                 assert controller.state is SessionState.FAILED
@@ -681,22 +687,58 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
 
 
 def test_reaction_time_is_forwarded_to_the_runtime_factory() -> None:
-    configuration = ApplicationConfiguration(
-        version=1,
-        source=VideoSourceConfiguration("recording.mp4"),
+    profile = Profile(
+        version=2,
+        source=VideoSourceConfiguration(str(BASE / "recording.mp4")),
         instances=(
             InstanceConfiguration(
-                LiveSplitConnection("rpc", "event"),
-                "./scenario.py",
+                LiveSplitConnection(54000),
+                str(BASE / "scenario.py"),
             ),
         ),
-        runtime=RuntimeConfiguration("INFO", 30),
     )
+    app_settings = AppSettings(1, "INFO", 30)
     controller, runtime_factory, _ = make_controller(
-        configuration_loader=FakeConfigurationLoader(configuration=configuration),
+        profile_loader=FakeProfileLoader(profile=profile),
     )
 
-    controller.start(Path("config.json"))
+    controller.start(Path("config.json"), app_settings=app_settings)
     controller.join()
 
     assert runtime_factory.reaction_time_ms == 30
+
+
+class TestRequestResetAll:
+    def test_forwards_to_a_running_runtime(self) -> None:
+        controller, runtime_factory, _ = make_controller(
+            runtime_factory=FakeRuntimeFactory(release_on_run=False),
+        )
+
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
+        try:
+            assert wait_until(lambda: controller.state is SessionState.RUNNING)
+            controller.request_reset_all()
+
+            assert runtime_factory.runtimes[0].request_reset_all_calls == 1
+        finally:
+            controller.request_stop()
+            runtime_factory.runtimes[0].release()
+            controller.join()
+
+    def test_without_a_runtime_is_a_noop(self) -> None:
+        controller, runtime_factory, _ = make_controller()
+
+        controller.request_reset_all()
+
+        assert runtime_factory.runtimes == []
+
+    def test_after_completion_is_a_noop(self) -> None:
+        controller, runtime_factory, _ = make_controller()
+
+        controller.start(Path("config.json"), app_settings=APP_SETTINGS)
+        controller.join()
+        assert controller.state is SessionState.COMPLETED
+
+        controller.request_reset_all()
+
+        assert runtime_factory.runtimes[0].request_reset_all_calls == 0

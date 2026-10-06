@@ -3,13 +3,14 @@ name = "divergencesplitter-ui"
 version = "0.1.0"
 description = "Windows desktop UI for DivergenceSplitter"
 requires-python = ">=3.14"
-license = "GPL-3.0-only"
+license = "MIT"
 classifiers = [
     "Operating System :: Microsoft :: Windows",
 ]
 dependencies = [
     "divergencesplitter-runtime",
     "flet>=1.0,<2",
+    "ndi-python>=6.3.2.4 ; sys_platform == 'win32'",
 ]
 
 [project.scripts]
@@ -33,7 +34,6 @@ divergencesplitter = "../divergencesplitter"
 [tool.flet.windows]
 dependencies = [
     "divergencesplitter",
-    "ndi-python>=6.3.2.4",
 ]
 
 [tool.flet.windows.compile]
@@ -51,3 +51,4 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

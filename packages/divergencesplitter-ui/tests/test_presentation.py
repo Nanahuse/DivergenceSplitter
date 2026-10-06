@@ -56,7 +56,7 @@ class FakeClock:
 def make_scenario(*reset_conditions, splits=()) -> ScenarioInstance:
     conditions = reset_conditions or (Detected(MeanBrightnessDetector(), -1.0),)
     return ScenarioInstance(
-        connection=LiveSplitConnection("rpc", "event"),
+        connection=LiveSplitConnection(54000),
         scenario=Scenario(
             start_condition=conditions[0],
             reset_condition=conditions[-1],
@@ -87,7 +87,7 @@ class TestStatusAndScoreFormatting:
         scenario = make_scenario()
         node = build_detector_tree((scenario,)).scenarios[0]
 
-        assert scenario_label(node) == "Scenario 0  rpc=rpc  event=event"
+        assert scenario_label(node) == "Scenario 0  port=54000"
 
 
 class TestSplitLabel:

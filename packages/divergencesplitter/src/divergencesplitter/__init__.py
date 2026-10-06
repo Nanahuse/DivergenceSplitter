@@ -1,6 +1,11 @@
 """DivergenceSplitter public API."""
 
-from divergencesplitter.clock import MonotonicTime, TimeProvider
+from divergencesplitter.clock import (
+    MonotonicTime,
+    ThreadCpuTime,
+    ThreadTimeProvider,
+    TimeProvider,
+)
 from divergencesplitter.condition import (
     All,
     Any,
@@ -133,6 +138,8 @@ __all__ = [
     "TemplateMatchConfig",
     "TemplateMatchDetector",
     "Then",
+    "ThreadCpuTime",
+    "ThreadTimeProvider",
     "TimeProvider",
     "VideoFileSource",
     "detect_ndi_support",

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import cast
 
 import numpy as np
+import pytest
 from divergencesplitter import (
     Action,
     Detected,
@@ -19,11 +20,14 @@ from divergencesplitter import (
     ReferenceImage,
     Rule,
     Scenario,
+    ThreadCpuTime,
+    ThreadTimeProvider,
     TimeProvider,
 )
 from divergencesplitter.frame.models import SharedFrameEvaluation
 from divergencesplitter_runtime import (
     ActionExecution,
+    ActionOutcome,
     BridgeEventConnectionLost,
     BridgeEventReceived,
     InstanceRuntime,
@@ -113,13 +117,19 @@ class ScriptedAdapter:
             self.baseline = event.snapshot
         return event
 
-    def resync(self, reason: LiveSplitResyncReason) -> LiveSplitUpdate:
+    def resync(
+        self,
+        reason: LiveSplitResyncReason,
+        *,
+        event_sequence: int | None = None,
+    ) -> LiveSplitUpdate:
+        del event_sequence
         self.resynced.append(reason)
         return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, self.baseline)
 
     def execute_action(
         self, action: Action, expected_snapshot: LiveSplitSnapshot
-    ) -> ActionExecution:
+    ) -> ActionOutcome:
         self.attempts.append((action, expected_snapshot))
         if self._clock is not None:
             self.dispatch_times.append(self._clock.nanoseconds)
@@ -127,8 +137,8 @@ class ScriptedAdapter:
             self.execute_result is ActionExecution.DISPATCHED
             and expected_snapshot != self.baseline
         ):
-            return ActionExecution.NOT_DISPATCHED
-        return self.execute_result
+            return ActionOutcome(ActionExecution.NOT_DISPATCHED)
+        return ActionOutcome(self.execute_result)
 
     def close(self) -> None:
         self.closed = True
@@ -173,6 +183,8 @@ class RecordingDiagnostics:
         self.run_changes: list[tuple[int, LiveSplitRunInfo | None]] = []
         self.evaluated: list[int] = []
         self.completions: list[int] = []
+        self.evaluation_cpu_durations_ns: list[int] = []
+        self.evaluation_wall_durations_ns: list[int] = []
         self.resets: list[int] = []
         self.reactions: list[tuple[int, Action, int, int, int]] = []
         self.cancellations: list[tuple[int, Action, str]] = []
@@ -206,9 +218,13 @@ class RecordingDiagnostics:
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None:
         self.evaluated.append(scenario_index)
         self.completions.append(completed_at.nanoseconds)
+        self.evaluation_cpu_durations_ns.append(evaluation_cpu_duration_ns)
+        self.evaluation_wall_durations_ns.append(evaluation_wall_duration_ns)
 
     def instance_reset(self, scenario_index: int) -> None:
         self.resets.append(scenario_index)
@@ -309,7 +325,7 @@ class RecordingDiagnostics:
 def snapshot(
     *,
     session_id: int = 1,
-    event_sequence: int = 0,
+    state_revision: int = 0,
     run_revision: int = 1,
     phase: TimerPhase = TimerPhase.RUNNING,
     split_index: int = 0,
@@ -317,8 +333,7 @@ def snapshot(
 ) -> LiveSplitSnapshot:
     return LiveSplitSnapshot(
         session_id=session_id,
-        state_revision=event_sequence,
-        event_sequence=event_sequence,
+        state_revision=state_revision,
         run_revision=run_revision,
         phase=phase,
         split_index=split_index,
@@ -369,6 +384,14 @@ class ManualClock(TimeProvider):
         return MonotonicTime(self.nanoseconds)
 
 
+class ManualThreadTimeProvider(ThreadTimeProvider):
+    def __init__(self, nanoseconds: int = 0) -> None:
+        self.nanoseconds = nanoseconds
+
+    def now(self) -> ThreadCpuTime:
+        return ThreadCpuTime(self.nanoseconds)
+
+
 class Harness:
     def __init__(
         self,
@@ -380,8 +403,10 @@ class Harness:
         diagnostics: RecordingDiagnostics | None = None,
         log: list[str] | None = None,
         time_provider: TimeProvider | None = None,
+        cpu_time_provider: ThreadTimeProvider | None = None,
         reaction_time_ms: int = 0,
         reaction_wait: Callable[[int], None] | None = None,
+        preload_events: tuple[BridgeEventReceived, ...] = (),
     ) -> None:
         self.initial = initial if initial is not None else initial_update()
         self.execute_result = execute_result
@@ -390,15 +415,17 @@ class Harness:
         self.adapters: list[ScriptedAdapter] = []
         self._fixed_adapter = adapter
         self._log = log
+        self._preload_events = preload_events
         self.instance = InstanceRuntime(
             0,
-            LiveSplitConnection("rpc", "event"),
+            LiveSplitConnection(54100),
             scenario,
             diagnostics=self.diagnostics,
             reconnect_delay_seconds=0.001,
             receive_timeout_ms=1,
             reaction_time_ms=reaction_time_ms,
             time_provider=time_provider,
+            cpu_time_provider=cpu_time_provider,
             reaction_wait=reaction_wait,
             adapter_factory=self._new_adapter,
             receiver_factory=self._new_receiver,
@@ -407,6 +434,9 @@ class Harness:
 
     def _new_receiver(self, wakeup: threading.Event) -> ControlledReceiver:
         receiver = ControlledReceiver(wakeup)
+        if not self.receivers:
+            for message in self._preload_events:
+                receiver.push(message)
         self.receivers.append(receiver)
         return receiver
 
@@ -616,6 +646,74 @@ def test_shared_cache_detects_once_across_instances() -> None:
     assert calls == [1]
 
 
+def test_shared_cache_waiter_cpu_excludes_the_wait() -> None:
+    owner_started = threading.Event()
+    release = threading.Event()
+    waiter_started = threading.Event()
+
+    class BlockingDetector:
+        @property
+        def reference_images(self) -> tuple[ReferenceImage, ...]:
+            return ()
+
+        def detect(self, context: FrameContext) -> DetectionResult:
+            owner_started.set()
+            assert release.wait(3)
+            return DetectionResult(score=1.0)
+
+        def __eq__(self, other: object) -> bool:
+            return isinstance(other, BlockingDetector)
+
+        def __hash__(self) -> int:
+            return hash("BlockingDetector")
+
+    class SignallingCpuTimeProvider(ThreadTimeProvider):
+        def now(self) -> ThreadCpuTime:
+            waiter_started.set()
+            return super().now()
+
+    def scenario() -> Scenario:
+        condition = Detected(BlockingDetector(), 0.5)
+        return Scenario(
+            start_condition=condition,
+            reset_condition=None,
+            incomplete_condition=None,
+            splits=((Rule(condition, Action("split")),),),
+        )
+
+    owner = Harness(scenario())
+    waiter = Harness(scenario(), cpu_time_provider=SignallingCpuTimeProvider())
+    owner.start()
+    waiter.start()
+    try:
+        owner.wait_ready()
+        waiter.wait_ready()
+        shared = shared_frame(1)
+        owner.instance.publish_frame(shared)
+        assert owner_started.wait(3)
+        # The waiter hits the same cache key and blocks on the owner's event.
+        waiter.instance.publish_frame(shared)
+        assert waiter_started.wait(3)
+        # Hold the owner so the waiter accumulates wall-clock time but no CPU.
+        time.sleep(0.2)
+        release.set()
+        wait_for(
+            lambda: (
+                bool(owner.diagnostics.evaluated) and bool(waiter.diagnostics.evaluated)
+            )
+        )
+    finally:
+        release.set()
+        owner.stop()
+        waiter.stop()
+
+    waiter_wall = waiter.diagnostics.evaluation_wall_durations_ns[0]
+    waiter_cpu = waiter.diagnostics.evaluation_cpu_durations_ns[0]
+    assert waiter_wall >= 100_000_000
+    assert waiter_cpu < 50_000_000
+    assert waiter_cpu < waiter_wall
+
+
 # -- Event ordering and Action semantics --------------------------------------
 
 
@@ -629,7 +727,7 @@ def test_bridge_event_is_applied_before_frame_evaluation() -> None:
     try:
         harness.wait_ready()
         harness.push_event(
-            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1))
+            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=1))
         )
         harness.instance.publish_frame(shared_frame(1))
         wait_for(lambda: "eval" in log)
@@ -646,7 +744,7 @@ def test_bridge_events_are_applied_in_receive_order() -> None:
         def handle_event(self, event: object) -> object:
             result = super().handle_event(event)
             if isinstance(event, LiveSplitUpdate):
-                handled.append(event.snapshot.event_sequence)
+                handled.append(event.snapshot.state_revision)
             return result
 
     harness = Harness(
@@ -659,7 +757,7 @@ def test_bridge_events_are_applied_in_receive_order() -> None:
         for sequence in (1, 2, 3):
             harness.push_event(
                 LiveSplitUpdate(
-                    LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=sequence)
+                    LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=sequence)
                 )
             )
         harness.instance.publish_frame(shared_frame(1))
@@ -687,7 +785,7 @@ def test_late_event_rejects_stale_action_without_rpc() -> None:
         harness.instance.publish_frame(shared_frame(1))
         assert entered.wait(3)
         harness.push_event(
-            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1))
+            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=1))
         )
         release.set()
         wait_for(lambda: bool(harness.adapter.attempts))
@@ -706,7 +804,7 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
     class SignalingAdapter(ScriptedAdapter):
         def execute_action(
             self, action: Action, expected_snapshot: LiveSplitSnapshot
-        ) -> ActionExecution:
+        ) -> ActionOutcome:
             result = super().execute_action(action, expected_snapshot)
             dispatched.set()
             return result
@@ -727,15 +825,28 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
     assert harness.diagnostics.resets == []
 
 
-def test_start_or_reset_decision_resets_evaluation_metrics() -> None:
-    reset_condition = RecordingCondition(True)
+@pytest.mark.parametrize(
+    "operation",
+    ["start", "reset"],
+    ids=["start", "reset"],
+)
+def test_start_or_reset_decision_resets_evaluation_metrics(operation: str) -> None:
+    is_start = operation == "start"
     scenario = Scenario(
-        start_condition=RecordingCondition(False),
-        reset_condition=reset_condition,
+        start_condition=RecordingCondition(is_start),
+        reset_condition=RecordingCondition(not is_start),
         incomplete_condition=None,
-        splits=((Rule(RecordingCondition(True), Action("split")),),),
+        splits=((Rule(RecordingCondition(False), Action("split")),),),
     )
-    harness = Harness(scenario)
+    initial = (
+        LiveSplitUpdate(
+            LiveSplitUpdateKind.INITIAL,
+            snapshot(phase=TimerPhase.NOT_RUNNING, split_index=-1),
+        )
+        if is_start
+        else initial_update()
+    )
+    harness = Harness(scenario, initial=initial)
     harness.start()
     try:
         harness.wait_ready()
@@ -744,10 +855,11 @@ def test_start_or_reset_decision_resets_evaluation_metrics() -> None:
     finally:
         harness.stop()
 
+    assert [action.operation for action, _ in harness.adapter.attempts] == [operation]
     assert harness.diagnostics.resets == [0]
 
 
-def test_evaluation_latency_ends_at_evaluate_return() -> None:
+def test_evaluation_duration_ends_at_evaluate_return() -> None:
     entered = threading.Event()
     release = threading.Event()
 
@@ -756,28 +868,33 @@ def test_evaluation_latency_ends_at_evaluate_return() -> None:
             entered.set()
             assert release.wait(3)
 
-    clock = ManualClock(0)
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
 
     class SlowActionAdapter(ScriptedAdapter):
         def execute_action(
             self, action: Action, expected_snapshot: LiveSplitSnapshot
-        ) -> ActionExecution:
-            # Action/RPC time must never be added to the evaluation latency.
-            clock.nanoseconds = 999_999_999
+        ) -> ActionOutcome:
+            # Action/RPC time must never be added to the evaluation duration.
+            wall.nanoseconds = 999_999_999
+            cpu.nanoseconds = 999_999_999
             return super().execute_action(action, expected_snapshot)
 
     condition = RecordingCondition(True, on_evaluate=on_evaluate)
     harness = Harness(
         make_scenario(condition),
         adapter=SlowActionAdapter(initial_update()),
-        time_provider=clock,
+        time_provider=wall,
+        cpu_time_provider=cpu,
     )
     harness.start()
     try:
         harness.wait_ready()
+        # Frame captured at 100 ns; evaluation starts at 0 and returns at 250 ns.
         harness.instance.publish_frame(shared_frame(100))
         assert entered.wait(3)
-        clock.nanoseconds = 250
+        wall.nanoseconds = 250
+        cpu.nanoseconds = 250
         release.set()
         wait_for(lambda: bool(harness.diagnostics.completions))
     finally:
@@ -785,6 +902,145 @@ def test_evaluation_latency_ends_at_evaluate_return() -> None:
         harness.stop()
 
     assert harness.diagnostics.completions == [250]
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [250]
+    assert harness.diagnostics.evaluation_wall_durations_ns == [250]
+
+
+def test_evaluation_duration_records_evaluate_time() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        wall.nanoseconds = 5_000_000
+        cpu.nanoseconds = 5_000_000
+        entered.set()
+        assert release.wait(3)
+
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=wall,
+        cpu_time_provider=cpu,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_cpu_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+    assert harness.diagnostics.evaluation_wall_durations_ns == [5_000_000]
+
+
+def test_evaluation_duration_excludes_capture_to_start_wait() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        wall.nanoseconds = 105_000_000
+        cpu.nanoseconds = 5_000_000
+        entered.set()
+        assert release.wait(3)
+
+    # 100 ms elapse between capture and evaluation start without consuming CPU.
+    wall = ManualClock(100_000_000)
+    cpu = ManualThreadTimeProvider(0)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=wall,
+        cpu_time_provider=cpu,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(100))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_cpu_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+
+
+def test_evaluation_duration_excludes_thread_stop_time() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        # 3 ms of work, then the thread is stopped for 100 ms (CPU frozen), then
+        # 2 ms more work: thread CPU 5 ms, wall-clock 105 ms.
+        wall.nanoseconds += 3_000_000
+        cpu.nanoseconds += 3_000_000
+        wall.nanoseconds += 100_000_000
+        wall.nanoseconds += 2_000_000
+        cpu.nanoseconds += 2_000_000
+        entered.set()
+        assert release.wait(3)
+
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
+    harness = Harness(
+        make_scenario(RecordingCondition(False, on_evaluate=on_evaluate)),
+        time_provider=wall,
+        cpu_time_provider=cpu,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(harness.diagnostics.evaluation_cpu_durations_ns))
+    finally:
+        release.set()
+        harness.stop()
+
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+    assert harness.diagnostics.evaluation_wall_durations_ns == [105_000_000]
+
+
+def test_reaction_time_is_excluded_from_evaluation_duration() -> None:
+    wall = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
+    entered, release = threading.Event(), threading.Event()
+
+    def on_evaluate(context: FrameContext) -> None:
+        wall.nanoseconds = 5_000_000
+        cpu.nanoseconds = 5_000_000
+        entered.set()
+        assert release.wait(3)
+
+    adapter = ScriptedAdapter(initial_update(), clock=wall)
+    harness = Harness(
+        make_scenario(RecordingCondition(True, on_evaluate=on_evaluate)),
+        adapter=adapter,
+        time_provider=wall,
+        cpu_time_provider=cpu,
+        reaction_time_ms=100,
+        reaction_wait=_advance_to_deadline(wall),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        assert entered.wait(3)
+        release.set()
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        release.set()
+        harness.stop()
+
+    # evaluate() consumed 5 ms of CPU; the 100 ms reaction wait is not CPU time.
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [5_000_000]
+    assert adapter.dispatch_times == [100_000_000]
 
 
 def test_unknown_rpc_result_recovers_without_resend() -> None:
@@ -933,6 +1189,7 @@ def test_zero_reaction_time_dispatches_immediately_without_waiting() -> None:
 
 def test_frames_during_reaction_wait_are_latest_only() -> None:
     clock = ManualClock(0)
+    cpu = ManualThreadTimeProvider(0)
     condition = RecordingCondition(True)
     adapter = ScriptedAdapter(
         initial_update(), execute_result=ActionExecution.NOT_DISPATCHED, clock=clock
@@ -950,6 +1207,7 @@ def test_frames_during_reaction_wait_are_latest_only() -> None:
         make_scenario(condition),
         adapter=adapter,
         time_provider=clock,
+        cpu_time_provider=cpu,
         reaction_time_ms=30,
         reaction_wait=wait,
     )
@@ -962,13 +1220,17 @@ def test_frames_during_reaction_wait_are_latest_only() -> None:
         harness.stop()
 
     assert condition.captured_at == [1, 4]
+    # The latest frame (captured_at=4) is evaluated only after the 30 ms
+    # reaction wait, but neither that wait nor the frame staleness is charged
+    # to the evaluation CPU duration.
+    assert harness.diagnostics.evaluation_cpu_durations_ns == [0, 0]
 
 
 def test_periodic_update_during_reaction_follows_expected_snapshot() -> None:
     clock = ManualClock(0)
     condition = RecordingCondition(True)
     adapter = ScriptedAdapter(initial_update(), clock=clock)
-    periodic = LiveSplitUpdate(LiveSplitUpdateKind.PERIODIC, snapshot(event_sequence=1))
+    periodic = LiveSplitUpdate(LiveSplitUpdateKind.PERIODIC, snapshot(state_revision=1))
 
     def wait(timeout_ns: int) -> None:
         harness.receiver.push(
@@ -1000,7 +1262,7 @@ def test_transition_during_reaction_cancels_action() -> None:
     condition = RecordingCondition(True)
     adapter = ScriptedAdapter(initial_update(), clock=clock)
     transition = LiveSplitUpdate(
-        LiveSplitUpdateKind.TRANSITION, snapshot(event_sequence=1)
+        LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=1)
     )
 
     def wait(timeout_ns: int) -> None:
@@ -1166,3 +1428,137 @@ def test_unknown_after_reaction_recovers_without_resend() -> None:
     assert harness.adapters[0].attempts
     assert harness.adapters[1].attempts == []
     assert harness.instance.generation == 1
+
+
+# -- Manual Reset --------------------------------------------------------------
+
+
+def phase_update(phase: TimerPhase) -> LiveSplitUpdate:
+    if phase is TimerPhase.NOT_RUNNING:
+        split_index = -1
+    elif phase is TimerPhase.ENDED:
+        split_index = 1
+    else:
+        split_index = 0
+    return LiveSplitUpdate(
+        LiveSplitUpdateKind.INITIAL,
+        snapshot(phase=phase, split_index=split_index),
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [TimerPhase.RUNNING, TimerPhase.PAUSED, TimerPhase.ENDED],
+)
+def test_manual_reset_runs_for_resettable_phases(phase: TimerPhase) -> None:
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        initial=phase_update(phase),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: bool(harness.adapter.attempts))
+    finally:
+        harness.stop()
+
+    assert [action.operation for action, _ in harness.adapter.attempts] == ["reset"]
+    assert harness.adapter.attempts[0][1].phase is phase
+    assert harness.diagnostics.resets == [0]
+
+
+def test_manual_reset_is_noop_when_not_running() -> None:
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        initial=phase_update(TimerPhase.NOT_RUNNING),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
+    finally:
+        harness.stop()
+
+    assert harness.adapter.attempts == []
+    assert harness.diagnostics.resets == []
+
+
+def test_manual_reset_uses_snapshot_at_processing_time() -> None:
+    harness = Harness(make_scenario(RecordingCondition(False)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        # The transition is already queued when the request is made: the request
+        # must be judged against the state drained in this cycle, not request time.
+        harness.push_event(
+            LiveSplitUpdate(
+                LiveSplitUpdateKind.TRANSITION,
+                snapshot(
+                    state_revision=1,
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                ),
+            )
+        )
+        harness.instance.request_reset()
+        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
+    finally:
+        harness.stop()
+
+    assert harness.adapter.attempts == []
+    assert harness.diagnostics.resets == []
+
+
+def test_manual_reset_ignores_reaction_time() -> None:
+    waits: list[int] = []
+    adapter = ScriptedAdapter(initial_update())
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        adapter=adapter,
+        reaction_time_ms=100,
+        reaction_wait=waits.append,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        harness.stop()
+
+    assert waits == []
+    assert harness.diagnostics.reactions == []
+    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert harness.diagnostics.resets == [0]
+
+
+def test_initial_sync_primes_baseline_from_queued_events() -> None:
+    adapter = ScriptedAdapter(initial_update())
+    duplicate = LiveSplitUpdate(
+        LiveSplitUpdateKind.TRANSITION,
+        snapshot(state_revision=0),
+    )
+    newer = LiveSplitUpdate(
+        LiveSplitUpdateKind.TRANSITION,
+        snapshot(state_revision=3, split_index=0),
+    )
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        adapter=adapter,
+        preload_events=(
+            BridgeEventReceived(cast(common_pb2.BridgeEvent, duplicate)),
+            BridgeEventReceived(cast(common_pb2.BridgeEvent, newer)),
+        ),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        wait_for(lambda: adapter.baseline == newer.snapshot and bool(adapter.handled))
+        assert harness.instance._scenario_runtime is not None
+        assert harness.instance._scenario_runtime.current_snapshot == newer.snapshot
+        assert adapter.baseline == newer.snapshot
+    finally:
+        harness.stop()

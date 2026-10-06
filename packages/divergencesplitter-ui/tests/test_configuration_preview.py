@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -10,6 +9,7 @@ from divergencesplitter import Frame, MonotonicTime
 from divergencesplitter.frame.camera import CameraCaptureSettings
 from divergencesplitter.frame.normalizer import FrameNormalizationError
 from divergencesplitter_runtime.configuration.models import (
+    CameraSourceConfiguration,
     NdiSourceConfiguration,
     SourceTransformConfiguration,
 )
@@ -23,7 +23,7 @@ from divergencesplitter_ui.configuration.preview import (
 
 class FakeCameraPreview:
     def __init__(self) -> None:
-        self.started: list[tuple] = []
+        self.started: list[CameraSourceConfiguration | NdiSourceConfiguration] = []
         self.stop_calls = 0
         self.transforms: list = []
         self.latest: Frame | None = None
@@ -31,8 +31,8 @@ class FakeCameraPreview:
         self.error: str | None = None
         self.settings = None
 
-    def start(self, configuration, base_directory) -> None:
-        self.started.append((configuration, base_directory))
+    def start(self, configuration) -> None:
+        self.started.append(configuration)
 
     def stop(self) -> None:
         self.stop_calls += 1
@@ -92,11 +92,11 @@ class TestPreviewController:
         controller = make_controller(camera)
         configuration = NdiSourceConfiguration("OBS")
 
-        controller.start_draft(configuration, Path("."))
+        controller.start_draft(configuration)
         controller.update_transform(SourceTransformConfiguration())
         controller.stop()
 
-        assert camera.started == [(configuration, Path("."))]
+        assert camera.started == [configuration]
         assert len(camera.transforms) == 1
         assert camera.stop_calls == 1
 
@@ -146,9 +146,12 @@ class TestSourceSwitch:
         camera = FakeCameraPreview()
         controller = make_controller(camera)
 
-        controller.start_draft(NdiSourceConfiguration("A"), Path("."))
+        controller.start_draft(NdiSourceConfiguration("A"))
         controller.stop()
-        controller.start_draft(NdiSourceConfiguration("B"), Path("."))
+        controller.start_draft(NdiSourceConfiguration("B"))
 
-        assert [item[0].name for item in camera.started] == ["A", "B"]
+        assert [cast(NdiSourceConfiguration, item).name for item in camera.started] == [
+            "A",
+            "B",
+        ]
         assert camera.stop_calls == 1

@@ -1,0 +1,693 @@
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import patch
+
+import pytest
+from divergencesplitter.frame.camera import OpenCvCameraSource
+from divergencesplitter.frame.ndi import NdiSource, NdiSupport
+from divergencesplitter.frame.normalizer import CropMargins, OutputSize
+from divergencesplitter.frame.video_file import VideoFileSource
+from divergencesplitter_runtime.configuration.models import (
+    CameraBackend,
+    CameraDeviceConfiguration,
+    CameraModeConfiguration,
+    CameraSourceConfiguration,
+    CropConfiguration,
+    NdiSourceConfiguration,
+    Profile,
+    ResizeConfiguration,
+    SourceTransformConfiguration,
+    VideoSourceConfiguration,
+)
+from divergencesplitter_runtime.configuration.profile_json import (
+    load_profile,
+    save_profile,
+)
+from divergencesplitter_runtime.configuration.source_builder import (
+    CameraDeviceInfo,
+    SourceConfigurationError,
+    build_frame_source,
+    resolve_camera_device,
+    resolve_camera_mode,
+)
+from divergencesplitter_runtime.configuration.strict_json import (
+    ConfigurationFileError,
+    ConfigurationValidationError,
+)
+
+
+def profile_document(
+    base: Path,
+    *,
+    source: dict[str, object] | None = None,
+    instances: list[dict[str, object]] | None = None,
+    version: object = 2,
+) -> dict[str, object]:
+    document: dict[str, object] = {
+        "version": version,
+        "source": source
+        if source is not None
+        else {
+            "type": "camera",
+            "device": {"backend": "direct_show", "name": "USB Camera", "index": 2},
+            "mode": {
+                "width": 1280,
+                "height": 720,
+                "fps": 60,
+                "subtype_guid": "47504A4D-0000-0010-8000-00AA00389B71",
+            },
+            "request_60_fps": False,
+        },
+        "instances": instances
+        if instances is not None
+        else [
+            {
+                "connection": {"port": 54000},
+                "scenario": str(base / "scenario.py"),
+            }
+        ],
+    }
+    return document
+
+
+def write_document(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def fake_device(index: int, modes: list[object] | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        backend=SimpleNamespace(name="DIRECT_SHOW"),
+        name="USB Camera",
+        index=index,
+        modes=modes or [],
+    )
+
+
+def test_loads_camera_profile(tmp_path: Path) -> None:
+    path = tmp_path / "profile.json"
+    write_document(path, profile_document(tmp_path))
+
+    profile = load_profile(path)
+
+    assert profile.version == 2
+    assert profile.source == CameraSourceConfiguration(
+        CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
+        CameraModeConfiguration(
+            1280, 720, 60.0, "47504A4D-0000-0010-8000-00AA00389B71"
+        ),
+        False,
+    )
+    assert len(profile.instances) == 1
+    assert profile.instances[0].scenario == str(tmp_path / "scenario.py")
+    assert profile.instances[0].connection.port == 54000
+
+
+def test_loads_multiple_instances(tmp_path: Path) -> None:
+    instances: list[dict[str, object]] = [
+        {
+            "connection": {"port": 54000},
+            "scenario": str(tmp_path / "main.yaml"),
+        },
+        {
+            "connection": {"port": 54100},
+            "scenario": str(tmp_path / "sub.py"),
+        },
+    ]
+    path = tmp_path / "profile.json"
+    write_document(path, profile_document(tmp_path, instances=instances))
+
+    profile = load_profile(path)
+
+    assert [instance.scenario for instance in profile.instances] == [
+        str(tmp_path / "main.yaml"),
+        str(tmp_path / "sub.py"),
+    ]
+    assert profile.instances[1].connection.port == 54100
+
+
+def test_loads_video_profile(tmp_path: Path) -> None:
+    value = profile_document(
+        tmp_path,
+        source={"type": "video", "path": str(tmp_path / "run.mp4")},
+    )
+    path = tmp_path / "profile.json"
+    write_document(path, value)
+
+    profile = load_profile(path)
+
+    assert profile.source == VideoSourceConfiguration(str(tmp_path / "run.mp4"))
+
+
+def test_loads_ndi_profile(tmp_path: Path) -> None:
+    value = profile_document(
+        tmp_path, source={"type": "ndi", "name": "Gaming PC (OBS)"}
+    )
+    path = tmp_path / "profile.json"
+    write_document(path, value)
+
+    profile = load_profile(path)
+
+    assert profile.version == 2
+    assert profile.source == NdiSourceConfiguration("Gaming PC (OBS)")
+
+
+def test_ndi_profile_round_trips_through_save_and_load(tmp_path: Path) -> None:
+    profile = load_profile(
+        _write_profile(
+            tmp_path,
+            profile_document(
+                tmp_path,
+                source={
+                    "type": "ndi",
+                    "name": "Gaming PC (OBS)",
+                    "transform": {
+                        "crop": {"left": 1, "right": 2, "top": 3, "bottom": 4},
+                        "resize": {"width": 320, "height": 240},
+                    },
+                },
+            ),
+        )
+    )
+
+    saved = tmp_path / "saved.json"
+    save_profile(saved, profile)
+
+    assert load_profile(saved) == profile
+    assert load_profile(saved).source == NdiSourceConfiguration(
+        "Gaming PC (OBS)",
+        SourceTransformConfiguration(
+            CropConfiguration(1, 2, 3, 4), ResizeConfiguration(320, 240)
+        ),
+    )
+
+
+def test_loads_and_saves_common_source_transform(tmp_path: Path) -> None:
+    value = profile_document(tmp_path)
+    source = cast(dict[str, object], value["source"])
+    source["transform"] = {
+        "crop": {"left": 10, "right": 20, "top": 30, "bottom": 40},
+        "resize": {"width": 320, "height": 240},
+    }
+    profile = load_profile(_write_profile(tmp_path, value))
+
+    assert isinstance(profile.source, CameraSourceConfiguration)
+    assert profile.source.transform == SourceTransformConfiguration(
+        CropConfiguration(10, 20, 30, 40), ResizeConfiguration(320, 240)
+    )
+    saved = tmp_path / "saved.json"
+    save_profile(saved, profile)
+    assert load_profile(saved) == profile
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: CropConfiguration(-1, 0, 10, 10),
+        lambda: CropConfiguration(0, 0, -1, 10),
+        lambda: ResizeConfiguration(0, 10),
+    ],
+)
+def test_transform_dimensions_are_validated(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()
+
+
+@pytest.mark.parametrize(
+    "transform",
+    [
+        {"crop": None, "resize": {"width": 320, "height": 240}},
+        {"crop": {"left": 0, "right": 0, "top": 10, "bottom": 20}, "resize": None},
+    ],
+)
+def test_loads_partial_source_transform(
+    tmp_path: Path, transform: dict[str, object]
+) -> None:
+    value = profile_document(tmp_path)
+    cast(dict[str, object], value["source"])["transform"] = transform
+
+    profile = load_profile(_write_profile(tmp_path, value))
+
+    assert isinstance(profile.source, CameraSourceConfiguration)
+    assert (
+        profile.source.transform.crop is None or profile.source.transform.resize is None
+    )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"version": 1,}',
+        '{"version": NaN}',
+        '{"version": Infinity}',
+        '{"version": 1, "version": 1}',
+        '{/* comment */ "version": 1}',
+    ],
+)
+def test_rejects_non_standard_or_ambiguous_json(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "profile.json"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ConfigurationFileError):
+        load_profile(path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "unknown root",
+        "unknown version",
+        "unknown source",
+        "unknown camera field",
+        "boolean width",
+        "missing instances",
+        "unknown instance field",
+        "unknown connection field",
+        "runtime field",
+    ],
+)
+def test_rejects_invalid_schema(tmp_path: Path, mutation: str) -> None:
+    value = profile_document(tmp_path)
+    source = cast(dict[str, object], value["source"])
+    if mutation == "unknown root":
+        value["unknown"] = 1
+    elif mutation == "unknown version":
+        value["version"] = 3
+    elif mutation == "unknown source":
+        value["source"] = {"type": "sdi"}
+    elif mutation == "unknown camera field":
+        source["path"] = "unexpected.mp4"
+    elif mutation == "boolean width":
+        source["width"] = True
+    elif mutation == "missing instances":
+        value.pop("instances")
+    elif mutation == "unknown instance field":
+        instance = cast(list[dict[str, object]], value["instances"])[0]
+        instance["unknown"] = 1
+    elif mutation == "unknown connection field":
+        instance = cast(list[dict[str, object]], value["instances"])[0]
+        connection = cast(dict[str, object], instance["connection"])
+        connection["unknown"] = 1
+    elif mutation == "runtime field":
+        value["runtime"] = {"log_level": "INFO", "reaction_time_ms": 0}
+    path = tmp_path / "profile.json"
+    write_document(path, value)
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(path)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"type": "ndi", "name": ""},
+        {"type": "ndi", "name": "Gaming PC (OBS)", "unknown": 1},
+        {"type": "ndi"},
+    ],
+)
+def test_rejects_invalid_ndi_source(tmp_path: Path, source: object) -> None:
+    value = profile_document(tmp_path, source=cast(dict[str, object], source))
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["scenarios/smw.yaml", "./scenario.py", "scenario.py"],
+)
+def test_rejects_relative_scenario_path(tmp_path: Path, scenario: str) -> None:
+    value = profile_document(
+        tmp_path,
+        instances=[
+            {
+                "connection": {"port": 54000},
+                "scenario": scenario,
+            }
+        ],
+    )
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
+
+
+@pytest.mark.parametrize("path", ["videos/test.mp4", "./run.mp4", "run.mp4"])
+def test_rejects_relative_video_path(tmp_path: Path, path: str) -> None:
+    value = profile_document(tmp_path, source={"type": "video", "path": path})
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
+
+
+def test_profile_model_requires_absolute_paths() -> None:
+    from divergencesplitter.livesplit.models import LiveSplitConnection
+    from divergencesplitter_runtime.configuration.models import InstanceConfiguration
+
+    with pytest.raises(ValueError):
+        Profile(
+            2,
+            NdiSourceConfiguration("source"),
+            (InstanceConfiguration(LiveSplitConnection(54000), "rel.py"),),
+        )
+    with pytest.raises(ValueError):
+        Profile(2, VideoSourceConfiguration("rel.mp4"), ())
+
+
+@pytest.mark.parametrize("port", [0, 65536, -1, "54000", 54000.0, True])
+def test_port_range_and_type_are_validated(tmp_path: Path, port: object) -> None:
+    value = profile_document(
+        tmp_path,
+        instances=[
+            {
+                "connection": {"port": port},
+                "scenario": str(tmp_path / "scenario.py"),
+            }
+        ],
+    )
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
+
+
+def _legacy_document(
+    base: Path,
+    *,
+    endpoints: tuple[tuple[str, str], ...] = (
+        ("tcp://127.0.0.1:54000", "tcp://127.0.0.1:54001"),
+    ),
+) -> dict[str, object]:
+    return profile_document(
+        base,
+        version=1,
+        instances=[
+            {
+                "connection": {
+                    "rpc_endpoint": rpc_endpoint,
+                    "event_endpoint": event_endpoint,
+                },
+                "scenario": str(base / f"scenario_{index}.py"),
+            }
+            for index, (rpc_endpoint, event_endpoint) in enumerate(endpoints)
+        ],
+    )
+
+
+@pytest.mark.parametrize("count", [1, 2, 3])
+def test_legacy_profile_assigns_sequential_ports(tmp_path: Path, count: int) -> None:
+    endpoints = tuple(
+        (f"tcp://127.0.0.1:{54000 + index}", f"tcp://127.0.0.1:{54001 + index}")
+        for index in range(count)
+    )
+
+    profile = load_profile(
+        _write_profile(tmp_path, _legacy_document(tmp_path, endpoints=endpoints))
+    )
+
+    assert profile.version == 2
+    assert [instance.connection.port for instance in profile.instances] == [
+        54000 + index for index in range(count)
+    ]
+
+
+def test_legacy_endpoint_values_do_not_affect_migration(tmp_path: Path) -> None:
+    endpoints = (
+        ("not-an-endpoint", ""),
+        ("tcp://host:1", "ipc:///tmp/socket"),
+        ("tcp://127.0.0.1:70000", "tcp://127.0.0.1"),
+    )
+
+    profile = load_profile(
+        _write_profile(tmp_path, _legacy_document(tmp_path, endpoints=endpoints))
+    )
+
+    assert [instance.connection.port for instance in profile.instances] == [
+        54000,
+        54001,
+        54002,
+    ]
+
+
+def test_migrated_profile_saves_only_version_2(tmp_path: Path) -> None:
+    profile = load_profile(_write_profile(tmp_path, _legacy_document(tmp_path)))
+    saved = tmp_path / "saved.json"
+
+    save_profile(saved, profile)
+
+    document = json.loads(saved.read_text(encoding="utf-8"))
+    assert document["version"] == 2
+    assert document["instances"][0]["connection"] == {"port": 54000}
+
+
+def test_legacy_profile_requires_both_legacy_endpoints(tmp_path: Path) -> None:
+    value = _legacy_document(tmp_path)
+    instance = cast(list[dict[str, object]], value["instances"])[0]
+    connection = cast(dict[str, object], instance["connection"])
+    del connection["event_endpoint"]
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(_write_profile(tmp_path, value))
+
+
+def test_legacy_migration_rejects_port_overflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from divergencesplitter_runtime.configuration import profile_json
+
+    monkeypatch.setattr(profile_json, "_LEGACY_MIGRATION_PORT_START", 65534)
+    endpoints = tuple(
+        (f"tcp://127.0.0.1:{54000 + index}", f"tcp://127.0.0.1:{54001 + index}")
+        for index in range(3)
+    )
+
+    with pytest.raises(ConfigurationValidationError):
+        load_profile(
+            _write_profile(tmp_path, _legacy_document(tmp_path, endpoints=endpoints))
+        )
+
+
+def test_resolves_unique_name_even_when_saved_index_changed() -> None:
+    configured = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2)
+    devices = cast(list[CameraDeviceInfo], [fake_device(7)])
+
+    assert resolve_camera_device(configured, devices).index == 7
+
+
+def test_resolves_duplicate_name_with_saved_index() -> None:
+    configured = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2)
+    devices = cast(list[CameraDeviceInfo], [fake_device(1), fake_device(2)])
+
+    assert resolve_camera_device(configured, devices).index == 2
+
+
+@pytest.mark.parametrize(
+    "devices",
+    [
+        [],
+        [
+            fake_device(1),
+            fake_device(3),
+        ],
+    ],
+)
+def test_camera_resolution_failure_requires_reselection(devices: list[object]) -> None:
+    configured = CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2)
+
+    with pytest.raises(SourceConfigurationError):
+        resolve_camera_device(configured, cast(list[CameraDeviceInfo], devices))
+
+
+def test_builds_camera_source_from_current_device_and_mode() -> None:
+    mode = SimpleNamespace(width=1280, height=720, fps=60.0, subtype_guid="MJPG-GUID")
+    configuration = CameraSourceConfiguration(
+        CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
+        CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
+        False,
+    )
+    devices = [fake_device(7, [mode])]
+
+    capture = SimpleNamespace(
+        isOpened=lambda: True,
+        get=lambda _: 0,
+        set=lambda *_: True,
+        release=lambda: None,
+    )
+    with (
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
+            return_value=devices,
+        ),
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder.importlib.import_module",
+            return_value=SimpleNamespace(
+                open_video_capture=lambda resolved_mode: capture
+            ),
+        ),
+    ):
+        source = build_frame_source(configuration)
+
+    assert isinstance(source, OpenCvCameraSource)
+    assert source.prepare() is None
+
+
+def test_camera_enumeration_failure_is_reported() -> None:
+    configuration = CameraSourceConfiguration(
+        CameraDeviceConfiguration(CameraBackend.DIRECT_SHOW, "USB Camera", 2),
+        CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"),
+        False,
+    )
+
+    with (
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder._list_camera_devices",
+            side_effect=RuntimeError("enumeration failed"),
+        ),
+        pytest.raises(
+            SourceConfigurationError,
+            match="failed to enumerate camera devices",
+        ),
+    ):
+        build_frame_source(configuration)
+
+
+def test_builds_ndi_source_with_transform() -> None:
+    configuration = NdiSourceConfiguration(
+        "Gaming PC (OBS)",
+        SourceTransformConfiguration(
+            crop=CropConfiguration(1, 2, 3, 4),
+            resize=ResizeConfiguration(320, 240),
+        ),
+    )
+    with patch(
+        "divergencesplitter_runtime.configuration.source_builder.detect_ndi_support",
+        return_value=NdiSupport(True),
+    ):
+        source = build_frame_source(configuration)
+
+    assert isinstance(source, NdiSource)
+    assert source.source_name == "Gaming PC (OBS)"
+    assert source.normalizer.crop_margins == CropMargins(1, 2, 3, 4)
+    assert source.normalizer.output_size == OutputSize(320, 240)
+
+
+def test_build_ndi_source_fails_only_when_unavailable() -> None:
+    with (
+        patch(
+            "divergencesplitter_runtime.configuration.source_builder.detect_ndi_support",
+            return_value=NdiSupport(False, "NDI is not available on this system"),
+        ),
+        pytest.raises(SourceConfigurationError, match="not available"),
+    ):
+        build_frame_source(NdiSourceConfiguration("Gaming PC (OBS)"))
+
+
+def test_builds_video_source_with_absolute_path(tmp_path: Path) -> None:
+    video_path = tmp_path / "media" / "run.mp4"
+    source = build_frame_source(VideoSourceConfiguration(str(video_path)))
+
+    assert isinstance(source, VideoFileSource)
+    assert Path(source.path) == video_path
+
+
+def test_builds_video_source_with_normalizer_transform(tmp_path: Path) -> None:
+    configuration = VideoSourceConfiguration(
+        str(tmp_path / "run.mp4"),
+        SourceTransformConfiguration(
+            CropConfiguration(1, 2, 3, 4), ResizeConfiguration(40, 30)
+        ),
+    )
+
+    source = build_frame_source(configuration)
+
+    assert isinstance(source, VideoFileSource)
+    assert source.normalizer.crop_margins is not None
+    assert source.normalizer.crop_margins.left == 1
+    assert source.normalizer.output_size is not None
+    assert source.normalizer.output_size.width == 40
+
+
+def test_save_then_load_round_trips_camera_profile(tmp_path: Path) -> None:
+    original = load_profile(_write_profile(tmp_path, profile_document(tmp_path)))
+
+    path = tmp_path / "saved.json"
+    save_profile(path, original)
+
+    assert load_profile(path) == original
+
+
+def test_save_preserves_readable_non_ascii_values(tmp_path: Path) -> None:
+    value = profile_document(tmp_path)
+    source = cast(dict[str, object], value["source"])
+    device = cast(dict[str, object], source["device"])
+    device["name"] = "日本語カメラ"
+    original = load_profile(_write_profile(tmp_path, value))
+
+    path = tmp_path / "saved.json"
+    save_profile(path, original)
+
+    assert "日本語カメラ" in path.read_text(encoding="utf-8")
+
+
+def test_save_then_load_round_trips_video_profile(tmp_path: Path) -> None:
+    value = profile_document(
+        tmp_path, source={"type": "video", "path": str(tmp_path / "run.mp4")}
+    )
+    original = load_profile(_write_profile(tmp_path, value))
+
+    path = tmp_path / "saved.json"
+    save_profile(path, original)
+
+    assert load_profile(path) == original
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"width": 1920},
+        {"height": 1080},
+        {"fps": 60.0},
+        {"subtype_guid": "NV12-GUID"},
+    ],
+)
+def test_mode_resolution_requires_exact_mode_fields(
+    mutation: dict[str, object],
+) -> None:
+    mode = SimpleNamespace(
+        width=1280,
+        height=720,
+        fps=59.94,
+        format="MJPG",
+        subtype_guid="MJPG-GUID",
+    )
+    values = {"width": 1280, "height": 720, "fps": 59.94, "subtype_guid": "MJPG-GUID"}
+    values.update(mutation)
+
+    with pytest.raises(SourceConfigurationError):
+        resolve_camera_mode(CameraModeConfiguration(**values), [mode])
+
+
+def test_mode_resolution_allows_only_tiny_fps_round_trip_difference() -> None:
+    mode = SimpleNamespace(
+        width=1280,
+        height=720,
+        fps=59.9400001,
+        format="MJPG",
+        subtype_guid="MJPG-GUID",
+    )
+
+    assert (
+        resolve_camera_mode(
+            CameraModeConfiguration(1280, 720, 59.94, "MJPG-GUID"), [mode]
+        )
+        is mode
+    )
+    with pytest.raises(SourceConfigurationError):
+        resolve_camera_mode(
+            CameraModeConfiguration(1280, 720, 60.0, "MJPG-GUID"), [mode]
+        )
+
+
+def _write_profile(tmp_path: Path, value: object) -> Path:
+    path = tmp_path / "profile.json"
+    write_document(path, value)
+    return path

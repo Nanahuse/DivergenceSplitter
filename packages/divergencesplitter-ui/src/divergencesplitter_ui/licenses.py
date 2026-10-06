@@ -3,7 +3,7 @@
 The inventory is a static data file generated at release time from the
 Windows dependency closure of ``divergencesplitter-ui``. It bundles both the
 license identifiers and the full license texts redistributed inside the
-executable, plus the application's own GPL-3.0 text. The screen never queries
+executable, plus the application's own MIT text. The screen never queries
 the network and never enumerates the installed environment; it reads exactly
 this file through ``importlib.resources``, which resolves identically from a
 source checkout and from a PyInstaller bundle.

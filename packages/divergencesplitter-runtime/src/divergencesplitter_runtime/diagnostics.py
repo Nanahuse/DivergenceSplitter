@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, TextIO
-from urllib.parse import urlsplit, urlunsplit
 
 from divergencesplitter import (
     Action,
@@ -49,6 +48,8 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
     LiveSplitRunInfo,
     LiveSplitSnapshot,
+    event_endpoint,
+    rpc_endpoint,
 )
 from divergencesplitter_runtime.metrics import (
     InstanceEvaluationMetrics,
@@ -157,7 +158,7 @@ class OperationalDiagnostics:
         self._input_frames_total = 0
         self._processed_frames_total = 0
         self._evaluation_indices: tuple[int, ...] = ()
-        self._instance_latency: dict[int, _LatencyWindow] = {}
+        self._instance_evaluation: dict[int, _EvaluationWindow] = {}
         self._observable_lock = threading.Lock()
         self._latest_input_frame: Frame | None = None
         self._latest_processed_frame: Frame | None = None
@@ -211,7 +212,7 @@ class OperationalDiagnostics:
                 self._observations_dirty = False
         with self._metrics_lock:
             self._evaluation_indices = tuple(range(len(instances)))
-            self._instance_latency = {}
+            self._instance_evaluation = {}
 
     def instance_statuses(self) -> tuple[InstanceStatus, ...]:
         """Copy the latest lifecycle outcomes, independently of logging level."""
@@ -230,7 +231,7 @@ class OperationalDiagnostics:
             for status in statuses:
                 if status.state is InstanceRuntimeState.READY:
                     continue
-                window = self._instance_latency.get(status.scenario_index)
+                window = self._instance_evaluation.get(status.scenario_index)
                 if window is not None:
                     window.reset_average()
         for status in statuses:
@@ -422,9 +423,20 @@ class OperationalDiagnostics:
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None:
-        """Record one instance's evaluation latency and condition activity."""
-        self._record_evaluation_latency(scenario_index, context, completed_at)
+        """Record one instance's evaluation duration and condition activity."""
+        self._emit(
+            logging.DEBUG,
+            "processing.evaluation_measured",
+            scenario_index=scenario_index,
+            evaluation_cpu_ns=evaluation_cpu_duration_ns,
+            evaluation_wall_ns=evaluation_wall_duration_ns,
+        )
+        self._record_evaluation_duration(
+            scenario_index, completed_at, evaluation_cpu_duration_ns
+        )
         with self._observable_lock:
             if scenario_index >= len(self._instances):
                 return
@@ -440,24 +452,26 @@ class OperationalDiagnostics:
             self._instance_observations[scenario_index] = observations
             self._observations_dirty = True
 
-    def _record_evaluation_latency(
+    def _record_evaluation_duration(
         self,
         scenario_index: int,
-        context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_cpu_duration_ns: int,
     ) -> None:
-        latency_ns = completed_at.nanoseconds - context.frame.captured_at.nanoseconds
+        # Only the thread CPU time spent inside runtime.evaluate() is recorded,
+        # never the time from frame capture to evaluation start nor the
+        # wall-clock time the instance thread was stopped while evaluating.
         with self._metrics_lock:
-            window = self._instance_latency.get(scenario_index)
+            window = self._instance_evaluation.get(scenario_index)
             if window is None:
-                window = _LatencyWindow()
-                self._instance_latency[scenario_index] = window
-            window.record(completed_at.nanoseconds, latency_ns)
+                window = _EvaluationWindow()
+                self._instance_evaluation[scenario_index] = window
+            window.record(completed_at.nanoseconds, evaluation_cpu_duration_ns)
 
     def instance_reset(self, scenario_index: int) -> None:
-        """Clear one instance's latency window on a new Start/Reset decision."""
+        """Clear one instance's evaluation window on a new Start/Reset decision."""
         with self._metrics_lock:
-            window = self._instance_latency.get(scenario_index)
+            window = self._instance_evaluation.get(scenario_index)
             if window is not None:
                 window.reset()
 
@@ -572,7 +586,7 @@ class OperationalDiagnostics:
         scenario_index: int,
         sampled_at_ns: int,
     ) -> InstanceEvaluationMetrics:
-        window = self._instance_latency.get(scenario_index)
+        window = self._instance_evaluation.get(scenario_index)
         if window is None:
             return InstanceEvaluationMetrics(scenario_index, None, None)
         average, maximum = window.average_and_max(sampled_at_ns)
@@ -870,8 +884,8 @@ class OperationalDiagnostics:
             return
 
 
-class _LatencyWindow:
-    """Per-instance evaluation latency: windowed average and sticky maximum.
+class _EvaluationWindow:
+    """Per-instance evaluation CPU duration: windowed average and sticky maximum.
 
     The average is computed over the latest ~1s window, while the maximum is
     kept across windows until the instance starts a new Run (or is rebound).
@@ -883,7 +897,7 @@ class _LatencyWindow:
         self._sums = [0] * _METRICS_BUCKET_COUNT
         self._max: int | None = None
 
-    def record(self, occurred_at_ns: int, latency_ns: int) -> None:
+    def record(self, occurred_at_ns: int, duration_ns: int) -> None:
         bucket_id = occurred_at_ns // _METRICS_BUCKET_NANOSECONDS
         index = bucket_id % _METRICS_BUCKET_COUNT
         if self._bucket_ids[index] != bucket_id:
@@ -891,9 +905,9 @@ class _LatencyWindow:
             self._counts[index] = 0
             self._sums[index] = 0
         self._counts[index] += 1
-        self._sums[index] += latency_ns
-        if self._max is None or latency_ns > self._max:
-            self._max = latency_ns
+        self._sums[index] += duration_ns
+        if self._max is None or duration_ns > self._max:
+            self._max = duration_ns
 
     def average_and_max(self, sampled_at_ns: int) -> tuple[int | None, int | None]:
         cutoff = sampled_at_ns - _METRICS_WINDOW_NANOSECONDS
@@ -974,7 +988,7 @@ def _snapshot_fields(prefix: str, snapshot: LiveSplitSnapshot) -> dict[str, obje
     return {
         f"{prefix}.session_id": snapshot.session_id,
         f"{prefix}.state_revision": snapshot.state_revision,
-        f"{prefix}.event_sequence": snapshot.event_sequence,
+        f"{prefix}.run_revision": snapshot.run_revision,
         f"{prefix}.phase": snapshot.phase.name,
         f"{prefix}.split_index": snapshot.split_index,
         f"{prefix}.split_count": snapshot.split_count,
@@ -983,26 +997,10 @@ def _snapshot_fields(prefix: str, snapshot: LiveSplitSnapshot) -> dict[str, obje
 
 def _connection_fields(connection: LiveSplitConnection) -> dict[str, object]:
     return {
-        "rpc_endpoint": _sanitize_endpoint(connection.rpc_endpoint),
-        "event_endpoint": _sanitize_endpoint(connection.event_endpoint),
+        "port": connection.port,
+        "rpc_endpoint": rpc_endpoint(connection),
+        "event_endpoint": event_endpoint(connection),
     }
-
-
-def _sanitize_endpoint(endpoint: str) -> str:
-    try:
-        parsed = urlsplit(endpoint)
-        if parsed.hostname is None or parsed.username is None:
-            return endpoint
-        host = parsed.hostname
-        if ":" in host and not host.startswith("["):
-            host = f"[{host}]"
-        if parsed.port is not None:
-            host = f"{host}:{parsed.port}"
-        return urlunsplit(
-            (parsed.scheme, host, parsed.path, parsed.query, parsed.fragment)
-        )
-    except Exception:  # noqa: BLE001
-        return re.sub(r"(?<=://)[^/@\s]+@", "", endpoint)
 
 
 def _sanitize_text(value: str) -> str:

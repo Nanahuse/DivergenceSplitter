@@ -3,7 +3,6 @@
 import importlib
 import math
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any, Protocol, assert_never, cast
 
 from divergencesplitter.frame.camera import OpenCvCameraSource
@@ -60,12 +59,13 @@ class CameraDeviceInfo(Protocol):
     def modes(self) -> Sequence[CaptureModeInfo]: ...
 
 
-def build_frame_source(
-    configuration: SourceConfiguration,
-    *,
-    base_directory: Path,
-) -> FrameSource:
-    """Build the concrete source selected by a parsed configuration."""
+def build_frame_source(configuration: SourceConfiguration) -> FrameSource:
+    """Build the concrete source selected by a parsed configuration.
+
+    Every path a configuration owns is absolute, so no base directory is needed;
+    the resolver that used to join paths against the configuration's directory
+    has been removed.
+    """
 
     match configuration:
         case CameraSourceConfiguration():
@@ -86,9 +86,8 @@ def build_frame_source(
                 resize_interpolation=_resize_interpolation(configuration.transform),
             )
         case VideoSourceConfiguration():
-            path = _resolve_path(configuration.path, base_directory)
             return VideoFileSource(
-                str(path),
+                configuration.path,
                 crop_margins=_crop_margins(configuration.transform),
                 output_size=_output_size(configuration.transform),
                 resize_interpolation=_resize_interpolation(configuration.transform),
@@ -200,16 +199,3 @@ def _resize_interpolation(transform: SourceTransformConfiguration):
         if transform.resize is not None
         else ResizeInterpolation.AREA
     )
-
-
-def resolve_configuration_path(path: str, *, base_directory: Path) -> Path:
-    """Resolve a configuration-owned path against its file directory."""
-
-    return _resolve_path(path, base_directory)
-
-
-def _resolve_path(path: str, base_directory: Path) -> Path:
-    candidate = Path(path)
-    if candidate.is_absolute():
-        return candidate
-    return base_directory / candidate

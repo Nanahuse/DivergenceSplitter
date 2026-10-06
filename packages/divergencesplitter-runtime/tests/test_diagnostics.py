@@ -114,10 +114,7 @@ def test_exception_group_records_every_leaf_on_one_line() -> None:
 def test_runtime_context_identifies_scenario_without_exposing_credentials() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream)
-    connection = LiveSplitConnection(
-        "tcp://rpc-user:rpc-secret@localhost:16835",
-        "tcp://event-user:event-secret@localhost:16836",
-    )
+    connection = LiveSplitConnection(16835)
     condition = Detected(MeanBrightnessDetector(), 300.0)
     scenario = Scenario(condition, condition, None, ())
     diagnostics.bind_runtime(
@@ -129,12 +126,7 @@ def test_runtime_context_identifies_scenario_without_exposing_credentials() -> N
 
     output = stream.getvalue()
     assert "scenario_index=0" in output
-    assert 'rpc_endpoint="tcp://localhost:16835"' in output
-    assert 'event_endpoint="tcp://localhost:16836"' in output
-    assert "rpc-user" not in output
-    assert "rpc-secret" not in output
-    assert "event-user" not in output
-    assert "event-secret" not in output
+    assert "port=16835" in output
 
 
 def test_debug_frame_log_contains_frame_and_detector_configuration() -> None:
@@ -189,7 +181,7 @@ def test_ndi_source_fields_are_logged() -> None:
 def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream, level=logging.DEBUG)
-    connection = LiveSplitConnection("tcp://rpc", "tcp://event")
+    connection = LiveSplitConnection(54100)
     detector = MeanBrightnessDetector()
     rules = (
         Rule(Detected(detector, 300.0), Action("split")),
@@ -205,7 +197,7 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
     runtime.apply_livesplit_update(
         LiveSplitUpdate(
             LiveSplitUpdateKind.INITIAL,
-            LiveSplitSnapshot(1, 0, 0, 1, TimerPhase.RUNNING, 0, 1),
+            LiveSplitSnapshot(1, 0, 1, TimerPhase.RUNNING, 0, 1),
         )
     )
     context = FrameContext(
@@ -234,9 +226,9 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
 def test_snapshot_mismatch_names_each_different_precondition() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream)
-    connection = LiveSplitConnection("tcp://rpc", "tcp://event")
-    expected = LiveSplitSnapshot(1, 2, 3, 1, TimerPhase.RUNNING, 0, 2)
-    actual = LiveSplitSnapshot(1, 4, 5, 1, TimerPhase.RUNNING, 1, 2)
+    connection = LiveSplitConnection(54100)
+    expected = LiveSplitSnapshot(1, 2, 1, TimerPhase.RUNNING, 0, 2)
+    actual = LiveSplitSnapshot(1, 4, 1, TimerPhase.RUNNING, 1, 2)
 
     diagnostics.snapshot_mismatched(connection, Action("split"), expected, actual)
 
@@ -266,13 +258,13 @@ def test_exception_text_does_not_expose_endpoint_credentials() -> None:
     diagnostics = OperationalDiagnostics(stream)
 
     diagnostics.runtime_failed(
-        RuntimeError("connection to tcp://name:secret@localhost:16835 failed")
+        RuntimeError("connection to ws://name:secret@localhost:16835 failed")
     )
 
     output = stream.getvalue()
     assert "name" not in output
     assert "secret" not in output
-    assert "tcp://localhost:16835" in output
+    assert "ws://localhost:16835" in output
 
 
 def test_log_level_filters_debug_events() -> None:
@@ -481,7 +473,7 @@ def test_instance_snapshots_are_consistent_across_threads() -> None:
 def _latency_instance() -> ScenarioInstance:
     condition = Detected(MeanBrightnessDetector(), 300.0)
     return ScenarioInstance(
-        LiveSplitConnection("rpc", "event"),
+        LiveSplitConnection(54100),
         Scenario(condition, condition, None, ()),
     )
 
@@ -496,7 +488,7 @@ def _latency_context(captured_ns: int) -> FrameContext:
     )
 
 
-def test_evaluation_latency_is_capture_to_evaluate_completion() -> None:
+def test_evaluation_duration_is_evaluate_cpu_time_only() -> None:
     from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
 
     diagnostics = OperationalDiagnostics(
@@ -504,27 +496,85 @@ def test_evaluation_latency_is_capture_to_evaluate_completion() -> None:
     )
     diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
 
-    diagnostics.instance_evaluated(0, _latency_context(100), MonotonicTime(250))
+    # The frame was captured at t=1, evaluation started much later, and the
+    # thread was stopped for most of the wall time: only the 7 ns of thread CPU
+    # time must be recorded.
+    diagnostics.instance_evaluated(
+        0, _latency_context(1), MonotonicTime(250), 7, 105_000_000
+    )
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations
-    assert metrics == (InstanceEvaluationMetrics(0, 150, 150),)
+    assert metrics == (InstanceEvaluationMetrics(0, 7, 7),)
 
 
-def test_evaluation_latency_averages_and_maxes_every_frame() -> None:
+def test_evaluation_measured_debug_log_reports_cpu_and_wall() -> None:
+    stream = StringIO()
+    diagnostics = OperationalDiagnostics(stream, level=logging.DEBUG)
+    try:
+        diagnostics.bind_runtime(
+            (_latency_instance(),), VideoFileSource("recording.mp4")
+        )
+        diagnostics.instance_evaluated(
+            0,
+            _latency_context(0),
+            MonotonicTime(105_000_000),
+            5_000_000,
+            105_000_000,
+        )
+    finally:
+        diagnostics.close()
+
+    text = stream.getvalue()
+    assert "processing.evaluation_measured" in text
+    assert "evaluation_cpu_ns=5000000" in text
+    assert "evaluation_wall_ns=105000000" in text
+
+
+def test_evaluation_measured_debug_log_is_silent_at_info() -> None:
+    stream = StringIO()
+    diagnostics = OperationalDiagnostics(stream, level=logging.INFO)
+    try:
+        diagnostics.bind_runtime(
+            (_latency_instance(),), VideoFileSource("recording.mp4")
+        )
+        diagnostics.instance_evaluated(
+            0,
+            _latency_context(0),
+            MonotonicTime(105_000_000),
+            5_000_000,
+            105_000_000,
+        )
+    finally:
+        diagnostics.close()
+
+    assert "evaluation_measured" not in stream.getvalue()
+
+
+def test_evaluation_duration_averages_and_maxes_every_frame() -> None:
     diagnostics = OperationalDiagnostics(
         StringIO(), time_provider=MutableTimeProvider(6_000_000)
     )
     diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
 
-    for completed in (2_000_000, 4_000_000, 6_000_000):
-        diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(completed))
+    for completed, cpu_duration in (
+        (2_000_000, 2_000_000),
+        (4_000_000, 4_000_000),
+        (6_000_000, 6_000_000),
+    ):
+        diagnostics.instance_evaluated(
+            0,
+            _latency_context(0),
+            MonotonicTime(completed),
+            cpu_duration,
+            100_000_000,
+        )
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
-    assert metrics.average_latency_ns == 4_000_000
-    assert metrics.max_latency_ns == 6_000_000
+    assert metrics.average_duration_ns == 4_000_000
+    assert metrics.max_duration_ns == 6_000_000
 
 
-def test_evaluation_latency_is_isolated_per_instance() -> None:
+def test_evaluation_duration_is_isolated_per_instance() -> None:
     from divergencesplitter_runtime.metrics import InstanceEvaluationMetrics
 
     diagnostics = OperationalDiagnostics(
@@ -535,14 +585,18 @@ def test_evaluation_latency_is_isolated_per_instance() -> None:
         VideoFileSource("recording.mp4"),
     )
 
-    for index, completed in (
-        (0, 2_000_000),
-        (0, 4_000_000),
-        (1, 8_000_000),
-        (1, 10_000_000),
+    for index, completed, cpu_duration in (
+        (0, 2_000_000, 2_000_000),
+        (0, 4_000_000, 4_000_000),
+        (1, 8_000_000, 8_000_000),
+        (1, 10_000_000, 10_000_000),
     ):
         diagnostics.instance_evaluated(
-            index, _latency_context(0), MonotonicTime(completed)
+            index,
+            _latency_context(0),
+            MonotonicTime(completed),
+            cpu_duration,
+            0,
         )
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations
@@ -557,16 +611,18 @@ def test_evaluation_average_expires_while_max_is_kept() -> None:
     diagnostics = OperationalDiagnostics(StringIO(), time_provider=clock)
     diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
 
-    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(5_000_000))
-    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+    diagnostics.instance_evaluated(
+        0, _latency_context(0), MonotonicTime(5_000_000), 5_000_000, 0
+    )
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_duration_ns == (
         5_000_000
     )
 
     clock.nanoseconds = 2_000_000_000
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
-    assert metrics.average_latency_ns is None
-    assert metrics.max_latency_ns == 5_000_000
+    assert metrics.average_duration_ns is None
+    assert metrics.max_duration_ns == 5_000_000
 
 
 @pytest.mark.parametrize("state", ["CONNECTING", "FAILED", "STOPPED"])
@@ -578,16 +634,37 @@ def test_evaluation_average_clears_and_max_survives_not_ready(state: str) -> Non
     )
     diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
     diagnostics.instances_changed(((InstanceStatus(0, InstanceRuntimeState.READY)),))
-    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(3_000_000))
-    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+    diagnostics.instance_evaluated(
+        0, _latency_context(0), MonotonicTime(3_000_000), 3_000_000, 0
+    )
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_duration_ns == (
         3_000_000
     )
 
     diagnostics.instances_changed((InstanceStatus(0, InstanceRuntimeState[state]),))
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
-    assert metrics.average_latency_ns is None
-    assert metrics.max_latency_ns == 3_000_000
+    assert metrics.average_duration_ns is None
+    assert metrics.max_duration_ns == 3_000_000
+
+
+def test_evaluation_max_keeps_the_largest_duration() -> None:
+    diagnostics = OperationalDiagnostics(
+        StringIO(), time_provider=MutableTimeProvider(6_000_000)
+    )
+    diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
+
+    for completed, cpu_duration in (
+        (1_000_000, 3_000_000),
+        (2_000_000, 7_000_000),
+        (3_000_000, 4_000_000),
+    ):
+        diagnostics.instance_evaluated(
+            0, _latency_context(0), MonotonicTime(completed), cpu_duration, 0
+        )
+
+    metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
+    assert metrics.max_duration_ns == 7_000_000
 
 
 def test_instance_reset_clears_average_and_sticky_max() -> None:
@@ -596,13 +673,15 @@ def test_instance_reset_clears_average_and_sticky_max() -> None:
     )
     diagnostics.bind_runtime((_latency_instance(),), VideoFileSource("recording.mp4"))
 
-    diagnostics.instance_evaluated(0, _latency_context(0), MonotonicTime(5_000_000))
-    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_latency_ns == (
+    diagnostics.instance_evaluated(
+        0, _latency_context(0), MonotonicTime(5_000_000), 5_000_000, 0
+    )
+    assert diagnostics.metrics_snapshot().instance_evaluations[0].max_duration_ns == (
         5_000_000
     )
 
     diagnostics.instance_reset(0)
 
     metrics = diagnostics.metrics_snapshot().instance_evaluations[0]
-    assert metrics.average_latency_ns is None
-    assert metrics.max_latency_ns is None
+    assert metrics.average_duration_ns is None
+    assert metrics.max_duration_ns is None

@@ -10,7 +10,6 @@ here changes the frames the runtime evaluates.
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 import flet as ft
 from divergencesplitter.frame.camera import CameraCaptureSettings
@@ -76,9 +75,8 @@ class PreviewController:
     def start_draft(
         self,
         configuration: CameraSourceConfiguration | NdiSourceConfiguration,
-        base_directory: Path,
     ) -> None:
-        self._camera_preview.start(configuration, base_directory)
+        self._camera_preview.start(configuration)
 
     def stop(self) -> None:
         self._camera_preview.stop()

@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Protocol
 
-from divergencesplitter import Action, LiveSplitConnection, MonotonicTime
+from divergencesplitter import (
+    Action,
+    LiveSplitConnection,
+    MonotonicTime,
+    ThreadTimeProvider,
+)
 from divergencesplitter.clock import TimeProvider
 from divergencesplitter.frame.models import FrameContext, SharedFrameEvaluation
 from divergencesplitter.scenario.models import Scenario
@@ -52,6 +57,8 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
+    TimerPhase,
+    event_endpoint,
 )
 from divergencesplitter_runtime.scenario import ScenarioRuntime
 
@@ -110,6 +117,8 @@ class InstanceDiagnostics(LiveSplitBridgeDiagnostics, Protocol):
         scenario_index: int,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None: ...
 
     def instance_reset(self, scenario_index: int) -> None: ...
@@ -140,6 +149,14 @@ class _Attempt(Enum):
 class _ReactionResult(Enum):
     OK = auto()
     CANCELLED = auto()
+
+
+def _event_sequence(event: object) -> int | None:
+    """Return the Bridge sequence when ``event`` is a raw Bridge event."""
+
+    if isinstance(event, common_pb2.BridgeEvent):
+        return event.event_sequence
+    return None
 
 
 class BridgeEventReceiverLike(Protocol):
@@ -176,6 +193,7 @@ class InstanceRuntime:
         heartbeat_timeout_ms: int = 3000,
         reaction_time_ms: int = 0,
         time_provider: TimeProvider | None = None,
+        cpu_time_provider: ThreadTimeProvider | None = None,
         reaction_wait: Callable[[int], None] | None = None,
         subscriber_factory: Callable[[], BridgeEventSubscriberLike] | None = None,
         adapter_factory: Callable[[], LiveSplitBridgeAdapter] | None = None,
@@ -203,6 +221,7 @@ class InstanceRuntime:
         self._heartbeat_timeout_ms = heartbeat_timeout_ms
         self._reaction_time_ns = reaction_time_ms * 1_000_000
         self._time_provider = time_provider or TimeProvider()
+        self._cpu_time_provider = cpu_time_provider or ThreadTimeProvider()
         self._reaction_wait = reaction_wait or self._wait_for_reaction
         self._subscriber_factory = subscriber_factory or self._create_subscriber
         self._adapter_factory = adapter_factory or self._create_adapter
@@ -220,6 +239,10 @@ class InstanceRuntime:
 
         self._wakeup = threading.Event()
         self._stop_requested = threading.Event()
+        # A pending manual Reset request is consumed by the instance thread,
+        # never executed on the requesting (UI) thread. It carries no snapshot:
+        # the decision uses whatever LiveSplit state is current when processed.
+        self._manual_reset_requested = threading.Event()
 
         # Owned exclusively by the instance thread.
         self._scenario_runtime: ScenarioRuntime | None = None
@@ -273,6 +296,21 @@ class InstanceRuntime:
         self._stop_requested.set()
         self._wakeup.set()
 
+    def request_reset(self) -> None:
+        """Queue one manual Reset for the instance thread to decide.
+
+        No Bridge RPC happens here. The request only flags a pending manual
+        Reset and wakes the worker, which evaluates the Reset precondition
+        against the latest LiveSplit snapshot on its own thread. A request that
+        is never processed before teardown or reconnect is dropped rather than
+        replayed against a later connection.
+        """
+
+        if self._stop_requested.is_set():
+            return
+        self._manual_reset_requested.set()
+        self._wakeup.set()
+
     def stop(self) -> None:
         """Finalize after the instance thread has been joined."""
         self._scenario_runtime = None
@@ -297,7 +335,7 @@ class InstanceRuntime:
 
     def _create_subscriber(self) -> BridgeEventSubscriber:
         return BridgeEventSubscriber(
-            self.connection.event_endpoint,
+            event_endpoint(self.connection),
             heartbeat_timeout_ms=self._heartbeat_timeout_ms,
         )
 
@@ -339,9 +377,44 @@ class InstanceRuntime:
             return _Attempt.STOPPED
         if not self._establish(initial):
             return _Attempt.TERMINAL
+        outcome = self._prime_initial_events(adapter)
+        if outcome is not None:
+            return outcome
         return self._serve()
 
+    def _prime_initial_events(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+    ) -> _Attempt | None:
+        """Establish the stream baseline from events received during attach.
+
+        The receiver starts before the RPC attach so no event is missed. Events
+        already reflected in the RPC initial state advance the event cursor
+        without being re-applied; events newer than the initial state are
+        applied. Either way the highest processed sequence becomes the stream
+        baseline, so heartbeat gap detection is active from startup.
+        """
+        receiver = self._receiver
+        if receiver is None:
+            return None
+        messages = receiver.drain()
+        overflowed = receiver.take_overflow()
+        outcome = self._handle_connection_loss(messages)
+        if outcome is not None:
+            return outcome
+        if overflowed:
+            return self._resync(adapter, LiveSplitResyncReason.EVENT_INBOX_OVERFLOW)
+        for message in messages:
+            if isinstance(message, BridgeEventReceived):
+                outcome = self._apply_event(adapter, message.event)
+                if outcome is not None:
+                    return outcome
+        return None
+
     def _establish(self, initial: LiveSplitUpdate) -> bool:
+        # A manual Reset requested before this connection existed is not carried
+        # over: once connected, only a fresh request may Reset.
+        self._manual_reset_requested.clear()
         try:
             validate_split_count(self.scenario, initial.snapshot)
         except ValueError as error:
@@ -393,6 +466,13 @@ class InstanceRuntime:
                 outcome = self._apply_event(adapter, message.event)
                 if outcome is not None:
                     return outcome
+        if self._manual_reset_requested.is_set():
+            # Consume the request even when the phase forbids a Reset: a stale
+            # request must never survive into a later state.
+            self._manual_reset_requested.clear()
+            outcome = self._handle_manual_reset(adapter)
+            if outcome is not None:
+                return outcome
         if self.state is not InstanceRuntimeState.READY:
             return None
         shared = self._take_frame()
@@ -409,21 +489,71 @@ class InstanceRuntime:
         if runtime is None:
             return None
         context = FrameContext(shared=shared)
+        evaluation_wall_started_at = self._time_provider.now()
+        evaluation_cpu_started_at = self._cpu_time_provider.now()
         try:
             action = runtime.evaluate(context)
         except Exception as error:  # noqa: BLE001
             self._diagnostics.scenario_evaluation_failed(self.scenario_index, error)
             return None
-        # Evaluation latency ends the moment evaluate() returned, before any
-        # action validity check, late event drain, or RPC.
-        completed_at = self._time_provider.now()
-        self._publish_observations(context, completed_at)
+        # Evaluation ends the moment evaluate() returned, before any action
+        # validity check, late event drain, reaction wait, or RPC. The reported
+        # value is the thread CPU time the instance actually spent evaluating;
+        # wall-clock time the thread was stopped is kept only for investigation.
+        evaluation_cpu_completed_at = self._cpu_time_provider.now()
+        evaluation_wall_completed_at = self._time_provider.now()
+        evaluation_cpu_duration_ns = (
+            evaluation_cpu_completed_at.nanoseconds
+            - evaluation_cpu_started_at.nanoseconds
+        )
+        evaluation_wall_duration_ns = (
+            evaluation_wall_completed_at.nanoseconds
+            - evaluation_wall_started_at.nanoseconds
+        )
+        self._publish_observations(
+            context,
+            evaluation_wall_completed_at,
+            evaluation_cpu_duration_ns,
+            evaluation_wall_duration_ns,
+        )
         if action is not None and action.operation in ("start", "reset"):
             # A new Start/Reset decision begins a fresh evaluation period.
             self._publish_reset()
         if action is None:
             return None
         return self._dispatch_action(adapter, runtime, action, context)
+
+    def _handle_manual_reset(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+    ) -> _Attempt | None:
+        # A manual Reset is decided on the instance thread against the current
+        # snapshot and is never delayed by reaction_time. Phases that cannot be
+        # Reset are a normal no-op.
+        runtime = self._scenario_runtime
+        if runtime is None:
+            return None
+        expected = runtime.current_snapshot
+        if expected is None:
+            return None
+        if expected.phase not in (
+            TimerPhase.RUNNING,
+            TimerPhase.PAUSED,
+            TimerPhase.ENDED,
+        ):
+            return None
+        action = Action("reset")
+        result = adapter.execute_action(action, expected)
+        if result.execution is ActionExecution.NOT_DISPATCHED:
+            runtime.action_not_dispatched(action)
+        elif result.execution is ActionExecution.UNKNOWN:
+            self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
+            return _Attempt.CONNECTION_LOST
+        else:
+            if result.update is not None:
+                self._apply_update(result.update)
+            self._publish_reset()
+        return None
 
     def _dispatch_action(
         self,
@@ -541,7 +671,9 @@ class InstanceRuntime:
             self._connection_lost(BridgeConnectionLostError("Bridge session changed"))
             return _ReactionResult.CANCELLED, expected, _Attempt.CONNECTION_LOST
         if isinstance(received, LiveSplitResyncReason):
-            outcome = self._resync(adapter, received)
+            outcome = self._resync(
+                adapter, received, event_sequence=_event_sequence(event)
+            )
             return _ReactionResult.CANCELLED, expected, outcome
         if received is None:
             return _ReactionResult.OK, expected, None
@@ -569,11 +701,13 @@ class InstanceRuntime:
     ) -> _Attempt | None:
         self._publish_reaction(action, captured_at_ns)
         result = adapter.execute_action(action, expected)
-        if result is ActionExecution.NOT_DISPATCHED:
+        if result.execution is ActionExecution.NOT_DISPATCHED:
             runtime.action_not_dispatched(action)
-        elif result is ActionExecution.UNKNOWN:
+        elif result.execution is ActionExecution.UNKNOWN:
             self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
             return _Attempt.CONNECTION_LOST
+        elif result.update is not None:
+            self._apply_update(result.update)
         return None
 
     def _wait_for_reaction(self, timeout_ns: int) -> None:
@@ -645,7 +779,9 @@ class InstanceRuntime:
             self._connection_lost(BridgeConnectionLostError("Bridge session changed"))
             return _Attempt.CONNECTION_LOST
         if isinstance(received, LiveSplitResyncReason):
-            return self._resync(adapter, received)
+            return self._resync(
+                adapter, received, event_sequence=_event_sequence(event)
+            )
         if received is not None:
             self._apply_update(received)
         return None
@@ -654,9 +790,11 @@ class InstanceRuntime:
         self,
         adapter: LiveSplitBridgeAdapter,
         reason: LiveSplitResyncReason,
+        *,
+        event_sequence: int | None = None,
     ) -> _Attempt | None:
         try:
-            update = adapter.resync(reason)
+            update = adapter.resync(reason, event_sequence=event_sequence)
         except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
             self._fail(error)
             return _Attempt.TERMINAL
@@ -683,10 +821,16 @@ class InstanceRuntime:
         self,
         context: FrameContext,
         completed_at: MonotonicTime,
+        evaluation_cpu_duration_ns: int,
+        evaluation_wall_duration_ns: int,
     ) -> None:
         try:
             self._diagnostics.instance_evaluated(
-                self.scenario_index, context, completed_at
+                self.scenario_index,
+                context,
+                completed_at,
+                evaluation_cpu_duration_ns,
+                evaluation_wall_duration_ns,
             )
         except Exception:  # noqa: BLE001, S110
             # Diagnostics must never break the evaluation cycle.
@@ -700,6 +844,7 @@ class InstanceRuntime:
             pass
 
     def _connection_lost(self, error: Exception) -> None:
+        self._manual_reset_requested.clear()
         self._scenario_runtime = None
         self._set_run_info(None)
         with self._state_lock:
@@ -710,6 +855,7 @@ class InstanceRuntime:
         self._diagnostics.connection_lost(self.connection, error)
 
     def _fail(self, error: Exception) -> None:
+        self._manual_reset_requested.clear()
         self._set_error(error)
         self._scenario_runtime = None
         self._set_run_info(None)
@@ -727,6 +873,7 @@ class InstanceRuntime:
         self._diagnostics.worker_stopped(self.connection)
 
     def _release_transport(self) -> None:
+        self._manual_reset_requested.clear()
         receiver = self._receiver
         self._receiver = None
         if receiver is not None:

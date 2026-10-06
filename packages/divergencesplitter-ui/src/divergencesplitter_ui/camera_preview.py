@@ -8,7 +8,6 @@ are still empty or being edited.
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 
 from divergencesplitter.frame.camera import CameraCaptureSettings, OpenCvCameraSource
 from divergencesplitter.frame.models import Frame
@@ -56,10 +55,9 @@ class CameraPreview:
     def start(
         self,
         configuration: CameraSourceConfiguration | NdiSourceConfiguration,
-        base_directory: Path,
     ) -> None:
         self.stop()
-        source = build_frame_source(configuration, base_directory=base_directory)
+        source = build_frame_source(configuration)
         with self._lock:
             self._source = source
             self._latest = None

@@ -67,12 +67,14 @@ higher values indicating a stronger response. Custom detectors are not
 required to use this range.
 
 Scenarios do not carry a LiveSplit connection; the JSON configuration pairs
-each scenario with a connection destination. The JSON configuration selects the
-frame source and one or more connection/scenario instances independently:
+each scenario with a LiveSplit Bridge port. The JSON configuration selects the
+frame source and one or more connection/scenario instances independently. The
+Profile schema is version `2` and stores only the LiveSplit Bridge WebSocket
+port per instance:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "video",
     "path": "./run.mp4"
@@ -80,17 +82,18 @@ frame source and one or more connection/scenario instances independently:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
-  ],
-  "runtime": {
-    "log_level": "DEBUG"
-  }
+  ]
 }
 ```
+
+A version `1` Profile is migrated on load. Its Protocol v1 ZeroMQ endpoints are
+not convertible to a Protocol v2 WebSocket port, so their values are discarded
+and each instance is assigned a fresh port starting at `54000` in file order.
+The next save writes the version `2` form.
 
 A scenario may also be written as YAML (`scenario.yaml`). The loader is chosen
 from the file extension: `.py` for Python, `.yaml`/`.yml` for YAML. A YAML
@@ -187,7 +190,7 @@ enumeration ID to disambiguate devices with the same name:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "camera",
     "device": {
@@ -205,15 +208,11 @@ enumeration ID to disambiguate devices with the same name:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
-  ],
-  "runtime": {
-    "log_level": "DEBUG"
-  }
+  ]
 }
 ```
 
@@ -225,7 +224,7 @@ name match is accepted even if its index changed. If several devices have the
 same name within one backend, the saved index must match one of them. Capture
 modes must be present in the current enumeration and are never substituted.
 Relative scenario and video paths are resolved from the configuration file's
-directory. The configuration version remains `1`.
+directory. The Profile version is `2`.
 
 Before using a camera/backend combination in production, manually confirm that
 it opens, continuously captures frames, releases the device on shutdown, and
@@ -235,15 +234,16 @@ selected backend must also return from synchronous `read()` in finite time,
 because stopping waits for an in-progress read and the source does not add a
 reader thread or a generic read timeout.
 
-## NDI input (optional)
+## NDI® input
 
 NDI is a third input source alongside Camera and Video File. It selects a
 sender by its advertised NDI name, never by list position, so reordering the
-network source list cannot connect to a different sender:
+network source list cannot connect to a different sender. Learn more about the
+technology at [ndi.video](https://ndi.video/):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "source": {
     "type": "ndi",
     "name": "Gaming PC (OBS)",
@@ -252,51 +252,62 @@ network source list cannot connect to a different sender:
   "instances": [
     {
       "connection": {
-        "rpc_endpoint": "tcp://127.0.0.1:54000",
-        "event_endpoint": "tcp://127.0.0.1:54001"
+        "port": 54000
       },
       "scenario": "./scenario.py"
     }
-  ],
-  "runtime": {
-    "log_level": "DEBUG"
-  }
+  ]
 }
 ```
 
-NDI is optional and never required by DivergenceSplitter itself. The NDI
-runtime and its Python binding load lazily, so an environment without NDI still
-starts, still lists NDI configurations, and still uses Camera and Video File
-normally. When NDI is unavailable the desktop UI shows the NDI source type as
-`NDI (Unavailable)` and refuses to select it, but an already-open NDI
-configuration keeps its source name and can be switched to Camera or Video.
+NDI is optional for the core libraries: `divergencesplitter` and
+`divergencesplitter-runtime` never require it. The NDI runtime and its Python
+binding load lazily, so an environment without NDI still starts, still lists NDI
+configurations, and still uses Camera and Video File normally. When NDI is
+unavailable the desktop UI shows the NDI source type as `NDI (Unavailable)` and
+refuses to select it, but an already-open NDI configuration keeps its source name
+and can be switched to Camera or Video.
 
-To enable NDI, install the optional extra:
+The Windows desktop UI includes NDI support by default. Installing
+`divergencesplitter-ui` on Windows pulls in `ndi-python`, so Windows UI users do
+not need to request the `ndi` extra. To use NDI from the core libraries alone,
+install the optional extra:
 
 ```console
 uv add "divergencesplitter[ndi] @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter"
 ```
 
-`ndi-python` redistributes the NDI runtime under its own license (MIT binding,
-NDI runtime notices included in the wheel). A frozen Windows build that should
-support NDI must install the extra and collect the `NDIlib` package. The Windows
-distribution CI does both and includes the binding and runtime license notices.
+`ndi-python` is the MIT-licensed Python binding. The NDI Runtime that it ships
+is licensed separately by Vizrt NDI AB under the NDI SDK License Agreement and
+is not covered by the MIT License. See
+[`THIRD_PARTY_LICENSES/NDI.md`](THIRD_PARTY_LICENSES/NDI.md) for the boundary
+and the applicable conditions. The Windows distribution CI builds from the
+normal UI dependencies and includes the binding and runtime license notices.
 For the same build environment locally, use
-`uv sync --locked --all-packages --group build --extra ndi` and run build tools
-with `uv run --no-sync` to preserve the optional dependency. A temporary
+`uv sync --locked --all-packages --group build` and run build tools
+with `uv run --no-sync`. A temporary
 loss of the sender does not stop the session; the receiver resumes when the same
 source name returns. NDI receive uses a bounded timeout, so shutdown stays
 responsive.
 
+NDI® is a registered trademark of Vizrt NDI AB.
+
 ## LiveSplit Bridge constraints
 
-Run a compatible LiveSplit.Bridge instance at the endpoints configured by each
-scenario. The runtime uses synchronous Bridge calls on a dedicated worker per
-connection, so capture and processing do not wait for network responses.
-Actions are checked against a fresh snapshot and are never blindly retried.
-The current protocol does not provide atomic compare-and-act, so an external
-LiveSplit operation can still race between that snapshot and the action. A
-timeout after sending an action is reported as an unknown result, not retried.
+Run a LiveSplit.Bridge instance exposing Protocol v2 on the WebSocket port each
+scenario is configured with. The runtime connects to the RPC endpoint
+`ws://127.0.0.1:<port>/bridge/v2/rpc` and subscribes to
+`ws://127.0.0.1:<port>/bridge/v2/events`; only the port is stored in the
+Profile. The runtime uses synchronous Bridge calls on a dedicated instance
+thread per connection, so capture and processing do not wait for network
+responses. Timer state is taken from the Protocol v2 `TimerState` and Run
+segments from `RunState`; the two are paired by their exact `run_revision`, so a
+snapshot never mixes revisions. `event_sequence` continuity and heartbeat
+semantics are tracked by the Bridge adapter so scenarios only ever see an
+authoritative LiveSplit state. Actions are checked against the current state
+and are never blindly retried. When an operation succeeds, its
+`OperationResponse.timer_state` is applied immediately.
+A timeout after sending an action is reported as an unknown result, not retried.
 
 ## Performance
 
@@ -344,8 +355,8 @@ sequences multiple Rules and their Actions.
 ## Windows distribution
 
 The `Windows distribution` CI workflow builds the desktop UI and AutoSplit
-Converter sequentially in one Windows job. Its `DivergenceSplitter-windows-x64.7z`
-artifact downloads directly as a 7z archive without an outer ZIP wrapper:
+Converter sequentially in one Windows job. Its `DivergenceSplitter-windows-x64`
+artifact downloads as a GitHub Actions ZIP:
 
 ```text
 DivergenceSplitter/
@@ -366,11 +377,16 @@ Choose `OFF` (no log output) or `DEBUG` (all diagnostic details) in Configuratio
 Changing this setting also updates the running session immediately. Save the
 configuration to keep the choice for future sessions.
 
-The Windows desktop application writes UTF-8 logs to `diagnostics.log` in the
-same directory as `DivergenceSplitter.exe`, including when launched without a
-console. Source runs write to the current working directory instead.
-The Configuration page displays the full path.
-Logs rotate at 5 MiB with up to three backups (`.1`, `.2`, `.3`). OFF suppresses
-new output; it does not remove previously recorded logs. The CLI continues to
-write to standard error. Existing INFO, WARNING, and ERROR settings are accepted
-as compatibility aliases for DEBUG.
+The desktop application writes UTF-8 logs to
+`%APPDATA%\DivergenceSplitter\diagnostics.log` on Windows, the same per-user
+directory that stores `settings.json`. This location is fixed: source runs
+(`uv run divergencesplitter-ui`) and the packaged EXE write to the same file, and
+it never depends on the current working directory or the executable path. On
+other platforms the log lives in
+`$XDG_CONFIG_HOME/DivergenceSplitter/diagnostics.log` (or
+`~/.config/DivergenceSplitter/diagnostics.log`).
+Logs rotate at 5 MiB with up to three backups (`diagnostics.log.1`,
+`diagnostics.log.2`, `diagnostics.log.3`). OFF suppresses new output; it does not
+remove previously recorded logs. The CLI continues to write to standard error.
+Existing INFO, WARNING, and ERROR settings are accepted as compatibility aliases
+for DEBUG.

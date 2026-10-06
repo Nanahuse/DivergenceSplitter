@@ -3,7 +3,7 @@ name = "divergencesplitter"
 version = "0.1.0"
 description = "Scenario authoring library for DivergenceSplitter"
 requires-python = ">=3.14"
-license = "GPL-3.0-only"
+license = "MIT"
 dependencies = [
     "numpy>=2.5.2",
     "opencv-contrib-python>=5.0.0.93",

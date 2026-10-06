@@ -15,7 +15,7 @@ from typing import Protocol
 
 import flet as ft
 
-CONFIGURATION_EXTENSIONS = ("json",)
+PROFILE_EXTENSIONS = ("json",)
 SCENARIO_EXTENSIONS = ("py", "yaml", "yml")
 VIDEO_EXTENSIONS = ("mp4", "mkv", "avi", "mov", "webm", "m4v")
 
