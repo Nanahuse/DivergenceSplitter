@@ -15,6 +15,9 @@ def make_tree(root: Path) -> None:
     ui_dir = root / bwd.DIST_ROOT / bwd.UI_ARTIFACT
     ui_dir.mkdir(parents=True, exist_ok=True)
     (ui_dir / f"{bwd.UI_ARTIFACT}.exe").write_bytes(b"ui")
+    notices_dir = ui_dir / "flutter_assets"
+    notices_dir.mkdir(parents=True, exist_ok=True)
+    (notices_dir / "NOTICES.Z").write_bytes(b"flutter notices")
     site_packages = ui_dir / bwd.SITE_PACKAGES
     for module in (
         "divergencesplitter",
@@ -39,6 +42,17 @@ def make_tree(root: Path) -> None:
     converter_dir = root / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
     converter_dir.mkdir(parents=True, exist_ok=True)
     (converter_dir / f"{bwd.CONVERTER_ARTIFACT}.exe").write_bytes(b"converter")
+
+    inventory = (
+        root
+        / "packages"
+        / "divergencesplitter-ui"
+        / "src"
+        / "divergencesplitter_ui"
+        / "license_inventory.json"
+    )
+    inventory.parent.mkdir(parents=True, exist_ok=True)
+    inventory.write_text('{"packages": [], "assets": []}', encoding="utf-8")
 
 
 class RecordingRunner:
@@ -102,7 +116,11 @@ class TestBuildCommands:
         create = bwd.archive_create_command(archive)
         assert create[:3] == ["7z", "a", "-t7z"]
         assert create[3] == archive.as_posix()
-        assert create[4:] == [bwd.UI_ARTIFACT, bwd.CONVERTER_ARTIFACT]
+        assert create[4:] == [
+            bwd.UI_ARTIFACT,
+            bwd.CONVERTER_ARTIFACT,
+            "THIRD_PARTY_NOTICES.txt",
+        ]
 
         assert bwd.archive_test_command(archive) == ["7z", "t", archive.as_posix()]
 
@@ -180,6 +198,8 @@ class TestOrchestration:
         assert any("pyinstaller" in command for command in commands)
         assert any(command[:2] == ["7z", "a"] for command in commands)
         assert any(command[:2] == ["7z", "t"] for command in commands)
+        generated_notices = tmp_path / bwd.DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
+        assert generated_notices.is_file()
 
     def test_propagates_build_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

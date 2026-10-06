@@ -196,7 +196,34 @@ class TestLicenseText:
 
         text = invgen.license_text(dist)
         assert "binding MIT text" in text
-        assert "NDI runtime notices" in text
+        assert "NDI runtime notices" not in text
+
+    def test_ndi_runtime_notice_is_a_runtime_asset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ndi = FakeDistribution(
+            "ndi-python",
+            "6.3.2.4",
+            license="MIT",
+            license_files={"LICENSE": "binding MIT text"},
+        )
+        notice = tmp_path / "NDIlib" / "Processing.NDI.Lib.Licenses.txt"
+        notice.parent.mkdir()
+        notice.write_text(
+            "NDI runtime notice\n\nNDI gratefully uses the following third party libraries.\nRapidJSON notices",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(ndi, "locate_file", lambda path: tmp_path / path)
+
+        inventory = invgen.build_inventory({"ndi-python": ndi}, assets=[])
+        by_name = {asset["name"]: asset for asset in inventory["assets"]}
+
+        assert by_name["NDI Runtime"]["license"] == "Licensing Notice"
+        assert "third party libraries" not in by_name["NDI Runtime"]["license_text"]
+        assert (
+            "RapidJSON notices"
+            in by_name["NDI Runtime Third-Party Notices"]["license_text"]
+        )
 
     def test_declared_license_files_are_bundled(self) -> None:
         dist = FakeDistribution(
@@ -312,7 +339,7 @@ class TestBuildInventory:
         )
         try:
             inventory = invgen.build_inventory(
-                invgen.release_closure(installed(*dists))
+                invgen.release_closure(installed(*dists)), assets=[]
             )
         finally:
             invgen.OVERRIDES["opencv-contrib-python"] = override
@@ -333,10 +360,12 @@ class TestBuildInventory:
             ),
         ]
 
-        inventory = invgen.build_inventory(invgen.release_closure(installed(*dists)))
+        inventory = invgen.build_inventory(
+            invgen.release_closure(installed(*dists)), assets=[]
+        )
 
         assert inventory == {
-            "schema_version": 3,
+            "schema_version": 4,
             "application": invgen.application_entry(),
             "packages": [
                 {
@@ -371,7 +400,9 @@ class TestBuildInventory:
             ),
         ]
 
-        inventory = invgen.build_inventory(invgen.release_closure(installed(*dists)))
+        inventory = invgen.build_inventory(
+            invgen.release_closure(installed(*dists)), assets=[]
+        )
 
         names = [entry["name"] for entry in inventory["packages"]]
 
@@ -434,10 +465,49 @@ class TestResolveLicense:
             del invgen.OVERRIDES["mine"]
 
 
+class TestRuntimeAssets:
+    def test_collects_runtime_components_from_python_distribution(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "LICENSE.txt").write_text("CPython notices", encoding="utf-8")
+        (tmp_path / "licenses").mkdir()
+        (tmp_path / "licenses" / "LICENSE.openssl.txt").write_text(
+            "OpenSSL terms", encoding="utf-8"
+        )
+        for directory, text in (("tcl8.6", "Tcl terms"), ("tk8.6", "Tk terms")):
+            path = tmp_path / "tcl" / directory
+            path.mkdir(parents=True)
+            (path / "license.terms").write_text(text, encoding="utf-8")
+        monkeypatch.setattr(invgen.metadata, "version", lambda name: "6.22.2")
+
+        assets = invgen.runtime_component_assets(tmp_path)
+
+        by_name = {asset["name"]: asset for asset in assets}
+        assert {
+            "CPython (Flet / serious_python)",
+            "CPython (AutoSplit Converter)",
+            "Tcl",
+            "Tk",
+            "dart_bridge",
+            "PyInstaller runtime hook pyi_rth__tkinter.py",
+        } <= by_name.keys()
+        converter_python = by_name["CPython (AutoSplit Converter)"]
+        assert converter_python["license_text"].count("CPython notices") == 1
+        assert "OpenSSL terms" in converter_python["license_text"]
+        assert by_name["Tcl"]["license_text"] == "Tcl terms"
+        assert by_name["Tk"]["license_text"] == "Tk terms"
+        assert by_name["dart_bridge"]["version"] == "1.9.0"
+        assert by_name["dart_bridge"]["license"] == "MIT"
+        assert (
+            by_name["PyInstaller runtime hook pyi_rth__tkinter.py"]["license"]
+            == "Apache-2.0"
+        )
+
+
 class TestCheckInventory:
     def make_expected(self) -> invgen.InventoryDocument:
         return {
-            "schema_version": 3,
+            "schema_version": 4,
             "application": {
                 "name": "DivergenceSplitter",
                 "license": "GPL-3.0-only",
@@ -469,6 +539,17 @@ class TestCheckInventory:
         self.write_stored(tmp_path, self.make_expected())
 
         assert invgen.check_inventory(self.make_expected()) is True
+
+    def test_third_party_notices_deduplicate_identical_text(self) -> None:
+        inventory = self.make_expected()
+        inventory["packages"][1]["license_text"] = "shared license"
+        inventory["packages"][0]["license_text"] = "shared license"
+        rendered = invgen.render_third_party_notices(inventory)
+
+        assert rendered.count("shared license") == 1
+        assert "sample-package 2.3.1" in rendered
+        assert "numpy 2.5.2" in rendered
+        assert "flutter_assets/NOTICES.Z" in rendered
 
     def test_missing_package_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()

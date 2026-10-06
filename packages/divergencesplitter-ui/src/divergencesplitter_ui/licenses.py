@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from typing import IO
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 INVENTORY_RESOURCE = "license_inventory.json"
 
 
@@ -52,11 +52,11 @@ class ApplicationLicense:
 class AssetLicense:
     """A non-Python asset redistributed inside the application.
 
-    Unlike ``LicenseEntry`` it has no package version because it is not a
-    distribution; non-Python assets are conveyed this way.
+    Non-Python runtime components retain the runtime version when known.
     """
 
     name: str
+    version: str
     license: str
     license_text: str
 
@@ -157,13 +157,13 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
     assets: list[AssetLicense] = []
     seen_assets: set[str] = set()
     for index, asset in enumerate(assets_data):
-        name, license, license_text = _entry(
-            index, asset, ("name", "license", "license_text")
+        name, version, license, license_text = _entry(
+            index, asset, ("name", "version", "license", "license_text")
         )
         if name in seen_assets:
             raise LicenseInventoryError(f"license inventory lists asset {name!r} twice")
         seen_assets.add(name)
-        assets.append(AssetLicense(name, license, license_text))
+        assets.append(AssetLicense(name, version, license, license_text))
     return LicenseInventory(schema_version, application, tuple(entries), tuple(assets))
 
 
@@ -190,7 +190,7 @@ def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
     for asset in inventory.assets:
         sections.append(
             LicenseSection(
-                title=f"{asset.name} — {asset.license}",
+                title=f"{asset.name} {asset.version} — {asset.license}",
                 text=asset.license_text,
             )
         )

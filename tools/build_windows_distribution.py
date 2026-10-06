@@ -22,11 +22,14 @@ build; this script never rewrites project metadata and never builds its own
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+
+from generate_ui_license_inventory import render_third_party_notices
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -116,7 +119,7 @@ def converter_build_command() -> list[str]:
 
 
 def archive_create_command(archive: Path) -> list[str]:
-    """7z the two built directory distributions into one archive."""
+    """7z both application directories and the distribution-wide notices."""
 
     return [
         "7z",
@@ -125,6 +128,7 @@ def archive_create_command(archive: Path) -> list[str]:
         archive.as_posix(),
         UI_ARTIFACT,
         CONVERTER_ARTIFACT,
+        "THIRD_PARTY_NOTICES.txt",
     ]
 
 
@@ -162,6 +166,7 @@ def verify_ui_distribution(ui_dir: Path) -> None:
     """Validate the Flet build output tree and its native dependencies."""
 
     require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
+    require_nonempty_file(ui_dir / "flutter_assets" / "NOTICES.Z")
 
     site_packages = ui_dir / SITE_PACKAGES
     require_dir(site_packages)
@@ -243,6 +248,18 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     converter_dir = root / DIST_ROOT / CONVERTER_ARTIFACT
     verify_ui_distribution(ui_dir)
     verify_converter_distribution(converter_dir)
+
+    inventory_path = (
+        root
+        / "packages"
+        / "divergencesplitter-ui"
+        / "src"
+        / "divergencesplitter_ui"
+        / "license_inventory.json"
+    )
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    notices = root / DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
+    notices.write_text(render_third_party_notices(inventory), encoding="utf-8")
 
     smoke_test_application(ui_dir / f"{UI_ARTIFACT}.exe")
 

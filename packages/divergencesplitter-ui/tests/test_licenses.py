@@ -22,7 +22,7 @@ def document(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 3,
+    schema_version: int = 4,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -51,6 +51,7 @@ def package(**fields: Any) -> dict[str, Any]:
 def asset(**fields: Any) -> dict[str, Any]:
     defaults = {
         "name": "sample-asset",
+        "version": "1.0",
         "license": "MIT",
         "license_text": "the asset license text",
     }
@@ -69,7 +70,7 @@ def load(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 3,
+    schema_version: int = 4,
 ) -> LicenseInventory:
     return load_inventory(
         StringIO(
@@ -92,7 +93,7 @@ class TestLoadInventory:
         )
 
         assert inventory == LicenseInventory(
-            schema_version=3,
+            schema_version=4,
             application=ApplicationLicense(
                 "DivergenceSplitter",
                 "GPL-3.0-only",
@@ -109,7 +110,7 @@ class TestLoadInventory:
         inventory = load([package()], assets=[asset()])
 
         assert inventory.assets == (
-            AssetLicense("sample-asset", "MIT", "the asset license text"),
+            AssetLicense("sample-asset", "1.0", "MIT", "the asset license text"),
         )
 
     def test_missing_asset_field_raises(self) -> None:
@@ -204,14 +205,16 @@ class TestLoadInventory:
 class TestLicenseSections:
     def make_inventory(self) -> LicenseInventory:
         return LicenseInventory(
-            schema_version=3,
+            schema_version=4,
             application=ApplicationLicense(
                 "DivergenceSplitter",
                 "GPL-3.0-only",
                 "the GPL text",
             ),
             packages=(LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "the BSD text"),),
-            assets=(AssetLicense("sample-asset", "MIT", "the asset license text"),),
+            assets=(
+                AssetLicense("sample-asset", "1.0", "MIT", "the asset license text"),
+            ),
         )
 
     def test_application_section_comes_first(self) -> None:
@@ -234,6 +237,6 @@ class TestLicenseSections:
         sections = license_sections(self.make_inventory())
 
         assert sections[2] == LicenseSection(
-            title="sample-asset — MIT",
+            title="sample-asset 1.0 — MIT",
             text="the asset license text",
         )
