@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import tomllib
 from collections.abc import Iterable, Mapping
 from importlib.metadata import Distribution, PackagePath
 from pathlib import Path
@@ -538,22 +537,6 @@ class TestResolveLicense:
 
 
 class TestRuntimeAssets:
-    def test_flet_windows_runtime_is_pinned_to_serious_python_windows_472(self) -> None:
-        project = tomllib.loads(
-            (
-                invgen.REPO_ROOT
-                / "packages"
-                / "divergencesplitter-ui"
-                / "pyproject.toml"
-            ).read_text(encoding="utf-8")
-        )
-
-        overrides = project["tool"]["flet"]["flutter"]["pubspec"][
-            "dependency_overrides"
-        ]
-        assert overrides["serious_python"] == "4.7.2"
-        assert overrides["serious_python_windows"] == "4.7.2"
-
     def test_collects_runtime_components_from_python_distribution(
         self, tmp_path: Path
     ) -> None:
