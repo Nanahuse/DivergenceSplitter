@@ -548,12 +548,11 @@ class TestRuntimeAssets:
             ).read_text(encoding="utf-8")
         )
 
-        assert (
-            project["tool"]["flet"]["flutter"]["pubspec"]["dependency_overrides"][
-                "serious_python_windows"
-            ]
-            == "4.7.2"
-        )
+        overrides = project["tool"]["flet"]["flutter"]["pubspec"][
+            "dependency_overrides"
+        ]
+        assert overrides["serious_python"] == "4.7.2"
+        assert overrides["serious_python_windows"] == "4.7.2"
 
     def test_collects_runtime_components_from_python_distribution(
         self, tmp_path: Path
