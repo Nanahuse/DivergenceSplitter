@@ -120,6 +120,7 @@ def verify_ui_distribution(ui_dir: Path) -> None:
     """Validate the Flet build output tree and its native dependencies."""
 
     require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
+    require_nonempty_file(ui_dir / "license_inventory.json")
     notices = ui_dir / "flutter_assets" / "NOTICES.Z"
     flutter_data_notices = ui_dir / "data" / "flutter_assets" / "NOTICES.Z"
     if not notices.is_file() and flutter_data_notices.is_file():
@@ -129,9 +130,6 @@ def verify_ui_distribution(ui_dir: Path) -> None:
 
     site_packages = ui_dir / SITE_PACKAGES
     require_dir(site_packages)
-    require_nonempty_file(
-        site_packages / "divergencesplitter_ui" / "license_inventory.json"
-    )
     for module in (
         "divergencesplitter",
         "divergencesplitter_runtime",
@@ -282,6 +280,7 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
         / "license_inventory.json"
     )
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    shutil.copyfile(inventory_path, ui_dir / "license_inventory.json")
     copy_inventory_license_files(
         inventory,
         source_root=root / "tools" / "licenses",

@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+import divergencesplitter_ui.licenses as license_module
 import pytest
 from divergencesplitter_ui.licenses import (
     ApplicationLicense,
@@ -108,6 +109,24 @@ def load(
 
 
 class TestLoadInventory:
+    def test_loads_inventory_and_license_files_beside_packaged_executable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        distribution = tmp_path / "DivergenceSplitter"
+        distribution.mkdir()
+        executable = distribution / "DivergenceSplitter.exe"
+        executable.touch()
+        monkeypatch.setattr(license_module.sys, "executable", str(executable))
+        inventory = document([package()])
+        (distribution / "license_inventory.json").write_text(
+            json.dumps(inventory), encoding="utf-8"
+        )
+        _populate_license_files(inventory, distribution / "licenses")
+
+        loaded = license_module.bundled_inventory()
+
+        assert loaded.packages[0].license_text == "full BSD text"
+
     def test_reads_referenced_license_files_into_runtime_entries(self) -> None:
         inventory = load([package(), package(name="pyyaml", license="MIT")])
 

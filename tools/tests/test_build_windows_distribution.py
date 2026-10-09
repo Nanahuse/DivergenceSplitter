@@ -29,8 +29,6 @@ def make_tree(root: Path) -> None:
         "cv2",
     ):
         (site_packages / module).mkdir(parents=True, exist_ok=True)
-    ui_module = site_packages / "divergencesplitter_ui"
-    ui_module.mkdir(parents=True, exist_ok=True)
     cv2 = site_packages / "cv2"
     (cv2 / "config.py").write_text("# config", encoding="utf-8")
     (cv2 / "config-3.py").write_text("# config3", encoding="utf-8")
@@ -85,7 +83,7 @@ def make_tree(root: Path) -> None:
     inventory_path.parent.mkdir(parents=True, exist_ok=True)
     inventory_text = json.dumps(inventory)
     inventory_path.write_text(inventory_text, encoding="utf-8")
-    (ui_module / "license_inventory.json").write_text(inventory_text, encoding="utf-8")
+    (ui_dir / "license_inventory.json").write_text(inventory_text, encoding="utf-8")
     for reference, text in {
         "application/app.txt": "application license text",
         "packages/sample.txt": "package license text",
@@ -167,12 +165,7 @@ class TestVerification:
             destination_root=ui_dir / "licenses",
         )
         bwd.verify_ui_distribution(ui_dir)
-        with (
-            ui_dir
-            / bwd.SITE_PACKAGES
-            / "divergencesplitter_ui"
-            / "license_inventory.json"
-        ).open(encoding="utf-8") as source:
+        with (ui_dir / "license_inventory.json").open(encoding="utf-8") as source:
             loaded = load_inventory(source, license_root=ui_dir / "licenses")
 
         assert len(copied) == 2

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.resources
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -100,11 +101,12 @@ def _entry(
 
 def _license_root(package_root: Path) -> Path:
     """Find license files beside the Windows distribution or in the source tree."""
-    candidates = [
+    candidates = [Path(sys.executable).resolve().parent / "licenses"]
+    candidates.extend(
         candidate
         for ancestor in (package_root, *package_root.parents)
         for candidate in (ancestor / "licenses", ancestor / "tools" / "licenses")
-    ]
+    )
     for candidate in candidates:
         if candidate.is_dir():
             return candidate
@@ -245,12 +247,17 @@ def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
 
 
 def bundled_inventory() -> LicenseInventory:
-    """Load the inventory shipped next to this package.
+    """Load the inventory shipped with the app or next to this package.
 
-    ``importlib.resources`` reads the data file from the source tree, from an
-    installed wheel, and from a PyInstaller bundle without any path special
-    cases in application code.
+    The Windows distribution keeps its data files beside the executable.
+    Development and installed-package runs use ``importlib.resources``.
     """
+
+    distribution_root = Path(sys.executable).resolve().parent
+    distribution_inventory = distribution_root / INVENTORY_RESOURCE
+    if distribution_inventory.is_file():
+        with distribution_inventory.open("r", encoding="utf-8") as source:
+            return load_inventory(source, license_root=distribution_root / "licenses")
 
     resource = importlib.resources.files("divergencesplitter_ui").joinpath(
         INVENTORY_RESOURCE
