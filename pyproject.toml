@@ -28,6 +28,7 @@ dev = [
 build = [
     "pyinstaller>=6.16,<7",
     "packaging>=26.0",
+    "flet-cli==1.0.4",
 ]
 
 [tool.pytest.ini_options]
