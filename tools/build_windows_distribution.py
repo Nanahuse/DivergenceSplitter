@@ -187,10 +187,19 @@ def copy_inventory_license_files(
     inventory: dict[str, object], *, source_root: Path, destination_root: Path
 ) -> list[Path]:
     """Copy only the license texts referenced by the bundled inventory."""
+    application = inventory.get("application")
+    packages = inventory.get("packages")
+    assets = inventory.get("assets")
+    if (
+        not isinstance(application, dict)
+        or not isinstance(packages, list)
+        or not isinstance(assets, list)
+    ):
+        raise TypeError("Malformed license inventory")
     entries = [
-        inventory["application"],
-        *inventory["packages"],
-        *inventory["assets"],
+        application,
+        *packages,
+        *assets,
     ]
     copied: list[Path] = []
     for entry in entries:
