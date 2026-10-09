@@ -8,9 +8,8 @@ real Flet/Flutter build.
 Order of work:
 
 1. Build the Flet Windows application.
-2. Build the AutoSplit converter with PyInstaller.
-3. Validate the UI and converter output trees.
-4. Smoke test the UI executable (bounded GUI launch).
+2. Validate the UI output tree and collect the embedded Python runtime notices.
+3. Write the distribution notice file and smoke test the UI executable.
 
 The workflow generates the UI version module (``tools/generate_ui_version.py``)
 immediately before this script. The Flet metadata in
@@ -36,7 +35,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 UI_PACKAGE = Path("packages") / "divergencesplitter-ui"
 
 UI_ARTIFACT = "DivergenceSplitter"
-CONVERTER_ARTIFACT = "autosplit-converter"
 DIST_ROOT = Path("dist") / "windows"
 
 SITE_PACKAGES = "site-packages"
@@ -91,29 +89,6 @@ def flet_build_command() -> list[str]:
         UI_ARTIFACT,
         "--output",
         (DIST_ROOT / UI_ARTIFACT).as_posix(),
-    ]
-
-
-def converter_build_command() -> list[str]:
-    """AutoSplit converter build command; the converter stays on PyInstaller."""
-
-    return [
-        "uv",
-        "run",
-        "--no-sync",
-        "pyinstaller",
-        "--onedir",
-        "--windowed",
-        "--clean",
-        "--name",
-        CONVERTER_ARTIFACT,
-        "--distpath",
-        DIST_ROOT.as_posix(),
-        "--workpath",
-        (Path("build") / "converter-pyinstaller").as_posix(),
-        "--specpath",
-        (Path("build") / "converter-pyinstaller").as_posix(),
-        (Path("tools") / "converter_entry.py").as_posix(),
     ]
 
 
@@ -177,10 +152,32 @@ def verify_ui_distribution(ui_dir: Path) -> None:
     require_glob(capture, "core*.pyd", "capture-device extension module")
 
 
-def verify_converter_distribution(converter_dir: Path) -> None:
-    """Validate the PyInstaller converter output tree."""
+def flet_runtime_license_notices(root: Path) -> str:
+    """Read the license bundle for the Python runtime staged by Flet's build."""
 
-    require_nonempty_file(converter_dir / f"{CONVERTER_ARTIFACT}.exe")
+    build_root = root / UI_PACKAGE / "build" / "flutter" / "build"
+    candidates = sorted(
+        path / "python"
+        for path in build_root.glob("build_python_*")
+        if (path / "python" / "python.exe").is_file()
+        and (path / "python" / "LICENSE.txt").is_file()
+    )
+    if len(candidates) != 1:
+        raise RuntimeError(
+            "Expected exactly one staged Flet Python runtime license bundle under "
+            f"{build_root}; found {len(candidates)}"
+        )
+
+    runtime = candidates[0]
+    files = [runtime / "LICENSE.txt"]
+    license_dir = runtime / "licenses"
+    if license_dir.is_dir():
+        files.extend(path for path in sorted(license_dir.rglob("*")) if path.is_file())
+    return "\n\n".join(
+        f"=== {path.relative_to(runtime).as_posix()} ===\n"
+        f"{path.read_text(encoding='utf-8')}"
+        for path in files
+    )
 
 
 def smoke_test_application(
@@ -227,12 +224,10 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     """Run the full Windows distribution build and return when verified."""
 
     run_command(flet_build_command(), cwd=root, env=flet_environment())
-    run_command(converter_build_command(), cwd=root)
 
     ui_dir = root / DIST_ROOT / UI_ARTIFACT
-    converter_dir = root / DIST_ROOT / CONVERTER_ARTIFACT
     verify_ui_distribution(ui_dir)
-    verify_converter_distribution(converter_dir)
+    runtime_notices = flet_runtime_license_notices(root)
 
     inventory_path = (
         root
@@ -244,7 +239,10 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     )
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
     notices = root / DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
-    notices.write_text(render_third_party_notices(inventory), encoding="utf-8")
+    notices.write_text(
+        render_third_party_notices(inventory, flet_runtime_notices=runtime_notices),
+        encoding="utf-8",
+    )
 
     smoke_test_application(ui_dir / f"{UI_ARTIFACT}.exe")
 

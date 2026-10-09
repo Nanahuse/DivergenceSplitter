@@ -40,9 +40,18 @@ def make_tree(root: Path) -> None:
     capture.mkdir(parents=True, exist_ok=True)
     (capture / "core.cp314-win_amd64.pyd").write_bytes(b"pyd")
 
-    converter_dir = root / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
-    converter_dir.mkdir(parents=True, exist_ok=True)
-    (converter_dir / f"{bwd.CONVERTER_ARTIFACT}.exe").write_bytes(b"converter")
+    runtime = (
+        root
+        / bwd.UI_PACKAGE
+        / "build"
+        / "flutter"
+        / "build"
+        / "build_python_3.14.7"
+        / "python"
+    )
+    runtime.mkdir(parents=True, exist_ok=True)
+    (runtime / "python.exe").write_bytes(b"python")
+    (runtime / "LICENSE.txt").write_text("Python runtime bundle", encoding="utf-8")
 
     inventory = (
         root
@@ -94,16 +103,6 @@ class TestBuildCommands:
         assert "--no-compile-packages" not in command
         assert "--no-cleanup-packages" not in command
 
-    def test_converter_build_stays_pyinstaller(self) -> None:
-        command = bwd.converter_build_command()
-
-        assert "pyinstaller" in command
-        assert "--onedir" in command
-        assert "--windowed" in command
-        assert "--clean" in command
-        assert command[command.index("--name") + 1] == bwd.CONVERTER_ARTIFACT
-        assert "flet" not in command
-
     def test_flet_environment_sets_encoding(self) -> None:
         env = bwd.flet_environment()
 
@@ -117,9 +116,6 @@ class TestVerification:
         make_tree(tmp_path)
 
         bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
-        bwd.verify_converter_distribution(
-            tmp_path / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
-        )
 
     def test_copies_flutter_notices_from_standard_windows_data_directory(
         self, tmp_path: Path
@@ -180,21 +176,6 @@ class TestVerification:
         with pytest.raises(RuntimeError, match="Missing required file"):
             bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
 
-    def test_rejects_empty_converter_executable(self, tmp_path: Path) -> None:
-        make_tree(tmp_path)
-        exe = (
-            tmp_path
-            / bwd.DIST_ROOT
-            / bwd.CONVERTER_ARTIFACT
-            / f"{bwd.CONVERTER_ARTIFACT}.exe"
-        )
-        exe.write_bytes(b"")
-
-        with pytest.raises(RuntimeError, match="empty"):
-            bwd.verify_converter_distribution(
-                tmp_path / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
-            )
-
 
 class TestSmokeTest:
     def test_accepts_a_process_that_stays_alive(self) -> None:
@@ -226,9 +207,14 @@ class TestOrchestration:
 
         commands = [call[0] for call in runner.calls]
         assert any("flet" in command and "build" in command for command in commands)
-        assert any("pyinstaller" in command for command in commands)
+        assert all("pyinstaller" not in command for command in commands)
         generated_notices = tmp_path / bwd.DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
         assert generated_notices.is_file()
+        assert (
+            "Flet embedded Python runtime third-party notices"
+            in generated_notices.read_text(encoding="utf-8")
+        )
+        assert "Python runtime bundle" in generated_notices.read_text(encoding="utf-8")
         assert all(command[0] != "7z" for command in commands)
 
     def test_propagates_build_failure(

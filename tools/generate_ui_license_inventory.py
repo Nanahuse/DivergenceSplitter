@@ -61,13 +61,11 @@ UI_MODULE_ROOT = (
 )
 INVENTORY_PATH = UI_MODULE_ROOT / "license_inventory.json"
 ROOT_DISTRIBUTION = "divergencesplitter-ui"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
-FLET_CPYTHON_LICENSE_PATH = (
-    TOOLS_ROOT / "licenses" / "CPython-flet-python-build-20260921.txt"
-)
+CPYTHON_LICENSE_PATH = TOOLS_ROOT / "licenses" / "CPython.txt"
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
 # The NDI runtime is conveyed alongside the MIT-licensed ``ndi-python`` binding
@@ -471,72 +469,15 @@ def build_inventory(
     }
 
 
-def runtime_component_assets(
-    python_prefix: Path | None = None,
-) -> list[AssetEntry]:
-    """Collect licenses for runtime components outside Python package metadata.
-
-    The converter's Python distribution provides its license bundle beside
-    the interpreter. Flet's Windows CPython bundle is vendored from
-    flet-dev/python-build release 20260921 (python-windows-for-dart).
-    """
-    prefix = python_prefix or Path(sys.base_prefix)
-    assets: list[AssetEntry] = []
-
-    license_files: dict[str, str] = {}
-    root_license = next(
-        (p for p in (prefix / "LICENSE.txt", prefix / "LICENSE") if p.is_file()),
-        None,
-    )
-    if root_license:
-        license_files[root_license.name] = root_license.read_text(encoding="utf-8")
-    license_dir = prefix / "licenses"
-    if license_dir.is_dir():
-        for path in sorted(license_dir.rglob("*")):
-            if path.is_file():
-                license_files[path.relative_to(prefix).as_posix()] = path.read_text(
-                    encoding="utf-8"
-                )
-    if not license_files:
-        raise RuntimeError(f"Python distribution licenses not found under {prefix}")
-
-    build_info = next(prefix.glob("python-build-standalone*.json"), None)
-    # LICENSE.txt in python-build-standalone is an aggregate of CPython and
-    # bundled third-party license terms; never reduce it to PSF-2.0 alone.
-    distribution_licenses = "Python distribution license bundle"
-    if build_info:
-        info = json.loads(build_info.read_text(encoding="utf-8"))
-        names = info.get("licenses") or []
-        if names:
-            distribution_licenses = " AND ".join(names)
-        declared_path = info.get("license_path")
-        if declared_path:
-            path = prefix / declared_path
-            if path.is_file():
-                license_files[path.relative_to(prefix).as_posix()] = path.read_text(
-                    encoding="utf-8"
-                )
-    assets.append(
+def runtime_component_assets() -> list[AssetEntry]:
+    """Collect licenses for runtime components without Python package metadata."""
+    assets: list[AssetEntry] = [
         {
-            "name": "CPython (AutoSplit Converter)",
-            "license": distribution_licenses,
-            "license_text": "\n\n".join(
-                f"=== {name} ===\n{text}"
-                for name, text in sorted(license_files.items())
-            ),
+            "name": "CPython",
+            "license": "Python Software Foundation License",
+            "license_text": CPYTHON_LICENSE_PATH.read_text(encoding="utf-8"),
         }
-    )
-    assets.append(
-        {
-            "name": "CPython (Flet / serious_python)",
-            "license": "Python distribution license bundle",
-            "license_text": (
-                "=== flet-dev/python-build release 20260921; "
-                "python-windows-for-dart CPython 3.14.7 ===\n"
-                + FLET_CPYTHON_LICENSE_PATH.read_text(encoding="utf-8")
-            ),
-        }
-    )
+    ]
 
     mit_text = (TOOLS_ROOT / "licenses" / "dart_bridge-MIT.txt").read_text(
         encoding="utf-8"
@@ -549,17 +490,6 @@ def runtime_component_assets(
             "license_text": mit_text,
         }
     )
-    apache = (TOOLS_ROOT / "licenses" / "Apache-2.0.txt").read_text(encoding="utf-8")
-    assets.append(
-        {
-            "name": "PyInstaller runtime hook pyi_rth__tkinter.py",
-            "license": "Apache-2.0",
-            "license_text": (
-                "Copyright (c) 2013-2023, PyInstaller Development Team.\n"
-                "SPDX-License-Identifier: Apache-2.0\n\n" + apache
-            ),
-        }
-    )
     return assets
 
 
@@ -570,7 +500,9 @@ def write_inventory(inventory: InventoryDocument) -> None:
     )
 
 
-def render_third_party_notices(inventory: InventoryDocument) -> str:
+def render_third_party_notices(
+    inventory: InventoryDocument, *, flet_runtime_notices: str
+) -> str:
     """Render a distribution-wide notice file, deduplicating identical texts."""
     groups: dict[str, list[str]] = {}
     texts: dict[str, str] = {}
@@ -584,6 +516,7 @@ def render_third_party_notices(inventory: InventoryDocument) -> str:
         "DivergenceSplitter Windows Distribution — Third-Party Notices",
         "",
         "Python package distributions and runtime components are listed below.",
+        "Flet embedded Python runtime third-party notices are included separately.",
         "Flutter and Dart package notices are provided by Flutter at",
         "DivergenceSplitter/flutter_assets/NOTICES.Z; that generated notice file",
         "is the authoritative source for Flutter, Flet Dart packages, serious_python,",
@@ -592,6 +525,16 @@ def render_third_party_notices(inventory: InventoryDocument) -> str:
     for key in sorted(groups):
         names = ", ".join(sorted(groups[key], key=str.casefold))
         lines.extend(["", "=" * 78, names, "=" * 78, "", texts[key].rstrip()])
+    lines.extend(
+        [
+            "",
+            "=" * 78,
+            "Flet embedded Python runtime third-party notices",
+            "=" * 78,
+            "",
+            flet_runtime_notices.rstrip(),
+        ]
+    )
     return "\n".join(lines).rstrip() + "\n"
 
 

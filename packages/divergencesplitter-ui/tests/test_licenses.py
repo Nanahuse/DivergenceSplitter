@@ -22,7 +22,7 @@ def document(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 4,
+    schema_version: int = 5,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -70,7 +70,7 @@ def load(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 4,
+    schema_version: int = 5,
 ) -> LicenseInventory:
     return load_inventory(
         StringIO(
@@ -93,7 +93,7 @@ class TestLoadInventory:
         )
 
         assert inventory == LicenseInventory(
-            schema_version=4,
+            schema_version=5,
             application=ApplicationLicense(
                 "DivergenceSplitter",
                 "MIT",
@@ -211,7 +211,7 @@ class TestLoadInventory:
 class TestLicenseSections:
     def make_inventory(self) -> LicenseInventory:
         return LicenseInventory(
-            schema_version=4,
+            schema_version=5,
             application=ApplicationLicense(
                 "DivergenceSplitter",
                 "MIT",
@@ -253,6 +253,16 @@ class TestLicenseSections:
             inventory.schema_version,
             inventory.application,
             inventory.packages,
-            (AssetLicense("CPython", None, "PSF-2.0", "Python text"),),
+            (
+                AssetLicense(
+                    "CPython",
+                    None,
+                    "Python Software Foundation License",
+                    "Python text",
+                ),
+            ),
         )
-        assert license_sections(inventory)[2].title == "CPython — PSF-2.0"
+        assert (
+            license_sections(inventory)[2].title
+            == "CPython — Python Software Foundation License"
+        )

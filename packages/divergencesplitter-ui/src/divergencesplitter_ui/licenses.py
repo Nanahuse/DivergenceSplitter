@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from typing import IO
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 INVENTORY_RESOURCE = "license_inventory.json"
 
 

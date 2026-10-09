@@ -394,7 +394,7 @@ class TestBuildInventory:
         )
 
         assert inventory == {
-            "schema_version": 4,
+            "schema_version": 5,
             "application": invgen.application_entry(),
             "packages": [
                 {
@@ -537,56 +537,24 @@ class TestResolveLicense:
 
 
 class TestRuntimeAssets:
-    def test_collects_runtime_components_from_python_distribution(
-        self, tmp_path: Path
-    ) -> None:
-        (tmp_path / "LICENSE.txt").write_text("CPython notices", encoding="utf-8")
-        (tmp_path / "licenses").mkdir()
-        (tmp_path / "licenses" / "LICENSE.openssl.txt").write_text(
-            "OpenSSL terms", encoding="utf-8"
-        )
-        assets = invgen.runtime_component_assets(tmp_path)
-
+    def test_cpython_is_a_single_unversioned_license_asset(self) -> None:
+        assets = invgen.runtime_component_assets()
         by_name = {asset["name"]: asset for asset in assets}
-        assert {
-            "CPython (Flet / serious_python)",
-            "CPython (AutoSplit Converter)",
-            "dart_bridge",
-            "PyInstaller runtime hook pyi_rth__tkinter.py",
-        } <= by_name.keys()
-        converter_python = by_name["CPython (AutoSplit Converter)"]
-        assert converter_python["license_text"].count("CPython notices") == 1
-        assert "OpenSSL terms" in converter_python["license_text"]
-        assert "version" not in converter_python
-        flet_python = by_name["CPython (Flet / serious_python)"]
-        assert "version" not in flet_python
-        assert flet_python["license_text"] != converter_python["license_text"]
-        assert "python-build release 20260921" in flet_python["license_text"]
-        assert "python-windows-for-dart CPython 3.14.7" in flet_python["license_text"]
-        assert (
-            invgen.FLET_CPYTHON_LICENSE_PATH.read_text(encoding="utf-8")
-            in (flet_python["license_text"])
-        )
+        assert {"CPython", "dart_bridge"} <= by_name.keys()
+        cpython = by_name["CPython"]
+        assert "version" not in cpython
+        assert cpython["license"] == "Python Software Foundation License"
+        assert "Python Software Foundation License Version 2" in cpython["license_text"]
+        assert not any(name.startswith("CPython (") for name in by_name)
+        assert not any("PyInstaller" in name for name in by_name)
         assert by_name["dart_bridge"]["version"] == "1.10.0"
         assert by_name["dart_bridge"]["license"] == "MIT"
-        assert (
-            by_name["PyInstaller runtime hook pyi_rth__tkinter.py"]["license"]
-            == "Apache-2.0"
-        )
-        hook_text = by_name["PyInstaller runtime hook pyi_rth__tkinter.py"][
-            "license_text"
-        ]
-        assert "Copyright (c) 2013-2023, PyInstaller Development Team." in hook_text
-        assert "SPDX-License-Identifier: Apache-2.0" in hook_text
-        assert hook_text.index("SPDX-License-Identifier") < hook_text.index(
-            "Apache License"
-        )
 
 
 class TestCheckInventory:
     def make_expected(self) -> invgen.InventoryDocument:
         return {
-            "schema_version": 4,
+            "schema_version": 5,
             "application": {
                 "name": "DivergenceSplitter",
                 "license": "MIT",
@@ -623,12 +591,16 @@ class TestCheckInventory:
         inventory = self.make_expected()
         inventory["packages"][1]["license_text"] = "shared license"
         inventory["packages"][0]["license_text"] = "shared license"
-        rendered = invgen.render_third_party_notices(inventory)
+        rendered = invgen.render_third_party_notices(
+            inventory, flet_runtime_notices="Flet runtime notice"
+        )
 
         assert rendered.count("shared license") == 1
         assert "sample-package 2.3.1" in rendered
         assert "numpy 2.5.2" in rendered
         assert "flutter_assets/NOTICES.Z" in rendered
+        assert "Flet embedded Python runtime third-party notices" in rendered
+        assert "Flet runtime notice" in rendered
 
     def test_missing_package_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()
@@ -682,8 +654,8 @@ class TestCheckInventory:
         expected = self.make_expected()
         expected["assets"] = [
             {
-                "name": "CPython (Flet / serious_python)",
-                "license": "Python distribution license bundle",
+                "name": "CPython",
+                "license": "Python Software Foundation License",
                 "license_text": "Python terms",
             }
         ]
@@ -699,8 +671,8 @@ class TestCheckInventory:
         expected = self.make_expected()
         expected["assets"] = [
             {
-                "name": "CPython (Flet / serious_python)",
-                "license": "Python distribution license bundle",
+                "name": "CPython",
+                "license": "Python Software Foundation License",
                 "license_text": "Python terms",
             }
         ]
@@ -708,14 +680,12 @@ class TestCheckInventory:
 
         assert invgen.check_inventory(expected) is True
 
-    def test_cpython_license_bundle_difference_is_detected(
-        self, tmp_path: Path
-    ) -> None:
+    def test_cpython_license_text_difference_is_detected(self, tmp_path: Path) -> None:
         expected = self.make_expected()
         expected["assets"] = [
             {
-                "name": "CPython (AutoSplit Converter)",
-                "license": "Python distribution license bundle",
+                "name": "CPython",
+                "license": "Python Software Foundation License",
                 "license_text": "updated patch bundle",
             }
         ]
