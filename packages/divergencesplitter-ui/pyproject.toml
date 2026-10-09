@@ -27,6 +27,9 @@ divergencesplitter-runtime = { workspace = true }
 path = "src"
 module = "main"
 
+[tool.flet.flutter.pubspec.dependency_overrides]
+serious_python_windows = "4.7.2"
+
 [tool.flet.dev_packages]
 divergencesplitter-runtime = "../divergencesplitter-runtime"
 divergencesplitter = "../divergencesplitter"

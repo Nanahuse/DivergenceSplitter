@@ -28,8 +28,9 @@ pointing at where their upstream source can be obtained.
 Generation is deterministic: packages are emitted sorted by their normalized
 name, license files are sorted by their normalized sub-path, and every run
 over the same environment produces identical JSON. The ``--check`` mode
-rebuilds the expected inventory and fails on any name/version/license/text
-difference, including both missing and extra packages. The license screen
+rebuilds the expected inventory and fails on missing or extra entries and
+license or text differences. Package versions always match; runtime asset
+versions match only when the expected asset explicitly has one. The license screen
 covers third-party components only, so the own DivergenceSplitter
 distributions are excluded from the emitted inventory via an explicit,
 documented set.
@@ -65,7 +66,7 @@ APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
 FLET_CPYTHON_LICENSE_PATH = (
-    TOOLS_ROOT / "licenses" / "CPython-flet-python-build-20260908.txt"
+    TOOLS_ROOT / "licenses" / "CPython-flet-python-build-20260921.txt"
 )
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
@@ -477,7 +478,7 @@ def runtime_component_assets(
 
     The converter's Python distribution provides its license bundle beside
     the interpreter. Flet's Windows CPython bundle is vendored from
-    flet-dev/python-build release 20260908 (python-windows-for-dart).
+    flet-dev/python-build release 20260921 (python-windows-for-dart).
     """
     prefix = python_prefix or Path(sys.base_prefix)
     assets: list[AssetEntry] = []
@@ -530,7 +531,7 @@ def runtime_component_assets(
             "name": "CPython (Flet / serious_python)",
             "license": "Python distribution license bundle",
             "license_text": (
-                "=== flet-dev/python-build release 20260908; "
+                "=== flet-dev/python-build release 20260921; "
                 "python-windows-for-dart CPython 3.14.7 ===\n"
                 + FLET_CPYTHON_LICENSE_PATH.read_text(encoding="utf-8")
             ),
@@ -543,7 +544,7 @@ def runtime_component_assets(
     assets.append(
         {
             "name": "dart_bridge",
-            "version": "1.9.0",
+            "version": "1.10.0",
             "license": "MIT",
             "license_text": mit_text,
         }
@@ -640,14 +641,21 @@ def check_inventory(inventory: InventoryDocument) -> bool:
         print(f"extra in inventory assets: {name}")
         mismatched = True
     for name in sorted(expected_assets.keys() & actual_assets.keys()):
-        fields = (
-            ("license",)
-            if name.startswith("CPython (")
-            else ("license", "license_text")
+        expected_asset = expected_assets[name]
+        actual_asset = actual_assets[name]
+        comparisons = (
+            ("license", expected_asset["license"], actual_asset.get("license")),
+            (
+                "license_text",
+                expected_asset["license_text"],
+                actual_asset.get("license_text"),
+            ),
         )
-        for field in fields:
-            expected_value = expected_assets[name][field]
-            actual_value = actual_assets[name][field]
+        if "version" in expected_asset:
+            comparisons += (
+                ("version", expected_asset["version"], actual_asset.get("version")),
+            )
+        for field, expected_value, actual_value in comparisons:
             if expected_value != actual_value:
                 print(
                     f"asset {name} {field}: expected {expected_value!r}, "

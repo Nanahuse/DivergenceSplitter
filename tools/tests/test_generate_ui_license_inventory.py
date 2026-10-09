@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tomllib
 from collections.abc import Iterable, Mapping
 from importlib.metadata import Distribution, PackagePath
 from pathlib import Path
@@ -537,6 +538,23 @@ class TestResolveLicense:
 
 
 class TestRuntimeAssets:
+    def test_flet_windows_runtime_is_pinned_to_serious_python_windows_472(self) -> None:
+        project = tomllib.loads(
+            (
+                invgen.REPO_ROOT
+                / "packages"
+                / "divergencesplitter-ui"
+                / "pyproject.toml"
+            ).read_text(encoding="utf-8")
+        )
+
+        assert (
+            project["tool"]["flet"]["flutter"]["pubspec"]["dependency_overrides"][
+                "serious_python_windows"
+            ]
+            == "4.7.2"
+        )
+
     def test_collects_runtime_components_from_python_distribution(
         self, tmp_path: Path
     ) -> None:
@@ -561,8 +579,13 @@ class TestRuntimeAssets:
         flet_python = by_name["CPython (Flet / serious_python)"]
         assert "version" not in flet_python
         assert flet_python["license_text"] != converter_python["license_text"]
-        assert "python-build release 20260908" in flet_python["license_text"]
-        assert by_name["dart_bridge"]["version"] == "1.9.0"
+        assert "python-build release 20260921" in flet_python["license_text"]
+        assert "python-windows-for-dart CPython 3.14.7" in flet_python["license_text"]
+        assert (
+            invgen.FLET_CPYTHON_LICENSE_PATH.read_text(encoding="utf-8")
+            in (flet_python["license_text"])
+        )
+        assert by_name["dart_bridge"]["version"] == "1.10.0"
         assert by_name["dart_bridge"]["license"] == "MIT"
         assert (
             by_name["PyInstaller runtime hook pyi_rth__tkinter.py"]["license"]
@@ -653,7 +676,9 @@ class TestCheckInventory:
 
         assert invgen.check_inventory(self.make_expected()) is False
 
-    def test_runtime_asset_version_difference_is_ignored(self, tmp_path: Path) -> None:
+    def test_versioned_runtime_asset_version_difference_is_detected(
+        self, tmp_path: Path
+    ) -> None:
         expected = self.make_expected()
         expected["assets"] = [
             {
@@ -667,9 +692,28 @@ class TestCheckInventory:
         stored["assets"] = [{**expected["assets"][0], "version": "3.14.7"}]
         self.write_stored(tmp_path, stored)
 
+        assert invgen.check_inventory(expected) is False
+
+    def test_unversioned_runtime_asset_does_not_compare_version(
+        self, tmp_path: Path
+    ) -> None:
+        expected = self.make_expected()
+        expected["assets"] = [
+            {
+                "name": "CPython (Flet / serious_python)",
+                "license": "Python distribution license bundle",
+                "license_text": "Python terms",
+            }
+        ]
+        stored = self.make_expected()
+        stored["assets"] = [{**expected["assets"][0], "version": "3.14.7"}]
+        self.write_stored(tmp_path, stored)
+
         assert invgen.check_inventory(expected) is True
 
-    def test_cpython_patch_bundle_difference_is_ignored(self, tmp_path: Path) -> None:
+    def test_cpython_license_bundle_difference_is_detected(
+        self, tmp_path: Path
+    ) -> None:
         expected = self.make_expected()
         expected["assets"] = [
             {
@@ -687,7 +731,7 @@ class TestCheckInventory:
         ]
         self.write_stored(tmp_path, stored)
 
-        assert invgen.check_inventory(expected) is True
+        assert invgen.check_inventory(expected) is False
 
     def test_license_difference_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()
