@@ -222,7 +222,7 @@ class TestNdiLicenseBoundary:
             "Licensing Notice",
             "Third-party notices",
         ]
-        assert all(asset["version"] == "6.3.2.4" for asset in assets)
+        assert all("version" not in asset for asset in assets)
         assert "NDI SDK License Agreement" not in assets[0]["license"]
         assert "NDI runtime notices" in assets[1]["license_text"]
 
@@ -538,41 +538,40 @@ class TestResolveLicense:
 
 class TestRuntimeAssets:
     def test_collects_runtime_components_from_python_distribution(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path
     ) -> None:
         (tmp_path / "LICENSE.txt").write_text("CPython notices", encoding="utf-8")
         (tmp_path / "licenses").mkdir()
         (tmp_path / "licenses" / "LICENSE.openssl.txt").write_text(
             "OpenSSL terms", encoding="utf-8"
         )
-        for directory, text in (("tcl8.6", "Tcl terms"), ("tk8.6", "Tk terms")):
-            path = tmp_path / "tcl" / directory
-            path.mkdir(parents=True)
-            (path / "license.terms").write_text(text, encoding="utf-8")
-        monkeypatch.setattr(invgen.metadata, "version", lambda name: "6.22.2")
-
         assets = invgen.runtime_component_assets(tmp_path)
 
         by_name = {asset["name"]: asset for asset in assets}
         assert {
             "CPython (Flet / serious_python)",
             "CPython (AutoSplit Converter)",
-            "Tcl",
-            "Tk",
             "dart_bridge",
             "PyInstaller runtime hook pyi_rth__tkinter.py",
         } <= by_name.keys()
         converter_python = by_name["CPython (AutoSplit Converter)"]
         assert converter_python["license_text"].count("CPython notices") == 1
         assert "OpenSSL terms" in converter_python["license_text"]
-        assert by_name["Tcl"]["license_text"] == "Tcl terms"
-        assert by_name["Tk"]["license_text"] == "Tk terms"
+        assert "version" not in converter_python
+        flet_python = by_name["CPython (Flet / serious_python)"]
+        assert "version" not in flet_python
+        assert flet_python["license_text"] != converter_python["license_text"]
+        assert "python-build release 20260908" in flet_python["license_text"]
         assert by_name["dart_bridge"]["version"] == "1.9.0"
         assert by_name["dart_bridge"]["license"] == "MIT"
         assert (
             by_name["PyInstaller runtime hook pyi_rth__tkinter.py"]["license"]
             == "Apache-2.0"
         )
+        hook_text = by_name["PyInstaller runtime hook pyi_rth__tkinter.py"]["license_text"]
+        assert "Copyright (c) 2013-2023, PyInstaller Development Team." in hook_text
+        assert "SPDX-License-Identifier: Apache-2.0" in hook_text
+        assert hook_text.index("SPDX-License-Identifier") < hook_text.index("Apache License")
 
 
 class TestCheckInventory:
@@ -643,12 +642,26 @@ class TestCheckInventory:
 
         assert invgen.check_inventory(self.make_expected()) is False
 
-    def test_version_difference_is_detected(self, tmp_path: Path) -> None:
+    def test_package_version_difference_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()
         stored["packages"][1]["version"] = "9.9.9"
         self.write_stored(tmp_path, stored)
 
         assert invgen.check_inventory(self.make_expected()) is False
+
+    def test_runtime_asset_version_difference_is_ignored(self, tmp_path: Path) -> None:
+        expected = self.make_expected()
+        expected["assets"] = [{
+            "name": "runtime",
+            "version": "3.14.6",
+            "license": "MIT",
+            "license_text": "runtime text",
+        }]
+        stored = self.make_expected()
+        stored["assets"] = [{**expected["assets"][0], "version": "3.14.7"}]
+        self.write_stored(tmp_path, stored)
+
+        assert invgen.check_inventory(expected) is True
 
     def test_license_difference_is_detected(self, tmp_path: Path) -> None:
         stored = self.make_expected()

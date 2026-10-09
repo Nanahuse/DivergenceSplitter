@@ -113,6 +113,12 @@ class TestLoadInventory:
             AssetLicense("sample-asset", "1.0", "MIT", "the asset license text"),
         )
 
+    def test_asset_version_is_optional(self) -> None:
+        unversioned = asset()
+        del unversioned["version"]
+        inventory = load([], assets=[unversioned])
+        assert inventory.assets[0].version is None
+
     def test_missing_asset_field_raises(self) -> None:
         broken = asset()
         del broken["license_text"]
@@ -240,3 +246,13 @@ class TestLicenseSections:
             title="sample-asset 1.0 — MIT",
             text="the asset license text",
         )
+
+    def test_unversioned_asset_title_omits_version(self) -> None:
+        inventory = self.make_inventory()
+        inventory = LicenseInventory(
+            inventory.schema_version,
+            inventory.application,
+            inventory.packages,
+            (AssetLicense("CPython", None, "PSF-2.0", "Python text"),),
+        )
+        assert license_sections(inventory)[2].title == "CPython — PSF-2.0"

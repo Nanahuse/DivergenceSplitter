@@ -56,7 +56,7 @@ class AssetLicense:
     """
 
     name: str
-    version: str
+    version: str | None
     license: str
     license_text: str
 
@@ -157,9 +157,14 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
     assets: list[AssetLicense] = []
     seen_assets: set[str] = set()
     for index, asset in enumerate(assets_data):
-        name, version, license, license_text = _entry(
-            index, asset, ("name", "version", "license", "license_text")
+        name, license, license_text = _entry(
+            index, asset, ("name", "license", "license_text")
         )
+        version = asset.get("version")
+        if version is not None and (not isinstance(version, str) or not version):
+            raise LicenseInventoryError(
+                f"license inventory package {index} has an empty 'version'"
+            )
         if name in seen_assets:
             raise LicenseInventoryError(f"license inventory lists asset {name!r} twice")
         seen_assets.add(name)
@@ -190,7 +195,11 @@ def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
     for asset in inventory.assets:
         sections.append(
             LicenseSection(
-                title=f"{asset.name} {asset.version} — {asset.license}",
+                title=(
+                    f"{asset.name} {asset.version} — {asset.license}"
+                    if asset.version
+                    else f"{asset.name} — {asset.license}"
+                ),
                 text=asset.license_text,
             )
         )

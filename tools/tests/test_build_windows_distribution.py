@@ -121,6 +121,26 @@ class TestVerification:
             tmp_path / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
         )
 
+    @pytest.mark.parametrize("contents", [None, b""])
+    def test_rejects_missing_or_empty_flutter_notices(
+        self, tmp_path: Path, contents: bytes | None
+    ) -> None:
+        make_tree(tmp_path)
+        notices = (
+            tmp_path
+            / bwd.DIST_ROOT
+            / bwd.UI_ARTIFACT
+            / "flutter_assets"
+            / "NOTICES.Z"
+        )
+        if contents is None:
+            notices.unlink()
+        else:
+            notices.write_bytes(contents)
+
+        with pytest.raises(RuntimeError, match="Required file is empty|Missing required file"):
+            bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
+
     def test_rejects_missing_ui_executable(self, tmp_path: Path) -> None:
         make_tree(tmp_path)
         (tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT / f"{bwd.UI_ARTIFACT}.exe").unlink()

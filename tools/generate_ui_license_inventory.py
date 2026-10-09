@@ -44,7 +44,7 @@ import sys
 from collections.abc import Mapping
 from importlib import metadata
 from pathlib import Path, PurePosixPath
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, NotRequired, TypedDict
 
 from packaging.licenses import (
     InvalidLicenseExpression,
@@ -64,7 +64,7 @@ SCHEMA_VERSION = 4
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
-FLET_CPYTHON_VERSION = "3.14.7"
+FLET_CPYTHON_LICENSE_PATH = TOOLS_ROOT / "licenses" / "CPython-flet-python-build-20260908.txt"
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
 # The NDI runtime is conveyed alongside the MIT-licensed ``ndi-python`` binding
@@ -125,7 +125,7 @@ class ApplicationEntry(TypedDict):
 
 class AssetEntry(TypedDict):
     name: str
-    version: str
+    version: NotRequired[str]
     license: str
     license_text: str
 
@@ -409,13 +409,11 @@ def ndi_runtime_assets(
     return [
         {
             "name": NDI_RUNTIME_ASSET_NAME,
-            "version": dist.metadata["Version"],
             "license": NDI_RUNTIME_LICENSE,
             "license_text": NDI_LICENSE_DOCUMENT_PATH.read_text(encoding="utf-8"),
         },
         {
             "name": NDI_RUNTIME_NOTICES_ASSET_NAME,
-            "version": dist.metadata["Version"],
             "license": NDI_RUNTIME_NOTICES_LICENSE,
             "license_text": notices,
         },
@@ -475,10 +473,9 @@ def runtime_component_assets(
 ) -> list[AssetEntry]:
     """Collect licenses for runtime components outside Python package metadata.
 
-    uv's managed Python distribution provides its license bundle beside the
-    interpreter (``licenses/`` and ``LICENSE.txt``). The same interpreter is
-    used by the converter build and the Flet build environment. Tcl/Tk terms
-    are read from the Tcl/Tk data shipped with that distribution.
+    The converter's Python distribution provides its license bundle beside
+    the interpreter. Flet's Windows CPython bundle is vendored from
+    flet-dev/python-build release 20260908 (python-windows-for-dart).
     """
     prefix = python_prefix or Path(sys.base_prefix)
     assets: list[AssetEntry] = []
@@ -519,7 +516,6 @@ def runtime_component_assets(
     assets.append(
         {
             "name": "CPython (AutoSplit Converter)",
-            "version": platform.python_version(),
             "license": distribution_licenses,
             "license_text": "\n\n".join(
                 f"=== {name} ===\n{text}"
@@ -530,38 +526,14 @@ def runtime_component_assets(
     assets.append(
         {
             "name": "CPython (Flet / serious_python)",
-            "version": FLET_CPYTHON_VERSION,
-            "license": distribution_licenses,
-            "license_text": assets[-1]["license_text"],
+            "license": "Python distribution license bundle",
+            "license_text": (
+                "=== flet-dev/python-build release 20260908; "
+                "python-windows-for-dart CPython 3.14.7 ===\n"
+                + FLET_CPYTHON_LICENSE_PATH.read_text(encoding="utf-8")
+            ),
         }
     )
-
-    tcl_root = prefix / "tcl"
-    tcl_terms = sorted(tcl_root.glob("tcl*/license.terms"))
-    tk_terms = sorted(tcl_root.glob("tk*/license.terms"))
-    for label, prefix_name in (("Tcl", "tcl"), ("Tk", "tk")):
-        matches = tcl_terms if prefix_name == "tcl" else tk_terms
-        # python-build-standalone ships Tcl/Tk's shared terms in Tk's data
-        # directory; those terms expressly apply to all files associated with
-        # the software, including the paired Tcl runtime.
-        if not matches and prefix_name == "tcl":
-            matches = tk_terms
-        if not matches:
-            raise RuntimeError(f"{label} license.terms not found under {tcl_root}")
-        path = matches[0]
-        component_version = (
-            path.parent.name.removeprefix(prefix_name)
-            if path.parent.name.lower().startswith(prefix_name)
-            else path.parent.name.removeprefix("tk")
-        )
-        assets.append(
-            {
-                "name": label,
-                "version": component_version,
-                "license": "Tcl/Tk License",
-                "license_text": path.read_text(encoding="utf-8"),
-            }
-        )
 
     mit_text = (TOOLS_ROOT / "licenses" / "dart_bridge-MIT.txt").read_text(
         encoding="utf-8"
@@ -578,9 +550,11 @@ def runtime_component_assets(
     assets.append(
         {
             "name": "PyInstaller runtime hook pyi_rth__tkinter.py",
-            "version": metadata.version("pyinstaller"),
             "license": "Apache-2.0",
-            "license_text": apache,
+            "license_text": (
+                "Copyright (c) 2013-2023, PyInstaller Development Team.\n"
+                "SPDX-License-Identifier: Apache-2.0\n\n" + apache
+            ),
         }
     )
     return assets
@@ -599,9 +573,9 @@ def render_third_party_notices(inventory: InventoryDocument) -> str:
     texts: dict[str, str] = {}
     for entry in [*inventory["packages"], *inventory["assets"]]:
         key = entry["license_text"]
-        groups.setdefault(key, []).append(
-            f"{entry['name']} {entry['version']} — {entry['license']}"
-        )
+        version = entry.get("version")
+        label = f"{entry['name']} {version}" if version else entry["name"]
+        groups.setdefault(key, []).append(f"{label} — {entry['license']}")
         texts[key] = key
     lines = [
         "DivergenceSplitter Windows Distribution — Third-Party Notices",
@@ -664,7 +638,7 @@ def check_inventory(inventory: InventoryDocument) -> bool:
         print(f"extra in inventory assets: {name}")
         mismatched = True
     for name in sorted(expected_assets.keys() & actual_assets.keys()):
-        for field in ("version", "license", "license_text"):
+        for field in ("license", "license_text"):
             expected_value = expected_assets[name][field]
             actual_value = actual_assets[name][field]
             if expected_value != actual_value:
