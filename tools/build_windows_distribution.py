@@ -76,8 +76,10 @@ def flet_build_command() -> list[str]:
 
     return [
         "uv",
+        "tool",
         "run",
-        "--no-sync",
+        "--from",
+        "flet-cli==1.0.4",
         "flet",
         "build",
         "windows",

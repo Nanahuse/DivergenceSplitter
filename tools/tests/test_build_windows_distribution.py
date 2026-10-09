@@ -76,10 +76,12 @@ class TestBuildCommands:
     def test_flet_build_uses_production_metadata(self) -> None:
         command = bwd.flet_build_command()
 
-        assert command[:7] == [
+        assert command[:9] == [
             "uv",
+            "tool",
             "run",
-            "--no-sync",
+            "--from",
+            "flet-cli==1.0.4",
             "flet",
             "build",
             "windows",
@@ -127,18 +129,16 @@ class TestVerification:
     ) -> None:
         make_tree(tmp_path)
         notices = (
-            tmp_path
-            / bwd.DIST_ROOT
-            / bwd.UI_ARTIFACT
-            / "flutter_assets"
-            / "NOTICES.Z"
+            tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT / "flutter_assets" / "NOTICES.Z"
         )
         if contents is None:
             notices.unlink()
         else:
             notices.write_bytes(contents)
 
-        with pytest.raises(RuntimeError, match="Required file is empty|Missing required file"):
+        with pytest.raises(
+            RuntimeError, match="Required file is empty|Missing required file"
+        ):
             bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
 
     def test_rejects_missing_ui_executable(self, tmp_path: Path) -> None:
