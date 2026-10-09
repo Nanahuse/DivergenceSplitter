@@ -551,7 +551,7 @@ class TestRuntimeAssets:
         overrides = project["tool"]["flet"]["flutter"]["pubspec"][
             "dependency_overrides"
         ]
-        assert overrides["serious_python"] == "4.7.2"
+        assert "serious_python" not in overrides
         assert overrides["serious_python_windows"] == "4.7.2"
 
     def test_collects_runtime_components_from_python_distribution(
@@ -693,7 +693,7 @@ class TestCheckInventory:
 
         assert invgen.check_inventory(expected) is False
 
-    def test_unversioned_runtime_asset_does_not_compare_version(
+    def test_unversioned_runtime_asset_rejects_stored_version(
         self, tmp_path: Path
     ) -> None:
         expected = self.make_expected()
@@ -707,6 +707,21 @@ class TestCheckInventory:
         stored = self.make_expected()
         stored["assets"] = [{**expected["assets"][0], "version": "3.14.7"}]
         self.write_stored(tmp_path, stored)
+
+        assert invgen.check_inventory(expected) is False
+
+    def test_unversioned_runtime_asset_without_version_matches(
+        self, tmp_path: Path
+    ) -> None:
+        expected = self.make_expected()
+        expected["assets"] = [
+            {
+                "name": "CPython (Flet / serious_python)",
+                "license": "Python distribution license bundle",
+                "license_text": "Python terms",
+            }
+        ]
+        self.write_stored(tmp_path, expected)
 
         assert invgen.check_inventory(expected) is True
 

@@ -76,12 +76,10 @@ class TestBuildCommands:
     def test_flet_build_uses_production_metadata(self) -> None:
         command = bwd.flet_build_command()
 
-        assert command[:9] == [
+        assert command[:7] == [
             "uv",
-            "tool",
             "run",
-            "--from",
-            "flet-cli==1.0.4",
+            "--no-sync",
             "flet",
             "build",
             "windows",

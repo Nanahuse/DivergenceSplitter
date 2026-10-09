@@ -643,6 +643,14 @@ def check_inventory(inventory: InventoryDocument) -> bool:
     for name in sorted(expected_assets.keys() & actual_assets.keys()):
         expected_asset = expected_assets[name]
         actual_asset = actual_assets[name]
+        expected_has_version = "version" in expected_asset
+        actual_has_version = "version" in actual_asset
+        if expected_has_version != actual_has_version:
+            print(
+                f"asset {name} version field presence: expected "
+                f"{expected_has_version}, stored {actual_has_version}"
+            )
+            mismatched = True
         comparisons = (
             ("license", expected_asset["license"], actual_asset.get("license")),
             (
@@ -651,7 +659,7 @@ def check_inventory(inventory: InventoryDocument) -> bool:
                 actual_asset.get("license_text"),
             ),
         )
-        if "version" in expected_asset:
+        if expected_has_version and actual_has_version:
             comparisons += (
                 ("version", expected_asset["version"], actual_asset.get("version")),
             )
