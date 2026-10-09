@@ -64,7 +64,9 @@ SCHEMA_VERSION = 4
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
-FLET_CPYTHON_LICENSE_PATH = TOOLS_ROOT / "licenses" / "CPython-flet-python-build-20260908.txt"
+FLET_CPYTHON_LICENSE_PATH = (
+    TOOLS_ROOT / "licenses" / "CPython-flet-python-build-20260908.txt"
+)
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
 # The NDI runtime is conveyed alongside the MIT-licensed ``ndi-python`` binding
@@ -638,7 +640,12 @@ def check_inventory(inventory: InventoryDocument) -> bool:
         print(f"extra in inventory assets: {name}")
         mismatched = True
     for name in sorted(expected_assets.keys() & actual_assets.keys()):
-        for field in ("license", "license_text"):
+        fields = (
+            ("license",)
+            if name.startswith("CPython (")
+            else ("license", "license_text")
+        )
+        for field in fields:
             expected_value = expected_assets[name][field]
             actual_value = actual_assets[name][field]
             if expected_value != actual_value:

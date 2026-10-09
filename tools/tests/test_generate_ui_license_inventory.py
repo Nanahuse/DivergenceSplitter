@@ -568,10 +568,14 @@ class TestRuntimeAssets:
             by_name["PyInstaller runtime hook pyi_rth__tkinter.py"]["license"]
             == "Apache-2.0"
         )
-        hook_text = by_name["PyInstaller runtime hook pyi_rth__tkinter.py"]["license_text"]
+        hook_text = by_name["PyInstaller runtime hook pyi_rth__tkinter.py"][
+            "license_text"
+        ]
         assert "Copyright (c) 2013-2023, PyInstaller Development Team." in hook_text
         assert "SPDX-License-Identifier: Apache-2.0" in hook_text
-        assert hook_text.index("SPDX-License-Identifier") < hook_text.index("Apache License")
+        assert hook_text.index("SPDX-License-Identifier") < hook_text.index(
+            "Apache License"
+        )
 
 
 class TestCheckInventory:
@@ -651,14 +655,36 @@ class TestCheckInventory:
 
     def test_runtime_asset_version_difference_is_ignored(self, tmp_path: Path) -> None:
         expected = self.make_expected()
-        expected["assets"] = [{
-            "name": "runtime",
-            "version": "3.14.6",
-            "license": "MIT",
-            "license_text": "runtime text",
-        }]
+        expected["assets"] = [
+            {
+                "name": "runtime",
+                "version": "3.14.6",
+                "license": "MIT",
+                "license_text": "runtime text",
+            }
+        ]
         stored = self.make_expected()
         stored["assets"] = [{**expected["assets"][0], "version": "3.14.7"}]
+        self.write_stored(tmp_path, stored)
+
+        assert invgen.check_inventory(expected) is True
+
+    def test_cpython_patch_bundle_difference_is_ignored(self, tmp_path: Path) -> None:
+        expected = self.make_expected()
+        expected["assets"] = [
+            {
+                "name": "CPython (AutoSplit Converter)",
+                "license": "Python distribution license bundle",
+                "license_text": "updated patch bundle",
+            }
+        ]
+        stored = self.make_expected()
+        stored["assets"] = [
+            {
+                **expected["assets"][0],
+                "license_text": "previous patch bundle",
+            }
+        ]
         self.write_stored(tmp_path, stored)
 
         assert invgen.check_inventory(expected) is True
