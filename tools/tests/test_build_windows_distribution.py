@@ -123,6 +123,22 @@ class TestVerification:
             tmp_path / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
         )
 
+    def test_copies_flutter_notices_from_standard_windows_data_directory(
+        self, tmp_path: Path
+    ) -> None:
+        make_tree(tmp_path)
+        ui_dir = tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT
+        (ui_dir / "flutter_assets" / "NOTICES.Z").unlink()
+        source = ui_dir / "data" / "flutter_assets" / "NOTICES.Z"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"authoritative Flutter notices")
+
+        bwd.verify_ui_distribution(ui_dir)
+
+        assert (
+            ui_dir / "flutter_assets" / "NOTICES.Z"
+        ).read_bytes() == source.read_bytes()
+
     @pytest.mark.parametrize("contents", [None, b""])
     def test_rejects_missing_or_empty_flutter_notices(
         self, tmp_path: Path, contents: bytes | None

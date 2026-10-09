@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from collections.abc import Mapping, Sequence
@@ -146,7 +147,12 @@ def verify_ui_distribution(ui_dir: Path) -> None:
     """Validate the Flet build output tree and its native dependencies."""
 
     require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
-    require_nonempty_file(ui_dir / "flutter_assets" / "NOTICES.Z")
+    notices = ui_dir / "flutter_assets" / "NOTICES.Z"
+    flutter_data_notices = ui_dir / "data" / "flutter_assets" / "NOTICES.Z"
+    if not notices.is_file() and flutter_data_notices.is_file():
+        notices.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(flutter_data_notices, notices)
+    require_nonempty_file(notices)
 
     site_packages = ui_dir / SITE_PACKAGES
     require_dir(site_packages)
