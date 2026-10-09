@@ -9,7 +9,7 @@ classifiers = [
 ]
 dependencies = [
     "divergencesplitter-runtime",
-    "flet>=1.0,<2",
+    "flet>=1.0.4,<2",
     "ndi-python>=6.3.2.4 ; sys_platform == 'win32'",
 ]
 

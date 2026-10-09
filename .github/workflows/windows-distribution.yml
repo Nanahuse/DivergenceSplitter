@@ -21,7 +21,7 @@ jobs:
           path: |
             ~/flutter/3.44.8
             ~/.flet/cache
-          key: flet-build-windows-${{ runner.os }}-flet-1.0.0-flutter-3.44.8-py-3.14
+          key: flet-build-windows-${{ runner.os }}-flet-1.0.4-flutter-3.44.8-py-3.14
       - name: Sync locked environment
         run: uv sync --locked --all-packages --group build
       - name: Check license inventory
