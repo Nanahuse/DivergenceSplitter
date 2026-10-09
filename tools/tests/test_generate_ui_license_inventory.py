@@ -551,7 +551,7 @@ class TestRuntimeAssets:
         overrides = project["tool"]["flet"]["flutter"]["pubspec"][
             "dependency_overrides"
         ]
-        assert "serious_python" not in overrides
+        assert overrides["serious_python"] == "4.7.2"
         assert overrides["serious_python_windows"] == "4.7.2"
 
     def test_collects_runtime_components_from_python_distribution(
