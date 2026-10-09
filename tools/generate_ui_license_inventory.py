@@ -60,8 +60,9 @@ UI_MODULE_ROOT = (
     REPO_ROOT / "packages" / "divergencesplitter-ui" / "src" / "divergencesplitter_ui"
 )
 INVENTORY_PATH = UI_MODULE_ROOT / "license_inventory.json"
+LICENSES_ROOT = TOOLS_ROOT / "licenses"
 ROOT_DISTRIBUTION = "divergencesplitter-ui"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
@@ -115,20 +116,20 @@ class PackageEntry(TypedDict):
     name: str
     version: str
     license: str
-    license_text: str
+    license_file: str
 
 
 class ApplicationEntry(TypedDict):
     name: str
     license: str
-    license_text: str
+    license_file: str
 
 
 class AssetEntry(TypedDict):
     name: str
     version: NotRequired[str]
     license: str
-    license_text: str
+    license_file: str
 
 
 class InventoryDocument(TypedDict):
@@ -396,6 +397,7 @@ def license_text(dist: metadata.Distribution) -> str:
 
 def ndi_runtime_assets(
     closure: dict[str, metadata.Distribution],
+    license_texts: dict[str, str],
 ) -> list[AssetEntry]:
     """Return the NDI Runtime assets when the NDI binding is in the closure.
 
@@ -407,31 +409,34 @@ def ndi_runtime_assets(
     if dist is None:
         return []
     notices = dist.locate_file(NDI_RUNTIME_NOTICES_PATH).read_text(encoding="utf-8")
+    licensing_file = "runtime/NDI-Runtime.txt"
+    notices_file = "runtime/NDI-Runtime-Third-Party-Notices.txt"
+    license_texts[licensing_file] = NDI_LICENSE_DOCUMENT_PATH.read_text(
+        encoding="utf-8"
+    )
+    license_texts[notices_file] = notices
     return [
         {
             "name": NDI_RUNTIME_ASSET_NAME,
             "license": NDI_RUNTIME_LICENSE,
-            "license_text": NDI_LICENSE_DOCUMENT_PATH.read_text(encoding="utf-8"),
+            "license_file": licensing_file,
         },
         {
             "name": NDI_RUNTIME_NOTICES_ASSET_NAME,
             "license": NDI_RUNTIME_NOTICES_LICENSE,
-            "license_text": notices,
+            "license_file": notices_file,
         },
     ]
 
 
-def application_entry() -> ApplicationEntry:
-    """Return the application's own license section from the repo ``LICENSE``.
-
-    The MIT text is bundled alongside the third-party inventory so the license
-    screen carries the application's own terms as well.
-    """
-
+def application_entry(license_texts: dict[str, str]) -> ApplicationEntry:
+    """Return application metadata and record the application's license text."""
+    license_file = "application/DivergenceSplitter.txt"
+    license_texts[license_file] = APPLICATION_LICENSE_PATH.read_text(encoding="utf-8")
     return {
         "name": APPLICATION_NAME,
         "license": APPLICATION_LICENSE,
-        "license_text": APPLICATION_LICENSE_PATH.read_text(encoding="utf-8"),
+        "license_file": license_file,
     }
 
 
@@ -439,6 +444,9 @@ def build_inventory(
     closure: dict[str, metadata.Distribution],
     *,
     assets: list[AssetEntry] | None = None,
+    licenses_root: Path = LICENSES_ROOT,
+    write_license_files: bool = True,
+    generated_license_files: dict[str, str] | None = None,
 ) -> InventoryDocument:
     """Emit one inventory entry per non-excluded package.
 
@@ -447,50 +455,82 @@ def build_inventory(
     are not Python distributions (the NDI Runtime) are emitted as assets.
     """
 
+    license_texts = (
+        generated_license_files if generated_license_files is not None else {}
+    )
     packages: list[PackageEntry] = []
     for key in sorted(closure):
         if key in EXCLUDED_DISTRIBUTIONS:
             continue
         dist = closure[key]
+        license_file = f"packages/{canonicalize_name(dist.metadata['Name'])}.txt"
+        license_texts[license_file] = license_text(dist)
         packages.append(
             {
                 "name": dist.metadata["Name"],
                 "version": dist.metadata["Version"],
                 "license": resolve_license(dist),
-                "license_text": license_text(dist),
+                "license_file": license_file,
             }
         )
-    runtime_assets = runtime_component_assets() if assets is None else assets
-    return {
+    runtime_assets = (
+        runtime_component_assets(license_texts) if assets is None else assets
+    )
+    inventory: InventoryDocument = {
         "schema_version": SCHEMA_VERSION,
-        "application": application_entry(),
+        "application": application_entry(license_texts),
         "packages": packages,
-        "assets": runtime_assets + ndi_runtime_assets(closure),
+        "assets": runtime_assets + ndi_runtime_assets(closure, license_texts),
     }
+    if write_license_files:
+        write_license_texts(license_texts, licenses_root)
+    return inventory
 
 
-def runtime_component_assets() -> list[AssetEntry]:
+def runtime_component_assets(license_texts: dict[str, str]) -> list[AssetEntry]:
     """Collect licenses for runtime components without Python package metadata."""
+    cpython_file = "CPython.txt"
+    dart_bridge_file = "dart_bridge-MIT.txt"
+    license_texts[cpython_file] = CPYTHON_LICENSE_PATH.read_text(encoding="utf-8")
+    license_texts[dart_bridge_file] = (
+        TOOLS_ROOT / "licenses" / "dart_bridge-MIT.txt"
+    ).read_text(encoding="utf-8")
     assets: list[AssetEntry] = [
         {
             "name": "CPython",
             "license": "Python Software Foundation License",
-            "license_text": CPYTHON_LICENSE_PATH.read_text(encoding="utf-8"),
+            "license_file": cpython_file,
         }
     ]
-
-    mit_text = (TOOLS_ROOT / "licenses" / "dart_bridge-MIT.txt").read_text(
-        encoding="utf-8"
-    )
     assets.append(
         {
             "name": "dart_bridge",
             "version": "1.10.0",
             "license": "MIT",
-            "license_text": mit_text,
+            "license_file": dart_bridge_file,
         }
     )
     return assets
+
+
+def write_license_texts(license_texts: Mapping[str, str], licenses_root: Path) -> None:
+    """Write collected license texts beneath the authoritative licenses root."""
+    for relative_path, text in sorted(license_texts.items()):
+        target = resolve_license_file(relative_path, licenses_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8", newline="\n")
+
+
+def resolve_license_file(relative_path: str, licenses_root: Path) -> Path:
+    """Resolve an inventory reference while preventing paths outside its root."""
+    relative = Path(relative_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise RuntimeError(f"invalid license_file reference: {relative_path!r}")
+    root = licenses_root.resolve()
+    target = (root / relative).resolve()
+    if not target.is_relative_to(root):
+        raise RuntimeError(f"invalid license_file reference: {relative_path!r}")
+    return target
 
 
 def write_inventory(inventory: InventoryDocument) -> None:
@@ -501,13 +541,18 @@ def write_inventory(inventory: InventoryDocument) -> None:
 
 
 def render_third_party_notices(
-    inventory: InventoryDocument, *, flet_runtime_notices: str
+    inventory: InventoryDocument,
+    *,
+    flet_runtime_notices: str,
+    licenses_root: Path = LICENSES_ROOT,
 ) -> str:
     """Render a distribution-wide notice file, deduplicating identical texts."""
     groups: dict[str, list[str]] = {}
     texts: dict[str, str] = {}
     for entry in [*inventory["packages"], *inventory["assets"]]:
-        key = entry["license_text"]
+        key = resolve_license_file(entry["license_file"], licenses_root).read_text(
+            encoding="utf-8"
+        )
         version = entry.get("version")
         label = f"{entry['name']} {version}" if version else entry["name"]
         groups.setdefault(key, []).append(f"{label} — {entry['license']}")
@@ -538,81 +583,77 @@ def render_third_party_notices(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def check_inventory(inventory: InventoryDocument) -> bool:
+def check_inventory(
+    inventory: InventoryDocument,
+    *,
+    license_texts: Mapping[str, str],
+    licenses_root: Path = LICENSES_ROOT,
+) -> bool:
     if not INVENTORY_PATH.exists():
         print(f"missing bundled inventory: {INVENTORY_PATH}")
         return False
     stored = json.loads(INVENTORY_PATH.read_text(encoding="utf-8"))
-    if stored == inventory:
-        return True
-    mismatched = False
-    if stored.get("schema_version") != inventory["schema_version"]:
-        print(
-            f"schema_version: expected {inventory['schema_version']!r}, "
-            f"stored {stored.get('schema_version')!r}"
-        )
-        mismatched = True
-    if stored.get("application") != inventory["application"]:
-        print("application license section differs from the release closure")
-        mismatched = True
-
-    expected = {entry["name"]: entry for entry in inventory["packages"]}
-    actual = {entry["name"]: entry for entry in stored.get("packages", [])}
-    for name in sorted(expected.keys() - actual.keys()):
-        print(f"missing from inventory: {name}")
-        mismatched = True
-    for name in sorted(actual.keys() - expected.keys()):
-        print(f"extra in inventory: {name}")
-        mismatched = True
-    for name in sorted(expected.keys() & actual.keys()):
-        for field in ("version", "license", "license_text"):
-            expected_value = expected[name][field]
-            actual_value = actual[name][field]
-            if expected_value != actual_value:
-                print(
-                    f"{name} {field}: expected {expected_value!r}, "
-                    f"stored {actual_value!r}"
-                )
-                mismatched = True
-
-    expected_assets = {entry["name"]: entry for entry in inventory["assets"]}
-    actual_assets = {entry["name"]: entry for entry in stored.get("assets", [])}
-    for name in sorted(expected_assets.keys() - actual_assets.keys()):
-        print(f"missing from inventory assets: {name}")
-        mismatched = True
-    for name in sorted(actual_assets.keys() - expected_assets.keys()):
-        print(f"extra in inventory assets: {name}")
-        mismatched = True
-    for name in sorted(expected_assets.keys() & actual_assets.keys()):
-        expected_asset = expected_assets[name]
-        actual_asset = actual_assets[name]
-        expected_has_version = "version" in expected_asset
-        actual_has_version = "version" in actual_asset
-        if expected_has_version != actual_has_version:
-            print(
-                f"asset {name} version field presence: expected "
-                f"{expected_has_version}, stored {actual_has_version}"
-            )
+    mismatched = stored != inventory
+    if mismatched:
+        print("license inventory metadata differs from the release closure")
+    stored_entries = (
+        [
+            stored.get("application"),
+            *stored.get("packages", []),
+            *stored.get("assets", []),
+        ]
+        if isinstance(stored, dict)
+        else []
+    )
+    for entry in stored_entries:
+        if not isinstance(entry, dict):
+            print("malformed entry in stored license inventory")
             mismatched = True
-        comparisons = (
-            ("license", expected_asset["license"], actual_asset.get("license")),
-            (
-                "license_text",
-                expected_asset["license_text"],
-                actual_asset.get("license_text"),
-            ),
-        )
-        if expected_has_version and actual_has_version:
-            comparisons += (
-                ("version", expected_asset["version"], actual_asset.get("version")),
-            )
-        for field, expected_value, actual_value in comparisons:
-            if expected_value != actual_value:
-                print(
-                    f"asset {name} {field}: expected {expected_value!r}, "
-                    f"stored {actual_value!r}"
-                )
-                mismatched = True
+            continue
+        reference = entry.get("license_file")
+        if not isinstance(reference, str) or not reference:
+            print("stored inventory entry has no license_file")
+            mismatched = True
+            continue
+        try:
+            stored_path = resolve_license_file(reference, licenses_root)
+        except RuntimeError as error:
+            print(error)
+            mismatched = True
+            continue
+        if not stored_path.is_file():
+            print(f"missing license file referenced by inventory: {reference}")
+            mismatched = True
+    referenced: set[str] = set()
+    for entry in [
+        inventory["application"],
+        *inventory["packages"],
+        *inventory["assets"],
+    ]:
+        relative_path = entry["license_file"]
+        referenced.add(relative_path)
+        try:
+            path = resolve_license_file(relative_path, licenses_root)
+        except RuntimeError as error:
+            print(error)
+            mismatched = True
+            continue
+        if not path.is_file():
+            print(f"missing license file: {relative_path}")
+            mismatched = True
+            continue
+        actual_text = path.read_text(encoding="utf-8")
+        expected_text = license_texts.get(relative_path)
+        if expected_text is None:
+            print(f"no generated license text for reference: {relative_path}")
+            mismatched = True
+        elif actual_text != expected_text:
+            print(f"license file content differs: {relative_path}")
+            mismatched = True
+    unexpected = set(license_texts) - referenced
+    if unexpected:
+        print(f"generated license text is unreferenced: {sorted(unexpected)}")
+        mismatched = True
     return not mismatched
 
 
@@ -629,9 +670,14 @@ def main() -> None:
     closure = release_closure(
         installed_distributions(), additional_roots=("ndi-python",)
     )
-    inventory = build_inventory(closure)
+    generated_license_files: dict[str, str] = {}
+    inventory = build_inventory(
+        closure,
+        generated_license_files=generated_license_files,
+        write_license_files=not args.check,
+    )
     if args.check:
-        if not check_inventory(inventory):
+        if not check_inventory(inventory, license_texts=generated_license_files):
             raise SystemExit(1)
         print(
             f"license inventory is up to date ({len(inventory['packages'])} packages)"

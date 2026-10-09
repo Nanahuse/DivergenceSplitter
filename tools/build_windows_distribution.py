@@ -129,6 +129,9 @@ def verify_ui_distribution(ui_dir: Path) -> None:
 
     site_packages = ui_dir / SITE_PACKAGES
     require_dir(site_packages)
+    require_nonempty_file(
+        site_packages / "divergencesplitter_ui" / "license_inventory.json"
+    )
     for module in (
         "divergencesplitter",
         "divergencesplitter_runtime",
@@ -180,6 +183,40 @@ def flet_runtime_license_notices(root: Path) -> str:
     )
 
 
+def copy_inventory_license_files(
+    inventory: dict[str, object], *, source_root: Path, destination_root: Path
+) -> list[Path]:
+    """Copy only the license texts referenced by the bundled inventory."""
+    entries = [
+        inventory["application"],
+        *inventory["packages"],
+        *inventory["assets"],
+    ]
+    copied: list[Path] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise TypeError("Malformed license inventory entry")
+        reference = entry.get("license_file")
+        if not isinstance(reference, str) or not reference:
+            raise RuntimeError("License inventory entry has no license_file")
+        relative = Path(reference)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RuntimeError(f"Invalid license file reference: {reference!r}")
+        source = (source_root / relative).resolve()
+        target_root_resolved = destination_root.resolve()
+        if not source.is_relative_to(source_root.resolve()):
+            raise RuntimeError(f"Invalid license file reference: {reference!r}")
+        if not source.is_file():
+            raise RuntimeError(f"Missing license file: {source}")
+        target = (target_root_resolved / relative).resolve()
+        if not target.is_relative_to(target_root_resolved):
+            raise RuntimeError(f"Invalid license file reference: {reference!r}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        copied.append(target)
+    return copied
+
+
 def smoke_test_application(
     executable: Path,
     *,
@@ -226,9 +263,7 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     run_command(flet_build_command(), cwd=root, env=flet_environment())
 
     ui_dir = root / DIST_ROOT / UI_ARTIFACT
-    verify_ui_distribution(ui_dir)
-    runtime_notices = flet_runtime_license_notices(root)
-
+    require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
     inventory_path = (
         root
         / "packages"
@@ -238,9 +273,20 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
         / "license_inventory.json"
     )
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    copy_inventory_license_files(
+        inventory,
+        source_root=root / "tools" / "licenses",
+        destination_root=ui_dir / "licenses",
+    )
+    verify_ui_distribution(ui_dir)
+    runtime_notices = flet_runtime_license_notices(root)
     notices = root / DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
     notices.write_text(
-        render_third_party_notices(inventory, flet_runtime_notices=runtime_notices),
+        render_third_party_notices(
+            inventory,
+            flet_runtime_notices=runtime_notices,
+            licenses_root=ui_dir / "licenses",
+        ),
         encoding="utf-8",
     )
 

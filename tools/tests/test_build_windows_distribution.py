@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import build_windows_distribution as bwd
 import pytest
+from divergencesplitter_ui.licenses import load_inventory
 
 
 def make_tree(root: Path) -> None:
@@ -27,6 +29,8 @@ def make_tree(root: Path) -> None:
         "cv2",
     ):
         (site_packages / module).mkdir(parents=True, exist_ok=True)
+    ui_module = site_packages / "divergencesplitter_ui"
+    ui_module.mkdir(parents=True, exist_ok=True)
     cv2 = site_packages / "cv2"
     (cv2 / "config.py").write_text("# config", encoding="utf-8")
     (cv2 / "config-3.py").write_text("# config3", encoding="utf-8")
@@ -53,7 +57,24 @@ def make_tree(root: Path) -> None:
     (runtime / "python.exe").write_bytes(b"python")
     (runtime / "LICENSE.txt").write_text("Python runtime bundle", encoding="utf-8")
 
-    inventory = (
+    inventory = {
+        "schema_version": 6,
+        "application": {
+            "name": "DivergenceSplitter",
+            "license": "MIT",
+            "license_file": "application/app.txt",
+        },
+        "packages": [
+            {
+                "name": "sample-package",
+                "version": "1.0",
+                "license": "MIT",
+                "license_file": "packages/sample.txt",
+            }
+        ],
+        "assets": [],
+    }
+    inventory_path = (
         root
         / "packages"
         / "divergencesplitter-ui"
@@ -61,8 +82,17 @@ def make_tree(root: Path) -> None:
         / "divergencesplitter_ui"
         / "license_inventory.json"
     )
-    inventory.parent.mkdir(parents=True, exist_ok=True)
-    inventory.write_text('{"packages": [], "assets": []}', encoding="utf-8")
+    inventory_path.parent.mkdir(parents=True, exist_ok=True)
+    inventory_text = json.dumps(inventory)
+    inventory_path.write_text(inventory_text, encoding="utf-8")
+    (ui_module / "license_inventory.json").write_text(inventory_text, encoding="utf-8")
+    for reference, text in {
+        "application/app.txt": "application license text",
+        "packages/sample.txt": "package license text",
+    }.items():
+        source = root / "tools" / "licenses" / reference
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(text, encoding="utf-8")
 
 
 class RecordingRunner:
@@ -116,6 +146,39 @@ class TestVerification:
         make_tree(tmp_path)
 
         bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
+
+    def test_copies_license_files_for_runtime_loader_and_notices(
+        self, tmp_path: Path
+    ) -> None:
+        make_tree(tmp_path)
+        ui_dir = tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT
+        inventory_path = (
+            tmp_path
+            / "packages"
+            / "divergencesplitter-ui"
+            / "src"
+            / "divergencesplitter_ui"
+            / "license_inventory.json"
+        )
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        copied = bwd.copy_inventory_license_files(
+            inventory,
+            source_root=tmp_path / "tools" / "licenses",
+            destination_root=ui_dir / "licenses",
+        )
+        bwd.verify_ui_distribution(ui_dir)
+        with (
+            ui_dir
+            / bwd.SITE_PACKAGES
+            / "divergencesplitter_ui"
+            / "license_inventory.json"
+        ).open(encoding="utf-8") as source:
+            loaded = load_inventory(source, license_root=ui_dir / "licenses")
+
+        assert len(copied) == 2
+        assert loaded.application.license_text == "application license text"
+        assert loaded.packages[0].license_text == "package license text"
+        assert (ui_dir / "flutter_assets" / "NOTICES.Z").is_file()
 
     def test_copies_flutter_notices_from_standard_windows_data_directory(
         self, tmp_path: Path
@@ -215,6 +278,7 @@ class TestOrchestration:
             in generated_notices.read_text(encoding="utf-8")
         )
         assert "Python runtime bundle" in generated_notices.read_text(encoding="utf-8")
+        assert "package license text" in generated_notices.read_text(encoding="utf-8")
         assert all(command[0] != "7z" for command in commands)
 
     def test_propagates_build_failure(
