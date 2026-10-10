@@ -1,22 +1,19 @@
-"""Pure loading and presentation of the bundled license inventory.
+"""Load the Windows distribution's generated license inventory and texts.
 
-The inventory is a static data file generated at release time from the
-Windows dependency closure of ``divergencesplitter-ui``. It bundles both the
-license identifiers and the full license texts redistributed inside the
-executable, plus the application's own MIT text. The screen never queries
-the network and never enumerates the installed environment; it reads exactly
-this file through ``importlib.resources``, which resolves identically from a
-source checkout and from a PyInstaller bundle.
+The inventory is created from the resolved dependency closure during the
+Windows build. The About screen reads the inventory and its referenced files
+beside the executable; it never queries the network or scans installed packages.
 """
 
 from __future__ import annotations
 
-import importlib.resources
 import json
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import IO
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 INVENTORY_RESOURCE = "license_inventory.json"
 
 
@@ -52,11 +49,11 @@ class ApplicationLicense:
 class AssetLicense:
     """A non-Python asset redistributed inside the application.
 
-    Unlike ``LicenseEntry`` it has no package version because it is not a
-    distribution; non-Python assets are conveyed this way.
+    Non-Python runtime components retain the runtime version when known.
     """
 
     name: str
+    version: str | None
     license: str
     license_text: str
 
@@ -99,13 +96,31 @@ def _entry(
     return tuple(values[field] for field in fields)
 
 
-def load_inventory(source: IO[str]) -> LicenseInventory:
+def _read_license_file(relative_path: object, license_root: Path) -> str:
+    if not isinstance(relative_path, str) or not relative_path:
+        raise LicenseInventoryError("inventory entry has an empty 'license_file'")
+    relative = Path(relative_path)
+    root = license_root.resolve()
+    if relative.is_absolute() or ".." in relative.parts:
+        raise LicenseInventoryError(f"invalid license_file reference {relative_path!r}")
+    target = (root / relative).resolve()
+    if not target.is_relative_to(root):
+        raise LicenseInventoryError(f"invalid license_file reference {relative_path!r}")
+    try:
+        return target.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise LicenseInventoryError(
+            f"license file referenced by inventory is missing: {relative_path}"
+        ) from error
+
+
+def load_inventory(
+    source: IO[str], *, license_root: Path | None = None
+) -> LicenseInventory:
     """Decode one inventory JSON document and validate its schema.
 
-    Every package must carry a name, version, license, and the full license
-    text; the application section must carry its conveyed license text. The
-    generator writes the file already sorted by normalized name; this loader
-    preserves that order and only rejects structural mistakes.
+    Entries reference license texts by relative file path. The loader reads
+    those files and retains the text in the runtime model for presentation.
     """
 
     try:
@@ -116,6 +131,8 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
         ) from error
     if not isinstance(document, dict):
         raise LicenseInventoryError("license inventory must be a JSON object")
+    if license_root is None:
+        license_root = Path(sys.executable).resolve().parent
     schema_version = document.get("schema_version")
     if schema_version != SCHEMA_VERSION:
         raise LicenseInventoryError(
@@ -127,8 +144,13 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
         raise LicenseInventoryError(
             "license inventory must include an application section"
         )
+    application_name, application_license = _entry(
+        0, application_data, ("name", "license")
+    )
     application = ApplicationLicense(
-        *_entry(0, application_data, ("name", "license", "license_text"))
+        application_name,
+        application_license,
+        _read_license_file(application_data.get("license_file"), license_root),
     )
 
     packages = document.get("packages")
@@ -138,11 +160,12 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
     entries: list[LicenseEntry] = []
     seen: set[str] = set()
     for index, package in enumerate(packages):
-        name, version, license, license_text = _entry(
+        name, version, license = _entry(
             index,
             package,
-            ("name", "version", "license", "license_text"),
+            ("name", "version", "license"),
         )
+        license_text = _read_license_file(package.get("license_file"), license_root)
         if name in seen:
             raise LicenseInventoryError(
                 f"license inventory lists package {name!r} twice"
@@ -157,13 +180,17 @@ def load_inventory(source: IO[str]) -> LicenseInventory:
     assets: list[AssetLicense] = []
     seen_assets: set[str] = set()
     for index, asset in enumerate(assets_data):
-        name, license, license_text = _entry(
-            index, asset, ("name", "license", "license_text")
-        )
+        name, license = _entry(index, asset, ("name", "license"))
+        license_text = _read_license_file(asset.get("license_file"), license_root)
+        version = asset.get("version")
+        if version is not None and (not isinstance(version, str) or not version):
+            raise LicenseInventoryError(
+                f"license inventory package {index} has an empty 'version'"
+            )
         if name in seen_assets:
             raise LicenseInventoryError(f"license inventory lists asset {name!r} twice")
         seen_assets.add(name)
-        assets.append(AssetLicense(name, license, license_text))
+        assets.append(AssetLicense(name, version, license, license_text))
     return LicenseInventory(schema_version, application, tuple(entries), tuple(assets))
 
 
@@ -190,7 +217,11 @@ def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
     for asset in inventory.assets:
         sections.append(
             LicenseSection(
-                title=f"{asset.name} — {asset.license}",
+                title=(
+                    f"{asset.name} {asset.version} — {asset.license}"
+                    if asset.version
+                    else f"{asset.name} — {asset.license}"
+                ),
                 text=asset.license_text,
             )
         )
@@ -198,15 +229,21 @@ def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
 
 
 def bundled_inventory() -> LicenseInventory:
-    """Load the inventory shipped next to this package.
+    """Load the generated inventory and license files beside the packaged exe."""
+    distribution_root = Path(sys.executable).resolve().parent
+    distribution_inventory = distribution_root / INVENTORY_RESOURCE
+    try:
+        with distribution_inventory.open("r", encoding="utf-8") as source:
+            return load_inventory(source)
+    except FileNotFoundError as error:
+        raise LicenseInventoryError(
+            f"license inventory is missing beside the executable: {distribution_inventory}"
+        ) from error
 
-    ``importlib.resources`` reads the data file from the source tree, from an
-    installed wheel, and from a PyInstaller bundle without any path special
-    cases in application code.
-    """
 
-    resource = importlib.resources.files("divergencesplitter_ui").joinpath(
-        INVENTORY_RESOURCE
+def is_packaged_distribution() -> bool:
+    """Detect the Flet/PyInstaller app tree without inspecting license data."""
+    executable_root = Path(sys.executable).resolve().parent
+    return bool(getattr(sys, "frozen", False)) or (
+        (executable_root / "site-packages").is_dir()
     )
-    with resource.open("r", encoding="utf-8") as source:
-        return load_inventory(source)

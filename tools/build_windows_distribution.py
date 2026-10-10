@@ -8,9 +8,8 @@ real Flet/Flutter build.
 Order of work:
 
 1. Build the Flet Windows application.
-2. Build the AutoSplit converter with PyInstaller.
-3. Validate the UI and converter output trees.
-4. Smoke test the UI executable (bounded GUI launch).
+2. Validate the UI output tree and collect the embedded Python runtime notices.
+3. Write the distribution notice file and smoke test the UI executable.
 
 The workflow generates the UI version module (``tools/generate_ui_version.py``)
 immediately before this script. The Flet metadata in
@@ -22,17 +21,22 @@ build; this script never rewrites project metadata and never builds its own
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+
+from generate_ui_license_inventory import (
+    generate_from_distribution,
+    render_third_party_notices,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 UI_PACKAGE = Path("packages") / "divergencesplitter-ui"
 
 UI_ARTIFACT = "DivergenceSplitter"
-CONVERTER_ARTIFACT = "autosplit-converter"
 DIST_ROOT = Path("dist") / "windows"
 
 SITE_PACKAGES = "site-packages"
@@ -90,29 +94,6 @@ def flet_build_command() -> list[str]:
     ]
 
 
-def converter_build_command() -> list[str]:
-    """AutoSplit converter build command; the converter stays on PyInstaller."""
-
-    return [
-        "uv",
-        "run",
-        "--no-sync",
-        "pyinstaller",
-        "--onedir",
-        "--windowed",
-        "--clean",
-        "--name",
-        CONVERTER_ARTIFACT,
-        "--distpath",
-        DIST_ROOT.as_posix(),
-        "--workpath",
-        (Path("build") / "converter-pyinstaller").as_posix(),
-        "--specpath",
-        (Path("build") / "converter-pyinstaller").as_posix(),
-        (Path("tools") / "converter_entry.py").as_posix(),
-    ]
-
-
 def require_file(path: Path) -> None:
     if not path.is_file():
         raise RuntimeError(f"Missing required file: {path}")
@@ -141,9 +122,20 @@ def verify_ui_distribution(ui_dir: Path) -> None:
     """Validate the Flet build output tree and its native dependencies."""
 
     require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
+    require_nonempty_file(ui_dir / "license_inventory.json")
+    notices = ui_dir / "flutter_assets" / "NOTICES.Z"
+    flutter_data_notices = ui_dir / "data" / "flutter_assets" / "NOTICES.Z"
+    if not notices.is_file() and flutter_data_notices.is_file():
+        notices.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(flutter_data_notices, notices)
+    require_nonempty_file(notices)
 
     site_packages = ui_dir / SITE_PACKAGES
     require_dir(site_packages)
+    if not any(path.is_dir() for path in site_packages.glob("*.dist-info")):
+        raise RuntimeError(
+            f"Missing required Python distribution metadata: {site_packages}/*.dist-info"
+        )
     for module in (
         "divergencesplitter",
         "divergencesplitter_runtime",
@@ -165,12 +157,6 @@ def verify_ui_distribution(ui_dir: Path) -> None:
 
     capture = site_packages / "windows_capture_device_list"
     require_glob(capture, "core*.pyd", "capture-device extension module")
-
-
-def verify_converter_distribution(converter_dir: Path) -> None:
-    """Validate the PyInstaller converter output tree."""
-
-    require_nonempty_file(converter_dir / f"{CONVERTER_ARTIFACT}.exe")
 
 
 def smoke_test_application(
@@ -217,12 +203,19 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
     """Run the full Windows distribution build and return when verified."""
 
     run_command(flet_build_command(), cwd=root, env=flet_environment())
-    run_command(converter_build_command(), cwd=root)
 
     ui_dir = root / DIST_ROOT / UI_ARTIFACT
-    converter_dir = root / DIST_ROOT / CONVERTER_ARTIFACT
+    require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
+    inventory = generate_from_distribution(root=root, distribution_root=ui_dir)
     verify_ui_distribution(ui_dir)
-    verify_converter_distribution(converter_dir)
+    notices = root / DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
+    notices.write_text(
+        render_third_party_notices(
+            inventory,
+            distribution_root=ui_dir,
+        ),
+        encoding="utf-8",
+    )
 
     smoke_test_application(ui_dir / f"{UI_ARTIFACT}.exe")
 

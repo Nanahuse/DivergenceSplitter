@@ -74,112 +74,69 @@ def ui_distribution(*, requires: Iterable[str] = ()) -> FakeDistribution:
     )
 
 
-class TestReleaseClosure:
-    def test_includes_explicitly_bundled_optional_backend(self) -> None:
-        ndi = FakeDistribution("ndi-python", "6.3.2.4", requires=["numpy"])
-        numpy = FakeDistribution("numpy", "2.5.2")
-        closure = invgen.release_closure(
-            installed(ui_distribution(), ndi, numpy),
-            additional_roots=("ndi-python",),
-        )
-        assert set(closure) == {"divergencesplitter-ui", "ndi-python", "numpy"}
+def staged_runtime(root: Path, *, extra_notice: bool = True) -> Path:
+    runtime = root / "build_python_test" / "python"
+    runtime.mkdir(parents=True, exist_ok=True)
+    (runtime / "python.exe").write_bytes(b"python")
+    (runtime / "LICENSE.txt").write_text("runtime license text", encoding="utf-8")
+    if extra_notice:
+        licenses = runtime / "licenses"
+        licenses.mkdir()
+        (licenses / "vendor.txt").write_text("runtime vendor notice", encoding="utf-8")
+    return runtime
 
-    def test_missing_explicit_backend_fails(self) -> None:
-        with pytest.raises(RuntimeError, match="ndi-python.*not installed"):
-            invgen.release_closure(
-                installed(ui_distribution()), additional_roots=("ndi-python",)
+
+class TestDistributionPackages:
+    def test_reads_all_distributions_retained_in_final_site_packages(
+        self, tmp_path: Path
+    ) -> None:
+        site_packages = tmp_path / "site-packages"
+        for name, version in (("actual-runtime", "1.2"), ("unused-extra", "3.4")):
+            dist_info = site_packages / f"{name}-{version}.dist-info"
+            dist_info.mkdir(parents=True)
+            (dist_info / "METADATA").write_text(
+                f"Metadata-Version: 2.4\nName: {name}\nVersion: {version}\n\n",
+                encoding="utf-8",
             )
 
-    def test_traces_transitive_dependencies(self) -> None:
-        runtime = FakeDistribution(
-            "divergencesplitter-runtime",
-            "0.1.0",
-            requires=["core-package"],
-            license_expression="MIT",
+        result = invgen.distribution_packages(site_packages)
+
+        assert set(result) == {"actual-runtime", "unused-extra"}
+
+    def test_resolves_metadata_and_license_files_from_final_site_packages(
+        self, tmp_path: Path
+    ) -> None:
+        site_packages = tmp_path / "site-packages"
+        dist_info = site_packages / "sample_package-1.0.dist-info"
+        licenses = dist_info / "licenses"
+        licenses.mkdir(parents=True)
+        (dist_info / "METADATA").write_text(
+            "Metadata-Version: 2.4\nName: sample-package\nVersion: 1.0\n"
+            "License-Expression: MIT\nLicense-File: COPYING\n\n",
+            encoding="utf-8",
         )
-        core = FakeDistribution(
-            "core-package",
-            "1.0.0",
-            requires=["leaf"],
-            license_expression="MIT",
-        )
-        leaf = FakeDistribution(
-            "leaf", "2.0.0", license="MIT", license_files={"LICENSE": "leaf MIT text"}
+        (licenses / "COPYING").write_text("declared terms", encoding="utf-8")
+        (site_packages / "NOTICE").write_text("package notice", encoding="utf-8")
+        (dist_info / "RECORD").write_text(
+            "sample_package-1.0.dist-info/METADATA,,\n"
+            "sample_package-1.0.dist-info/licenses/COPYING,,\n"
+            "NOTICE,,\n",
+            encoding="utf-8",
         )
 
-        closure = invgen.release_closure(
-            installed(
-                ui_distribution(requires=["divergencesplitter-runtime"]),
-                runtime,
-                core,
-                leaf,
-            )
-        )
+        dist = invgen.distribution_packages(site_packages)["sample-package"]
 
-        assert set(closure) == {
-            "divergencesplitter-ui",
-            "divergencesplitter-runtime",
-            "core-package",
-            "leaf",
-        }
+        assert invgen.resolve_license(dist) == "MIT"
+        text = invgen.license_text(dist)
+        assert "declared terms" in text
+        assert "package notice" in text
 
-    def test_evaluates_environment_markers_for_windows(self) -> None:
-        runtime = FakeDistribution(
-            "divergencesplitter-runtime",
-            "0.1.0",
-            requires=[
-                "windows-only; sys_platform == 'win32'",
-                "mac-only; sys_platform == 'darwin'",
-                "extra-only; extra == 'dev'",
-            ],
-            license_expression="MIT",
-        )
-        windows = FakeDistribution(
-            "windows-only", "1.0.0", license="MIT", license_files={"LICENSE": "t"}
-        )
-        mac = FakeDistribution(
-            "mac-only", "1.0.0", license="MIT", license_files={"LICENSE": "t"}
-        )
-        extra = FakeDistribution(
-            "extra-only", "1.0.0", license="MIT", license_files={"LICENSE": "t"}
-        )
+    def test_requires_retained_dist_info_metadata(self, tmp_path: Path) -> None:
+        site_packages = tmp_path / "site-packages"
+        site_packages.mkdir()
 
-        closure = invgen.release_closure(
-            installed(
-                ui_distribution(requires=["divergencesplitter-runtime"]),
-                runtime,
-                windows,
-                mac,
-                extra,
-            )
-        )
-
-        assert "windows-only" in closure
-        assert "mac-only" not in closure
-        assert "extra-only" not in closure
-
-    def test_dev_and_build_dependencies_are_not_included(self) -> None:
-        pytest_dist = FakeDistribution(
-            "pytest", "9.1.1", license="MIT", license_files={"LICENSE": "t"}
-        )
-        pyinstaller_dist = FakeDistribution(
-            "pyinstaller",
-            "6.22.2",
-            license="GPL-2.0-or-later",
-            license_files={"L": "t"},
-        )
-
-        closure = invgen.release_closure(
-            installed(ui_distribution(), pytest_dist, pyinstaller_dist)
-        )
-
-        assert set(closure) == {"divergencesplitter-ui"}
-
-    def test_missing_requirement_not_installed_raises(self) -> None:
-        closure_source = installed(ui_distribution(requires=["missing-package"]))
-
-        with pytest.raises(RuntimeError, match="not installed"):
-            invgen.release_closure(closure_source)
+        with pytest.raises(RuntimeError, match=r"no \.dist-info metadata"):
+            invgen.distribution_packages(site_packages)
 
 
 class TestNdiLicenseBoundary:
@@ -204,7 +161,6 @@ class TestNdiLicenseBoundary:
         dist = self.ndi_distribution(tmp_path, monkeypatch)
 
         text = invgen.license_text(dist)
-
         assert "binding MIT text" in text
         assert "NDI runtime notices" not in text
 
@@ -213,17 +169,34 @@ class TestNdiLicenseBoundary:
     ) -> None:
         dist = self.ndi_distribution(tmp_path, monkeypatch)
 
-        assets = invgen.ndi_runtime_assets({"ndi-python": dist})
+        distribution = tmp_path / "distribution"
+        fallback = tmp_path / "official-ndi-agreement.txt"
+        fallback.write_text("NDI SDK License Agreement", encoding="utf-8")
+        monkeypatch.setitem(
+            invgen.LICENSE_TEXT_FALLBACKS,
+            "ndi-runtime",
+            invgen.LicenseTextFallback(fallback, "test official fallback"),
+        )
+        assets = invgen.ndi_runtime_assets({"ndi-python": dist}, distribution)
 
         assert [asset["name"] for asset in assets] == [
             invgen.NDI_RUNTIME_ASSET_NAME,
             invgen.NDI_RUNTIME_NOTICES_ASSET_NAME,
         ]
-        assert all(asset["license"] == invgen.NDI_SDK_LICENSE for asset in assets)
-        assert "NDI runtime notices" in assets[1]["license_text"]
+        assert [asset["license"] for asset in assets] == [
+            "Licensing Notice",
+            "Third-party notices",
+        ]
+        assert all("version" not in asset for asset in assets)
+        assert "NDI SDK License Agreement" in (
+            distribution / assets[0]["license_file"]
+        ).read_text(encoding="utf-8")
+        assert "NDI runtime notices" in (
+            distribution / assets[1]["license_file"]
+        ).read_text(encoding="utf-8")
 
     def test_absent_binding_emits_no_assets(self) -> None:
-        assert invgen.ndi_runtime_assets({}) == []
+        assert invgen.ndi_runtime_assets({}, Path(".")) == []
 
 
 class TestLicenseText:
@@ -291,16 +264,44 @@ class TestLicenseText:
         with pytest.raises(RuntimeError, match="cannot collect"):
             invgen.license_text(dist)
 
-    def test_vendored_text_is_used_when_wheel_ships_no_license_file(self) -> None:
-        dist = FakeDistribution("flet", "1.0.0", license_expression="Apache-2.0")
+    def test_mechanical_text_takes_precedence_over_component_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fallback = tmp_path / "fallback.txt"
+        fallback.write_text("fallback text", encoding="utf-8")
+        monkeypatch.setitem(
+            invgen.LICENSE_TEXT_FALLBACKS,
+            "flet",
+            invgen.LicenseTextFallback(fallback, "test fallback"),
+        )
+        dist = FakeDistribution(
+            "flet",
+            "1.0.0",
+            license_expression="Apache-2.0",
+            license_files={"licenses/LICENSE": "wheel license text"},
+        )
 
-        text = invgen.license_text(dist)
+        assert "wheel license text" in invgen.license_text(dist)
+        assert "fallback text" not in invgen.license_text(dist)
 
-        assert text.startswith("=== tools/licenses/Apache-2.0.txt ===")
-        assert "Apache License" in text
-        assert "Version 2.0, January 2004" in text
+    def test_fallback_is_component_specific_even_for_same_spdx(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fallback = tmp_path / "fallback.txt"
+        fallback.write_text("flet-only text", encoding="utf-8")
+        monkeypatch.setitem(
+            invgen.LICENSE_TEXT_FALLBACKS,
+            "flet",
+            invgen.LicenseTextFallback(fallback, "test fallback"),
+        )
+        flet = FakeDistribution("flet", "1.0.0", license_expression="Apache-2.0")
+        another = FakeDistribution("another", "1.0.0", license_expression="Apache-2.0")
 
-    def test_expression_without_vendored_text_still_raises(self) -> None:
+        assert invgen.license_text(flet) == "flet-only text"
+        with pytest.raises(RuntimeError, match="cannot collect"):
+            invgen.license_text(another)
+
+    def test_missing_license_text_without_component_fallback_fails(self) -> None:
         dist = FakeDistribution("mine", "1.0.0", license_expression="MIT")
 
         with pytest.raises(RuntimeError, match="cannot collect"):
@@ -331,7 +332,7 @@ class TestLicenseText:
 
 
 class TestBuildInventory:
-    def test_packages_are_sorted_by_normalized_name(self) -> None:
+    def test_packages_are_sorted_by_normalized_name(self, tmp_path: Path) -> None:
         dists = [
             ui_distribution(
                 requires=[
@@ -364,7 +365,9 @@ class TestBuildInventory:
         )
         try:
             inventory = invgen.build_inventory(
-                invgen.release_closure(installed(*dists))
+                installed(*dists),
+                staged_python_runtime=staged_runtime(tmp_path),
+                distribution_root=tmp_path,
             )
         finally:
             invgen.OVERRIDES["opencv-contrib-python"] = override
@@ -374,7 +377,9 @@ class TestBuildInventory:
         assert names == sorted(names, key=canonicalize_name)
         assert names == ["numpy", "opencv-contrib-python"]
 
-    def test_name_version_license_and_text_are_extracted(self) -> None:
+    def test_package_license_text_is_written_to_its_referenced_file(
+        self, tmp_path: Path
+    ) -> None:
         dists = [
             ui_distribution(requires=["numpy"]),
             FakeDistribution(
@@ -385,23 +390,21 @@ class TestBuildInventory:
             ),
         ]
 
-        inventory = invgen.build_inventory(invgen.release_closure(installed(*dists)))
+        inventory = invgen.build_inventory(
+            installed(*dists),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
 
-        assert inventory == {
-            "schema_version": 3,
-            "application": invgen.application_entry(),
-            "packages": [
-                {
-                    "name": "numpy",
-                    "version": "2.5.2",
-                    "license": "BSD-3-Clause",
-                    "license_text": "=== licenses/LICENSE.txt ===\nnumpy text",
-                },
-            ],
-            "assets": [],
-        }
+        package_entry = inventory["packages"][0]
+        assert package_entry["license_file"] == "licenses/packages/numpy.txt"
+        assert "license_text" not in package_entry
+        assert (tmp_path / package_entry["license_file"]).read_text(
+            encoding="utf-8"
+        ) == "=== licenses/LICENSE.txt ===\nnumpy text"
+        assert (tmp_path / "license_inventory.json").is_file()
 
-    def test_own_packages_are_not_licensed_or_displayed(self) -> None:
+    def test_own_packages_are_not_licensed_or_displayed(self, tmp_path: Path) -> None:
         dists = [
             ui_distribution(requires=["divergencesplitter-runtime", "numpy"]),
             FakeDistribution(
@@ -423,7 +426,11 @@ class TestBuildInventory:
             ),
         ]
 
-        inventory = invgen.build_inventory(invgen.release_closure(installed(*dists)))
+        inventory = invgen.build_inventory(
+            installed(*dists),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
 
         names = [entry["name"] for entry in inventory["packages"]]
 
@@ -444,30 +451,44 @@ class TestBuildInventory:
         monkeypatch.setattr(ndi, "locate_file", lambda path: tmp_path / path)
         dists = [ui_distribution(requires=["ndi-python"]), ndi]
 
-        inventory = invgen.build_inventory(invgen.release_closure(installed(*dists)))
+        fallback = tmp_path / "official-ndi-agreement.txt"
+        fallback.write_text("NDI SDK License Agreement", encoding="utf-8")
+        monkeypatch.setitem(
+            invgen.LICENSE_TEXT_FALLBACKS,
+            "ndi-runtime",
+            invgen.LicenseTextFallback(fallback, "test official fallback"),
+        )
+        inventory = invgen.build_inventory(
+            installed(*dists),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
 
         binding = next(
             entry for entry in inventory["packages"] if entry["name"] == "ndi-python"
         )
         assert binding["license"] == "MIT"
-        assert "NDI runtime notices" not in binding["license_text"]
-        assert [asset["name"] for asset in inventory["assets"]] == [
+        assert "license_text" not in binding
+        assert [asset["name"] for asset in inventory["assets"]][-2:] == [
             invgen.NDI_RUNTIME_ASSET_NAME,
             invgen.NDI_RUNTIME_NOTICES_ASSET_NAME,
         ]
-        assert "NDI runtime notices" in inventory["assets"][1]["license_text"]
+        ndi_notices = inventory["assets"][-1]["license_file"]
+        assert "NDI runtime notices" in (tmp_path / ndi_notices).read_text(
+            encoding="utf-8"
+        )
 
 
 class TestApplicationEntry:
-    def test_application_is_mit_and_matches_root_license(self) -> None:
-        entry = invgen.application_entry()
+    def test_application_is_copied_from_root_license(self, tmp_path: Path) -> None:
+        entry = invgen.application_entry(tmp_path)
 
         assert entry["name"] == "DivergenceSplitter"
         assert entry["license"] == "MIT"
-        assert entry["license_text"] == invgen.APPLICATION_LICENSE_PATH.read_text(
-            encoding="utf-8"
-        )
-        assert "MIT License" in entry["license_text"]
+        assert entry["license_file"] == "licenses/application/DivergenceSplitter.txt"
+        assert (
+            tmp_path / entry["license_file"]
+        ).read_bytes() == invgen.APPLICATION_LICENSE_PATH.read_bytes()
 
 
 class TestResolveLicense:
@@ -526,92 +547,85 @@ class TestResolveLicense:
             del invgen.OVERRIDES["mine"]
 
 
-class TestCheckInventory:
-    def make_expected(self) -> invgen.InventoryDocument:
-        return {
-            "schema_version": 3,
-            "application": {
-                "name": "DivergenceSplitter",
-                "license": "MIT",
-                "license_text": "the MIT text",
-            },
-            "packages": [
-                {
-                    "name": "sample-package",
-                    "version": "2.3.1",
-                    "license": "MIT",
-                    "license_text": "sample package text",
-                },
-                {
-                    "name": "numpy",
-                    "version": "2.5.2",
-                    "license": "BSD-3-Clause",
-                    "license_text": "numpy text",
-                },
-            ],
-            "assets": [],
-        }
-
-    def write_stored(self, tmp_path: Path, document: invgen.InventoryDocument) -> None:
-        target = tmp_path / "license_inventory.json"
-        target.write_text(json.dumps(document), encoding="utf-8")
-        invgen.INVENTORY_PATH = target
-
-    def test_matching_inventory_passes(self, tmp_path: Path) -> None:
-        self.write_stored(tmp_path, self.make_expected())
-
-        assert invgen.check_inventory(self.make_expected()) is True
-
-    def test_missing_package_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["packages"] = stored["packages"][:1]
-        self.write_stored(tmp_path, stored)
-
-        assert invgen.check_inventory(self.make_expected()) is False
-
-    def test_extra_package_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["packages"].append(
-            {
-                "name": "websocket-client",
-                "version": "1.9.2",
-                "license": "Apache-2.0",
-                "license_text": "websocket-client text",
-            }
+class TestDistributionGeneration:
+    def test_generates_inventory_and_all_referenced_files(self, tmp_path: Path) -> None:
+        ui = ui_distribution(requires=["sample-package"])
+        sample = FakeDistribution(
+            "sample-package",
+            "2.3.1",
+            license_expression="MIT",
+            license_files={"licenses/LICENSE": "sample package terms"},
         )
-        self.write_stored(tmp_path, stored)
+        inventory = invgen.build_inventory(
+            installed(ui, sample),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
 
-        assert invgen.check_inventory(self.make_expected()) is False
+        saved = json.loads((tmp_path / "license_inventory.json").read_text())
+        assert saved == inventory
+        assert "license_text" not in json.dumps(inventory)
+        assert inventory["packages"][0]["license_file"] == (
+            "licenses/packages/sample-package.txt"
+        )
+        assert (tmp_path / inventory["packages"][0]["license_file"]).read_text() == (
+            "=== licenses/LICENSE ===\nsample package terms"
+        )
 
-    def test_version_difference_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["packages"][1]["version"] = "9.9.9"
-        self.write_stored(tmp_path, stored)
+    def test_runtime_assets_come_from_staged_build_outputs(
+        self, tmp_path: Path
+    ) -> None:
+        runtime = staged_runtime(tmp_path)
+        inventory = invgen.build_inventory(
+            installed(ui_distribution()),
+            staged_python_runtime=runtime,
+            distribution_root=tmp_path,
+        )
 
-        assert invgen.check_inventory(self.make_expected()) is False
+        by_name = {asset["name"]: asset for asset in inventory["assets"]}
+        runtime_bundle = (
+            tmp_path / by_name["Flet embedded Python runtime"]["license_file"]
+        )
+        bundle_text = runtime_bundle.read_text(encoding="utf-8")
+        assert "runtime license text" in bundle_text
+        assert "licenses/vendor.txt" in bundle_text
 
-    def test_license_difference_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["packages"][1]["license"] = "Apache-2.0"
-        self.write_stored(tmp_path, stored)
+    def test_third_party_notices_use_the_generated_distribution_files(
+        self, tmp_path: Path
+    ) -> None:
+        ui = ui_distribution(requires=["sample-package"])
+        sample = FakeDistribution(
+            "sample-package",
+            "2.3.1",
+            license_expression="MIT",
+            license_files={"LICENSE": "sample package terms"},
+        )
+        inventory = invgen.build_inventory(
+            installed(ui, sample),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
+        rendered = invgen.render_third_party_notices(
+            inventory, distribution_root=tmp_path
+        )
 
-        assert invgen.check_inventory(self.make_expected()) is False
+        assert "DivergenceSplitter" in rendered
+        assert "sample-package 2.3.1" in rendered
+        assert "Flet embedded Python runtime" in rendered
+        assert "dart_bridge" in rendered
+        assert "runtime license text" in rendered
+        assert "sample package terms" in rendered
+        assert "Flutter and Dart dependency notices" in rendered
 
-    def test_license_text_difference_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["packages"][1]["license_text"] = "different text"
-        self.write_stored(tmp_path, stored)
+    def test_missing_generated_license_file_is_a_build_error(
+        self, tmp_path: Path
+    ) -> None:
+        inventory = invgen.build_inventory(
+            installed(ui_distribution()),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
+        (tmp_path / inventory["assets"][0]["license_file"]).unlink()
 
-        assert invgen.check_inventory(self.make_expected()) is False
-
-    def test_application_difference_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["application"]["license_text"] = "edited MIT text"
-        self.write_stored(tmp_path, stored)
-
-        assert invgen.check_inventory(self.make_expected()) is False
-
-    def test_missing_inventory_file_fails(self, tmp_path: Path) -> None:
-        invgen.INVENTORY_PATH = tmp_path / "absent.json"
-
-        assert invgen.check_inventory(self.make_expected()) is False
+        with pytest.raises(RuntimeError, match="license file was not generated"):
+            invgen.validate_inventory_files(inventory, tmp_path)

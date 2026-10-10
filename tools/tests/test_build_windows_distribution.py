@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import build_windows_distribution as bwd
 import pytest
+from divergencesplitter_ui.licenses import load_inventory
 
 
 def make_tree(root: Path) -> None:
@@ -15,7 +17,16 @@ def make_tree(root: Path) -> None:
     ui_dir = root / bwd.DIST_ROOT / bwd.UI_ARTIFACT
     ui_dir.mkdir(parents=True, exist_ok=True)
     (ui_dir / f"{bwd.UI_ARTIFACT}.exe").write_bytes(b"ui")
+    notices_dir = ui_dir / "flutter_assets"
+    notices_dir.mkdir(parents=True, exist_ok=True)
+    (notices_dir / "NOTICES.Z").write_bytes(b"flutter notices")
     site_packages = ui_dir / bwd.SITE_PACKAGES
+    dist_info = site_packages / "sample_package-1.0.dist-info"
+    dist_info.mkdir(parents=True, exist_ok=True)
+    (dist_info / "METADATA").write_text(
+        "Metadata-Version: 2.4\nName: sample-package\nVersion: 1.0\n\n",
+        encoding="utf-8",
+    )
     for module in (
         "divergencesplitter",
         "divergencesplitter_runtime",
@@ -37,9 +48,52 @@ def make_tree(root: Path) -> None:
     capture.mkdir(parents=True, exist_ok=True)
     (capture / "core.cp314-win_amd64.pyd").write_bytes(b"pyd")
 
-    converter_dir = root / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
-    converter_dir.mkdir(parents=True, exist_ok=True)
-    (converter_dir / f"{bwd.CONVERTER_ARTIFACT}.exe").write_bytes(b"converter")
+    runtime = (
+        root
+        / bwd.UI_PACKAGE
+        / "build"
+        / "flutter"
+        / "build"
+        / "build_python_test"
+        / "python"
+    )
+    runtime.mkdir(parents=True, exist_ok=True)
+    (runtime / "python.exe").write_bytes(b"python")
+    (runtime / "LICENSE.txt").write_text("Python runtime bundle", encoding="utf-8")
+
+    inventory = {
+        "schema_version": 4,
+        "application": {
+            "name": "DivergenceSplitter",
+            "license": "MIT",
+            "license_file": "licenses/application/DivergenceSplitter.txt",
+        },
+        "packages": [
+            {
+                "name": "sample-package",
+                "version": "1.0",
+                "license": "MIT",
+                "license_file": "licenses/packages/sample.txt",
+            }
+        ],
+        "assets": [
+            {
+                "name": "Flet embedded Python runtime",
+                "license": "Runtime license bundle",
+                "license_file": "licenses/runtime/Flet-runtime.txt",
+            },
+        ],
+    }
+    inventory_text = json.dumps(inventory)
+    (ui_dir / "license_inventory.json").write_text(inventory_text, encoding="utf-8")
+    for reference, text in {
+        "licenses/application/DivergenceSplitter.txt": "application license text",
+        "licenses/packages/sample.txt": "package license text",
+        "licenses/runtime/Flet-runtime.txt": "Flet runtime notice",
+    }.items():
+        source = ui_dir / reference
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(text, encoding="utf-8")
 
 
 class RecordingRunner:
@@ -80,16 +134,6 @@ class TestBuildCommands:
         assert "--no-compile-packages" not in command
         assert "--no-cleanup-packages" not in command
 
-    def test_converter_build_stays_pyinstaller(self) -> None:
-        command = bwd.converter_build_command()
-
-        assert "pyinstaller" in command
-        assert "--onedir" in command
-        assert "--windowed" in command
-        assert "--clean" in command
-        assert command[command.index("--name") + 1] == bwd.CONVERTER_ARTIFACT
-        assert "flet" not in command
-
     def test_flet_environment_sets_encoding(self) -> None:
         env = bwd.flet_environment()
 
@@ -103,9 +147,64 @@ class TestVerification:
         make_tree(tmp_path)
 
         bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
-        bwd.verify_converter_distribution(
-            tmp_path / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
+
+    def test_distribution_inventory_and_files_are_readable_by_ui_loader(
+        self, tmp_path: Path
+    ) -> None:
+        make_tree(tmp_path)
+        ui_dir = tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT
+        inventory = json.loads(
+            (ui_dir / "license_inventory.json").read_text(encoding="utf-8")
         )
+        bwd.verify_ui_distribution(ui_dir)
+        with (ui_dir / "license_inventory.json").open(encoding="utf-8") as source:
+            loaded = load_inventory(source, license_root=ui_dir)
+
+        assert all(
+            (ui_dir / entry["license_file"]).is_file()
+            for entry in [
+                inventory["application"],
+                *inventory["packages"],
+                *inventory["assets"],
+            ]
+        )
+        assert loaded.application.license_text == "application license text"
+        assert loaded.packages[0].license_text == "package license text"
+        assert (ui_dir / "flutter_assets" / "NOTICES.Z").is_file()
+
+    def test_copies_flutter_notices_from_standard_windows_data_directory(
+        self, tmp_path: Path
+    ) -> None:
+        make_tree(tmp_path)
+        ui_dir = tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT
+        (ui_dir / "flutter_assets" / "NOTICES.Z").unlink()
+        source = ui_dir / "data" / "flutter_assets" / "NOTICES.Z"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"authoritative Flutter notices")
+
+        bwd.verify_ui_distribution(ui_dir)
+
+        assert (
+            ui_dir / "flutter_assets" / "NOTICES.Z"
+        ).read_bytes() == source.read_bytes()
+
+    @pytest.mark.parametrize("contents", [None, b""])
+    def test_rejects_missing_or_empty_flutter_notices(
+        self, tmp_path: Path, contents: bytes | None
+    ) -> None:
+        make_tree(tmp_path)
+        notices = (
+            tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT / "flutter_assets" / "NOTICES.Z"
+        )
+        if contents is None:
+            notices.unlink()
+        else:
+            notices.write_bytes(contents)
+
+        with pytest.raises(
+            RuntimeError, match="Required file is empty|Missing required file"
+        ):
+            bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
 
     def test_rejects_missing_ui_executable(self, tmp_path: Path) -> None:
         make_tree(tmp_path)
@@ -131,21 +230,6 @@ class TestVerification:
 
         with pytest.raises(RuntimeError, match="Missing required file"):
             bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
-
-    def test_rejects_empty_converter_executable(self, tmp_path: Path) -> None:
-        make_tree(tmp_path)
-        exe = (
-            tmp_path
-            / bwd.DIST_ROOT
-            / bwd.CONVERTER_ARTIFACT
-            / f"{bwd.CONVERTER_ARTIFACT}.exe"
-        )
-        exe.write_bytes(b"")
-
-        with pytest.raises(RuntimeError, match="empty"):
-            bwd.verify_converter_distribution(
-                tmp_path / bwd.DIST_ROOT / bwd.CONVERTER_ARTIFACT
-            )
 
 
 class TestSmokeTest:
@@ -173,12 +257,28 @@ class TestOrchestration:
         runner = RecordingRunner()
         monkeypatch.setattr(bwd, "run_command", runner)
         monkeypatch.setattr(bwd, "smoke_test_application", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            bwd,
+            "generate_from_distribution",
+            lambda *, root, distribution_root: json.loads(
+                (distribution_root / "license_inventory.json").read_text(
+                    encoding="utf-8"
+                )
+            ),
+        )
 
         bwd.build_windows_distribution(tmp_path)
 
         commands = [call[0] for call in runner.calls]
         assert any("flet" in command and "build" in command for command in commands)
-        assert any("pyinstaller" in command for command in commands)
+        assert all("pyinstaller" not in command for command in commands)
+        generated_notices = tmp_path / bwd.DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
+        assert generated_notices.is_file()
+        assert "Flet embedded Python runtime" in generated_notices.read_text(
+            encoding="utf-8"
+        )
+        assert "Flet runtime notice" in generated_notices.read_text(encoding="utf-8")
+        assert "package license text" in generated_notices.read_text(encoding="utf-8")
         assert all(command[0] != "7z" for command in commands)
 
     def test_propagates_build_failure(
