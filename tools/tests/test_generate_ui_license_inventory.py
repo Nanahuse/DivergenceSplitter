@@ -78,7 +78,7 @@ def staged_runtime(root: Path, *, extra_notice: bool = True) -> Path:
     runtime = root / "build_python_test" / "python"
     runtime.mkdir(parents=True, exist_ok=True)
     (runtime / "python.exe").write_bytes(b"python")
-    (runtime / "LICENSE.txt").write_text("CPython license text", encoding="utf-8")
+    (runtime / "LICENSE.txt").write_text("runtime license text", encoding="utf-8")
     if extra_notice:
         licenses = runtime / "licenses"
         licenses.mkdir()
@@ -587,7 +587,7 @@ class TestDistributionGeneration:
             tmp_path / by_name["Flet embedded Python runtime"]["license_file"]
         )
         bundle_text = runtime_bundle.read_text(encoding="utf-8")
-        assert "CPython license text" in bundle_text
+        assert "runtime license text" in bundle_text
         assert "licenses/vendor.txt" in bundle_text
 
     def test_third_party_notices_use_the_generated_distribution_files(
@@ -611,9 +611,9 @@ class TestDistributionGeneration:
 
         assert "DivergenceSplitter" in rendered
         assert "sample-package 2.3.1" in rendered
-        assert "CPython" in rendered
+        assert "Flet embedded Python runtime" in rendered
         assert "dart_bridge" in rendered
-        assert "CPython license text" in rendered
+        assert "runtime license text" in rendered
         assert "sample package terms" in rendered
         assert "Flutter and Dart dependency notices" in rendered
 

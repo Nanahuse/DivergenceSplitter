@@ -566,10 +566,10 @@ def staged_python_runtime(root: Path) -> Path:
     return candidates[0]
 
 
-def generate_from_installed_environment(
+def generate_from_distribution(
     *, root: Path, distribution_root: Path
 ) -> InventoryDocument:
-    """Resolve licenses from the actual Windows app site-packages and runtime."""
+    """Generate inventory from the final Windows distribution and staged runtime."""
     distributions = distribution_packages(distribution_root / "site-packages")
     return build_inventory(
         distributions,
@@ -593,7 +593,7 @@ def main() -> None:
         help="directory where inventory and license files are written",
     )
     args = parser.parse_args()
-    inventory = generate_from_installed_environment(
+    inventory = generate_from_distribution(
         root=args.root, distribution_root=args.distribution_root
     )
     print(

@@ -28,7 +28,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from generate_ui_license_inventory import (
-    generate_from_installed_environment,
+    generate_from_distribution,
     render_third_party_notices,
 )
 
@@ -206,7 +206,7 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
 
     ui_dir = root / DIST_ROOT / UI_ARTIFACT
     require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
-    inventory = generate_from_installed_environment(root=root, distribution_root=ui_dir)
+    inventory = generate_from_distribution(root=root, distribution_root=ui_dir)
     verify_ui_distribution(ui_dir)
     notices = root / DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
     notices.write_text(

@@ -259,7 +259,7 @@ class TestOrchestration:
         monkeypatch.setattr(bwd, "smoke_test_application", lambda *args, **kwargs: None)
         monkeypatch.setattr(
             bwd,
-            "generate_from_installed_environment",
+            "generate_from_distribution",
             lambda *, root, distribution_root: json.loads(
                 (distribution_root / "license_inventory.json").read_text(
                     encoding="utf-8"

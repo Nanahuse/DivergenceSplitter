@@ -284,12 +284,8 @@ class TestLicenseSections:
             inventory.schema_version,
             inventory.application,
             inventory.packages,
-            (
-                AssetLicense(
-                    "CPython", None, "Python Software Foundation License", "Python text"
-                ),
-            ),
+            (AssetLicense("sample-runtime", None, "Runtime license", "license text"),),
         )
-        assert license_sections(inventory)[2].title == (
-            "CPython — Python Software Foundation License"
+        assert (
+            license_sections(inventory)[2].title == "sample-runtime — Runtime license"
         )
