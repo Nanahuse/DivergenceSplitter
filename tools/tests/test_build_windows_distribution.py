@@ -62,7 +62,7 @@ def make_tree(root: Path) -> None:
     (runtime / "LICENSE.txt").write_text("Python runtime bundle", encoding="utf-8")
 
     inventory = {
-        "schema_version": 7,
+        "schema_version": 4,
         "application": {
             "name": "DivergenceSplitter",
             "license": "MIT",

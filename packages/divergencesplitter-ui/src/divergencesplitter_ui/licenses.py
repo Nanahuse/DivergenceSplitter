@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 4
 INVENTORY_RESOURCE = "license_inventory.json"
 
 

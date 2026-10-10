@@ -27,7 +27,7 @@ from packaging.utils import canonicalize_name
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_ROOT = Path(__file__).resolve().parent
 LICENSES_ROOT = TOOLS_ROOT / "licenses"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 4
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"

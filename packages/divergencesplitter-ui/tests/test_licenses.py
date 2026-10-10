@@ -25,7 +25,7 @@ def document(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 7,
+    schema_version: int = 4,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -94,7 +94,7 @@ def load(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 7,
+    schema_version: int = 4,
 ) -> LicenseInventory:
     value = document(
         packages,
@@ -143,7 +143,7 @@ class TestLoadInventory:
         inventory = load([package(), package(name="pyyaml", license="MIT")])
 
         assert inventory == LicenseInventory(
-            schema_version=7,
+            schema_version=4,
             application=ApplicationLicense("DivergenceSplitter", "MIT", "MIT text"),
             packages=(
                 LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "full BSD text"),
@@ -239,7 +239,7 @@ class TestLoadInventory:
     def test_missing_application_section_raises(self) -> None:
         with pytest.raises(LicenseInventoryError):
             load_inventory(
-                StringIO(json.dumps({"schema_version": 7, "packages": []})),
+                StringIO(json.dumps({"schema_version": 4, "packages": []})),
                 license_root=Path("."),
             )
 
@@ -254,7 +254,7 @@ class TestLoadInventory:
 class TestLicenseSections:
     def make_inventory(self) -> LicenseInventory:
         return LicenseInventory(
-            schema_version=7,
+            schema_version=4,
             application=ApplicationLicense("DivergenceSplitter", "MIT", "the MIT text"),
             packages=(LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "the BSD text"),),
             assets=(

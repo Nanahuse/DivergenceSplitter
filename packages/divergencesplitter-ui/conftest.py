@@ -13,7 +13,7 @@ from divergencesplitter_ui.licenses import (
 @pytest.fixture
 def license_inventory() -> LicenseInventory:
     return LicenseInventory(
-        schema_version=7,
+        schema_version=4,
         application=ApplicationLicense("DivergenceSplitter", "MIT", "MIT License"),
         packages=(
             LicenseEntry("sample-package", "test-version", "MIT", "MIT License"),
