@@ -1,4 +1,4 @@
-"""Generate and verify the UI inventory of Python packages and runtime assets.
+"""Generate the Windows distribution license inventory and license files.
 
 The inventory is computed from the Windows release dependency closure of the
 ``divergencesplitter-ui`` distribution. The closure walks ``Requires-Dist``
@@ -14,16 +14,12 @@ tooling in ``flutter_assets/NOTICES.Z``. The NDI Runtime is an explicit release
 root, with its licensing notice and third-party notices separate from its MIT
 Python binding.
 
-For each inventoried component the generator also bundles the full license
-text files shipped by the installed distribution, so the license screen can
-reproduce the actual license texts (not just SPDX identifiers) that are
-redistributed inside the executable. Some releases declare an SPDX expression
-in metadata but omit every license file from the wheel (``flet`` is one such
-distribution); for those a canonical text vendored under ``tools/licenses`` is
-used so the inventory still reproduces the license rather than failing. The
-application's own MIT text from the repository ``LICENSE`` is included as the
-``application`` section. Components under MPL-2.0 also carry a short note
-pointing at where their upstream source can be obtained.
+For each inventoried component the generator writes license texts directly to
+the Windows distribution. Installed distribution metadata and files are the
+primary source. Only components listed in ``LICENSE_TEXT_FALLBACKS`` may use a
+Git-managed license text. The application license comes directly from the
+repository ``LICENSE``; CPython and its additional notices come from the Python
+runtime staged by Flet.
 
 Generation is deterministic: packages are emitted sorted by their normalized
 name, license files are sorted by their normalized sub-path, and every run
@@ -41,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shutil
 import sys
 from collections.abc import Mapping
 from importlib import metadata
@@ -56,17 +53,12 @@ from packaging.utils import canonicalize_name
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_ROOT = Path(__file__).resolve().parent
-UI_MODULE_ROOT = (
-    REPO_ROOT / "packages" / "divergencesplitter-ui" / "src" / "divergencesplitter_ui"
-)
-INVENTORY_PATH = UI_MODULE_ROOT / "license_inventory.json"
 LICENSES_ROOT = TOOLS_ROOT / "licenses"
 ROOT_DISTRIBUTION = "divergencesplitter-ui"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 APPLICATION_NAME = "DivergenceSplitter"
 APPLICATION_LICENSE = "MIT"
 APPLICATION_LICENSE_PATH = REPO_ROOT / "LICENSE"
-CPYTHON_LICENSE_PATH = TOOLS_ROOT / "licenses" / "CPython.txt"
 LICENSE_NAME_STARTS = ("license", "licence", "copying", "notice")
 
 # The NDI runtime is conveyed alongside the MIT-licensed ``ndi-python`` binding
@@ -92,12 +84,21 @@ MPL_SOURCE_NOTE = (
     "https://pypi.org/project/{name}/{version}/#files"
 )
 
-# Canonical license texts vendored for distributions that declare an SPDX
-# expression but ship no license file in their wheel, keyed by that expression.
-# They are read like any bundled text so the emitted inventory stays
-# deterministic across platforms.
-SPDX_LICENSE_TEXTS: dict[str, Path] = {
-    "Apache-2.0": TOOLS_ROOT / "licenses" / "Apache-2.0.txt",
+
+class LicenseTextFallback(NamedTuple):
+    path: Path
+    reason: str
+
+
+LICENSE_TEXT_FALLBACKS: dict[str, LicenseTextFallback] = {
+    "flet": LicenseTextFallback(
+        LICENSES_ROOT / "Apache-2.0.txt",
+        "the installed wheel declares Apache-2.0 but ships no license text",
+    ),
+    "dart-bridge": LicenseTextFallback(
+        LICENSES_ROOT / "dart_bridge-MIT.txt",
+        "the native runtime artifact does not contain a license text",
+    ),
 }
 
 EXCLUDED_DISTRIBUTIONS: dict[str, str] = {
@@ -321,19 +322,17 @@ def _scanned_license_files(
     return sorted(scanned.items())
 
 
-def _vendored_license_text(dist: metadata.Distribution) -> str | None:
-    """Return a vendored canonical text for a wheel that ships no license file.
+def _fallback_license_text(component: str) -> str | None:
+    """Return a component-specific fallback text, if one is explicitly set."""
 
-    The text is selected by the distribution's resolved SPDX expression when
-    that expression has a canonical file under ``tools/licenses``. Returns
-    ``None`` when no vendored text applies, so the caller can fail loudly.
-    """
-
-    path = SPDX_LICENSE_TEXTS.get(resolve_license(dist))
-    if path is None:
+    fallback = LICENSE_TEXT_FALLBACKS.get(canonicalize_name(component))
+    if fallback is None:
         return None
-    relative = path.relative_to(REPO_ROOT).as_posix()
-    return f"=== {relative} ===\n{path.read_text(encoding='utf-8')}"
+    if not fallback.path.is_file():
+        raise RuntimeError(
+            f"license text fallback for {component!r} is missing: {fallback.path}"
+        )
+    return fallback.path.read_text(encoding="utf-8")
 
 
 def _contains_mpl(expression: str) -> bool:
@@ -377,12 +376,12 @@ def license_text(dist: metadata.Distribution) -> str:
     for read_path, content in _scanned_license_files(dist):
         entries[read_path] = content
     if not entries:
-        vendored = _vendored_license_text(dist)
-        if vendored is None:
+        fallback_text = _fallback_license_text(dist.metadata["Name"])
+        if fallback_text is None:
             raise RuntimeError(
                 f"cannot collect any license text for {dist.metadata['Name']!r}"
             )
-        text = vendored
+        text = fallback_text
     else:
         blocks = [
             f"=== {read_path} ===\n{entries[read_path]}"
@@ -395,297 +394,265 @@ def license_text(dist: metadata.Distribution) -> str:
     return text
 
 
-def ndi_runtime_assets(
-    closure: dict[str, metadata.Distribution],
-    license_texts: dict[str, str],
-) -> list[AssetEntry]:
-    """Return the NDI Runtime assets when the NDI binding is in the closure.
-
-    ``ndi-python`` is MIT, but ships the NDI Runtime licensing notice and
-    third-party notices. These assets stay distinct from the MIT binding.
-    """
-
-    dist = closure.get(canonicalize_name(NDI_PACKAGE))
-    if dist is None:
-        return []
-    notices = dist.locate_file(NDI_RUNTIME_NOTICES_PATH).read_text(encoding="utf-8")
-    licensing_file = "runtime/NDI-Runtime.txt"
-    notices_file = "runtime/NDI-Runtime-Third-Party-Notices.txt"
-    license_texts[licensing_file] = NDI_LICENSE_DOCUMENT_PATH.read_text(
-        encoding="utf-8"
-    )
-    license_texts[notices_file] = notices
-    return [
-        {
-            "name": NDI_RUNTIME_ASSET_NAME,
-            "license": NDI_RUNTIME_LICENSE,
-            "license_file": licensing_file,
-        },
-        {
-            "name": NDI_RUNTIME_NOTICES_ASSET_NAME,
-            "license": NDI_RUNTIME_NOTICES_LICENSE,
-            "license_file": notices_file,
-        },
-    ]
+def _write_text(distribution_root: Path, relative_path: str, text: str) -> None:
+    target = resolve_license_file(relative_path, distribution_root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8", newline="\n")
 
 
-def application_entry(license_texts: dict[str, str]) -> ApplicationEntry:
-    """Return application metadata and record the application's license text."""
-    license_file = "application/DivergenceSplitter.txt"
-    license_texts[license_file] = APPLICATION_LICENSE_PATH.read_text(encoding="utf-8")
-    return {
-        "name": APPLICATION_NAME,
-        "license": APPLICATION_LICENSE,
-        "license_file": license_file,
-    }
-
-
-def build_inventory(
-    closure: dict[str, metadata.Distribution],
-    *,
-    assets: list[AssetEntry] | None = None,
-    licenses_root: Path = LICENSES_ROOT,
-    write_license_files: bool = True,
-    generated_license_files: dict[str, str] | None = None,
-) -> InventoryDocument:
-    """Emit one inventory entry per non-excluded package.
-
-    The own DivergenceSplitter distributions are excluded because their
-    licenses are not part of the third-party license screen. Components that
-    are not Python distributions (the NDI Runtime) are emitted as assets.
-    """
-
-    license_texts = (
-        generated_license_files if generated_license_files is not None else {}
-    )
-    packages: list[PackageEntry] = []
-    for key in sorted(closure):
-        if key in EXCLUDED_DISTRIBUTIONS:
-            continue
-        dist = closure[key]
-        license_file = f"packages/{canonicalize_name(dist.metadata['Name'])}.txt"
-        license_texts[license_file] = license_text(dist)
-        packages.append(
-            {
-                "name": dist.metadata["Name"],
-                "version": dist.metadata["Version"],
-                "license": resolve_license(dist),
-                "license_file": license_file,
-            }
-        )
-    runtime_assets = (
-        runtime_component_assets(license_texts) if assets is None else assets
-    )
-    inventory: InventoryDocument = {
-        "schema_version": SCHEMA_VERSION,
-        "application": application_entry(license_texts),
-        "packages": packages,
-        "assets": runtime_assets + ndi_runtime_assets(closure, license_texts),
-    }
-    if write_license_files:
-        write_license_texts(license_texts, licenses_root)
-    return inventory
-
-
-def runtime_component_assets(license_texts: dict[str, str]) -> list[AssetEntry]:
-    """Collect licenses for runtime components without Python package metadata."""
-    cpython_file = "CPython.txt"
-    dart_bridge_file = "dart_bridge-MIT.txt"
-    license_texts[cpython_file] = CPYTHON_LICENSE_PATH.read_text(encoding="utf-8")
-    license_texts[dart_bridge_file] = (
-        TOOLS_ROOT / "licenses" / "dart_bridge-MIT.txt"
-    ).read_text(encoding="utf-8")
-    assets: list[AssetEntry] = [
-        {
-            "name": "CPython",
-            "license": "Python Software Foundation License",
-            "license_file": cpython_file,
-        }
-    ]
-    assets.append(
-        {
-            "name": "dart_bridge",
-            "version": "1.10.0",
-            "license": "MIT",
-            "license_file": dart_bridge_file,
-        }
-    )
-    return assets
-
-
-def write_license_texts(license_texts: Mapping[str, str], licenses_root: Path) -> None:
-    """Write collected license texts beneath the authoritative licenses root."""
-    for relative_path, text in sorted(license_texts.items()):
-        target = resolve_license_file(relative_path, licenses_root)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8", newline="\n")
-
-
-def resolve_license_file(relative_path: str, licenses_root: Path) -> Path:
-    """Resolve an inventory reference while preventing paths outside its root."""
+def resolve_license_file(relative_path: str, distribution_root: Path) -> Path:
+    """Resolve a distribution-relative file reference without allowing escape."""
     relative = Path(relative_path)
     if relative.is_absolute() or ".." in relative.parts:
         raise RuntimeError(f"invalid license_file reference: {relative_path!r}")
-    root = licenses_root.resolve()
+    root = distribution_root.resolve()
     target = (root / relative).resolve()
     if not target.is_relative_to(root):
         raise RuntimeError(f"invalid license_file reference: {relative_path!r}")
     return target
 
 
-def write_inventory(inventory: InventoryDocument) -> None:
-    INVENTORY_PATH.write_text(
+def application_entry(distribution_root: Path) -> ApplicationEntry:
+    """Copy the project LICENSE and return its distribution inventory entry."""
+    relative_path = "licenses/application/DivergenceSplitter.txt"
+    target = resolve_license_file(relative_path, distribution_root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(APPLICATION_LICENSE_PATH, target)
+    return {
+        "name": APPLICATION_NAME,
+        "license": APPLICATION_LICENSE,
+        "license_file": relative_path,
+    }
+
+
+def ndi_runtime_assets(
+    closure: dict[str, metadata.Distribution], distribution_root: Path
+) -> list[AssetEntry]:
+    """Write NDI's project notice and installed binding notice separately."""
+    dist = closure.get(canonicalize_name(NDI_PACKAGE))
+    if dist is None:
+        return []
+    runtime_license = "licenses/runtime/NDI-Runtime.txt"
+    third_party_notices = "licenses/runtime/NDI-Runtime-Third-Party-Notices.txt"
+    _write_text(
+        distribution_root,
+        runtime_license,
+        NDI_LICENSE_DOCUMENT_PATH.read_text(encoding="utf-8"),
+    )
+    notice_path = dist.locate_file(NDI_RUNTIME_NOTICES_PATH)
+    if not notice_path.is_file():
+        raise RuntimeError(f"ndi-python NDI notice is missing: {notice_path}")
+    _write_text(
+        distribution_root,
+        third_party_notices,
+        notice_path.read_text(encoding="utf-8"),
+    )
+    return [
+        {
+            "name": NDI_RUNTIME_ASSET_NAME,
+            "license": NDI_RUNTIME_LICENSE,
+            "license_file": runtime_license,
+        },
+        {
+            "name": NDI_RUNTIME_NOTICES_ASSET_NAME,
+            "license": NDI_RUNTIME_NOTICES_LICENSE,
+            "license_file": third_party_notices,
+        },
+    ]
+
+
+def runtime_component_assets(
+    staged_python_runtime: Path, distribution_root: Path
+) -> list[AssetEntry]:
+    """Collect CPython and runtime notices from Flet's staged Python runtime."""
+    cpython_source = staged_python_runtime / "LICENSE.txt"
+    if not cpython_source.is_file():
+        raise RuntimeError(
+            f"staged Flet Python runtime has no LICENSE.txt: {cpython_source}"
+        )
+    cpython_reference = "licenses/CPython.txt"
+    cpython_target = resolve_license_file(cpython_reference, distribution_root)
+    cpython_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(cpython_source, cpython_target)
+    assets: list[AssetEntry] = [
+        {
+            "name": "CPython",
+            "license": "Python Software Foundation License",
+            "license_file": cpython_reference,
+        }
+    ]
+
+    dart_fallback = _fallback_license_text("dart_bridge")
+    if dart_fallback is None:
+        raise RuntimeError("dart_bridge requires an explicit license text fallback")
+    dart_reference = "licenses/dart_bridge.txt"
+    _write_text(distribution_root, dart_reference, dart_fallback)
+    assets.append(
+        {"name": "dart_bridge", "license": "MIT", "license_file": dart_reference}
+    )
+
+    license_dir = staged_python_runtime / "licenses"
+    notice_files = (
+        sorted(path for path in license_dir.rglob("*") if path.is_file())
+        if license_dir.is_dir()
+        else []
+    )
+    if notice_files:
+        blocks = [
+            f"=== {path.relative_to(staged_python_runtime).as_posix()} ===\n"
+            f"{path.read_text(encoding='utf-8')}"
+            for path in notice_files
+        ]
+        notice_reference = "licenses/runtime/Flet-Python-runtime-notices.txt"
+        _write_text(distribution_root, notice_reference, "\n\n".join(blocks))
+        assets.append(
+            {
+                "name": "Flet embedded Python runtime third-party notices",
+                "license": "Third-party notices",
+                "license_file": notice_reference,
+            }
+        )
+    return assets
+
+
+def build_inventory(
+    closure: dict[str, metadata.Distribution],
+    *,
+    staged_python_runtime: Path,
+    distribution_root: Path,
+) -> InventoryDocument:
+    """Resolve all release licenses and write their files into the distribution."""
+    packages: list[PackageEntry] = []
+    for key in sorted(closure):
+        if key in EXCLUDED_DISTRIBUTIONS:
+            continue
+        dist = closure[key]
+        reference = f"licenses/packages/{canonicalize_name(dist.metadata['Name'])}.txt"
+        _write_text(distribution_root, reference, license_text(dist))
+        packages.append(
+            {
+                "name": dist.metadata["Name"],
+                "version": dist.metadata["Version"],
+                "license": resolve_license(dist),
+                "license_file": reference,
+            }
+        )
+    assets = runtime_component_assets(staged_python_runtime, distribution_root)
+    assets.extend(ndi_runtime_assets(closure, distribution_root))
+    inventory: InventoryDocument = {
+        "schema_version": SCHEMA_VERSION,
+        "application": application_entry(distribution_root),
+        "packages": packages,
+        "assets": assets,
+    }
+    inventory_path = distribution_root / "license_inventory.json"
+    inventory_path.write_text(
         json.dumps(inventory, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    validate_inventory_files(inventory, distribution_root)
+    return inventory
+
+
+def validate_inventory_files(
+    inventory: InventoryDocument, distribution_root: Path
+) -> None:
+    """Require every inventory reference to resolve to a nonempty file."""
+    entries = [inventory["application"], *inventory["packages"], *inventory["assets"]]
+    for entry in entries:
+        path = resolve_license_file(entry["license_file"], distribution_root)
+        if not path.is_file() or path.stat().st_size == 0:
+            raise RuntimeError(
+                f"license file was not generated: {entry['license_file']}"
+            )
 
 
 def render_third_party_notices(
-    inventory: InventoryDocument,
-    *,
-    flet_runtime_notices: str,
-    licenses_root: Path = LICENSES_ROOT,
+    inventory: InventoryDocument, *, distribution_root: Path
 ) -> str:
-    """Render a distribution-wide notice file, deduplicating identical texts."""
+    """Render notices from the exact license files generated for the distribution."""
     groups: dict[str, list[str]] = {}
-    texts: dict[str, str] = {}
-    for entry in [*inventory["packages"], *inventory["assets"]]:
-        key = resolve_license_file(entry["license_file"], licenses_root).read_text(
-            encoding="utf-8"
-        )
-        version = entry.get("version")
-        label = f"{entry['name']} {version}" if version else entry["name"]
-        groups.setdefault(key, []).append(f"{label} — {entry['license']}")
-        texts[key] = key
-    lines = [
-        "DivergenceSplitter Windows Distribution — Third-Party Notices",
-        "",
-        "Python package distributions and runtime components are listed below.",
-        "Flet embedded Python runtime third-party notices are included separately.",
-        "Flutter and Dart package notices are provided by Flutter at",
-        "DivergenceSplitter/flutter_assets/NOTICES.Z; that generated notice file",
-        "is the authoritative source for Flutter, Flet Dart packages, serious_python,",
-        "and other pub dependencies.",
-    ]
-    for key in sorted(groups):
-        names = ", ".join(sorted(groups[key], key=str.casefold))
-        lines.extend(["", "=" * 78, names, "=" * 78, "", texts[key].rstrip()])
-    lines.extend(
-        [
-            "",
-            "=" * 78,
-            "Flet embedded Python runtime third-party notices",
-            "=" * 78,
-            "",
-            flet_runtime_notices.rstrip(),
-        ]
-    )
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def check_inventory(
-    inventory: InventoryDocument,
-    *,
-    license_texts: Mapping[str, str],
-    licenses_root: Path = LICENSES_ROOT,
-) -> bool:
-    if not INVENTORY_PATH.exists():
-        print(f"missing bundled inventory: {INVENTORY_PATH}")
-        return False
-    stored = json.loads(INVENTORY_PATH.read_text(encoding="utf-8"))
-    mismatched = stored != inventory
-    if mismatched:
-        print("license inventory metadata differs from the release closure")
-    stored_entries = (
-        [
-            stored.get("application"),
-            *stored.get("packages", []),
-            *stored.get("assets", []),
-        ]
-        if isinstance(stored, dict)
-        else []
-    )
-    for entry in stored_entries:
-        if not isinstance(entry, dict):
-            print("malformed entry in stored license inventory")
-            mismatched = True
-            continue
-        reference = entry.get("license_file")
-        if not isinstance(reference, str) or not reference:
-            print("stored inventory entry has no license_file")
-            mismatched = True
-            continue
-        try:
-            stored_path = resolve_license_file(reference, licenses_root)
-        except RuntimeError as error:
-            print(error)
-            mismatched = True
-            continue
-        if not stored_path.is_file():
-            print(f"missing license file referenced by inventory: {reference}")
-            mismatched = True
-    referenced: set[str] = set()
     for entry in [
         inventory["application"],
         *inventory["packages"],
         *inventory["assets"],
     ]:
-        relative_path = entry["license_file"]
-        referenced.add(relative_path)
-        try:
-            path = resolve_license_file(relative_path, licenses_root)
-        except RuntimeError as error:
-            print(error)
-            mismatched = True
-            continue
+        path = resolve_license_file(entry["license_file"], distribution_root)
         if not path.is_file():
-            print(f"missing license file: {relative_path}")
-            mismatched = True
-            continue
-        actual_text = path.read_text(encoding="utf-8")
-        expected_text = license_texts.get(relative_path)
-        if expected_text is None:
-            print(f"no generated license text for reference: {relative_path}")
-            mismatched = True
-        elif actual_text != expected_text:
-            print(f"license file content differs: {relative_path}")
-            mismatched = True
-    unexpected = set(license_texts) - referenced
-    if unexpected:
-        print(f"generated license text is unreferenced: {sorted(unexpected)}")
-        mismatched = True
-    return not mismatched
+            raise RuntimeError(
+                f"license file referenced by inventory is missing: {path}"
+            )
+        text = path.read_text(encoding="utf-8")
+        version = entry.get("version")
+        label = f"{entry['name']} {version}" if version else entry["name"]
+        groups.setdefault(text, []).append(f"{label} — {entry['license']}")
+    lines = [
+        "DivergenceSplitter Windows Distribution — Third-Party Notices",
+        "",
+        "License texts below were generated from the resolved release dependencies",
+        "and runtime artifacts. Flutter and Dart dependency notices are provided by",
+        "DivergenceSplitter/flutter_assets/NOTICES.Z, the authoritative source for",
+        "Flutter, Flet Dart packages, serious_python, and other pub dependencies.",
+    ]
+    for text in sorted(groups):
+        names = ", ".join(sorted(groups[text], key=str.casefold))
+        lines.extend(["", "=" * 78, names, "=" * 78, "", text.rstrip()])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def staged_python_runtime(root: Path) -> Path:
+    """Find the single Python runtime expanded by the Flet Windows build."""
+    build_root = (
+        root / "packages" / "divergencesplitter-ui" / "build" / "flutter" / "build"
+    )
+    candidates = sorted(
+        path / "python"
+        for path in build_root.glob("build_python_*")
+        if (path / "python" / "python.exe").is_file()
+        and (path / "python" / "LICENSE.txt").is_file()
+    )
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"Expected exactly one staged Flet Python runtime under {build_root}; "
+            f"found {len(candidates)}"
+        )
+    return candidates[0]
+
+
+def generate_from_installed_environment(
+    *, root: Path, distribution_root: Path
+) -> InventoryDocument:
+    """Build the Windows dependency closure and generate distribution licenses."""
+    closure = release_closure(
+        installed_distributions(), additional_roots=(NDI_PACKAGE,)
+    )
+    return build_inventory(
+        closure,
+        staged_python_runtime=staged_python_runtime(root),
+        distribution_root=distribution_root,
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--check",
-        action="store_true",
-        help="compare the stored inventory with the release closure",
+        "--root",
+        type=Path,
+        default=REPO_ROOT,
+        help="repository root containing the Flet build",
+    )
+    parser.add_argument(
+        "--distribution-root",
+        type=Path,
+        default=REPO_ROOT / "dist" / "windows" / "DivergenceSplitter",
+        help="directory where inventory and license files are written",
     )
     args = parser.parse_args()
-
-    # The Windows executable also bundles the optional NDI input backend.
-    closure = release_closure(
-        installed_distributions(), additional_roots=("ndi-python",)
+    inventory = generate_from_installed_environment(
+        root=args.root, distribution_root=args.distribution_root
     )
-    generated_license_files: dict[str, str] = {}
-    inventory = build_inventory(
-        closure,
-        generated_license_files=generated_license_files,
-        write_license_files=not args.check,
-    )
-    if args.check:
-        if not check_inventory(inventory, license_texts=generated_license_files):
-            raise SystemExit(1)
-        print(
-            f"license inventory is up to date ({len(inventory['packages'])} packages)"
-        )
-        return
-    write_inventory(inventory)
     print(
-        f"wrote {len(inventory['packages'])} packages to {INVENTORY_PATH.relative_to(REPO_ROOT)}"
+        f"Generated license inventory for {len(inventory['packages'])} Python packages"
     )
 
 

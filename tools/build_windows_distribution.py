@@ -20,7 +20,6 @@ build; this script never rewrites project metadata and never builds its own
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -28,7 +27,10 @@ import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from generate_ui_license_inventory import render_third_party_notices
+from generate_ui_license_inventory import (
+    generate_from_installed_environment,
+    render_third_party_notices,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -153,77 +155,6 @@ def verify_ui_distribution(ui_dir: Path) -> None:
     require_glob(capture, "core*.pyd", "capture-device extension module")
 
 
-def flet_runtime_license_notices(root: Path) -> str:
-    """Read the license bundle for the Python runtime staged by Flet's build."""
-
-    build_root = root / UI_PACKAGE / "build" / "flutter" / "build"
-    candidates = sorted(
-        path / "python"
-        for path in build_root.glob("build_python_*")
-        if (path / "python" / "python.exe").is_file()
-        and (path / "python" / "LICENSE.txt").is_file()
-    )
-    if len(candidates) != 1:
-        raise RuntimeError(
-            "Expected exactly one staged Flet Python runtime license bundle under "
-            f"{build_root}; found {len(candidates)}"
-        )
-
-    runtime = candidates[0]
-    files = [runtime / "LICENSE.txt"]
-    license_dir = runtime / "licenses"
-    if license_dir.is_dir():
-        files.extend(path for path in sorted(license_dir.rglob("*")) if path.is_file())
-    return "\n\n".join(
-        f"=== {path.relative_to(runtime).as_posix()} ===\n"
-        f"{path.read_text(encoding='utf-8')}"
-        for path in files
-    )
-
-
-def copy_inventory_license_files(
-    inventory: dict[str, object], *, source_root: Path, destination_root: Path
-) -> list[Path]:
-    """Copy only the license texts referenced by the bundled inventory."""
-    application = inventory.get("application")
-    packages = inventory.get("packages")
-    assets = inventory.get("assets")
-    if (
-        not isinstance(application, dict)
-        or not isinstance(packages, list)
-        or not isinstance(assets, list)
-    ):
-        raise TypeError("Malformed license inventory")
-    entries = [
-        application,
-        *packages,
-        *assets,
-    ]
-    copied: list[Path] = []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            raise TypeError("Malformed license inventory entry")
-        reference = entry.get("license_file")
-        if not isinstance(reference, str) or not reference:
-            raise RuntimeError("License inventory entry has no license_file")
-        relative = Path(reference)
-        if relative.is_absolute() or ".." in relative.parts:
-            raise RuntimeError(f"Invalid license file reference: {reference!r}")
-        source = (source_root / relative).resolve()
-        target_root_resolved = destination_root.resolve()
-        if not source.is_relative_to(source_root.resolve()):
-            raise RuntimeError(f"Invalid license file reference: {reference!r}")
-        if not source.is_file():
-            raise RuntimeError(f"Missing license file: {source}")
-        target = (target_root_resolved / relative).resolve()
-        if not target.is_relative_to(target_root_resolved):
-            raise RuntimeError(f"Invalid license file reference: {reference!r}")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        copied.append(target)
-    return copied
-
-
 def smoke_test_application(
     executable: Path,
     *,
@@ -271,29 +202,13 @@ def build_windows_distribution(root: Path = REPO_ROOT) -> None:
 
     ui_dir = root / DIST_ROOT / UI_ARTIFACT
     require_nonempty_file(ui_dir / f"{UI_ARTIFACT}.exe")
-    inventory_path = (
-        root
-        / "packages"
-        / "divergencesplitter-ui"
-        / "src"
-        / "divergencesplitter_ui"
-        / "license_inventory.json"
-    )
-    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-    shutil.copyfile(inventory_path, ui_dir / "license_inventory.json")
-    copy_inventory_license_files(
-        inventory,
-        source_root=root / "tools" / "licenses",
-        destination_root=ui_dir / "licenses",
-    )
+    inventory = generate_from_installed_environment(root=root, distribution_root=ui_dir)
     verify_ui_distribution(ui_dir)
-    runtime_notices = flet_runtime_license_notices(root)
     notices = root / DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
     notices.write_text(
         render_third_party_notices(
             inventory,
-            flet_runtime_notices=runtime_notices,
-            licenses_root=ui_dir / "licenses",
+            distribution_root=ui_dir,
         ),
         encoding="utf-8",
     )

@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import flet as ft
+import pytest
+from divergencesplitter_ui import license_page
 from divergencesplitter_ui.about import about_info
 from divergencesplitter_ui.about_page import GITHUB_URL, AboutView
-from divergencesplitter_ui.licenses import bundled_inventory, license_sections
+from divergencesplitter_ui.licenses import LicenseInventory, license_sections
 from divergencesplitter_ui.ndi_branding import NDI_TRADEMARK_NOTICE, NDI_WEBSITE_URL
 
 
@@ -30,7 +32,12 @@ def collect_text(control: ft.Control) -> list[str]:
 
 
 class TestAboutView:
-    def test_shows_application_identity_and_required_links(self) -> None:
+    def test_shows_application_identity_and_required_links(
+        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            license_page, "bundled_inventory", lambda: license_inventory
+        )
         info = about_info()
         view = AboutView()
 
@@ -47,8 +54,13 @@ class TestAboutView:
         assert NDI_TRADEMARK_NOTICE in texts
         assert NDI_WEBSITE_URL in urls
 
-    def test_embeds_bundled_licenses(self) -> None:
-        sections = license_sections(bundled_inventory())
+    def test_embeds_bundled_licenses(
+        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            license_page, "bundled_inventory", lambda: license_inventory
+        )
+        sections = license_sections(license_inventory)
 
         view = AboutView()
 

@@ -1,10 +1,8 @@
-"""Pure loading and presentation of the bundled license inventory.
+"""Load the Windows distribution's generated license inventory and texts.
 
-The inventory is a static data file generated at release time from the
-Windows dependency closure of ``divergencesplitter-ui``. It contains component
-metadata and references license texts stored in the distribution's ``licenses``
-directory. The screen never queries the network or enumerates installed
-packages; it loads the inventory and its referenced files from the distribution.
+The inventory is created from the resolved dependency closure during the
+Windows build. The About screen reads the inventory and its referenced files
+beside the executable; it never queries the network or scans installed packages.
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 INVENTORY_RESOURCE = "license_inventory.json"
 
 
@@ -100,16 +98,14 @@ def _entry(
 
 
 def _license_root(package_root: Path) -> Path:
-    """Find license files beside the Windows distribution or in the source tree."""
-    candidates = [Path(sys.executable).resolve().parent / "licenses"]
-    candidates.extend(
-        candidate
-        for ancestor in (package_root, *package_root.parents)
-        for candidate in (ancestor / "licenses", ancestor / "tools" / "licenses")
-    )
+    """Find the root that contains the ``licenses`` directory."""
+    candidates = [Path(sys.executable).resolve().parent]
+    candidates.extend((package_root, *package_root.parents))
     for candidate in candidates:
-        if candidate.is_dir():
+        if (candidate / "licenses").is_dir():
             return candidate
+        if (candidate / "tools" / "licenses").is_dir():
+            return candidate / "tools"
     raise LicenseInventoryError("license files directory is missing")
 
 
@@ -257,10 +253,15 @@ def bundled_inventory() -> LicenseInventory:
     distribution_inventory = distribution_root / INVENTORY_RESOURCE
     if distribution_inventory.is_file():
         with distribution_inventory.open("r", encoding="utf-8") as source:
-            return load_inventory(source, license_root=distribution_root / "licenses")
+            return load_inventory(source, license_root=distribution_root)
 
     resource = importlib.resources.files("divergencesplitter_ui").joinpath(
         INVENTORY_RESOURCE
     )
-    with resource.open("r", encoding="utf-8") as source:
-        return load_inventory(source)
+    try:
+        with resource.open("r", encoding="utf-8") as source:
+            return load_inventory(source)
+    except FileNotFoundError as error:
+        raise LicenseInventoryError(
+            "license inventory is missing from this distribution"
+        ) from error

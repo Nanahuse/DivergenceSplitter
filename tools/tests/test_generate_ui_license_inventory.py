@@ -74,6 +74,18 @@ def ui_distribution(*, requires: Iterable[str] = ()) -> FakeDistribution:
     )
 
 
+def staged_runtime(root: Path, *, extra_notice: bool = True) -> Path:
+    runtime = root / "build_python_test" / "python"
+    runtime.mkdir(parents=True, exist_ok=True)
+    (runtime / "python.exe").write_bytes(b"python")
+    (runtime / "LICENSE.txt").write_text("CPython license text", encoding="utf-8")
+    if extra_notice:
+        licenses = runtime / "licenses"
+        licenses.mkdir()
+        (licenses / "vendor.txt").write_text("runtime vendor notice", encoding="utf-8")
+    return runtime
+
+
 class TestReleaseClosure:
     def test_includes_explicitly_bundled_optional_backend(self) -> None:
         ndi = FakeDistribution("ndi-python", "6.3.2.4", requires=["numpy"])
@@ -212,8 +224,10 @@ class TestNdiLicenseBoundary:
     ) -> None:
         dist = self.ndi_distribution(tmp_path, monkeypatch)
 
-        license_texts: dict[str, str] = {}
-        assets = invgen.ndi_runtime_assets({"ndi-python": dist}, license_texts)
+        distribution = tmp_path / "distribution"
+        monkeypatch.setattr(invgen, "NDI_LICENSE_DOCUMENT_PATH", tmp_path / "NDI.md")
+        (tmp_path / "NDI.md").write_text("NDI project notice", encoding="utf-8")
+        assets = invgen.ndi_runtime_assets({"ndi-python": dist}, distribution)
 
         assert [asset["name"] for asset in assets] == [
             invgen.NDI_RUNTIME_ASSET_NAME,
@@ -224,11 +238,15 @@ class TestNdiLicenseBoundary:
             "Third-party notices",
         ]
         assert all("version" not in asset for asset in assets)
-        assert "NDI SDK License Agreement" not in assets[0]["license"]
-        assert "NDI runtime notices" in license_texts[assets[1]["license_file"]]
+        assert "NDI SDK License Agreement" not in (
+            distribution / assets[0]["license_file"]
+        ).read_text(encoding="utf-8")
+        assert "NDI runtime notices" in (
+            distribution / assets[1]["license_file"]
+        ).read_text(encoding="utf-8")
 
     def test_absent_binding_emits_no_assets(self) -> None:
-        assert invgen.ndi_runtime_assets({}, {}) == []
+        assert invgen.ndi_runtime_assets({}, Path(".")) == []
 
 
 class TestLicenseText:
@@ -296,16 +314,44 @@ class TestLicenseText:
         with pytest.raises(RuntimeError, match="cannot collect"):
             invgen.license_text(dist)
 
-    def test_vendored_text_is_used_when_wheel_ships_no_license_file(self) -> None:
-        dist = FakeDistribution("flet", "1.0.0", license_expression="Apache-2.0")
+    def test_mechanical_text_takes_precedence_over_component_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fallback = tmp_path / "fallback.txt"
+        fallback.write_text("fallback text", encoding="utf-8")
+        monkeypatch.setitem(
+            invgen.LICENSE_TEXT_FALLBACKS,
+            "flet",
+            invgen.LicenseTextFallback(fallback, "test fallback"),
+        )
+        dist = FakeDistribution(
+            "flet",
+            "1.0.0",
+            license_expression="Apache-2.0",
+            license_files={"licenses/LICENSE": "wheel license text"},
+        )
 
-        text = invgen.license_text(dist)
+        assert "wheel license text" in invgen.license_text(dist)
+        assert "fallback text" not in invgen.license_text(dist)
 
-        assert text.startswith("=== tools/licenses/Apache-2.0.txt ===")
-        assert "Apache License" in text
-        assert "Version 2.0, January 2004" in text
+    def test_fallback_is_component_specific_even_for_same_spdx(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fallback = tmp_path / "fallback.txt"
+        fallback.write_text("flet-only text", encoding="utf-8")
+        monkeypatch.setitem(
+            invgen.LICENSE_TEXT_FALLBACKS,
+            "flet",
+            invgen.LicenseTextFallback(fallback, "test fallback"),
+        )
+        flet = FakeDistribution("flet", "1.0.0", license_expression="Apache-2.0")
+        another = FakeDistribution("another", "1.0.0", license_expression="Apache-2.0")
 
-    def test_expression_without_vendored_text_still_raises(self) -> None:
+        assert invgen.license_text(flet) == "flet-only text"
+        with pytest.raises(RuntimeError, match="cannot collect"):
+            invgen.license_text(another)
+
+    def test_missing_license_text_without_component_fallback_fails(self) -> None:
         dist = FakeDistribution("mine", "1.0.0", license_expression="MIT")
 
         with pytest.raises(RuntimeError, match="cannot collect"):
@@ -370,8 +416,8 @@ class TestBuildInventory:
         try:
             inventory = invgen.build_inventory(
                 invgen.release_closure(installed(*dists)),
-                assets=[],
-                licenses_root=tmp_path,
+                staged_python_runtime=staged_runtime(tmp_path),
+                distribution_root=tmp_path,
             )
         finally:
             invgen.OVERRIDES["opencv-contrib-python"] = override
@@ -394,22 +440,23 @@ class TestBuildInventory:
             ),
         ]
 
-        generated_files: dict[str, str] = {}
         inventory = invgen.build_inventory(
             invgen.release_closure(installed(*dists)),
-            assets=[],
-            licenses_root=tmp_path,
-            generated_license_files=generated_files,
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
         )
 
         package_entry = inventory["packages"][0]
-        assert package_entry["license_file"] == "packages/numpy.txt"
+        assert package_entry["license_file"] == "licenses/packages/numpy.txt"
         assert "license_text" not in package_entry
         assert (tmp_path / package_entry["license_file"]).read_text(
             encoding="utf-8"
         ) == "=== licenses/LICENSE.txt ===\nnumpy text"
-        assert generated_files[package_entry["license_file"]].endswith("numpy text")
-        assert inventory["schema_version"] == 6
+        assert inventory["schema_version"] == 7
+        assert (tmp_path / "license_inventory.json").is_file()
+        assert (tmp_path / "licenses/CPython.txt").read_text(
+            encoding="utf-8"
+        ) == "CPython license text"
 
     def test_own_packages_are_not_licensed_or_displayed(self, tmp_path: Path) -> None:
         dists = [
@@ -434,7 +481,9 @@ class TestBuildInventory:
         ]
 
         inventory = invgen.build_inventory(
-            invgen.release_closure(installed(*dists)), assets=[], licenses_root=tmp_path
+            invgen.release_closure(installed(*dists)),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
         )
 
         names = [entry["name"] for entry in inventory["packages"]]
@@ -456,12 +505,12 @@ class TestBuildInventory:
         monkeypatch.setattr(ndi, "locate_file", lambda path: tmp_path / path)
         dists = [ui_distribution(requires=["ndi-python"]), ndi]
 
-        generated_files: dict[str, str] = {}
+        monkeypatch.setattr(invgen, "NDI_LICENSE_DOCUMENT_PATH", tmp_path / "NDI.md")
+        (tmp_path / "NDI.md").write_text("NDI project notice", encoding="utf-8")
         inventory = invgen.build_inventory(
             invgen.release_closure(installed(*dists)),
-            assets=[],
-            licenses_root=tmp_path,
-            generated_license_files=generated_files,
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
         )
 
         binding = next(
@@ -469,27 +518,26 @@ class TestBuildInventory:
         )
         assert binding["license"] == "MIT"
         assert "license_text" not in binding
-        assert [asset["name"] for asset in inventory["assets"]] == [
+        assert [asset["name"] for asset in inventory["assets"]][-2:] == [
             invgen.NDI_RUNTIME_ASSET_NAME,
             invgen.NDI_RUNTIME_NOTICES_ASSET_NAME,
         ]
-        assert "license_text" not in inventory["assets"][1]
-        ndi_notices = inventory["assets"][1]["license_file"]
-        assert "NDI runtime notices" in generated_files[ndi_notices]
+        ndi_notices = inventory["assets"][-1]["license_file"]
+        assert "NDI runtime notices" in (tmp_path / ndi_notices).read_text(
+            encoding="utf-8"
+        )
 
 
 class TestApplicationEntry:
-    def test_application_is_mit_and_matches_root_license(self) -> None:
-        license_texts: dict[str, str] = {}
-        entry = invgen.application_entry(license_texts)
+    def test_application_is_copied_from_root_license(self, tmp_path: Path) -> None:
+        entry = invgen.application_entry(tmp_path)
 
         assert entry["name"] == "DivergenceSplitter"
         assert entry["license"] == "MIT"
-        assert entry["license_file"] == "application/DivergenceSplitter.txt"
-        assert license_texts[
-            entry["license_file"]
-        ] == invgen.APPLICATION_LICENSE_PATH.read_text(encoding="utf-8")
-        assert "MIT License" in license_texts[entry["license_file"]]
+        assert entry["license_file"] == "licenses/application/DivergenceSplitter.txt"
+        assert (
+            tmp_path / entry["license_file"]
+        ).read_bytes() == invgen.APPLICATION_LICENSE_PATH.read_bytes()
 
 
 class TestResolveLicense:
@@ -548,120 +596,88 @@ class TestResolveLicense:
             del invgen.OVERRIDES["mine"]
 
 
-class TestCheckInventory:
-    def make_expected(self) -> invgen.InventoryDocument:
-        return {
-            "schema_version": 6,
-            "application": {
-                "name": "DivergenceSplitter",
-                "license": "MIT",
-                "license_file": "application/app.txt",
-            },
-            "packages": [
-                {
-                    "name": "sample-package",
-                    "version": "2.3.1",
-                    "license": "MIT",
-                    "license_file": "packages/sample-package.txt",
-                },
-                {
-                    "name": "numpy",
-                    "version": "2.5.2",
-                    "license": "BSD-3-Clause",
-                    "license_file": "packages/numpy.txt",
-                },
-            ],
-            "assets": [],
-        }
-
-    def license_texts(self) -> dict[str, str]:
-        return {
-            "application/app.txt": "application terms",
-            "packages/sample-package.txt": "sample package terms",
-            "packages/numpy.txt": "numpy terms",
-        }
-
-    def write_stored(
-        self,
-        tmp_path: Path,
-        document: invgen.InventoryDocument,
-        *,
-        texts: dict[str, str] | None = None,
-    ) -> Path:
-        target = tmp_path / "license_inventory.json"
-        target.write_text(json.dumps(document), encoding="utf-8")
-        invgen.INVENTORY_PATH = target
-        license_root = tmp_path / "licenses"
-        for reference, text in (texts or self.license_texts()).items():
-            path = invgen.resolve_license_file(reference, license_root)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
-        return license_root
-
-    def check(
-        self,
-        expected: invgen.InventoryDocument,
-        license_root: Path,
-    ) -> bool:
-        return invgen.check_inventory(
-            expected,
-            license_texts=self.license_texts(),
-            licenses_root=license_root,
+class TestDistributionGeneration:
+    def test_generates_inventory_and_all_referenced_files(self, tmp_path: Path) -> None:
+        ui = ui_distribution(requires=["sample-package"])
+        sample = FakeDistribution(
+            "sample-package",
+            "2.3.1",
+            license_expression="MIT",
+            license_files={"licenses/LICENSE": "sample package terms"},
+        )
+        inventory = invgen.build_inventory(
+            invgen.release_closure(installed(ui, sample)),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
         )
 
-    def test_matching_inventory_passes(self, tmp_path: Path) -> None:
-        license_root = self.write_stored(tmp_path, self.make_expected())
+        saved = json.loads((tmp_path / "license_inventory.json").read_text())
+        assert saved == inventory
+        assert "license_text" not in json.dumps(inventory)
+        assert inventory["packages"][0]["license_file"] == (
+            "licenses/packages/sample-package.txt"
+        )
+        assert (tmp_path / inventory["packages"][0]["license_file"]).read_text() == (
+            "=== licenses/LICENSE ===\nsample package terms"
+        )
 
-        assert self.check(self.make_expected(), license_root) is True
-
-    def test_third_party_notices_deduplicate_identical_text(
+    def test_runtime_assets_come_from_staged_build_outputs(
         self, tmp_path: Path
     ) -> None:
-        inventory = self.make_expected()
-        license_root = tmp_path / "licenses"
-        texts = {
-            **self.license_texts(),
-            "packages/sample-package.txt": "shared license",
-            "packages/numpy.txt": "shared license",
-        }
-        for reference, text in texts.items():
-            path = invgen.resolve_license_file(reference, license_root)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
-        rendered = invgen.render_third_party_notices(
-            inventory,
-            flet_runtime_notices="Flet runtime notice",
-            licenses_root=license_root,
+        runtime = staged_runtime(tmp_path)
+        inventory = invgen.build_inventory(
+            invgen.release_closure(installed(ui_distribution())),
+            staged_python_runtime=runtime,
+            distribution_root=tmp_path,
         )
 
-        assert rendered.count("shared license") == 1
+        by_name = {asset["name"]: asset for asset in inventory["assets"]}
+        cpython = tmp_path / by_name["CPython"]["license_file"]
+        runtime_notices = (
+            tmp_path
+            / by_name["Flet embedded Python runtime third-party notices"][
+                "license_file"
+            ]
+        )
+        assert cpython.read_text(encoding="utf-8") == "CPython license text"
+        assert "licenses/vendor.txt" in runtime_notices.read_text(encoding="utf-8")
+
+    def test_third_party_notices_use_the_generated_distribution_files(
+        self, tmp_path: Path
+    ) -> None:
+        ui = ui_distribution(requires=["sample-package"])
+        sample = FakeDistribution(
+            "sample-package",
+            "2.3.1",
+            license_expression="MIT",
+            license_files={"LICENSE": "sample package terms"},
+        )
+        inventory = invgen.build_inventory(
+            invgen.release_closure(installed(ui, sample)),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
+        rendered = invgen.render_third_party_notices(
+            inventory, distribution_root=tmp_path
+        )
+
+        assert "DivergenceSplitter" in rendered
         assert "sample-package 2.3.1" in rendered
-        assert "numpy 2.5.2" in rendered
-        assert "flutter_assets/NOTICES.Z" in rendered
-        assert "Flet embedded Python runtime third-party notices" in rendered
-        assert "Flet runtime notice" in rendered
+        assert "CPython" in rendered
+        assert "dart_bridge" in rendered
+        assert "CPython license text" in rendered
+        assert "sample package terms" in rendered
+        assert "Flutter and Dart dependency notices" in rendered
 
-    def test_inventory_metadata_difference_is_detected(self, tmp_path: Path) -> None:
-        stored = self.make_expected()
-        stored["packages"][1]["version"] = "9.9.9"
-        license_root = self.write_stored(tmp_path, stored)
+    def test_missing_generated_license_file_is_a_build_error(
+        self, tmp_path: Path
+    ) -> None:
+        inventory = invgen.build_inventory(
+            invgen.release_closure(installed(ui_distribution())),
+            staged_python_runtime=staged_runtime(tmp_path),
+            distribution_root=tmp_path,
+        )
+        (tmp_path / inventory["assets"][0]["license_file"]).unlink()
 
-        assert self.check(self.make_expected(), license_root) is False
-
-    def test_missing_referenced_license_file_fails(self, tmp_path: Path) -> None:
-        license_root = self.write_stored(tmp_path, self.make_expected())
-        (license_root / "packages" / "numpy.txt").unlink()
-
-        assert self.check(self.make_expected(), license_root) is False
-
-    def test_license_file_content_difference_fails(self, tmp_path: Path) -> None:
-        license_root = self.write_stored(tmp_path, self.make_expected())
-        target = license_root / "packages" / "numpy.txt"
-        target.write_text("altered terms", encoding="utf-8")
-
-        assert self.check(self.make_expected(), license_root) is False
-
-    def test_missing_inventory_file_fails(self, tmp_path: Path) -> None:
-        invgen.INVENTORY_PATH = tmp_path / "absent.json"
-
-        assert self.check(self.make_expected(), tmp_path / "licenses") is False
+        with pytest.raises(RuntimeError, match="license file was not generated"):
+            invgen.validate_inventory_files(inventory, tmp_path)

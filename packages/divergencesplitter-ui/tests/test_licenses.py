@@ -25,7 +25,7 @@ def document(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 6,
+    schema_version: int = 7,
 ) -> dict[str, Any]:
     return {
         "schema_version": schema_version,
@@ -33,7 +33,7 @@ def document(
         or {
             "name": "DivergenceSplitter",
             "license": "MIT",
-            "license_file": "application.txt",
+            "license_file": "licenses/application/DivergenceSplitter.txt",
         },
         "packages": packages,
         "assets": assets or [],
@@ -45,7 +45,7 @@ def package(**fields: Any) -> dict[str, Any]:
         "name": "numpy",
         "version": "2.5.2",
         "license": "BSD-3-Clause",
-        "license_file": "packages/numpy.txt",
+        "license_file": "licenses/packages/numpy.txt",
     }
     defaults.update(fields)
     return defaults
@@ -56,7 +56,7 @@ def asset(**fields: Any) -> dict[str, Any]:
         "name": "sample-asset",
         "version": "1.0",
         "license": "MIT",
-        "license_file": "runtime/sample-asset.txt",
+        "license_file": "licenses/runtime/sample-asset.txt",
     }
     defaults.update(fields)
     return defaults
@@ -64,10 +64,10 @@ def asset(**fields: Any) -> dict[str, Any]:
 
 def _populate_license_files(inventory: dict[str, Any], root: Path) -> None:
     default_texts = {
-        "application.txt": "MIT text",
-        "packages/numpy.txt": "full BSD text",
-        "packages/pyyaml.txt": "full BSD text",
-        "runtime/sample-asset.txt": "the asset license text",
+        "licenses/application/DivergenceSplitter.txt": "MIT text",
+        "licenses/packages/numpy.txt": "full BSD text",
+        "licenses/packages/pyyaml.txt": "full BSD text",
+        "licenses/runtime/sample-asset.txt": "the asset license text",
     }
     entries = [
         inventory["application"],
@@ -94,7 +94,7 @@ def load(
     *,
     application: dict[str, Any] | None = None,
     assets: list[dict[str, Any]] | None = None,
-    schema_version: int = 6,
+    schema_version: int = 7,
 ) -> LicenseInventory:
     value = document(
         packages,
@@ -121,7 +121,7 @@ class TestLoadInventory:
         (distribution / "license_inventory.json").write_text(
             json.dumps(inventory), encoding="utf-8"
         )
-        _populate_license_files(inventory, distribution / "licenses")
+        _populate_license_files(inventory, distribution)
 
         loaded = license_module.bundled_inventory()
 
@@ -131,7 +131,7 @@ class TestLoadInventory:
         inventory = load([package(), package(name="pyyaml", license="MIT")])
 
         assert inventory == LicenseInventory(
-            schema_version=6,
+            schema_version=7,
             application=ApplicationLicense("DivergenceSplitter", "MIT", "MIT text"),
             packages=(
                 LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "full BSD text"),
@@ -160,7 +160,9 @@ class TestLoadInventory:
 
     def test_invalid_license_file_reference_raises(self, tmp_path: Path) -> None:
         value = document([package(license_file="../outside.txt")])
-        (tmp_path / "application.txt").write_text("application", encoding="utf-8")
+        app = tmp_path / "licenses" / "application" / "DivergenceSplitter.txt"
+        app.parent.mkdir(parents=True)
+        app.write_text("application", encoding="utf-8")
         with pytest.raises(LicenseInventoryError, match="invalid license_file"):
             load_inventory(StringIO(json.dumps(value)), license_root=tmp_path)
 
@@ -225,7 +227,7 @@ class TestLoadInventory:
     def test_missing_application_section_raises(self) -> None:
         with pytest.raises(LicenseInventoryError):
             load_inventory(
-                StringIO(json.dumps({"schema_version": 6, "packages": []})),
+                StringIO(json.dumps({"schema_version": 7, "packages": []})),
                 license_root=Path("."),
             )
 
@@ -240,7 +242,7 @@ class TestLoadInventory:
 class TestLicenseSections:
     def make_inventory(self) -> LicenseInventory:
         return LicenseInventory(
-            schema_version=6,
+            schema_version=7,
             application=ApplicationLicense("DivergenceSplitter", "MIT", "the MIT text"),
             packages=(LicenseEntry("numpy", "2.5.2", "BSD-3-Clause", "the BSD text"),),
             assets=(

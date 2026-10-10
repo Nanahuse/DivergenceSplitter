@@ -48,7 +48,7 @@ def make_tree(root: Path) -> None:
         / "build"
         / "flutter"
         / "build"
-        / "build_python_3.14.7"
+        / "build_python_test"
         / "python"
     )
     runtime.mkdir(parents=True, exist_ok=True)
@@ -56,39 +56,42 @@ def make_tree(root: Path) -> None:
     (runtime / "LICENSE.txt").write_text("Python runtime bundle", encoding="utf-8")
 
     inventory = {
-        "schema_version": 6,
+        "schema_version": 7,
         "application": {
             "name": "DivergenceSplitter",
             "license": "MIT",
-            "license_file": "application/app.txt",
+            "license_file": "licenses/application/DivergenceSplitter.txt",
         },
         "packages": [
             {
                 "name": "sample-package",
                 "version": "1.0",
                 "license": "MIT",
-                "license_file": "packages/sample.txt",
+                "license_file": "licenses/packages/sample.txt",
             }
         ],
-        "assets": [],
+        "assets": [
+            {
+                "name": "CPython",
+                "license": "Python Software Foundation License",
+                "license_file": "licenses/CPython.txt",
+            },
+            {
+                "name": "Flet embedded Python runtime third-party notices",
+                "license": "Third-party notices",
+                "license_file": "licenses/runtime/Flet-runtime.txt",
+            },
+        ],
     }
-    inventory_path = (
-        root
-        / "packages"
-        / "divergencesplitter-ui"
-        / "src"
-        / "divergencesplitter_ui"
-        / "license_inventory.json"
-    )
-    inventory_path.parent.mkdir(parents=True, exist_ok=True)
     inventory_text = json.dumps(inventory)
-    inventory_path.write_text(inventory_text, encoding="utf-8")
     (ui_dir / "license_inventory.json").write_text(inventory_text, encoding="utf-8")
     for reference, text in {
-        "application/app.txt": "application license text",
-        "packages/sample.txt": "package license text",
+        "licenses/application/DivergenceSplitter.txt": "application license text",
+        "licenses/packages/sample.txt": "package license text",
+        "licenses/CPython.txt": "CPython license text",
+        "licenses/runtime/Flet-runtime.txt": "Flet runtime notice",
     }.items():
-        source = root / "tools" / "licenses" / reference
+        source = ui_dir / reference
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text(text, encoding="utf-8")
 
@@ -145,30 +148,26 @@ class TestVerification:
 
         bwd.verify_ui_distribution(tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT)
 
-    def test_copies_license_files_for_runtime_loader_and_notices(
+    def test_distribution_inventory_and_files_are_readable_by_ui_loader(
         self, tmp_path: Path
     ) -> None:
         make_tree(tmp_path)
         ui_dir = tmp_path / bwd.DIST_ROOT / bwd.UI_ARTIFACT
-        inventory_path = (
-            tmp_path
-            / "packages"
-            / "divergencesplitter-ui"
-            / "src"
-            / "divergencesplitter_ui"
-            / "license_inventory.json"
-        )
-        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-        copied = bwd.copy_inventory_license_files(
-            inventory,
-            source_root=tmp_path / "tools" / "licenses",
-            destination_root=ui_dir / "licenses",
+        inventory = json.loads(
+            (ui_dir / "license_inventory.json").read_text(encoding="utf-8")
         )
         bwd.verify_ui_distribution(ui_dir)
         with (ui_dir / "license_inventory.json").open(encoding="utf-8") as source:
-            loaded = load_inventory(source, license_root=ui_dir / "licenses")
+            loaded = load_inventory(source, license_root=ui_dir)
 
-        assert len(copied) == 2
+        assert all(
+            (ui_dir / entry["license_file"]).is_file()
+            for entry in [
+                inventory["application"],
+                *inventory["packages"],
+                *inventory["assets"],
+            ]
+        )
         assert loaded.application.license_text == "application license text"
         assert loaded.packages[0].license_text == "package license text"
         assert (ui_dir / "flutter_assets" / "NOTICES.Z").is_file()
@@ -258,6 +257,15 @@ class TestOrchestration:
         runner = RecordingRunner()
         monkeypatch.setattr(bwd, "run_command", runner)
         monkeypatch.setattr(bwd, "smoke_test_application", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            bwd,
+            "generate_from_installed_environment",
+            lambda *, root, distribution_root: json.loads(
+                (distribution_root / "license_inventory.json").read_text(
+                    encoding="utf-8"
+                )
+            ),
+        )
 
         bwd.build_windows_distribution(tmp_path)
 
@@ -270,7 +278,7 @@ class TestOrchestration:
             "Flet embedded Python runtime third-party notices"
             in generated_notices.read_text(encoding="utf-8")
         )
-        assert "Python runtime bundle" in generated_notices.read_text(encoding="utf-8")
+        assert "Flet runtime notice" in generated_notices.read_text(encoding="utf-8")
         assert "package license text" in generated_notices.read_text(encoding="utf-8")
         assert all(command[0] != "7z" for command in commands)
 

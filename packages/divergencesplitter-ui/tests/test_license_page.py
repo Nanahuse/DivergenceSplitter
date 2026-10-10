@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import flet as ft
+import pytest
+from divergencesplitter_ui import license_page
 from divergencesplitter_ui.license_page import LicenseView
-from divergencesplitter_ui.licenses import bundled_inventory, license_sections
+from divergencesplitter_ui.licenses import LicenseInventory, license_sections
 
 
 def iter_controls(control: ft.Control) -> Iterator[ft.Control]:
@@ -45,20 +47,30 @@ def title_text(tile: ft.ExpansionTile) -> str:
 
 
 class TestLicenseView:
-    def test_builds_one_section_per_inventory_entry(self) -> None:
-        sections = license_sections(bundled_inventory())
+    def test_builds_one_section_per_inventory_entry(
+        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            license_page, "bundled_inventory", lambda: license_inventory
+        )
+        sections = license_sections(license_inventory)
 
         view = LicenseView()
 
         tiles = expansion_tiles(view.control)
         assert [title_text(tile) for tile in tiles] == [s.title for s in sections]
 
-    def test_shows_component_titles_and_license_text(self) -> None:
-        sections = license_sections(bundled_inventory())
+    def test_shows_component_titles_and_license_text(
+        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            license_page, "bundled_inventory", lambda: license_inventory
+        )
+        sections = license_sections(license_inventory)
 
         view = LicenseView()
 
         texts = collect_text(view.control)
         assert sections[0].title in texts
-        assert any("numpy" in text for text in texts)
+        assert any("sample-package" in text for text in texts)
         assert any("MIT License" in text for text in texts)
