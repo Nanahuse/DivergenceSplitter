@@ -32,12 +32,27 @@ def collect_text(control: ft.Control) -> list[str]:
 
 
 class TestAboutView:
-    def test_shows_application_identity_and_required_links(
-        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+    def test_source_mode_about_opens_without_distribution_inventory(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setattr(license_page, "is_packaged_distribution", lambda: False)
         monkeypatch.setattr(
-            license_page, "bundled_inventory", lambda: license_inventory
+            license_page,
+            "bundled_inventory",
+            lambda: pytest.fail("source mode must not load a release inventory"),
         )
+
+        view = AboutView()
+
+        assert "Licenses" in collect_text(view.control)
+        assert (
+            "License information is generated when building the Windows distribution."
+            in collect_text(view.control)
+        )
+
+    def test_shows_application_identity_and_required_links(
+        self, packaged_license_inventory: LicenseInventory
+    ) -> None:
         info = about_info()
         view = AboutView()
 
@@ -55,12 +70,9 @@ class TestAboutView:
         assert NDI_WEBSITE_URL in urls
 
     def test_embeds_bundled_licenses(
-        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+        self, packaged_license_inventory: LicenseInventory
     ) -> None:
-        monkeypatch.setattr(
-            license_page, "bundled_inventory", lambda: license_inventory
-        )
-        sections = license_sections(license_inventory)
+        sections = license_sections(packaged_license_inventory)
 
         view = AboutView()
 

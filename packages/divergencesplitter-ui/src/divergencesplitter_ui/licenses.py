@@ -7,7 +7,6 @@ beside the executable; it never queries the network or scans installed packages.
 
 from __future__ import annotations
 
-import importlib.resources
 import json
 import sys
 from dataclasses import dataclass
@@ -97,18 +96,6 @@ def _entry(
     return tuple(values[field] for field in fields)
 
 
-def _license_root(package_root: Path) -> Path:
-    """Find the root that contains the ``licenses`` directory."""
-    candidates = [Path(sys.executable).resolve().parent]
-    candidates.extend((package_root, *package_root.parents))
-    for candidate in candidates:
-        if (candidate / "licenses").is_dir():
-            return candidate
-        if (candidate / "tools" / "licenses").is_dir():
-            return candidate / "tools"
-    raise LicenseInventoryError("license files directory is missing")
-
-
 def _read_license_file(relative_path: object, license_root: Path) -> str:
     if not isinstance(relative_path, str) or not relative_path:
         raise LicenseInventoryError("inventory entry has an empty 'license_file'")
@@ -145,8 +132,7 @@ def load_inventory(
     if not isinstance(document, dict):
         raise LicenseInventoryError("license inventory must be a JSON object")
     if license_root is None:
-        package_root = Path(str(importlib.resources.files("divergencesplitter_ui")))
-        license_root = _license_root(package_root)
+        license_root = Path(sys.executable).resolve().parent
     schema_version = document.get("schema_version")
     if schema_version != SCHEMA_VERSION:
         raise LicenseInventoryError(
@@ -243,25 +229,21 @@ def license_sections(inventory: LicenseInventory) -> tuple[LicenseSection, ...]:
 
 
 def bundled_inventory() -> LicenseInventory:
-    """Load the inventory shipped with the app or next to this package.
-
-    The Windows distribution keeps its data files beside the executable.
-    Development and installed-package runs use ``importlib.resources``.
-    """
-
+    """Load the generated inventory and license files beside the packaged exe."""
     distribution_root = Path(sys.executable).resolve().parent
     distribution_inventory = distribution_root / INVENTORY_RESOURCE
-    if distribution_inventory.is_file():
-        with distribution_inventory.open("r", encoding="utf-8") as source:
-            return load_inventory(source, license_root=distribution_root)
-
-    resource = importlib.resources.files("divergencesplitter_ui").joinpath(
-        INVENTORY_RESOURCE
-    )
     try:
-        with resource.open("r", encoding="utf-8") as source:
+        with distribution_inventory.open("r", encoding="utf-8") as source:
             return load_inventory(source)
     except FileNotFoundError as error:
         raise LicenseInventoryError(
-            "license inventory is missing from this distribution"
+            f"license inventory is missing beside the executable: {distribution_inventory}"
         ) from error
+
+
+def is_packaged_distribution() -> bool:
+    """Detect the Flet/PyInstaller app tree without inspecting license data."""
+    executable_root = Path(sys.executable).resolve().parent
+    return bool(getattr(sys, "frozen", False)) or (
+        (executable_root / "site-packages").is_dir()
+    )

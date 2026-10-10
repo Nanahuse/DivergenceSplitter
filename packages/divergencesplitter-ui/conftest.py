@@ -22,8 +22,10 @@ def license_inventory() -> LicenseInventory:
     )
 
 
-@pytest.fixture(autouse=True)
-def use_test_license_inventory(
+@pytest.fixture
+def packaged_license_inventory(
     monkeypatch: pytest.MonkeyPatch, license_inventory: LicenseInventory
-) -> None:
+) -> LicenseInventory:
+    monkeypatch.setattr(license_page, "is_packaged_distribution", lambda: True)
     monkeypatch.setattr(license_page, "bundled_inventory", lambda: license_inventory)
+    return license_inventory

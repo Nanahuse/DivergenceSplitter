@@ -132,6 +132,10 @@ def verify_ui_distribution(ui_dir: Path) -> None:
 
     site_packages = ui_dir / SITE_PACKAGES
     require_dir(site_packages)
+    if not any(path.is_dir() for path in site_packages.glob("*.dist-info")):
+        raise RuntimeError(
+            f"Missing required Python distribution metadata: {site_packages}/*.dist-info"
+        )
     for module in (
         "divergencesplitter",
         "divergencesplitter_runtime",

@@ -127,6 +127,18 @@ class TestLoadInventory:
 
         assert loaded.packages[0].license_text == "full BSD text"
 
+    def test_missing_packaged_inventory_is_a_distribution_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executable = tmp_path / "DivergenceSplitter.exe"
+        executable.touch()
+        monkeypatch.setattr(license_module.sys, "executable", str(executable))
+
+        with pytest.raises(
+            license_module.LicenseInventoryError, match="missing beside"
+        ):
+            license_module.bundled_inventory()
+
     def test_reads_referenced_license_files_into_runtime_entries(self) -> None:
         inventory = load([package(), package(name="pyyaml", license="MIT")])
 

@@ -48,12 +48,9 @@ def title_text(tile: ft.ExpansionTile) -> str:
 
 class TestLicenseView:
     def test_builds_one_section_per_inventory_entry(
-        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+        self, packaged_license_inventory: LicenseInventory
     ) -> None:
-        monkeypatch.setattr(
-            license_page, "bundled_inventory", lambda: license_inventory
-        )
-        sections = license_sections(license_inventory)
+        sections = license_sections(packaged_license_inventory)
 
         view = LicenseView()
 
@@ -61,12 +58,9 @@ class TestLicenseView:
         assert [title_text(tile) for tile in tiles] == [s.title for s in sections]
 
     def test_shows_component_titles_and_license_text(
-        self, license_inventory: LicenseInventory, monkeypatch: pytest.MonkeyPatch
+        self, packaged_license_inventory: LicenseInventory
     ) -> None:
-        monkeypatch.setattr(
-            license_page, "bundled_inventory", lambda: license_inventory
-        )
-        sections = license_sections(license_inventory)
+        sections = license_sections(packaged_license_inventory)
 
         view = LicenseView()
 
@@ -74,3 +68,20 @@ class TestLicenseView:
         assert sections[0].title in texts
         assert any("sample-package" in text for text in texts)
         assert any("MIT License" in text for text in texts)
+
+    def test_source_mode_shows_build_time_notice_without_loading_inventory(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(license_page, "is_packaged_distribution", lambda: False)
+        monkeypatch.setattr(
+            license_page,
+            "bundled_inventory",
+            lambda: pytest.fail("source mode must not load a release inventory"),
+        )
+
+        view = LicenseView()
+
+        assert (
+            "License information is generated when building the Windows distribution."
+            in collect_text(view.control)
+        )

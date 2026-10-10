@@ -21,6 +21,12 @@ def make_tree(root: Path) -> None:
     notices_dir.mkdir(parents=True, exist_ok=True)
     (notices_dir / "NOTICES.Z").write_bytes(b"flutter notices")
     site_packages = ui_dir / bwd.SITE_PACKAGES
+    dist_info = site_packages / "sample_package-1.0.dist-info"
+    dist_info.mkdir(parents=True, exist_ok=True)
+    (dist_info / "METADATA").write_text(
+        "Metadata-Version: 2.4\nName: sample-package\nVersion: 1.0\n\n",
+        encoding="utf-8",
+    )
     for module in (
         "divergencesplitter",
         "divergencesplitter_runtime",
@@ -72,13 +78,8 @@ def make_tree(root: Path) -> None:
         ],
         "assets": [
             {
-                "name": "CPython",
-                "license": "Python Software Foundation License",
-                "license_file": "licenses/CPython.txt",
-            },
-            {
-                "name": "Flet embedded Python runtime third-party notices",
-                "license": "Third-party notices",
+                "name": "Flet embedded Python runtime",
+                "license": "Runtime license bundle",
                 "license_file": "licenses/runtime/Flet-runtime.txt",
             },
         ],
@@ -88,7 +89,6 @@ def make_tree(root: Path) -> None:
     for reference, text in {
         "licenses/application/DivergenceSplitter.txt": "application license text",
         "licenses/packages/sample.txt": "package license text",
-        "licenses/CPython.txt": "CPython license text",
         "licenses/runtime/Flet-runtime.txt": "Flet runtime notice",
     }.items():
         source = ui_dir / reference
@@ -274,9 +274,8 @@ class TestOrchestration:
         assert all("pyinstaller" not in command for command in commands)
         generated_notices = tmp_path / bwd.DIST_ROOT / "THIRD_PARTY_NOTICES.txt"
         assert generated_notices.is_file()
-        assert (
-            "Flet embedded Python runtime third-party notices"
-            in generated_notices.read_text(encoding="utf-8")
+        assert "Flet embedded Python runtime" in generated_notices.read_text(
+            encoding="utf-8"
         )
         assert "Flet runtime notice" in generated_notices.read_text(encoding="utf-8")
         assert "package license text" in generated_notices.read_text(encoding="utf-8")
