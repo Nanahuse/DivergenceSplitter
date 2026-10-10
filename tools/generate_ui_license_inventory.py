@@ -439,7 +439,7 @@ def ndi_runtime_assets(
         runtime_license,
         NDI_LICENSE_DOCUMENT_PATH.read_text(encoding="utf-8"),
     )
-    notice_path = dist.locate_file(NDI_RUNTIME_NOTICES_PATH)
+    notice_path = Path(str(dist.locate_file(NDI_RUNTIME_NOTICES_PATH)))
     if not notice_path.is_file():
         raise RuntimeError(f"ndi-python NDI notice is missing: {notice_path}")
     _write_text(

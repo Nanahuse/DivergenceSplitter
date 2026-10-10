@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from divergencesplitter_ui import license_page
 from divergencesplitter_ui.licenses import (
     ApplicationLicense,
     AssetLicense,
@@ -19,3 +20,10 @@ def license_inventory() -> LicenseInventory:
         ),
         assets=(AssetLicense("sample-runtime", None, "MIT", "MIT License"),),
     )
+
+
+@pytest.fixture(autouse=True)
+def use_test_license_inventory(
+    monkeypatch: pytest.MonkeyPatch, license_inventory: LicenseInventory
+) -> None:
+    monkeypatch.setattr(license_page, "bundled_inventory", lambda: license_inventory)
