@@ -93,8 +93,6 @@ class TestStatusAndScoreFormatting:
 class TestSplitLabel:
     def _run_info(self, *segments: tuple[int, str]) -> LiveSplitRunInfo:
         return LiveSplitRunInfo(
-            session_id=1,
-            run_revision=1,
             segments=tuple(
                 LiveSplitSegmentInfo(index, name) for index, name in segments
             ),

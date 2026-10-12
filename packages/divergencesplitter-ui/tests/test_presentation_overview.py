@@ -103,8 +103,6 @@ def build_view(
 
 def run_info(*segments: tuple[int, str]) -> LiveSplitRunInfo:
     return LiveSplitRunInfo(
-        session_id=1,
-        run_revision=1,
         segments=tuple(LiveSplitSegmentInfo(index, name) for index, name in segments),
     )
 
