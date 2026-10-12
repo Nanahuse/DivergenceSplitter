@@ -6,6 +6,7 @@ from divergencesplitter_runtime.livesplit.models import (
     LiveSplitRunInfo,
     LiveSplitSegmentInfo,
     LiveSplitSnapshot,
+    LiveSplitTransitionReason,
     LiveSplitUpdateKind,
     TimerPhase,
 )
@@ -73,3 +74,29 @@ def event_update_kind(event_type: int) -> LiveSplitUpdateKind | None:
         return None
     event_name = common_pb2.BridgeEventType.Name(event_type)
     raise ValueError(f"unsupported Bridge event type: {event_name}")
+
+
+_TRANSITION_REASONS: dict[int, LiveSplitTransitionReason] = {
+    common_pb2.EVENT_TIMER_STARTED: LiveSplitTransitionReason.START,
+    common_pb2.EVENT_TIMER_SPLIT: LiveSplitTransitionReason.SPLIT,
+    common_pb2.EVENT_TIMER_SKIPPED: LiveSplitTransitionReason.SKIP,
+    common_pb2.EVENT_TIMER_UNDO: LiveSplitTransitionReason.UNDO,
+    common_pb2.EVENT_TIMER_RESET: LiveSplitTransitionReason.RESET,
+}
+
+
+def transition_reason_from_event(
+    event_type: int,
+    snapshot: LiveSplitSnapshot,
+) -> LiveSplitTransitionReason:
+    """Classify a timer transition without leaking protobuf types upward."""
+
+    if event_type == common_pb2.EVENT_TIMER_PHASE_CHANGED:
+        if snapshot.phase is TimerPhase.PAUSED:
+            return LiveSplitTransitionReason.PAUSE
+        if snapshot.phase is TimerPhase.RUNNING:
+            return LiveSplitTransitionReason.RESUME
+        if snapshot.phase is TimerPhase.NOT_RUNNING:
+            return LiveSplitTransitionReason.RESET
+        return LiveSplitTransitionReason.OTHER
+    return _TRANSITION_REASONS.get(event_type, LiveSplitTransitionReason.OTHER)

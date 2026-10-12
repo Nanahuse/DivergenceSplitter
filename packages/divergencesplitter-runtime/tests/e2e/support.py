@@ -148,27 +148,6 @@ class BridgeScript:
             self._condition.notify_all()
         return ActionOutcome(ActionExecution.DISPATCHED)
 
-    def resync(
-        self,
-        reason: LiveSplitResyncReason,
-        *,
-        event_sequence: int | None = None,
-    ) -> LiveSplitUpdate:
-        del reason, event_sequence
-        if self._block_resync:
-            self.resync_entered.set()
-            if not self._resync_release.wait(5):
-                raise TimeoutError("test did not release Bridge resynchronization")
-        with self._condition:
-            return LiveSplitUpdate(
-                LiveSplitUpdateKind.RESYNC,
-                self._snapshot,
-                session_id=self._session_id,
-                event_sequence=self._event_sequence or None,
-                state_epoch=self._state_epoch,
-                run_structure_changed=True,
-            )
-
     def confirm_timer_state(self) -> LiveSplitUpdate:
         with self._condition:
             self._state_epoch += 1
@@ -179,9 +158,6 @@ class BridgeScript:
                 event_sequence=self._event_sequence or None,
                 state_epoch=self._state_epoch,
             )
-
-    def reconnect(self) -> LiveSplitUpdate:
-        return self.resync(LiveSplitResyncReason.CONNECTION_LOST)
 
     def block_resync(self) -> None:
         self._block_resync = True
@@ -341,14 +317,6 @@ class ScriptedBridgeAdapter:
 
     def confirm_timer_state(self) -> LiveSplitUpdate:
         return self._script.confirm_timer_state()
-
-    def resync(
-        self,
-        reason: LiveSplitResyncReason,
-        *,
-        event_sequence: int | None = None,
-    ) -> LiveSplitUpdate:
-        return self._script.resync(reason, event_sequence=event_sequence)
 
     def close(self) -> None:
         self._script.close()
@@ -599,22 +567,6 @@ class RecordingDiagnostics:
         baseline: LiveSplitSnapshot,
         received_session_id: int,
         received_event_sequence: int,
-    ) -> None:
-        pass
-
-    def resync_started(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-    ) -> None:
-        pass
-
-    def resync_completed(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-        previous: LiveSplitSnapshot,
-        current: LiveSplitSnapshot,
     ) -> None:
         pass
 

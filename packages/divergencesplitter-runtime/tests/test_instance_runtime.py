@@ -41,7 +41,11 @@ from divergencesplitter_runtime import (
     LiveSplitUpdateKind,
     TimerPhase,
 )
-from livesplit_bridge import BridgeConnectionLostError, common_pb2
+from livesplit_bridge import (
+    BridgeConnectionLostError,
+    BridgeProtocolError,
+    common_pb2,
+)
 
 # -- Deterministic test doubles ------------------------------------------------
 
@@ -54,6 +58,7 @@ class ControlledReceiver:
         self._messages: list[BridgeEventConnectionLost | BridgeEventReceived] = []
         self.started = False
         self.stopped = False
+        self.overflow = False
 
     def start(self) -> None:
         self.started = True
@@ -73,7 +78,9 @@ class ControlledReceiver:
         return messages
 
     def take_overflow(self) -> bool:
-        return False
+        overflowed = self.overflow
+        self.overflow = False
+        return overflowed
 
     def stop(self) -> None:
         self.stopped = True
@@ -94,7 +101,6 @@ class ScriptedAdapter:
         self.baseline = initial.snapshot
         self.execute_result = execute_result
         self.handled: list[object] = []
-        self.resynced: list[LiveSplitResyncReason] = []
         self.attempts: list[tuple[Action, LiveSplitSnapshot]] = []
         self.not_dispatched = 0
         self.confirmed = threading.Event()
@@ -127,23 +133,6 @@ class ScriptedAdapter:
             self.baseline = event.snapshot
             self.state_epoch = event.state_epoch
         return event
-
-    def resync(
-        self,
-        reason: LiveSplitResyncReason,
-        *,
-        event_sequence: int | None = None,
-    ) -> LiveSplitUpdate:
-        del event_sequence
-        self.resynced.append(reason)
-        self.state_epoch += 1
-        return LiveSplitUpdate(
-            LiveSplitUpdateKind.RESYNC,
-            self.baseline,
-            session_id=1,
-            state_epoch=self.state_epoch,
-            run_structure_changed=True,
-        )
 
     def confirm_timer_state(self) -> LiveSplitUpdate:
         self.state_epoch += 1
@@ -342,20 +331,6 @@ class RecordingDiagnostics:
         received_event_sequence: int,
     ) -> None: ...
 
-    def resync_started(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-    ) -> None: ...
-
-    def resync_completed(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-        previous: LiveSplitSnapshot,
-        current: LiveSplitSnapshot,
-    ) -> None: ...
-
 
 def snapshot(
     *,
@@ -436,6 +411,11 @@ class Harness:
         reaction_time_ms: int = 0,
         reaction_wait: Callable[[int], None] | None = None,
         preload_events: tuple[BridgeEventReceived, ...] = (),
+        preload_overflow: bool = False,
+        receiver_factory: (
+            Callable[[threading.Event], ControlledReceiver] | None
+        ) = None,
+        adapter_factory: Callable[[], ScriptedAdapter] | None = None,
     ) -> None:
         self.initial = initial if initial is not None else initial_update()
         self.execute_result = execute_result
@@ -445,6 +425,9 @@ class Harness:
         self._fixed_adapter = adapter
         self._log = log
         self._preload_events = preload_events
+        self._preload_overflow = preload_overflow
+        self._receiver_factory = receiver_factory or self._new_receiver
+        self._adapter_factory_override = adapter_factory
         self.instance = InstanceRuntime(
             0,
             LiveSplitConnection(54100),
@@ -457,7 +440,7 @@ class Harness:
             cpu_time_provider=cpu_time_provider,
             reaction_wait=reaction_wait,
             adapter_factory=self._new_adapter,
-            receiver_factory=self._new_receiver,
+            receiver_factory=self._receiver_factory,
         )
         self._thread: threading.Thread | None = None
 
@@ -466,15 +449,19 @@ class Harness:
         if not self.receivers:
             for message in self._preload_events:
                 receiver.push(message)
+            receiver.overflow = self._preload_overflow
         self.receivers.append(receiver)
         return receiver
 
     def _new_adapter(self) -> LiveSplitBridgeAdapter:
-        adapter = self._fixed_adapter or ScriptedAdapter(
-            self.initial,
-            execute_result=self.execute_result,
-            log=self._log,
-        )
+        if self._adapter_factory_override is not None:
+            adapter = self._adapter_factory_override()
+        else:
+            adapter = self._fixed_adapter or ScriptedAdapter(
+                self.initial,
+                execute_result=self.execute_result,
+                log=self._log,
+            )
         self.adapters.append(adapter)
         return cast(LiveSplitBridgeAdapter, adapter)
 
@@ -1354,7 +1341,7 @@ def test_transition_during_reaction_cancels_action() -> None:
     assert harness.diagnostics.cancellations == [(0, Action("split"), "event")]
 
 
-def test_resync_during_reaction_cancels_action() -> None:
+def test_event_gap_during_reaction_cancels_action_and_reconnects() -> None:
     clock = ManualClock(0)
     condition = RecordingCondition(True)
     adapter = ScriptedAdapter(initial_update(), clock=clock)
@@ -1376,13 +1363,16 @@ def test_resync_during_reaction_cancels_action() -> None:
     try:
         harness.wait_ready()
         harness.instance.publish_frame(shared_frame(0))
-        wait_for(lambda: bool(adapter.resynced))
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
     finally:
         harness.stop()
 
+    # An integrity loss during a reaction wait cancels the unsent action and
+    # rebuilds both connections instead of a query-only resync.
     assert adapter.attempts == []
-    assert adapter.resynced == [LiveSplitResyncReason.GAP]
-    assert harness.diagnostics.cancellations
+    assert adapter.closed
+    assert harness.instance.generation == 1
 
 
 def test_connection_loss_during_reaction_cancels_action() -> None:
@@ -1627,5 +1617,315 @@ def test_initial_sync_primes_baseline_from_queued_events() -> None:
         )
         assert adapter.baseline == adapter.initial.snapshot
         assert adapter.handled == []
+    finally:
+        harness.stop()
+
+
+# -- Regression: Reset priority during a reaction wait -------------------------
+
+
+def test_manual_reset_during_reaction_cancels_unsent_split() -> None:
+    clock = ManualClock(0)
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+
+    def wait(timeout_ns: int) -> None:
+        clock.nanoseconds += timeout_ns
+        harness.instance.request_reset()
+
+    harness = Harness(
+        make_scenario(RecordingCondition(True)),
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: bool(adapter.attempts))
+        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
+    finally:
+        harness.stop()
+
+    # The Split is never sent; the manual Reset is issued without a wait.
+    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert harness.diagnostics.resets == [0]
+    assert (0, Action("split"), "reset") in harness.diagnostics.cancellations
+
+
+def test_auto_reset_during_reaction_takes_priority() -> None:
+    clock = ManualClock(0)
+    reset = RecordingCondition(False)
+    main = RecordingCondition(True)
+    adapter = ScriptedAdapter(initial_update(), clock=clock)
+
+    def wait(timeout_ns: int) -> None:
+        reset.result = True
+        harness.instance.publish_frame(shared_frame(2))
+        clock.nanoseconds += timeout_ns
+
+    scenario = Scenario(
+        start_condition=RecordingCondition(False),
+        reset_condition=reset,
+        incomplete_condition=None,
+        splits=((Rule(main, Action("split")),),),
+    )
+    harness = Harness(
+        scenario,
+        adapter=adapter,
+        time_provider=clock,
+        reaction_time_ms=30,
+        reaction_wait=wait,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(0))
+        wait_for(lambda: bool(adapter.attempts))
+    finally:
+        harness.stop()
+
+    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert harness.diagnostics.resets == [0]
+
+
+# -- Regression: Event integrity loss rebuilds both connections ----------------
+
+
+def _push_gap(harness: Harness) -> None:
+    harness.receiver.push(
+        BridgeEventReceived(cast(common_pb2.BridgeEvent, LiveSplitResyncReason.GAP))
+    )
+    harness.receiver.wake()
+
+
+def test_event_sequence_gap_rebuilds_both_connections() -> None:
+    harness = Harness(make_scenario(RecordingCondition(False)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        generation = harness.instance.generation
+        _push_gap(harness)
+        wait_for(lambda: harness.instance.generation == generation + 1)
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    assert harness.adapters[0].closed
+    assert harness.receivers[0].stopped
+
+
+def test_event_inbox_overflow_rebuilds_both_connections() -> None:
+    harness = Harness(make_scenario(RecordingCondition(False)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        generation = harness.instance.generation
+        harness.receiver.overflow = True
+        harness.receiver.wake()
+        wait_for(lambda: harness.instance.generation == generation + 1)
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    assert harness.adapters[0].closed
+    assert harness.receivers[0].stopped
+
+
+def test_overflow_with_connection_loss_does_not_return_to_ready() -> None:
+    harness = Harness(make_scenario(RecordingCondition(False)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        generation = harness.instance.generation
+        # The inbox is full at the same moment the Events connection is lost, so
+        # the connection-loss notification cannot be enqueued.
+        harness.receiver.overflow = True
+        harness.receiver.push(
+            BridgeEventConnectionLost(BridgeConnectionLostError("lost"))
+        )
+        harness.receiver.wake()
+        wait_for(lambda: harness.instance.generation == generation + 1)
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    assert harness.adapters[0].closed
+
+
+def test_connection_loss_discards_queued_events_before_apply() -> None:
+    adapter = ScriptedAdapter(initial_update())
+    harness = Harness(make_scenario(RecordingCondition(False)), adapter=adapter)
+    harness.start()
+    try:
+        harness.wait_ready()
+        stale = LiveSplitUpdate(
+            LiveSplitUpdateKind.TRANSITION,
+            snapshot(phase=TimerPhase.NOT_RUNNING, split_index=-1),
+            state_epoch=99,
+        )
+        harness.receiver.push(BridgeEventReceived(cast(common_pb2.BridgeEvent, stale)))
+        harness.receiver.push(
+            BridgeEventConnectionLost(BridgeConnectionLostError("lost"))
+        )
+        harness.receiver.wake()
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    # The transition queued before the loss is never applied to the old runtime.
+    assert adapter.handled == []
+
+
+def test_session_change_does_not_carry_pending_action() -> None:
+    harness = Harness(make_scenario(RecordingCondition(True)))
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: bool(harness.adapter.attempts))
+        generation = harness.instance.generation
+        harness.receiver.push(
+            BridgeEventReceived(
+                cast(
+                    common_pb2.BridgeEvent,
+                    LiveSplitResyncReason.SESSION_CHANGED,
+                )
+            )
+        )
+        harness.receiver.wake()
+        wait_for(lambda: harness.instance.generation == generation + 1)
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    assert harness.adapters[0].attempts
+    assert harness.adapters[1].attempts == []
+
+
+# -- Regression: Control exception handling ------------------------------------
+
+
+class _ProtocolErrorAdapter(ScriptedAdapter):
+    def execute_action(
+        self,
+        action: Action,
+        expected_snapshot: LiveSplitSnapshot,
+        expected_state_epoch: int,
+    ) -> ActionOutcome:
+        self.attempts.append((action, expected_snapshot))
+        raise BridgeProtocolError("Bridge returned a malformed response")
+
+
+class _FatalProtocolAdapter(ScriptedAdapter):
+    def execute_action(
+        self,
+        action: Action,
+        expected_snapshot: LiveSplitSnapshot,
+        expected_state_epoch: int,
+    ) -> ActionOutcome:
+        self.attempts.append((action, expected_snapshot))
+        return ActionOutcome(
+            ActionExecution.FAILED,
+            BridgeProtocolError("Protocol version mismatch"),
+        )
+
+
+def test_control_protocol_error_recovers_without_resend() -> None:
+    harness = Harness(
+        make_scenario(RecordingCondition(True)),
+        adapter_factory=lambda: _ProtocolErrorAdapter(initial_update()),
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+        assert harness.thread_alive()
+    finally:
+        harness.stop()
+
+    # The control was sent once and must never be resent after an ambiguous
+    # protocol failure.
+    assert harness.adapters[0].attempts
+    assert harness.adapters[1].attempts == []
+    assert harness.instance.generation == 1
+
+
+def test_control_version_mismatch_fails_without_resend() -> None:
+    adapter = _FatalProtocolAdapter(initial_update())
+    harness = Harness(make_scenario(RecordingCondition(True)), adapter=adapter)
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: harness.instance.state is InstanceRuntimeState.FAILED)
+        wait_for(lambda: not harness.thread_alive())
+    finally:
+        harness.instance.request_stop()
+        harness.join(2)
+
+    assert isinstance(harness.instance.error, BridgeProtocolError)
+    assert len(harness.adapters) == 1
+    assert adapter.attempts
+
+
+# -- Regression: Initial synchronization convergence ---------------------------
+
+
+def test_initial_sync_overflow_reconnects() -> None:
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        preload_overflow=True,
+    )
+    harness.start()
+    try:
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    assert harness.receivers[0].stopped
+
+
+class _ReplayingReceiver(ControlledReceiver):
+    """Always reports one in-flight event so priming never converges."""
+
+    def __init__(self, wakeup: threading.Event, event: LiveSplitUpdate) -> None:
+        super().__init__(wakeup)
+        self._event = event
+
+    def drain(self) -> tuple[BridgeEventConnectionLost | BridgeEventReceived, ...]:
+        return (BridgeEventReceived(cast(common_pb2.BridgeEvent, self._event)),)
+
+    def take_overflow(self) -> bool:
+        return False
+
+
+def test_initial_sync_retry_limit_does_not_reach_ready() -> None:
+    event = LiveSplitUpdate(
+        LiveSplitUpdateKind.TRANSITION,
+        snapshot(),
+        state_epoch=1,
+    )
+
+    def factory(wakeup: threading.Event) -> ControlledReceiver:
+        return _ReplayingReceiver(wakeup, event)
+
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        receiver_factory=factory,
+    )
+    harness.start()
+    try:
+        wait_for(lambda: harness.instance.generation >= 1)
+        assert harness.instance.state is not InstanceRuntimeState.READY
     finally:
         harness.stop()

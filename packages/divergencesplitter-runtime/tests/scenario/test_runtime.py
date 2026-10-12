@@ -13,6 +13,7 @@ from divergencesplitter import (
 )
 from divergencesplitter_runtime import (
     LiveSplitSnapshot,
+    LiveSplitTransitionReason,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     ScenarioRuntime,
@@ -115,6 +116,7 @@ def update(
     event_sequence: int | None = None,
     state_epoch: int = 0,
     run_structure_changed: bool = False,
+    transition: LiveSplitTransitionReason | None = None,
 ) -> LiveSplitUpdate:
     return LiveSplitUpdate(
         kind=kind,
@@ -123,6 +125,7 @@ def update(
         event_sequence=event_sequence,
         state_epoch=state_epoch,
         run_structure_changed=run_structure_changed,
+        transition=transition,
     )
 
 
@@ -452,7 +455,7 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
             (baseline[0], baseline[1] + 1, baseline[2]),
         )
 
-    def test_reset_and_event_loss_resync_reset_all_rules(self) -> None:
+    def test_reset_transition_resets_all_rules(self) -> None:
         reset = RecordingCondition(False)
         main = RecordingCondition(False)
         runtime = ScenarioRuntime(
@@ -467,25 +470,20 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
                 ),
                 LiveSplitUpdateKind.TRANSITION,
                 state_epoch=1,
+                transition=LiveSplitTransitionReason.RESET,
             )
         )
         self.assertEqual(
             (reset.resets, main.resets), (baseline[0] + 1, baseline[1] + 1)
         )
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(split_count=1), LiveSplitUpdateKind.RESYNC, state_epoch=2
-            )
-        )
-        self.assertEqual(
-            (reset.resets, main.resets), (baseline[0] + 2, baseline[1] + 2)
-        )
 
-    def test_session_change_requires_resync(self) -> None:
+    def test_session_change_is_ignored_on_the_current_runtime(self) -> None:
         condition = RecordingCondition(False)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
         runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
         baseline = condition.resets
+        # A different session must never be applied onto the current rules; a
+        # fresh runtime is established after reconnecting instead.
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(split_count=1),
@@ -494,15 +492,7 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
             )
         )
         self.assertEqual(runtime.current_snapshot, make_snapshot(split_count=1))
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(split_count=1),
-                LiveSplitUpdateKind.RESYNC,
-                session_id=2,
-                state_epoch=1,
-            )
-        )
-        self.assertEqual(condition.resets, baseline + 1)
+        self.assertEqual(condition.resets, baseline)
 
     def test_structural_run_change_resets_but_timing_change_does_not(self) -> None:
         reset = RecordingCondition(False)
@@ -532,14 +522,17 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
             (reset.resets, main.resets), (baseline[0] + 1, baseline[1] + 1)
         )
 
-    def test_invalid_split_count_stops_evaluation_until_resync(self) -> None:
+    def test_invalid_split_count_recovers_on_structural_run_change(self) -> None:
         condition = RecordingCondition(True)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),), None, None)))
         runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
         self.assertIsNone(runtime.evaluate(context()))
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(split_count=3), LiveSplitUpdateKind.RESYNC, state_epoch=1
+                make_snapshot(split_count=3),
+                LiveSplitUpdateKind.RUN_CHANGED,
+                state_epoch=1,
+                run_structure_changed=True,
             )
         )
         self.assertEqual(runtime.evaluate(context()), Action(operation="split"))
@@ -572,6 +565,95 @@ class ScenarioRuntimeTimeoutTest(unittest.TestCase):
         self.assertEqual(
             runtime.evaluate(context(1_000_000_101)), Action(operation="split")
         )
+
+
+class ScenarioRuntimePendingResetTest(unittest.TestCase):
+    def _runtime_with_split_pending(
+        self,
+    ) -> tuple[ScenarioRuntime, RecordingCondition]:
+        reset = RecordingCondition(False)
+        main = RecordingCondition(True)
+        runtime = ScenarioRuntime(
+            make_scenario(((make_rule(main),),), reset_conditions=(reset,))
+        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
+        self.assertEqual(runtime.evaluate(context()), Action("split"))
+        runtime.action_accepted(Action("split"), 1)
+        return runtime, main
+
+    def test_rejected_reset_keeps_the_split_wait(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_not_dispatched(Action("reset"))
+
+        self.assertEqual(runtime.pending_action, Action("split"))
+        self.assertIsNone(runtime.reset_pending)
+        self.assertIsNone(runtime.evaluate(context(3)))
+
+    def test_accepted_reset_survives_a_stale_split_event(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_accepted(Action("reset"), 3)
+
+        self.assertIsNone(runtime.pending_action)
+        self.assertEqual(runtime.reset_pending, Action("reset"))
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(split_count=1),
+                LiveSplitUpdateKind.TRANSITION,
+                state_epoch=4,
+                transition=LiveSplitTransitionReason.SPLIT,
+            )
+        )
+        self.assertEqual(runtime.reset_pending, Action("reset"))
+
+    def test_reset_wait_blocks_a_new_normal_control(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_accepted(Action("reset"), 3)
+
+        self.assertIsNone(runtime.evaluate(context(4)))
+
+    def test_pause_transition_does_not_complete_a_split_wait(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(phase=TimerPhase.PAUSED, split_count=1),
+                LiveSplitUpdateKind.TRANSITION,
+                state_epoch=4,
+                transition=LiveSplitTransitionReason.PAUSE,
+            )
+        )
+        self.assertEqual(runtime.pending_action, Action("split"))
+
+    def test_run_changed_does_not_clear_a_pending_action(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(split_count=1),
+                LiveSplitUpdateKind.RUN_CHANGED,
+                state_epoch=4,
+            )
+        )
+        self.assertEqual(runtime.pending_action, Action("split"))
+
+    def test_reset_transition_releases_the_reset_wait(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_accepted(Action("reset"), 3)
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                    split_count=1,
+                ),
+                LiveSplitUpdateKind.TRANSITION,
+                state_epoch=4,
+                transition=LiveSplitTransitionReason.RESET,
+            )
+        )
+        self.assertIsNone(runtime.reset_pending)
 
 
 if __name__ == "__main__":

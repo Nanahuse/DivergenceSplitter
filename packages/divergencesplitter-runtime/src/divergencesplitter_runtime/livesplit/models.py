@@ -79,18 +79,39 @@ class LiveSplitRunInfo:
 
 class LiveSplitUpdateKind(Enum):
     INITIAL = auto()
-    RESYNC = auto()
     PERIODIC = auto()
     TRANSITION = auto()
     RUN_CHANGED = auto()
 
 
 class LiveSplitResyncReason(Enum):
+    """Reason an authoritative event stream can no longer be trusted.
+
+    These are detection signals only: the instance runtime responds to any of
+    them by discarding both WebSocket connections and reconnecting. They are not
+    a request for a query-only recovery.
+    """
+
     GAP = auto()
     SESSION_CHANGED = auto()
-    CONNECTION_LOST = auto()
-    UPDATE_QUEUE_OVERFLOW = auto()
-    EVENT_INBOX_OVERFLOW = auto()
+
+
+class LiveSplitTransitionReason(Enum):
+    """Protocol-independent classification of an accepted timer transition.
+
+    Derived by the transport layer from the Bridge event type so that the
+    scenario runtime can decide which pending action a transition resolves
+    without depending on Protocol v3 protobuf types.
+    """
+
+    START = auto()
+    SPLIT = auto()
+    SKIP = auto()
+    UNDO = auto()
+    RESET = auto()
+    PAUSE = auto()
+    RESUME = auto()
+    OTHER = auto()
 
 
 @dataclass(frozen=True)
@@ -104,3 +125,4 @@ class LiveSplitUpdate:
     event_sequence: int | None = None
     state_epoch: int = 0
     run_structure_changed: bool = False
+    transition: LiveSplitTransitionReason | None = None

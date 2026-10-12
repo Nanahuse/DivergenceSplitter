@@ -18,7 +18,13 @@ from divergencesplitter_runtime.livesplit.models import (
     event_endpoint,
     rpc_endpoint,
 )
-from livesplit_bridge import BridgeRemoteError, BridgeRpcClient, common_pb2, run_pb2
+from livesplit_bridge import (
+    BridgeProtocolError,
+    BridgeRemoteError,
+    BridgeRpcClient,
+    common_pb2,
+    run_pb2,
+)
 
 
 class Diagnostics:
@@ -27,7 +33,6 @@ class Diagnostics:
         self.dispatches: list[str] = []
         self.successes: list[str] = []
         self.rejections: list[str] = []
-        self.resyncs: list[LiveSplitResyncReason] = []
 
     def snapshot_mismatched(self, *_: object) -> None: ...
 
@@ -62,13 +67,6 @@ class Diagnostics:
         received_event_sequence: int,
     ) -> None:
         self.gaps.append((received_session_id, received_event_sequence))
-
-    def resync_started(
-        self, _connection: object, reason: LiveSplitResyncReason
-    ) -> None:
-        self.resyncs.append(reason)
-
-    def resync_completed(self, *_: object) -> None: ...
 
 
 class FakeRpc:
@@ -318,6 +316,45 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
         self.assertEqual(outcome.execution, ActionExecution.REJECTED)
         self.assertEqual(self.diagnostics.rejections, ["split"])
         self.assertNotIn("get_timer_state", self.rpc.calls[2:])
+
+    def test_remote_error_with_session_change_is_not_a_rejection(self) -> None:
+        self.sync()
+        self.rpc.operation_error = BridgeRemoteError(4, "not allowed")
+        # The client commits the new session even for a RemoteError.
+        self.rpc.session_change = (1, 2)
+        baseline = self.adapter.current_snapshot
+        assert baseline is not None
+        outcome = self.adapter.execute_action(
+            Action("split"), baseline, self.adapter.state_epoch
+        )
+        self.assertEqual(outcome.execution, ActionExecution.UNKNOWN)
+        self.assertEqual(self.diagnostics.rejections, [])
+
+    def test_protocol_error_after_control_is_unknown_and_not_resent(self) -> None:
+        self.sync()
+        self.rpc.operation_error = BridgeProtocolError("malformed response")
+        baseline = self.adapter.current_snapshot
+        assert baseline is not None
+        before = list(self.rpc.calls)
+        outcome = self.adapter.execute_action(
+            Action("split"), baseline, self.adapter.state_epoch
+        )
+        self.assertEqual(outcome.execution, ActionExecution.UNKNOWN)
+        # Only the single control request was sent; nothing is retried.
+        self.assertEqual(self.rpc.calls, before + ["split"])
+
+    def test_protocol_version_mismatch_is_fatal(self) -> None:
+        self.sync()
+        self.rpc.operation_error = BridgeProtocolError(
+            "Protocol version mismatch: expected 3, got 2"
+        )
+        baseline = self.adapter.current_snapshot
+        assert baseline is not None
+        outcome = self.adapter.execute_action(
+            Action("split"), baseline, self.adapter.state_epoch
+        )
+        self.assertEqual(outcome.execution, ActionExecution.FAILED)
+        self.assertIsNotNone(outcome.error)
 
 
 if __name__ == "__main__":

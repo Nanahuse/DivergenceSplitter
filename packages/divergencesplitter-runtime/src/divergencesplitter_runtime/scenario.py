@@ -12,6 +12,7 @@ from divergencesplitter.scenario.models import Scenario
 
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitSnapshot,
+    LiveSplitTransitionReason,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
@@ -54,9 +55,15 @@ class ScenarioRuntime:
         self._event_sequence: int | None = None
         self._state_epoch = 0
         self._configuration_valid = True
+        # Normal actions (start/split/skip/undo/pause/resume) and Reset are
+        # tracked separately: a rejected Reset must not lose a pending Split,
+        # and a stale Split event must not release a pending Reset.
         self._pending_action: Action | None = None
         self._action_started_at: int | None = None
         self._state_wait_started_at: int | None = None
+        self._reset_pending: Action | None = None
+        self._reset_started_at: int | None = None
+        self._reset_state_wait_started_at: int | None = None
 
     @property
     def current_snapshot(self) -> LiveSplitSnapshot | None:
@@ -68,39 +75,37 @@ class ScenarioRuntime:
 
     @property
     def state_wait_deadline_ns(self) -> int | None:
-        if self._state_wait_started_at is None:
+        deadlines: list[int] = []
+        if self._state_wait_started_at is not None:
+            deadlines.append(
+                self._state_wait_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
+            )
+        if self._reset_state_wait_started_at is not None:
+            deadlines.append(
+                self._reset_state_wait_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
+            )
+        if not deadlines:
             return None
-        return self._state_wait_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
+        return min(deadlines)
 
     def apply_livesplit_update(self, update: LiveSplitUpdate) -> None:
         snapshot = update.snapshot
         current = self._snapshot
         if current is None:
-            if update.kind not in (
-                LiveSplitUpdateKind.INITIAL,
-                LiveSplitUpdateKind.RESYNC,
-            ):
+            if update.kind is not LiveSplitUpdateKind.INITIAL:
                 self._log(logging.WARNING, "scenario_runtime.initial_sync_required")
                 return
             self._establish_baseline(update)
             return
 
         if update.session_id != self._session_id:
-            if update.kind is not LiveSplitUpdateKind.RESYNC:
-                self._log(
-                    logging.WARNING,
-                    "scenario_runtime.session_resync_required",
-                    received_session_id=update.session_id,
-                )
-                return
-            self._establish_baseline(update)
-            self._log(logging.INFO, "scenario_runtime.session_resynced")
-            return
-
-        # A resync confirms the authoritative state; it may carry the same
-        # revision and is applied even when no new transition event arrived.
-        if update.kind is LiveSplitUpdateKind.RESYNC:
-            self._apply_resync(update, current)
+            # A changed session is recovered by reconnecting to a fresh runtime;
+            # never apply cross-session state onto the current rules.
+            self._log(
+                logging.WARNING,
+                "scenario_runtime.session_resync_required",
+                received_session_id=update.session_id,
+            )
             return
 
         if update.kind is LiveSplitUpdateKind.INITIAL:
@@ -116,9 +121,10 @@ class ScenarioRuntime:
         if update.kind is LiveSplitUpdateKind.TRANSITION or run_changed:
             if run_changed:
                 self._reset_all_rules()
+                self._clear_all_pending()
             else:
                 self._apply_transition_resets(current, snapshot)
-            self._clear_pending_action()
+                self._resolve_transition_pending(update.transition)
             self._log(
                 logging.INFO,
                 "scenario_runtime.transition",
@@ -131,6 +137,11 @@ class ScenarioRuntime:
     def evaluate(self, context: FrameContext) -> Action | None:
         snapshot = self._snapshot
         if snapshot is None or not self._configuration_valid:
+            return None
+
+        # While a Reset wait is unresolved it blocks every new control so a
+        # stale normal action can never be issued before the Reset resolves.
+        if self._reset_pending is not None:
             return None
 
         if self._pending_action is not None and self._pending_action.operation in {
@@ -200,6 +211,13 @@ class ScenarioRuntime:
         leaves ``evaluate`` with a pending action set. The rule progress the
         action advanced is reset so the next frame can decide again.
         """
+        if action.operation == "reset":
+            # A Reset that was never sent keeps no Reset wait; restore its rules
+            # so an automatic Reset can be decided again. The pending normal
+            # action is deliberately left untouched.
+            self._clear_reset_pending()
+            self._reset_rule_group(self._reset_rules, "reset", None)
+            return
         if self._pending_action is None:
             return
         snapshot = self._snapshot
@@ -209,44 +227,116 @@ class ScenarioRuntime:
 
     def action_accepted(self, action: Action, accepted_at_ns: int) -> None:
         """Start the Bridge state wait only after a successful Control response."""
+        if action.operation == "reset":
+            if self._reset_pending is None:
+                return
+            self._reset_state_wait_started_at = accepted_at_ns
+            # A successful Reset absorbs the preceding normal wait; the Reset
+            # wait itself stays pending until an authoritative Reset event.
+            self._clear_pending_action()
+            return
         if self._pending_action != action:
             return
         self._state_wait_started_at = accepted_at_ns
+
+    def cancel_pending_action(self) -> Action | None:
+        """Drop an unsent normal action and restart the rules it advanced.
+
+        Used when a Reset supersedes a normal action during a reaction wait so
+        no stale rule progress or pending action survives.
+        """
+        action = self._pending_action
+        if action is None:
+            return None
+        snapshot = self._snapshot
+        if snapshot is not None:
+            self._reset_pending_action(snapshot)
+        self._clear_pending_action()
+        return action
 
     @property
     def pending_action(self) -> Action | None:
         return self._pending_action
 
+    @property
+    def reset_pending(self) -> Action | None:
+        return self._reset_pending
+
     def external_action_pending(self, action: Action, decided_at_ns: int) -> None:
-        """Track a manual action using the same one-control-at-a-time gate."""
-        self._pending_action = action
-        self._action_started_at = decided_at_ns
-        self._state_wait_started_at = None
+        """Track a manual Reset in the dedicated Reset wait.
+
+        Any pending normal action is preserved so a rejected Reset can restore
+        it rather than silently losing the wait.
+        """
+        self._reset_pending = action
+        self._reset_started_at = decided_at_ns
+        self._reset_state_wait_started_at = None
+
+    def evaluate_reset_only(self, context: FrameContext) -> Action | None:
+        """Evaluate only the Reset condition during a reaction wait.
+
+        The frame is used solely to honor Reset priority over the pending
+        normal action, so it is never reused for that normal action.
+        """
+        snapshot = self._snapshot
+        if snapshot is None or not self._configuration_valid:
+            return None
+        if self._reset_pending is not None:
+            return None
+        if snapshot.phase not in (TimerPhase.RUNNING, TimerPhase.PAUSED):
+            return None
+        action = self._evaluate_rules(
+            self._reset_rules,
+            context,
+            snapshot,
+            group="reset",
+            split_index=None,
+        )
+        if action is not None:
+            self._start_action(action, context)
+        return action
 
     def state_wait_timed_out(self, observed_at_ns: int) -> None:
-        """Release an unconfirmed action and restart its relevant rules."""
-        action = self._pending_action
-        snapshot = self._snapshot
-        if action is None or snapshot is None:
-            return
-        if action.operation in ("split", "skip"):
-            split_index = self._evaluation_index(snapshot)
-            if split_index is not None:
-                self._reset_split_group(split_index)
-                self._log(
-                    logging.WARNING,
-                    "scenario_runtime.same_index_reentry",
-                    split_index=split_index,
-                    state_epoch=self._state_epoch,
-                )
-        else:
-            self._reset_pending_action(snapshot)
-        self._clear_pending_action()
-        self._log(
-            logging.WARNING,
-            "scenario_runtime.transition_timeout",
-            observed_at_ns=observed_at_ns,
-        )
+        """Release any state wait whose deadline has passed."""
+        resolved = False
+        if (
+            self._pending_action is not None
+            and self._state_wait_started_at is not None
+            and observed_at_ns
+            >= self._state_wait_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
+        ):
+            action = self._pending_action
+            snapshot = self._snapshot
+            if snapshot is not None:
+                if action.operation in ("split", "skip"):
+                    split_index = self._evaluation_index(snapshot)
+                    if split_index is not None:
+                        self._reset_split_group(split_index)
+                        self._log(
+                            logging.WARNING,
+                            "scenario_runtime.same_index_reentry",
+                            split_index=split_index,
+                            state_epoch=self._state_epoch,
+                        )
+                else:
+                    self._reset_pending_action(snapshot)
+            self._clear_pending_action()
+            resolved = True
+        if (
+            self._reset_pending is not None
+            and self._reset_state_wait_started_at is not None
+            and observed_at_ns
+            >= self._reset_state_wait_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
+        ):
+            self._reset_rule_group(self._reset_rules, "reset", None)
+            self._clear_reset_pending()
+            resolved = True
+        if resolved:
+            self._log(
+                logging.WARNING,
+                "scenario_runtime.transition_timeout",
+                observed_at_ns=observed_at_ns,
+            )
 
     def _reset_pending_action(self, snapshot: LiveSplitSnapshot) -> None:
         action = self._pending_action
@@ -319,6 +409,17 @@ class ScenarioRuntime:
         return None
 
     def _start_action(self, action: Action, context: FrameContext) -> None:
+        if action.operation == "reset":
+            # A Reset supersedes any pending normal action. Restart that
+            # action's rules so no stale progress survives the Reset.
+            snapshot = self._snapshot
+            if self._pending_action is not None and snapshot is not None:
+                self._reset_pending_action(snapshot)
+            self._clear_pending_action()
+            self._reset_pending = action
+            self._reset_started_at = context.now.nanoseconds
+            self._reset_state_wait_started_at = None
+            return
         self._pending_action = action
         self._action_started_at = context.now.nanoseconds
 
@@ -327,25 +428,40 @@ class ScenarioRuntime:
         self._action_started_at = None
         self._state_wait_started_at = None
 
-    def _apply_resync(
-        self,
-        update: LiveSplitUpdate,
-        current: LiveSplitSnapshot,
-    ) -> None:
-        snapshot = update.snapshot
-        self._snapshot = snapshot
-        self._session_id = update.session_id
-        self._event_sequence = update.event_sequence
-        self._state_epoch = update.state_epoch
-        self._configuration_valid = self._validate_split_count(snapshot)
+    def _clear_reset_pending(self) -> None:
+        self._reset_pending = None
+        self._reset_started_at = None
+        self._reset_state_wait_started_at = None
+
+    def _clear_all_pending(self) -> None:
         self._clear_pending_action()
-        self._reset_all_rules()
-        self._log(
-            logging.INFO,
-            "scenario_runtime.resynced",
-            run_changed=update.run_structure_changed,
-            state_epoch=update.state_epoch,
-        )
+        self._clear_reset_pending()
+
+    def _resolve_transition_pending(
+        self,
+        reason: LiveSplitTransitionReason | None,
+    ) -> None:
+        """Resolve state waits from an accepted transition, not from any event.
+
+        ``None`` is an authoritative query result (already-confirmed state), so
+        it resolves both waits. A Reset transition resolves both. Pause/Resume
+        must not complete a pending Split/Skip wait, and Split/Skip/Start/Undo
+        must not release a pending Reset.
+        """
+        if reason is None or reason is LiveSplitTransitionReason.RESET:
+            self._clear_all_pending()
+            return
+        if reason in (
+            LiveSplitTransitionReason.PAUSE,
+            LiveSplitTransitionReason.RESUME,
+        ):
+            if self._pending_action is not None and self._pending_action.operation in (
+                "pause",
+                "resume",
+            ):
+                self._clear_pending_action()
+            return
+        self._clear_pending_action()
 
     def _establish_baseline(self, update: LiveSplitUpdate) -> None:
         snapshot = update.snapshot
@@ -354,7 +470,7 @@ class ScenarioRuntime:
         self._event_sequence = update.event_sequence
         self._state_epoch = update.state_epoch
         self._configuration_valid = self._validate_split_count(snapshot)
-        self._clear_pending_action()
+        self._clear_all_pending()
         self._reset_all_rules()
         self._log(logging.INFO, "scenario_runtime.baseline")
 

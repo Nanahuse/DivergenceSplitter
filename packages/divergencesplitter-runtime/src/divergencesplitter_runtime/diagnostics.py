@@ -45,7 +45,6 @@ from divergencesplitter_runtime.instance_runtime import (
 )
 from divergencesplitter_runtime.instances import ScenarioInstance
 from divergencesplitter_runtime.livesplit.models import (
-    LiveSplitResyncReason,
     LiveSplitRunInfo,
     LiveSplitSnapshot,
     event_endpoint,
@@ -794,34 +793,6 @@ class OperationalDiagnostics:
             **_snapshot_fields("baseline", baseline),
             received_session_id=received_session_id,
             received_event_sequence=received_event_sequence,
-        )
-
-    def resync_started(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-    ) -> None:
-        self._emit_connection(
-            logging.INFO,
-            "bridge.resync_started",
-            connection,
-            reason=reason.name,
-        )
-
-    def resync_completed(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-        previous: LiveSplitSnapshot,
-        current: LiveSplitSnapshot,
-    ) -> None:
-        self._emit_connection(
-            logging.INFO,
-            "bridge.resync_completed",
-            connection,
-            reason=reason.name,
-            **_snapshot_fields("previous", previous),
-            **_snapshot_fields("current", current),
         )
 
     def _source_context(self) -> dict[str, object]:

@@ -19,6 +19,7 @@ from divergencesplitter_runtime.livesplit.mapping import (
     event_update_kind,
     run_info_from_proto,
     snapshot_from_timer_state,
+    transition_reason_from_event,
 )
 from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
@@ -91,31 +92,30 @@ class LiveSplitBridgeDiagnostics(Protocol):
         received_event_sequence: int,
     ) -> None: ...
 
-    def resync_started(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-    ) -> None: ...
-
-    def resync_completed(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-        previous: LiveSplitSnapshot,
-        current: LiveSplitSnapshot,
-    ) -> None: ...
-
 
 class ActionExecution(Enum):
     NOT_DISPATCHED = auto()
     DISPATCHED = auto()
     REJECTED = auto()
     UNKNOWN = auto()
+    FAILED = auto()
 
 
 @dataclass(frozen=True)
 class ActionOutcome:
     execution: ActionExecution
+    error: Exception | None = None
+
+
+def _is_protocol_version_mismatch(error: BridgeProtocolError) -> bool:
+    """Detect the fatal protocol-version mismatch among protocol failures.
+
+    The client raises the same ``BridgeProtocolError`` type for a version
+    mismatch and for other malformed responses. Only the former is fatal; the
+    latter still has an ambiguous result and is recovered by reconnecting.
+    """
+
+    return "protocol version mismatch" in str(error).lower()
 
 
 class LiveSplitBridgeAdapter:
@@ -248,6 +248,7 @@ class LiveSplitBridgeAdapter:
 
         run_info = self._run_info
         structure_changed = False
+        transition = None
         if kind is LiveSplitUpdateKind.RUN_CHANGED:
             run_info = run_info_from_proto(self._rpc.get_run())
             self._check_rpc_session(session_id)
@@ -283,6 +284,7 @@ class LiveSplitBridgeAdapter:
                 timer_state,
                 split_count=len(run_info.segments),
             )
+            transition = transition_reason_from_event(event.type, snapshot)
 
         self._baseline = snapshot
         if kind is not LiveSplitUpdateKind.RUN_CHANGED or structure_changed:
@@ -295,36 +297,8 @@ class LiveSplitBridgeAdapter:
             event_sequence=event.event_sequence,
             state_epoch=self._state_epoch,
             run_structure_changed=structure_changed,
+            transition=transition,
         )
-
-    def resync(
-        self,
-        reason: LiveSplitResyncReason,
-        *,
-        event_sequence: int | None = None,
-    ) -> LiveSplitUpdate:
-        previous = self._require_baseline()
-        self._diagnostics.resync_started(self._connection, reason)
-        update = self.synchronize()
-        self._last_event_sequence = (
-            event_sequence if event_sequence is not None else self._last_event_sequence
-        )
-        update = LiveSplitUpdate(
-            kind=LiveSplitUpdateKind.RESYNC,
-            snapshot=update.snapshot,
-            run_info=update.run_info,
-            session_id=update.session_id,
-            event_sequence=self._last_event_sequence,
-            state_epoch=update.state_epoch,
-            run_structure_changed=True,
-        )
-        self._diagnostics.resync_completed(
-            self._connection,
-            reason,
-            previous,
-            update.snapshot,
-        )
-        return update
 
     def confirm_timer_state(self) -> LiveSplitUpdate:
         """Query only the timer after a control state-wait deadline."""
@@ -400,8 +374,17 @@ class LiveSplitBridgeAdapter:
         )
         try:
             operation()
-            self._check_rpc_session(self._session_id)
         except BridgeRemoteError as error:
+            # A RemoteError still commits the RPC session, so a session change
+            # here means the rejection came from a different LiveSplit session.
+            if self._rpc.session_change is not None:
+                self._diagnostics.action_result_unknown(
+                    self._connection,
+                    action,
+                    actual_snapshot,
+                    error,
+                )
+                return ActionOutcome(ActionExecution.UNKNOWN)
             self._diagnostics.action_rejected(
                 self._connection,
                 action,
@@ -410,9 +393,41 @@ class LiveSplitBridgeAdapter:
                 error.message,
             )
             return ActionOutcome(ActionExecution.REJECTED)
-        except BridgeProtocolError:
-            raise
+        except BridgeProtocolError as error:
+            # The control may already have executed, so it must never be
+            # resent. A protocol version mismatch is fatal; any other malformed
+            # response is treated as an unknown result that needs recovery.
+            self._diagnostics.action_result_unknown(
+                self._connection,
+                action,
+                actual_snapshot,
+                error,
+            )
+            if _is_protocol_version_mismatch(error):
+                return ActionOutcome(ActionExecution.FAILED, error)
+            return ActionOutcome(ActionExecution.UNKNOWN, error)
         except BridgeClientError as error:
+            self._diagnostics.action_result_unknown(
+                self._connection,
+                action,
+                actual_snapshot,
+                error,
+            )
+            return ActionOutcome(ActionExecution.UNKNOWN)
+
+        try:
+            self._check_rpc_session(self._session_id)
+        except BridgeProtocolError as error:
+            self._diagnostics.action_result_unknown(
+                self._connection,
+                action,
+                actual_snapshot,
+                error,
+            )
+            return ActionOutcome(ActionExecution.UNKNOWN)
+        except BridgeClientError as error:
+            # The response arrived but the follow-up session check failed:
+            # the operation result is known to be ambiguous, never resend.
             self._diagnostics.action_result_unknown(
                 self._connection,
                 action,
