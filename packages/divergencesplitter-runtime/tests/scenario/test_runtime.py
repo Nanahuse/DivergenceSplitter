@@ -656,5 +656,90 @@ class ScenarioRuntimePendingResetTest(unittest.TestCase):
         self.assertIsNone(runtime.reset_pending)
 
 
+class ScenarioRuntimeRejectedResetTest(unittest.TestCase):
+    def test_same_phase_and_index_clears_pending_and_restarts_rules(self) -> None:
+        reset = RecordingCondition(False)
+        first = RecordingCondition(False)
+        second = RecordingCondition(False)
+        runtime = ScenarioRuntime(
+            make_scenario(
+                ((make_rule(first),), (make_rule(second),)),
+                reset_conditions=(reset,),
+            )
+        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
+        first.result = True
+        self.assertEqual(runtime.evaluate(context()), Action("split"))
+        runtime.action_accepted(Action("split"), 1)
+        runtime.external_action_pending(Action("reset"), 2)
+        baseline = (reset.resets, first.resets, second.resets)
+
+        runtime.settle_rejected_reset(
+            update(
+                make_snapshot(split_count=2),
+                LiveSplitUpdateKind.PERIODIC,
+                state_epoch=7,
+            )
+        )
+
+        self.assertIsNone(runtime.pending_action)
+        self.assertIsNone(runtime.reset_pending)
+        self.assertEqual(runtime.state_epoch, 7)
+        self.assertEqual(
+            (reset.resets, first.resets, second.resets),
+            (baseline[0] + 1, baseline[1] + 1, baseline[2]),
+        )
+
+    def test_advanced_index_restarts_that_index(self) -> None:
+        reset = RecordingCondition(False)
+        first = RecordingCondition(False)
+        second = RecordingCondition(True)
+        runtime = ScenarioRuntime(
+            make_scenario(
+                ((make_rule(first),), (make_rule(second),)),
+                reset_conditions=(reset,),
+            )
+        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
+        baseline = (first.resets, second.resets)
+
+        runtime.settle_rejected_reset(
+            update(
+                make_snapshot(split_count=2, split_index=1),
+                LiveSplitUpdateKind.PERIODIC,
+                state_epoch=3,
+            )
+        )
+
+        self.assertEqual((first.resets, second.resets), (baseline[0], baseline[1] + 1))
+        self.assertEqual(runtime.evaluate(context()), Action("split"))
+
+    def test_not_running_moves_to_start(self) -> None:
+        reset = RecordingCondition(False)
+        start = RecordingCondition(True)
+        runtime = ScenarioRuntime(
+            make_scenario((), start_condition=start, reset_conditions=(reset,))
+        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
+        baseline = (start.resets, reset.resets)
+
+        runtime.settle_rejected_reset(
+            update(
+                make_snapshot(
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                    split_count=1,
+                ),
+                LiveSplitUpdateKind.PERIODIC,
+                state_epoch=2,
+            )
+        )
+
+        self.assertEqual(
+            (start.resets, reset.resets), (baseline[0] + 1, baseline[1] + 1)
+        )
+        self.assertEqual(runtime.evaluate(context()), Action("start"))
+
+
 if __name__ == "__main__":
     unittest.main()

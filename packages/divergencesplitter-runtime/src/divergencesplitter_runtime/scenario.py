@@ -272,6 +272,42 @@ class ScenarioRuntime:
         self._reset_started_at = decided_at_ns
         self._reset_state_wait_started_at = None
 
+    def settle_rejected_reset(self, update: LiveSplitUpdate) -> None:
+        """Adopt the authoritative state after a Reset was rejected.
+
+        The rejected Reset and any preceding normal wait are dropped, the queried
+        snapshot becomes the current state, and the rules the current phase and
+        split index evaluate from are restarted through their normal ``reset()``.
+        The rejected Reset is never retried here; a later frame may still decide
+        a fresh Reset through the ordinary rule evaluation.
+        """
+        snapshot = update.snapshot
+        self._snapshot = snapshot
+        self._session_id = update.session_id
+        self._event_sequence = update.event_sequence
+        self._state_epoch = update.state_epoch
+        self._configuration_valid = self._validate_split_count(snapshot)
+        self._clear_all_pending()
+        self._restart_rules_for_snapshot(snapshot)
+        self._log(
+            logging.INFO,
+            "scenario_runtime.reset_rejected_reconciled",
+            state_epoch=update.state_epoch,
+        )
+
+    def _restart_rules_for_snapshot(self, snapshot: LiveSplitSnapshot) -> None:
+        # The rejected Reset may be decided again from a clean condition state,
+        # plus the rules the current phase and split index evaluate from.
+        self._reset_rule_group(self._reset_rules, "reset", None)
+        if snapshot.phase is TimerPhase.NOT_RUNNING:
+            self._reset_rule_group(self._start_rules, "start", None)
+        elif snapshot.phase is TimerPhase.ENDED:
+            self._reset_rule_group(self._incomplete_rules, "incomplete", None)
+        else:
+            split_index = self._evaluation_index(snapshot)
+            if split_index is not None:
+                self._reset_split_group(split_index)
+
     def evaluate_reset_only(self, context: FrameContext) -> Action | None:
         """Evaluate only the Reset condition during a reaction wait.
 

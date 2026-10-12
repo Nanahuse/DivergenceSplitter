@@ -867,10 +867,13 @@ class InstanceRuntime:
         except Exception as error:  # noqa: BLE001
             self._fail(error)
             return _Attempt.TERMINAL
-        if result.execution in (
-            ActionExecution.NOT_DISPATCHED,
-            ActionExecution.REJECTED,
-        ):
+        if result.execution is ActionExecution.NOT_DISPATCHED:
+            runtime.action_not_dispatched(action)
+        elif result.execution is ActionExecution.REJECTED:
+            if action.operation == "reset":
+                # A rejected Reset is not authoritative: read the current timer
+                # state and resume judgment from it. Never resend the Reset.
+                return self._reconcile_rejected_reset(adapter, runtime)
             runtime.action_not_dispatched(action)
         elif result.execution is ActionExecution.FAILED:
             self._fail(result.error or RuntimeError("Bridge control failed"))
@@ -883,6 +886,35 @@ class InstanceRuntime:
             if action.operation == "reset":
                 # A dispatched Reset begins a fresh evaluation period.
                 self._publish_reset()
+        return None
+
+    def _reconcile_rejected_reset(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+        runtime: ScenarioRuntime,
+    ) -> _Attempt | None:
+        # The LiveSplit state after a rejected Reset is authoritative. Read it
+        # with the same failure handling as the state-wait timeout: a query
+        # failure or session change follows the existing recovery path.
+        try:
+            update = adapter.confirm_timer_state()
+        except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+            self._fail(error)
+            return _Attempt.TERMINAL
+        except BridgeClientError as error:
+            self._connection_lost(error)
+            return _Attempt.CONNECTION_LOST
+        completed_at_ns = self._time_provider.now().nanoseconds
+        runtime.settle_rejected_reset(update)
+        self._discard_frames_through(completed_at_ns)
+        self._log(
+            "bridge.reset_rejected_reconciled",
+            session_id=adapter.session_id,
+            event_sequence=adapter.event_sequence,
+            state_epoch=adapter.state_epoch,
+            phase=update.snapshot.phase.name,
+            split_index=update.snapshot.split_index,
+        )
         return None
 
     def _wait_for_reaction(self, timeout_ns: int) -> None:

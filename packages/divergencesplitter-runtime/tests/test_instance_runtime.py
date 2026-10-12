@@ -44,6 +44,7 @@ from divergencesplitter_runtime import (
 from livesplit_bridge import (
     BridgeConnectionLostError,
     BridgeProtocolError,
+    BridgeResponseTimeoutError,
     common_pb2,
 )
 
@@ -104,6 +105,7 @@ class ScriptedAdapter:
         self.attempts: list[tuple[Action, LiveSplitSnapshot]] = []
         self.not_dispatched = 0
         self.confirmed = threading.Event()
+        self.confirm_calls = 0
         self.dispatch_times: list[int] = []
         self.closed = False
         self.synchronized = 0
@@ -135,6 +137,7 @@ class ScriptedAdapter:
         return event
 
     def confirm_timer_state(self) -> LiveSplitUpdate:
+        self.confirm_calls += 1
         self.state_epoch += 1
         self.confirmed.set()
         return LiveSplitUpdate(
@@ -175,6 +178,7 @@ class RecordingCondition:
         self.result = result
         self._on_evaluate = on_evaluate
         self.calls = 0
+        self.resets = 0
         self.captured_at: list[int] = []
 
     @property
@@ -191,7 +195,7 @@ class RecordingCondition:
         return self.result
 
     def reset(self) -> None:
-        pass
+        self.resets += 1
 
 
 class RecordingDiagnostics:
@@ -1929,3 +1933,163 @@ def test_initial_sync_retry_limit_does_not_reach_ready() -> None:
         assert harness.instance.state is not InstanceRuntimeState.READY
     finally:
         harness.stop()
+
+
+# -- Regression: Rejected Reset reconciliation ---------------------------------
+
+
+class _RejectingResetAdapter(ScriptedAdapter):
+    """Rejects Reset controls and answers confirm_timer_state from a set state."""
+
+    def __init__(
+        self,
+        initial: LiveSplitUpdate,
+        *,
+        confirm_snapshot: LiveSplitSnapshot | None = None,
+        confirm_error: Exception | None = None,
+    ) -> None:
+        super().__init__(initial)
+        self.confirm_snapshot = confirm_snapshot
+        self.confirm_error = confirm_error
+        self.reset_attempts = 0
+
+    def execute_action(
+        self,
+        action: Action,
+        expected_snapshot: LiveSplitSnapshot,
+        expected_state_epoch: int,
+    ) -> ActionOutcome:
+        if action.operation == "reset":
+            self.attempts.append((action, expected_snapshot))
+            self.reset_attempts += 1
+            return ActionOutcome(ActionExecution.REJECTED)
+        return super().execute_action(action, expected_snapshot, expected_state_epoch)
+
+    def confirm_timer_state(self) -> LiveSplitUpdate:
+        self.confirm_calls += 1
+        if self.confirm_error is not None:
+            raise self.confirm_error
+        self.state_epoch += 1
+        resolved = (
+            self.confirm_snapshot
+            if self.confirm_snapshot is not None
+            else self.baseline
+        )
+        self.baseline = resolved
+        return LiveSplitUpdate(
+            LiveSplitUpdateKind.PERIODIC,
+            resolved,
+            session_id=self.session_id,
+            state_epoch=self.state_epoch,
+        )
+
+
+def _reset_scenario(reset_result: bool) -> Scenario:
+    return Scenario(
+        start_condition=RecordingCondition(False),
+        reset_condition=RecordingCondition(reset_result),
+        incomplete_condition=None,
+        splits=((Rule(RecordingCondition(False), Action("split")),),),
+    )
+
+
+def test_rejected_auto_reset_fetches_timer_state_and_resumes() -> None:
+    adapter = _RejectingResetAdapter(initial_update(split_count=1))
+    harness = Harness(_reset_scenario(True), adapter=adapter)
+    harness.start()
+    runtime = None
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: adapter.confirm_calls == 1)
+        runtime = harness.instance._scenario_runtime
+    finally:
+        harness.stop()
+
+    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert adapter.reset_attempts == 1
+    assert runtime is not None
+    assert runtime.reset_pending is None
+    assert runtime.pending_action is None
+
+
+def test_rejected_manual_reset_fetches_timer_state_and_resumes() -> None:
+    adapter = _RejectingResetAdapter(initial_update(split_count=1))
+    harness = Harness(make_scenario(RecordingCondition(False)), adapter=adapter)
+    harness.start()
+    runtime = None
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: adapter.confirm_calls == 1)
+        runtime = harness.instance._scenario_runtime
+    finally:
+        harness.stop()
+
+    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert adapter.reset_attempts == 1
+    assert runtime is not None
+    assert runtime.reset_pending is None
+    assert runtime.pending_action is None
+
+
+def test_rejected_reset_is_not_resent_without_a_new_frame() -> None:
+    adapter = _RejectingResetAdapter(initial_update(split_count=1))
+    harness = Harness(_reset_scenario(True), adapter=adapter)
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: adapter.confirm_calls == 1)
+        time.sleep(0.05)
+    finally:
+        harness.stop()
+
+    assert adapter.reset_attempts == 1
+    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+
+
+def test_rejected_reset_query_failure_recovers() -> None:
+    def factory() -> ScriptedAdapter:
+        return _RejectingResetAdapter(
+            initial_update(split_count=1),
+            confirm_error=BridgeResponseTimeoutError("no Bridge response"),
+        )
+
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        adapter_factory=factory,
+    )
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.request_reset()
+        wait_for(lambda: harness.instance.generation == 1)
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    # The rejected Reset is never resent, and the old state is not continued.
+    first = harness.adapters[0]
+    assert isinstance(first, _RejectingResetAdapter)
+    assert first.reset_attempts == 1
+    assert first.confirm_calls == 1
+    assert harness.adapters[1].attempts == []
+
+
+def test_normal_split_does_not_query_timer_state() -> None:
+    adapter = ScriptedAdapter(
+        initial_update(), execute_result=ActionExecution.DISPATCHED
+    )
+    harness = Harness(make_scenario(RecordingCondition(True)), adapter=adapter)
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: bool(adapter.attempts))
+        assert adapter.confirm_calls == 0
+    finally:
+        harness.stop()
+
+    assert [action.operation for action, _ in adapter.attempts] == ["split"]
