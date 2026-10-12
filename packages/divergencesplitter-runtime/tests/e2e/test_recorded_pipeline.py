@@ -495,10 +495,10 @@ def test_independent_instances_keep_one_shared_capture_across_reconnect(
     allow_b = threading.Event()
 
     class LateBridge(BridgeScript):
-        def attach(self) -> LiveSplitUpdate:
+        def synchronize(self) -> LiveSplitUpdate:
             if not allow_b.is_set():
                 raise BridgeResponseTimeoutError("not running")
-            return super().attach()
+            return super().synchronize()
 
     scripts = (
         BridgeScript(snapshot()),

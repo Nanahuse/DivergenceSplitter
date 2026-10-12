@@ -726,6 +726,26 @@ class OperationalDiagnostics:
             **_snapshot_fields("snapshot", snapshot),
         )
 
+    def action_dispatched(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+        session_id: int | None,
+        event_sequence: int | None,
+        state_epoch: int,
+    ) -> None:
+        self._emit_connection(
+            logging.DEBUG,
+            "bridge.control_dispatched",
+            connection,
+            action=action.operation,
+            session_id=session_id,
+            event_sequence=event_sequence,
+            state_epoch=state_epoch,
+            **_snapshot_fields("snapshot", snapshot),
+        )
+
     def action_rejected(
         self,
         connection: LiveSplitConnection,
@@ -774,20 +794,6 @@ class OperationalDiagnostics:
             **_snapshot_fields("baseline", baseline),
             received_session_id=received_session_id,
             received_event_sequence=received_event_sequence,
-        )
-
-    def heartbeat_received(
-        self,
-        connection: LiveSplitConnection,
-        session_id: int,
-        event_sequence: int,
-    ) -> None:
-        self._emit_connection(
-            logging.DEBUG,
-            "bridge.heartbeat_received",
-            connection,
-            session_id=session_id,
-            event_sequence=event_sequence,
         )
 
     def resync_started(
@@ -986,9 +992,6 @@ def _frame_fields(frame: Frame) -> dict[str, object]:
 
 def _snapshot_fields(prefix: str, snapshot: LiveSplitSnapshot) -> dict[str, object]:
     return {
-        f"{prefix}.session_id": snapshot.session_id,
-        f"{prefix}.state_revision": snapshot.state_revision,
-        f"{prefix}.run_revision": snapshot.run_revision,
         f"{prefix}.phase": snapshot.phase.name,
         f"{prefix}.split_index": snapshot.split_index,
         f"{prefix}.split_count": snapshot.split_count,
@@ -1111,7 +1114,7 @@ def _snapshot_mismatches(
     expected: LiveSplitSnapshot,
     actual: LiveSplitSnapshot,
 ) -> tuple[str, ...]:
-    names = ("session_id", "state_revision", "phase", "split_index", "split_count")
+    names = ("phase", "split_index", "split_count")
     return tuple(
         name for name in names if getattr(expected, name) != getattr(actual, name)
     )

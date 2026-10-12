@@ -1,1094 +1,323 @@
+from __future__ import annotations
+
 import unittest
-from typing import Any
-from unittest.mock import create_autospec, patch
+from typing import cast
 
 from divergencesplitter import Action, LiveSplitConnection
-from divergencesplitter_runtime import (
+from divergencesplitter_runtime.livesplit.adapter import (
     ActionExecution,
     LiveSplitBridgeAdapter,
     LiveSplitBridgeDiagnostics,
+)
+from divergencesplitter_runtime.livesplit.models import (
     LiveSplitResyncReason,
-    LiveSplitRunInfo,
-    LiveSplitSegmentInfo,
     LiveSplitSnapshot,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     TimerPhase,
-)
-from divergencesplitter_runtime.livesplit import (
-    event_update_kind,
+    event_endpoint,
     rpc_endpoint,
-    run_info_from_proto,
-    snapshot_from_timer_state,
 )
-from divergencesplitter_runtime.livesplit.adapter import _MAX_STATE_SYNC_ATTEMPTS
-from livesplit_bridge import (
-    BridgeProtocolError,
-    BridgeRemoteError,
-    BridgeResponseTimeoutError,
-    BridgeRpcClient,
-    bridge_pb2,
-    common_pb2,
-    run_pb2,
-)
+from livesplit_bridge import BridgeRemoteError, BridgeRpcClient, common_pb2, run_pb2
 
 
-def proto_timer_state(
-    *,
-    session_id: int = 1,
-    state_revision: int = 2,
-    run_revision: int = 1,
-    phase: common_pb2.TimerPhase = common_pb2.RUNNING,
-    split_index: int = 0,
-) -> common_pb2.TimerState:
-    return common_pb2.TimerState(
-        session_id=session_id,
-        state_revision=state_revision,
-        run_revision=run_revision,
-        phase=phase,
-        split_index=split_index,
-    )
-
-
-def proto_run(
-    *,
-    session_id: int = 1,
-    run_revision: int = 1,
-    segments: tuple[tuple[int, str], ...] = ((0, "A"), (1, "B")),
-) -> run_pb2.RunState:
-    return run_pb2.RunState(
-        session_id=session_id,
-        run_revision=run_revision,
-        segments=[
-            run_pb2.SegmentInfo(index=index, name=name) for index, name in segments
-        ],
-    )
-
-
-def proto_event(
-    event_type: common_pb2.BridgeEventType,
-    *,
-    timer_state: common_pb2.TimerState | None = None,
-    session_id: int | None = None,
-    event_sequence: int = 1,
-) -> common_pb2.BridgeEvent:
-    if timer_state is None:
-        timer_state = proto_timer_state()
-    if session_id is None:
-        session_id = timer_state.session_id
-    return common_pb2.BridgeEvent(
-        session_id=session_id,
-        event_sequence=event_sequence,
-        type=event_type,
-        timer_state=timer_state,
-    )
-
-
-def domain_snapshot(
-    *,
-    session_id: int = 1,
-    state_revision: int = 2,
-    run_revision: int = 1,
-    phase: TimerPhase = TimerPhase.RUNNING,
-    split_index: int = 0,
-    split_count: int = 2,
-) -> LiveSplitSnapshot:
-    return LiveSplitSnapshot(
-        session_id=session_id,
-        state_revision=state_revision,
-        run_revision=run_revision,
-        phase=phase,
-        split_index=split_index,
-        split_count=split_count,
-    )
-
-
-def domain_run(
-    *,
-    session_id: int = 1,
-    run_revision: int = 1,
-    segments: tuple[tuple[int, str], ...] = ((0, "A"), (1, "B")),
-) -> LiveSplitRunInfo:
-    return LiveSplitRunInfo(
-        session_id=session_id,
-        run_revision=run_revision,
-        segments=tuple(
-            LiveSplitSegmentInfo(index=index, name=name) for index, name in segments
-        ),
-    )
-
-
-class RecordingDiagnostics(LiveSplitBridgeDiagnostics):
+class Diagnostics:
     def __init__(self) -> None:
-        self.events: list[tuple[object, ...]] = []
-        self.stream_events: list[tuple[object, ...]] = []
+        self.gaps: list[tuple[int, int]] = []
+        self.dispatches: list[str] = []
+        self.successes: list[str] = []
+        self.rejections: list[str] = []
+        self.resyncs: list[LiveSplitResyncReason] = []
 
-    def snapshot_mismatched(
-        self,
-        connection: LiveSplitConnection,
-        action: Action,
-        expected: LiveSplitSnapshot,
-        actual: LiveSplitSnapshot,
-    ) -> None:
-        self.events.append(
-            ("snapshot_mismatched", connection, action, expected, actual)
-        )
+    def snapshot_mismatched(self, *_: object) -> None: ...
 
-    def action_precondition_failed(
+    def action_precondition_failed(self, *_: object) -> None: ...
+
+    def action_dispatched(
         self,
         connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
+        session_id: int | None,
+        event_sequence: int | None,
+        state_epoch: int,
     ) -> None:
-        self.events.append(("action_precondition_failed", connection, action, snapshot))
+        self.dispatches.append(action.operation)
 
     def action_succeeded(
-        self,
-        connection: LiveSplitConnection,
-        action: Action,
-        snapshot: LiveSplitSnapshot,
+        self, _connection: object, action: Action, _snapshot: object
     ) -> None:
-        self.events.append(("action_succeeded", connection, action, snapshot))
+        self.successes.append(action.operation)
 
-    def action_rejected(
-        self,
-        connection: LiveSplitConnection,
-        action: Action,
-        snapshot: LiveSplitSnapshot,
-        code: int | None,
-        message: str,
-    ) -> None:
-        self.events.append(
-            ("action_rejected", connection, action, snapshot, code, message)
-        )
+    def action_rejected(self, _connection: object, action: Action, *_: object) -> None:
+        self.rejections.append(action.operation)
 
-    def action_result_unknown(
-        self,
-        connection: LiveSplitConnection,
-        action: Action,
-        snapshot: LiveSplitSnapshot,
-        error: Exception,
-    ) -> None:
-        self.events.append(
-            ("action_result_unknown", connection, action, snapshot, error)
-        )
+    def action_result_unknown(self, *_: object) -> None: ...
 
     def gap_detected(
         self,
-        connection: LiveSplitConnection,
-        baseline: LiveSplitSnapshot,
+        _connection: object,
+        _baseline: object,
         received_session_id: int,
         received_event_sequence: int,
     ) -> None:
-        self.stream_events.append(
-            (
-                "gap_detected",
-                connection,
-                baseline,
-                received_session_id,
-                received_event_sequence,
-            )
-        )
-
-    def heartbeat_received(
-        self,
-        connection: LiveSplitConnection,
-        session_id: int,
-        event_sequence: int,
-    ) -> None:
-        self.stream_events.append(
-            ("heartbeat_received", connection, session_id, event_sequence)
-        )
+        self.gaps.append((received_session_id, received_event_sequence))
 
     def resync_started(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
+        self, _connection: object, reason: LiveSplitResyncReason
     ) -> None:
-        self.stream_events.append(("resync_started", connection, reason))
+        self.resyncs.append(reason)
 
-    def resync_completed(
-        self,
-        connection: LiveSplitConnection,
-        reason: LiveSplitResyncReason,
-        previous: LiveSplitSnapshot,
-        current: LiveSplitSnapshot,
-    ) -> None:
-        self.stream_events.append(
-            ("resync_completed", connection, reason, previous, current)
+    def resync_completed(self, *_: object) -> None: ...
+
+
+class FakeRpc:
+    def __init__(self) -> None:
+        self.session_id = 1
+        self.session_change: tuple[int, int] | None = None
+        self.timer_state = common_pb2.TimerState(
+            phase=common_pb2.RUNNING,
+            split_index=0,
+        )
+        self.run = run_pb2.RunState(
+            game_name="Game",
+            category_name="Any%",
+            segments=(run_pb2.SegmentInfo(index=0, name="A"),),
+        )
+        self.calls: list[str] = []
+        self.operation_error: Exception | None = None
+        self.closed = False
+
+    def get_timer_state(self) -> common_pb2.TimerState:
+        self.calls.append("get_timer_state")
+        return self.timer_state
+
+    def get_run(self) -> run_pb2.RunState:
+        self.calls.append("get_run")
+        return self.run
+
+    def _operation(self, name: str) -> common_pb2.OperationResponse:
+        self.calls.append(name)
+        if self.operation_error is not None:
+            raise self.operation_error
+        return common_pb2.OperationResponse()
+
+    def start(self) -> common_pb2.OperationResponse:
+        return self._operation("start")
+
+    def split(self) -> common_pb2.OperationResponse:
+        return self._operation("split")
+
+    def skip(self) -> common_pb2.OperationResponse:
+        return self._operation("skip")
+
+    def undo(self) -> common_pb2.OperationResponse:
+        return self._operation("undo")
+
+    def reset(self) -> common_pb2.OperationResponse:
+        return self._operation("reset")
+
+    def pause(self) -> common_pb2.OperationResponse:
+        return self._operation("pause")
+
+    def resume(self) -> common_pb2.OperationResponse:
+        return self._operation("resume")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def timer_state(
+    phase: common_pb2.TimerPhase = common_pb2.RUNNING,
+    split_index: int = 0,
+) -> common_pb2.TimerState:
+    return common_pb2.TimerState(phase=phase, split_index=split_index)
+
+
+def event(
+    kind: common_pb2.BridgeEventType,
+    sequence: int,
+    *,
+    state: common_pb2.TimerState | None = None,
+    session_id: int = 1,
+) -> common_pb2.BridgeEvent:
+    value = common_pb2.BridgeEvent(
+        type=kind,
+        session_id=session_id,
+        event_sequence=sequence,
+    )
+    if state is not None:
+        value.timer_state.CopyFrom(state)
+    return value
+
+
+class LiveSplitBridgeAdapterTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.connection = LiveSplitConnection(54100)
+        self.diagnostics = Diagnostics()
+        self.rpc = FakeRpc()
+        self.adapter = LiveSplitBridgeAdapter(
+            self.connection,
+            diagnostics=cast(LiveSplitBridgeDiagnostics, self.diagnostics),
+            rpc=cast(BridgeRpcClient, self.rpc),
         )
 
+    def tearDown(self) -> None:
+        self.adapter.close()
 
-class MappingTest(unittest.TestCase):
-    def test_snapshot_maps_supported_phases(self) -> None:
-        cases = (
-            (common_pb2.NOT_RUNNING, -1, TimerPhase.NOT_RUNNING),
-            (common_pb2.STARTING, 0, TimerPhase.STARTING),
-            (common_pb2.RUNNING, 0, TimerPhase.RUNNING),
-            (common_pb2.PAUSED, 0, TimerPhase.PAUSED),
-            (common_pb2.ENDED, 2, TimerPhase.ENDED),
-        )
-        for proto_phase, split_index, expected in cases:
-            with self.subTest(proto_phase=proto_phase):
-                actual = snapshot_from_timer_state(
-                    proto_timer_state(
-                        phase=proto_phase,
-                        split_index=split_index,
-                    ),
-                    split_count=2,
-                )
-                self.assertEqual(actual.phase, expected)
-                self.assertEqual(actual.session_id, 1)
-                self.assertEqual(actual.state_revision, 2)
-                self.assertEqual(actual.run_revision, 1)
-                self.assertEqual(actual.split_count, 2)
+    def sync(self) -> None:
+        self.adapter.synchronize()
 
-    def test_snapshot_preserves_run_revision(self) -> None:
-        actual = snapshot_from_timer_state(
-            proto_timer_state(run_revision=7), split_count=2
-        )
-
-        self.assertEqual(actual.run_revision, 7)
-
-    def test_run_info_maps_segments(self) -> None:
-        actual = run_info_from_proto(
-            proto_run(
-                session_id=10,
-                run_revision=20,
-                segments=((0, "A"), (1, "B")),
-            )
-        )
-
+    def test_uses_protocol_v3_websocket_endpoints(self) -> None:
         self.assertEqual(
-            actual,
-            LiveSplitRunInfo(
-                session_id=10,
-                run_revision=20,
-                segments=(
-                    LiveSplitSegmentInfo(0, "A"),
-                    LiveSplitSegmentInfo(1, "B"),
-                ),
-            ),
+            rpc_endpoint(self.connection), "ws://127.0.0.1:54100/bridge/v3/rpc"
         )
-
-    def test_snapshot_rejects_unsupported_phases(self) -> None:
-        for phase in (common_pb2.TIMER_PHASE_UNSPECIFIED,):
-            with (
-                self.subTest(phase=phase),
-                self.assertRaisesRegex(ValueError, "unsupported timer phase"),
-            ):
-                snapshot_from_timer_state(proto_timer_state(phase=phase), split_count=2)
-
-    def test_timer_and_run_events_are_transitions(self) -> None:
-        event_types = (
-            common_pb2.EVENT_TIMER_STARTED,
-            common_pb2.EVENT_TIMER_SPLIT,
-            common_pb2.EVENT_TIMER_SKIPPED,
-            common_pb2.EVENT_TIMER_UNDO,
-            common_pb2.EVENT_TIMER_RESET,
-            common_pb2.EVENT_TIMER_PAUSED,
-            common_pb2.EVENT_TIMER_RESUMED,
-            common_pb2.EVENT_RUN_CHANGED,
-        )
-        for event_type in event_types:
-            with self.subTest(event_type=event_type):
-                self.assertIs(
-                    event_update_kind(event_type), LiveSplitUpdateKind.TRANSITION
-                )
-
-    def test_game_time_events_are_periodic(self) -> None:
-        event_types = (
-            common_pb2.EVENT_GAME_TIME_INITIALIZED,
-            common_pb2.EVENT_GAME_TIME_SET,
-            common_pb2.EVENT_GAME_TIME_PAUSED,
-            common_pb2.EVENT_GAME_TIME_RESUMED,
-        )
-        for event_type in event_types:
-            with self.subTest(event_type=event_type):
-                self.assertIs(
-                    event_update_kind(event_type), LiveSplitUpdateKind.PERIODIC
-                )
-
-    def test_runtime_changed_event_has_no_scenario_update(self) -> None:
-        self.assertIsNone(event_update_kind(common_pb2.EVENT_RUNTIME_CHANGED))
-
-    def test_unspecified_event_type_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "unsupported Bridge event type"):
-            event_update_kind(common_pb2.BRIDGE_EVENT_UNSPECIFIED)
-
-
-class AdapterTest(unittest.TestCase):
-    def make_attached_adapter(
-        self,
-        *,
-        state_revision: int = 2,
-        run_revision: int = 1,
-        segments: tuple[tuple[int, str], ...] = ((0, "A"), (1, "B")),
-        diagnostics: RecordingDiagnostics | None = None,
-    ) -> tuple[LiveSplitBridgeAdapter, Any]:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.attach.return_value = bridge_pb2.AttachResponse(
-            session_id=1,
-            timer_state=proto_timer_state(
-                state_revision=state_revision, run_revision=run_revision
-            ),
-        )
-        client.get_run.return_value = proto_run(
-            session_id=1, run_revision=run_revision, segments=segments
-        )
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=diagnostics or RecordingDiagnostics(),
-            rpc=client,
-        )
-        adapter.attach()
-        return adapter, client
-
-    def test_uses_connection_port_for_rpc_client(self) -> None:
-        connection = LiveSplitConnection(54000)
-        with patch(
-            "divergencesplitter_runtime.livesplit.adapter.BridgeRpcClient",
-            autospec=True,
-        ) as client_type:
-            adapter = LiveSplitBridgeAdapter(
-                connection,
-                diagnostics=RecordingDiagnostics(),
-                rpc_timeout_ms=10,
-            )
-            adapter.close()
-
-        client_type.assert_called_once_with(
-            rpc_endpoint(connection),
-            response_timeout_ms=10,
-        )
-        client_type.return_value.close.assert_called_once_with()
-
-    def test_attach_establishes_initial_snapshot_and_run(self) -> None:
-        adapter, client = self.make_attached_adapter()
-
         self.assertEqual(
-            adapter._require_baseline(),
-            domain_snapshot(state_revision=2, run_revision=1, split_count=2),
-        )
-        client.get_run.assert_called_once_with()
-        adapter.close()
-        client.close.assert_called_once_with()
-
-    def test_runtime_changed_event_advances_cursor_without_update(self) -> None:
-        adapter, client = self.make_attached_adapter()
-
-        update = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_RUNTIME_CHANGED,
-                timer_state=proto_timer_state(state_revision=2, run_revision=1),
-                event_sequence=1,
-            )
+            event_endpoint(self.connection), "ws://127.0.0.1:54100/bridge/v3/events"
         )
 
-        self.assertIsNone(update)
-        self.assertEqual(adapter._last_event_sequence, 1)
-        client.get_run.assert_called_once_with()
+    def test_initial_sync_uses_only_timer_and_run_queries(self) -> None:
+        update = self.adapter.synchronize()
 
-    def test_runtime_changed_event_requires_timer_state(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-
-        with self.assertRaisesRegex(BridgeProtocolError, "timer_state"):
-            adapter.handle_event(
-                common_pb2.BridgeEvent(
-                    session_id=1,
-                    event_sequence=1,
-                    type=common_pb2.EVENT_RUNTIME_CHANGED,
-                )
-            )
-
-    def test_runtime_changed_event_rejects_session_mismatch(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-
-        with self.assertRaisesRegex(BridgeProtocolError, "session IDs"):
-            adapter.handle_event(
-                proto_event(
-                    common_pb2.EVENT_RUNTIME_CHANGED,
-                    timer_state=proto_timer_state(session_id=2),
-                    session_id=1,
-                    event_sequence=1,
-                )
-            )
-
-    def test_sequence_must_be_contiguous(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-        adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, split_index=1),
-                event_sequence=1,
-            )
-        )
-
-        duplicate = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, split_index=1),
-                event_sequence=1,
-            )
-        )
-        self.assertIsNone(duplicate)
-
-        gap = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=4, split_index=1),
-                event_sequence=3,
-            )
-        )
-        self.assertIs(gap, LiveSplitResyncReason.GAP)
-
-    def test_session_change_requests_resync(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-
-        reason = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(session_id=2, state_revision=3),
-                event_sequence=1,
-            )
-        )
-
-        self.assertIs(reason, LiveSplitResyncReason.SESSION_CHANGED)
-
-    def test_heartbeat_semantics(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-        adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, split_index=1),
-                event_sequence=4,
-            )
-        )
-
-        self.assertIsNone(
-            adapter.handle_event(
-                proto_event(common_pb2.EVENT_HEARTBEAT, event_sequence=4)
-            )
-        )
-        self.assertIsNone(
-            adapter.handle_event(
-                proto_event(common_pb2.EVENT_HEARTBEAT, event_sequence=2)
-            )
-        )
-        self.assertIs(
-            adapter.handle_event(
-                proto_event(common_pb2.EVENT_HEARTBEAT, event_sequence=5)
-            ),
-            LiveSplitResyncReason.GAP,
-        )
-
-    def test_resync_fetches_authoritative_state(self) -> None:
-        adapter, client = self.make_attached_adapter()
-        client.get_timer_state.return_value = proto_timer_state(
-            state_revision=9, run_revision=4
-        )
-        client.get_run.return_value = proto_run(
-            session_id=1, run_revision=4, segments=((0, "A"), (1, "B"), (2, "C"))
-        )
-
-        update = adapter.resync(LiveSplitResyncReason.GAP)
-
-        self.assertIs(update.kind, LiveSplitUpdateKind.RESYNC)
-        self.assertEqual(update.snapshot.split_count, 3)
-        self.assertEqual(
-            update.run_info,
-            domain_run(run_revision=4, segments=((0, "A"), (1, "B"), (2, "C"))),
-        )
-
-    def test_gap_resync_keeps_heartbeat_sequence_baseline(self) -> None:
-        adapter, client = self.make_attached_adapter()
-        adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, split_index=1),
-                event_sequence=10,
-            )
-        )
-        self.assertEqual(adapter._last_event_sequence, 10)
-
-        reason = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=4, split_index=1),
-                event_sequence=12,
-            )
-        )
-        self.assertIs(reason, LiveSplitResyncReason.GAP)
-        assert isinstance(reason, LiveSplitResyncReason)
-        client.get_timer_state.return_value = proto_timer_state(
-            state_revision=4, run_revision=1
-        )
-        client.get_run.return_value = proto_run(session_id=1, run_revision=1)
-
-        adapter.resync(reason, event_sequence=12)
-
-        # The sequence that triggered the resync is the new stream baseline.
-        self.assertEqual(adapter._last_event_sequence, 12)
-        self.assertIsNone(
-            adapter.handle_event(
-                proto_event(common_pb2.EVENT_HEARTBEAT, event_sequence=12)
-            )
-        )
-        self.assertIs(
-            adapter.handle_event(
-                proto_event(common_pb2.EVENT_HEARTBEAT, event_sequence=13)
-            ),
-            LiveSplitResyncReason.GAP,
-        )
-
-    def test_resync_without_sequence_keeps_existing_baseline(self) -> None:
-        adapter, client = self.make_attached_adapter()
-        adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, split_index=1),
-                event_sequence=7,
-            )
-        )
-        client.get_timer_state.return_value = proto_timer_state(
-            state_revision=3, run_revision=1
-        )
-        client.get_run.return_value = proto_run(session_id=1, run_revision=1)
-
-        adapter.resync(LiveSplitResyncReason.EVENT_INBOX_OVERFLOW)
-
-        self.assertEqual(adapter._last_event_sequence, 7)
-
-    def test_first_heartbeat_establishes_baseline(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-
-        self.assertIsNone(
-            adapter.handle_event(
-                proto_event(common_pb2.EVENT_HEARTBEAT, event_sequence=6)
-            )
-        )
-
-        self.assertEqual(adapter._last_event_sequence, 6)
-        self.assertIs(
-            adapter.handle_event(
-                proto_event(common_pb2.EVENT_HEARTBEAT, event_sequence=7)
-            ),
-            LiveSplitResyncReason.GAP,
-        )
-
-    def test_initial_duplicate_event_is_not_reapplied(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-
-        self.assertIsNone(
-            adapter.handle_event(
-                proto_event(
-                    common_pb2.EVENT_TIMER_SPLIT,
-                    timer_state=proto_timer_state(state_revision=1, split_index=0),
-                    event_sequence=1,
-                )
-            )
-        )
-        self.assertEqual(adapter._last_event_sequence, 1)
-
-        update = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, split_index=1),
-                event_sequence=2,
-            )
-        )
-        assert isinstance(update, LiveSplitUpdate)
-        self.assertEqual(update.snapshot.state_revision, 3)
-
-    def test_initial_unreconcilable_event_requests_resync(self) -> None:
-        adapter, _ = self.make_attached_adapter()
-
-        reason = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=5, split_index=1),
-                event_sequence=1,
-            )
-        )
-
-        self.assertIs(reason, LiveSplitResyncReason.GAP)
-
-    def test_close_is_idempotent(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=RecordingDiagnostics(),
-            rpc=client,
-        )
-
-        adapter.close()
-        adapter.close()
-
-        client.close.assert_called_once_with()
-
-
-class RunSynchronizationTest(unittest.TestCase):
-    def test_initial_attach_always_fetches_run(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.attach.return_value = bridge_pb2.AttachResponse(
-            session_id=1,
-            timer_state=proto_timer_state(state_revision=2, run_revision=1),
-        )
-        client.get_run.return_value = proto_run(session_id=1, run_revision=1)
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=RecordingDiagnostics(),
-            rpc=client,
-        )
-
-        initial = adapter.attach()
-
-        self.assertEqual(initial.run_info, domain_run())
-        client.get_run.assert_called_once_with()
-
-    def test_run_changed_event_fetches_run_by_revision(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.attach.return_value = bridge_pb2.AttachResponse(
-            session_id=1,
-            timer_state=proto_timer_state(state_revision=2, run_revision=1),
-        )
-        client.get_run.side_effect = (
-            proto_run(session_id=1, run_revision=1),
-            proto_run(session_id=1, run_revision=2, segments=((0, "A"),)),
-        )
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=RecordingDiagnostics(),
-            rpc=client,
-        )
-        adapter.attach()
-
-        update = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_RUN_CHANGED,
-                timer_state=proto_timer_state(state_revision=2, run_revision=2),
-                event_sequence=1,
-            )
-        )
-
-        assert isinstance(update, LiveSplitUpdate)
-        self.assertEqual(
-            update.run_info, domain_run(run_revision=2, segments=((0, "A"),))
-        )
+        self.assertEqual(self.rpc.calls, ["get_timer_state", "get_run"])
+        self.assertEqual(update.kind, LiveSplitUpdateKind.INITIAL)
+        self.assertEqual(update.session_id, 1)
+        self.assertEqual(update.state_epoch, 1)
+        self.assertEqual(update.snapshot.phase, TimerPhase.RUNNING)
         self.assertEqual(update.snapshot.split_count, 1)
-        self.assertEqual(client.get_run.call_count, 2)
+        self.assertIsNotNone(update.run_info)
+        assert update.run_info is not None
+        self.assertEqual(update.run_info.game_name, "Game")
 
-    def test_unchanged_run_revision_skips_get_run(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.attach.return_value = bridge_pb2.AttachResponse(
-            session_id=1,
-            timer_state=proto_timer_state(state_revision=2, run_revision=1),
+    def test_event_order_and_session_validation(self) -> None:
+        self.sync()
+        first = self.adapter.handle_event(
+            event(common_pb2.EVENT_TIMER_SPLIT, 10, state=timer_state(split_index=0))
         )
-        client.get_run.return_value = proto_run(session_id=1, run_revision=1)
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=RecordingDiagnostics(),
-            rpc=client,
+        assert isinstance(first, LiveSplitUpdate)
+        self.assertEqual(first.kind, LiveSplitUpdateKind.TRANSITION)
+        # A timer transition remains observable even if phase and index do not change.
+        update = self.adapter.handle_event(
+            event(common_pb2.EVENT_TIMER_SPLIT, 11, state=timer_state(split_index=0))
         )
-        adapter.attach()
-
-        update = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, run_revision=1),
-                event_sequence=1,
-            )
-        )
-
         assert isinstance(update, LiveSplitUpdate)
-        self.assertIsNone(update.run_info)
-        client.get_run.assert_called_once_with()
-
-    def test_stale_run_snapshot_is_rejected(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.attach.return_value = bridge_pb2.AttachResponse(
-            session_id=1,
-            timer_state=proto_timer_state(state_revision=2, run_revision=1),
-        )
-        client.get_run.side_effect = (
-            proto_run(session_id=1, run_revision=1),
-            proto_run(session_id=1, run_revision=1),
-        )
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=RecordingDiagnostics(),
-            rpc=client,
-        )
-        adapter.attach()
-
-        with self.assertRaisesRegex(
-            BridgeProtocolError, "run revision is behind timer_state"
-        ):
-            adapter.handle_event(
-                proto_event(
-                    common_pb2.EVENT_RUN_CHANGED,
-                    timer_state=proto_timer_state(state_revision=2, run_revision=2),
-                    event_sequence=1,
-                )
-            )
-
-    def test_run_ahead_of_timer_refetches_timer_state(self) -> None:
-        segments = ((0, "A"), (1, "B"), (2, "C"))
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.attach.return_value = bridge_pb2.AttachResponse(
-            session_id=1,
-            timer_state=proto_timer_state(state_revision=2, run_revision=4),
-        )
-        client.get_run.side_effect = (
-            proto_run(session_id=1, run_revision=5, segments=segments),
-            proto_run(session_id=1, run_revision=5, segments=segments),
-        )
-        client.get_timer_state.return_value = proto_timer_state(
-            state_revision=3, run_revision=5
-        )
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=RecordingDiagnostics(),
-            rpc=client,
-        )
-
-        initial = adapter.attach()
-
-        # The revision 4 TimerState and revision 5 RunState are never mixed.
-        self.assertEqual(initial.snapshot.run_revision, 5)
-        self.assertEqual(initial.snapshot.state_revision, 3)
-        self.assertEqual(initial.snapshot.split_count, 3)
+        self.assertEqual(update.kind, LiveSplitUpdateKind.TRANSITION)
+        self.assertEqual(update.state_epoch, 3)
         self.assertEqual(
-            initial.run_info,
-            domain_run(run_revision=5, segments=segments),
+            self.adapter.handle_event(
+                event(
+                    common_pb2.EVENT_TIMER_SPLIT, 11, state=timer_state(split_index=0)
+                )
+            ),
+            None,
         )
-        client.get_timer_state.assert_called_once_with()
-
-    def test_unstable_run_revision_fails_after_bounded_attempts(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.attach.return_value = bridge_pb2.AttachResponse(
-            session_id=1,
-            timer_state=proto_timer_state(state_revision=2, run_revision=4),
-        )
-        client.get_run.return_value = proto_run(session_id=1, run_revision=5)
-        client.get_timer_state.return_value = proto_timer_state(
-            state_revision=2, run_revision=4
-        )
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=RecordingDiagnostics(),
-            rpc=client,
+        self.assertIs(
+            self.adapter.handle_event(
+                event(
+                    common_pb2.EVENT_TIMER_SPLIT,
+                    12,
+                    session_id=2,
+                    state=timer_state(split_index=0),
+                )
+            ),
+            LiveSplitResyncReason.SESSION_CHANGED,
         )
 
-        with self.assertRaisesRegex(BridgeProtocolError, "did not stabilize"):
-            adapter.attach()
-
-        self.assertEqual(client.get_run.call_count, _MAX_STATE_SYNC_ATTEMPTS)
-        self.assertEqual(client.get_timer_state.call_count, _MAX_STATE_SYNC_ATTEMPTS)
-
-
-class ActionExecutionTest(unittest.TestCase):
-    def make_adapter(
+    def test_sequence_gap_requires_resync_and_does_not_infer_missing_events(
         self,
-        client: BridgeRpcClient,
-        diagnostics: LiveSplitBridgeDiagnostics,
-        *,
-        baseline: LiveSplitSnapshot | None = None,
-    ) -> LiveSplitBridgeAdapter:
-        adapter = LiveSplitBridgeAdapter(
-            LiveSplitConnection(54000),
-            diagnostics=diagnostics,
-            rpc=client,
+    ) -> None:
+        self.sync()
+        self.adapter.handle_event(
+            event(common_pb2.EVENT_TIMER_STARTED, 3, state=timer_state())
         )
-        adapter._baseline = baseline if baseline is not None else domain_snapshot()
-        return adapter
-
-    def assert_no_operation(self, client: BridgeRpcClient) -> None:
-        for operation in (
-            "start",
-            "split",
-            "skip",
-            "undo",
-            "reset",
-            "pause",
-            "resume",
-        ):
-            getattr(client, operation).assert_not_called()
-
-    def test_maps_each_action_to_one_client_operation(self) -> None:
-        cases = (
-            ("start", common_pb2.NOT_RUNNING, -1),
-            ("split", common_pb2.RUNNING, 0),
-            ("skip", common_pb2.RUNNING, 0),
-            ("undo", common_pb2.PAUSED, 1),
-            ("reset", common_pb2.ENDED, 2),
-            ("pause", common_pb2.RUNNING, 0),
-            ("resume", common_pb2.PAUSED, 0),
+        result = self.adapter.handle_event(
+            event(common_pb2.EVENT_TIMER_SPLIT, 5, state=timer_state(split_index=0))
         )
-        for operation, phase, split_index in cases:
-            with self.subTest(operation=operation):
-                client = create_autospec(BridgeRpcClient, instance=True)
-                client.get_run.return_value = proto_run(session_id=1, run_revision=1)
-                baseline = domain_snapshot(
-                    phase={
-                        common_pb2.NOT_RUNNING: TimerPhase.NOT_RUNNING,
-                        common_pb2.RUNNING: TimerPhase.RUNNING,
-                        common_pb2.PAUSED: TimerPhase.PAUSED,
-                        common_pb2.ENDED: TimerPhase.ENDED,
-                    }[phase],
-                    split_index=split_index,
-                    split_count=2,
-                )
-                getattr(client, operation).return_value = common_pb2.OperationResponse(
-                    success=True,
-                    timer_state=proto_timer_state(
-                        state_revision=3,
-                        phase=phase,
-                        split_index=split_index,
-                    ),
-                )
-                diagnostics = RecordingDiagnostics()
-                action = Action(operation=operation)
-                adapter = self.make_adapter(client, diagnostics, baseline=baseline)
+        self.assertIs(result, LiveSplitResyncReason.GAP)
+        self.assertEqual(self.diagnostics.gaps, [(1, 5)])
+        current = self.adapter.current_snapshot
+        assert current is not None
+        self.assertEqual(current.split_index, 0)
 
-                outcome = adapter.execute_action(action, baseline)
+    def test_reset_event_without_timer_state_queries_the_authoritative_state(
+        self,
+    ) -> None:
+        self.sync()
+        self.rpc.timer_state = timer_state(common_pb2.NOT_RUNNING, -1)
+        before = self.rpc.calls.count("get_timer_state")
 
-                self.assertIs(outcome.execution, ActionExecution.DISPATCHED)
-                self.assertIsNotNone(outcome.update)
-                getattr(client, operation).assert_called_once_with()
+        update = self.adapter.handle_event(event(common_pb2.EVENT_TIMER_RESET, 1))
 
-    def test_rejects_actions_whose_phase_or_position_is_invalid(self) -> None:
-        cases = (
-            ("split", TimerPhase.PAUSED, 0),
-            ("skip", TimerPhase.RUNNING, 1),
-            ("undo", TimerPhase.RUNNING, 0),
-            ("undo", TimerPhase.PAUSED, 0),
-            ("reset", TimerPhase.NOT_RUNNING, -1),
-            ("pause", TimerPhase.PAUSED, 0),
-            ("resume", TimerPhase.RUNNING, 0),
+        self.assertEqual(self.rpc.calls.count("get_timer_state"), before + 1)
+        assert isinstance(update, LiveSplitUpdate)
+        self.assertEqual(update.snapshot.phase, TimerPhase.NOT_RUNNING)
+        self.assertEqual(update.snapshot.split_index, -1)
+
+    def test_run_changed_fetches_run_and_only_marks_structure_changes(self) -> None:
+        self.sync()
+        epoch = self.adapter.state_epoch
+        self.rpc.run = run_pb2.RunState(
+            game_name="Game",
+            category_name="Any%",
+            segments=(run_pb2.SegmentInfo(index=0, name="A"),),
         )
-        for operation, phase, split_index in cases:
-            with self.subTest(operation=operation, phase=phase):
-                client = create_autospec(BridgeRpcClient, instance=True)
-                diagnostics = RecordingDiagnostics()
-                action = Action(operation=operation)
-                snapshot = domain_snapshot(
-                    phase=phase, split_index=split_index, split_count=2
-                )
-
-                outcome = self.make_adapter(
-                    client, diagnostics, baseline=snapshot
-                ).execute_action(action, snapshot)
-
-                self.assertIs(outcome.execution, ActionExecution.NOT_DISPATCHED)
-                self.assert_no_operation(client)
-                self.assertEqual(
-                    diagnostics.events,
-                    [
-                        (
-                            "action_precondition_failed",
-                            LiveSplitConnection(54000),
-                            action,
-                            snapshot,
-                        )
-                    ],
-                )
-
-    def test_expected_state_mismatch_does_not_operate(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        diagnostics = RecordingDiagnostics()
-        action = Action(operation="split")
-        expected = domain_snapshot(state_revision=1)
-        actual = domain_snapshot(state_revision=2)
-
-        outcome = self.make_adapter(
-            client, diagnostics, baseline=actual
-        ).execute_action(action, expected)
-
-        self.assertIs(outcome.execution, ActionExecution.NOT_DISPATCHED)
-        self.assert_no_operation(client)
-        self.assertEqual(
-            diagnostics.events,
-            [
-                (
-                    "snapshot_mismatched",
-                    LiveSplitConnection(54000),
-                    action,
-                    expected,
-                    actual,
-                )
-            ],
+        timing_update = self.adapter.handle_event(
+            event(common_pb2.EVENT_RUN_CHANGED, 1)
         )
+        assert isinstance(timing_update, LiveSplitUpdate)
+        self.assertFalse(timing_update.run_structure_changed)
+        self.assertEqual(timing_update.state_epoch, epoch)
+        self.assertEqual(self.rpc.calls.count("get_timer_state"), 1)
 
-    def test_success_applies_operation_response_state(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.get_run.return_value = proto_run(session_id=1, run_revision=1)
-        client.split.return_value = common_pb2.OperationResponse(
-            success=True,
-            timer_state=proto_timer_state(state_revision=3, split_index=1),
+        self.rpc.run = run_pb2.RunState(
+            game_name="Game",
+            category_name="Any%",
+            segments=(run_pb2.SegmentInfo(index=0, name="Changed"),),
         )
-        diagnostics = RecordingDiagnostics()
-        action = Action(operation="split")
-        baseline = domain_snapshot(state_revision=2, split_index=0)
-        adapter = self.make_adapter(client, diagnostics, baseline=baseline)
-
-        outcome = adapter.execute_action(action, baseline)
-
-        self.assertIs(outcome.execution, ActionExecution.DISPATCHED)
-        assert outcome.update is not None
-        self.assertIs(outcome.update.kind, LiveSplitUpdateKind.TRANSITION)
-        self.assertEqual(outcome.update.snapshot.state_revision, 3)
-        self.assertEqual(outcome.update.snapshot.split_index, 1)
-        self.assertEqual(adapter._require_baseline(), outcome.update.snapshot)
-        self.assertEqual(
-            diagnostics.events,
-            [
-                (
-                    "action_succeeded",
-                    LiveSplitConnection(54000),
-                    action,
-                    outcome.update.snapshot,
-                )
-            ],
+        structural_update = self.adapter.handle_event(
+            event(common_pb2.EVENT_RUN_CHANGED, 2)
         )
+        assert isinstance(structural_update, LiveSplitUpdate)
+        self.assertTrue(structural_update.run_structure_changed)
+        self.assertEqual(structural_update.state_epoch, epoch + 1)
 
-    def test_matching_event_after_operation_is_not_reapplied(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.get_run.return_value = proto_run(session_id=1, run_revision=1)
-        client.split.return_value = common_pb2.OperationResponse(
-            success=True,
-            timer_state=proto_timer_state(state_revision=3, split_index=1),
+    def test_control_success_has_no_state_query_or_optimistic_transition(self) -> None:
+        self.sync()
+        baseline = self.adapter.current_snapshot
+        assert baseline is not None
+        epoch = self.adapter.state_epoch
+        query_count = self.rpc.calls.count("get_timer_state")
+
+        outcome = self.adapter.execute_action(Action("split"), baseline, epoch)
+
+        self.assertEqual(outcome.execution, ActionExecution.DISPATCHED)
+        self.assertEqual(self.rpc.calls[-1], "split")
+        self.assertEqual(self.rpc.calls.count("get_timer_state"), query_count)
+        self.assertEqual(self.diagnostics.dispatches, ["split"])
+        self.assertEqual(self.adapter.current_snapshot, baseline)
+        self.assertEqual(self.adapter.state_epoch, epoch)
+
+    def test_stale_epoch_is_not_dispatched(self) -> None:
+        self.sync()
+        baseline = self.adapter.current_snapshot
+        assert baseline is not None
+        outcome = self.adapter.execute_action(
+            Action("split"), baseline, self.adapter.state_epoch - 1
         )
-        baseline = domain_snapshot(state_revision=2, split_index=0)
-        adapter = self.make_adapter(client, RecordingDiagnostics(), baseline=baseline)
-        adapter.execute_action(Action(operation="split"), baseline)
+        self.assertEqual(outcome.execution, ActionExecution.NOT_DISPATCHED)
+        self.assertNotIn("split", self.rpc.calls)
 
-        update = adapter.handle_event(
-            proto_event(
-                common_pb2.EVENT_TIMER_SPLIT,
-                timer_state=proto_timer_state(state_revision=3, split_index=1),
-                event_sequence=1,
-            )
+    def test_remote_rejection_is_distinct_from_unknown_outcome(self) -> None:
+        self.sync()
+        self.rpc.operation_error = BridgeRemoteError(4, "not allowed")
+        baseline = self.adapter.current_snapshot
+        assert baseline is not None
+        outcome = self.adapter.execute_action(
+            Action("split"), baseline, self.adapter.state_epoch
         )
-
-        self.assertIsNone(update)
-
-    def test_reports_operation_rejection_without_retry(self) -> None:
-        cases = (
-            (common_pb2.OperationResponse(success=False, message="not allowed"), None),
-            (None, BridgeRemoteError(12, "remote rejected")),
-        )
-        for response, error in cases:
-            with self.subTest(error=error):
-                client = create_autospec(BridgeRpcClient, instance=True)
-                if error is None:
-                    client.split.return_value = response
-                    code = None
-                    message = "not allowed"
-                else:
-                    client.split.side_effect = error
-                    code = 12
-                    message = "remote rejected"
-                diagnostics = RecordingDiagnostics()
-                action = Action(operation="split")
-
-                outcome = self.make_adapter(client, diagnostics).execute_action(
-                    action, domain_snapshot()
-                )
-
-                self.assertIs(outcome.execution, ActionExecution.DISPATCHED)
-                self.assertIsNone(outcome.update)
-                client.split.assert_called_once_with()
-                self.assertEqual(
-                    diagnostics.events,
-                    [
-                        (
-                            "action_rejected",
-                            LiveSplitConnection(54000),
-                            action,
-                            domain_snapshot(),
-                            code,
-                            message,
-                        )
-                    ],
-                )
-
-    def test_timeout_is_reported_as_unknown_without_retry(self) -> None:
-        error = BridgeResponseTimeoutError("operation timed out")
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.split.side_effect = error
-        diagnostics = RecordingDiagnostics()
-        action = Action(operation="split")
-
-        outcome = self.make_adapter(client, diagnostics).execute_action(
-            action, domain_snapshot()
-        )
-
-        self.assertIs(outcome.execution, ActionExecution.UNKNOWN)
-        client.split.assert_called_once_with()
-        self.assertEqual(
-            diagnostics.events,
-            [
-                (
-                    "action_result_unknown",
-                    LiveSplitConnection(54000),
-                    action,
-                    domain_snapshot(),
-                    error,
-                )
-            ],
-        )
-
-    def test_protocol_failure_is_not_swallowed(self) -> None:
-        error = BridgeProtocolError("invalid response")
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.split.side_effect = error
-        diagnostics = RecordingDiagnostics()
-        action = Action(operation="split")
-
-        with self.assertRaises(BridgeProtocolError):
-            self.make_adapter(client, diagnostics).execute_action(
-                action, domain_snapshot()
-            )
-
-        client.split.assert_called_once_with()
-
-    def test_success_without_timer_state_is_a_protocol_error(self) -> None:
-        client = create_autospec(BridgeRpcClient, instance=True)
-        client.split.return_value = common_pb2.OperationResponse(success=True)
-
-        with self.assertRaisesRegex(BridgeProtocolError, "timer_state"):
-            self.make_adapter(client, RecordingDiagnostics()).execute_action(
-                Action(operation="split"), domain_snapshot()
-            )
-
-    def test_operation_response_run_ahead_refetches_timer_state(self) -> None:
-        segments = ((0, "A"), (1, "B"), (2, "C"))
-        client = create_autospec(BridgeRpcClient, instance=True)
-        # The operation response carries revision 4, but get_run is already at
-        # revision 5; the adapter must not mix them.
-        client.get_run.side_effect = (
-            proto_run(session_id=1, run_revision=5, segments=segments),
-            proto_run(session_id=1, run_revision=5, segments=segments),
-        )
-        client.get_timer_state.return_value = proto_timer_state(
-            state_revision=5, run_revision=5
-        )
-        client.split.return_value = common_pb2.OperationResponse(
-            success=True,
-            timer_state=proto_timer_state(state_revision=4, run_revision=4),
-        )
-        baseline = domain_snapshot(state_revision=2, run_revision=4, split_index=0)
-        adapter = self.make_adapter(client, RecordingDiagnostics(), baseline=baseline)
-
-        outcome = adapter.execute_action(Action(operation="split"), baseline)
-
-        self.assertIs(outcome.execution, ActionExecution.DISPATCHED)
-        assert outcome.update is not None
-        self.assertEqual(outcome.update.snapshot.run_revision, 5)
-        self.assertEqual(outcome.update.snapshot.state_revision, 5)
-        self.assertEqual(outcome.update.snapshot.split_count, 3)
-        client.get_timer_state.assert_called_once_with()
+        self.assertEqual(outcome.execution, ActionExecution.REJECTED)
+        self.assertEqual(self.diagnostics.rejections, ["split"])
+        self.assertNotIn("get_timer_state", self.rpc.calls[2:])
 
 
 if __name__ == "__main__":

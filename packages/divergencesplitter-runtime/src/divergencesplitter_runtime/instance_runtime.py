@@ -190,7 +190,6 @@ class InstanceRuntime:
         reconnect_delay_seconds: float = DEFAULT_RECONNECT_DELAY_SECONDS,
         event_capacity: int = DEFAULT_EVENT_CAPACITY,
         rpc_timeout_ms: int = 3000,
-        heartbeat_timeout_ms: int = 3000,
         reaction_time_ms: int = 0,
         time_provider: TimeProvider | None = None,
         cpu_time_provider: ThreadTimeProvider | None = None,
@@ -218,7 +217,6 @@ class InstanceRuntime:
         self._reconnect_delay_seconds = reconnect_delay_seconds
         self._event_capacity = event_capacity
         self._rpc_timeout_ms = rpc_timeout_ms
-        self._heartbeat_timeout_ms = heartbeat_timeout_ms
         self._reaction_time_ns = reaction_time_ms * 1_000_000
         self._time_provider = time_provider or TimeProvider()
         self._cpu_time_provider = cpu_time_provider or ThreadTimeProvider()
@@ -336,7 +334,6 @@ class InstanceRuntime:
     def _create_subscriber(self) -> BridgeEventSubscriber:
         return BridgeEventSubscriber(
             event_endpoint(self.connection),
-            heartbeat_timeout_ms=self._heartbeat_timeout_ms,
         )
 
     def _create_adapter(self) -> LiveSplitBridgeAdapter:
@@ -362,7 +359,7 @@ class InstanceRuntime:
             self._receiver = receiver
             adapter = self._adapter_factory()
             self._adapter = adapter
-            initial = adapter.attach()
+            initial = adapter.synchronize()
         except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
             self._fail(error)
             return _Attempt.TERMINAL
@@ -375,41 +372,54 @@ class InstanceRuntime:
 
         if self._stop_requested.is_set():
             return _Attempt.STOPPED
+        initial = self._prime_initial_events(adapter, initial)
+        if isinstance(initial, _Attempt):
+            return initial
         if not self._establish(initial):
             return _Attempt.TERMINAL
-        outcome = self._prime_initial_events(adapter)
-        if outcome is not None:
-            return outcome
         return self._serve()
 
     def _prime_initial_events(
         self,
         adapter: LiveSplitBridgeAdapter,
-    ) -> _Attempt | None:
-        """Establish the stream baseline from events received during attach.
-
-        The receiver starts before the RPC attach so no event is missed. Events
-        already reflected in the RPC initial state advance the event cursor
-        without being re-applied; events newer than the initial state are
-        applied. Either way the highest processed sequence becomes the stream
-        baseline, so heartbeat gap detection is active from startup.
-        """
+        initial: LiveSplitUpdate,
+    ) -> LiveSplitUpdate | _Attempt:
+        """Settle the initial RPC baseline after discarding in-flight old events."""
         receiver = self._receiver
         if receiver is None:
-            return None
-        messages = receiver.drain()
-        overflowed = receiver.take_overflow()
-        outcome = self._handle_connection_loss(messages)
-        if outcome is not None:
-            return outcome
-        if overflowed:
-            return self._resync(adapter, LiveSplitResyncReason.EVENT_INBOX_OVERFLOW)
-        for message in messages:
-            if isinstance(message, BridgeEventReceived):
-                outcome = self._apply_event(adapter, message.event)
-                if outcome is not None:
-                    return outcome
-        return None
+            return initial
+        for _ in range(5):
+            messages = receiver.drain()
+            overflowed = receiver.take_overflow()
+            outcome = self._handle_connection_loss(messages)
+            if outcome is not None:
+                return outcome
+            events = tuple(
+                message.event
+                for message in messages
+                if isinstance(message, BridgeEventReceived)
+            )
+            if any(event.session_id != initial.session_id for event in events):
+                self._connection_lost(
+                    BridgeConnectionLostError(
+                        "Bridge session changed during initial sync"
+                    )
+                )
+                return _Attempt.CONNECTION_LOST
+            if not events and not overflowed:
+                return initial
+            adapter.establish_event_cursor(events)
+            try:
+                initial = adapter.synchronize()
+            except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+                self._fail(error)
+                return _Attempt.TERMINAL
+            except BridgeClientError as error:
+                self._diagnostics.initial_sync_failed(self.connection, error)
+                return _Attempt.CONNECTION_LOST
+            if overflowed:
+                self._log("bridge.initial_event_inbox_overflow")
+        return initial
 
     def _establish(self, initial: LiveSplitUpdate) -> bool:
         # A manual Reset requested before this connection existed is not carried
@@ -433,7 +443,14 @@ class InstanceRuntime:
         if self._initialized_once:
             self._log("instance.reinitialized")
         self._initialized_once = True
-        self._log("instance.ready")
+        self._log(
+            "instance.ready",
+            session_id=initial.session_id,
+            event_sequence=initial.event_sequence,
+            state_epoch=initial.state_epoch,
+            phase=initial.snapshot.phase.name,
+            split_index=initial.snapshot.split_index,
+        )
         return True
 
     def _serve(self) -> _Attempt:
@@ -442,7 +459,13 @@ class InstanceRuntime:
             outcome = self._process()
             if outcome is not None:
                 return outcome
-            self._wakeup.wait()
+            runtime = self._scenario_runtime
+            deadline_ns = None if runtime is None else runtime.state_wait_deadline_ns
+            if deadline_ns is None:
+                self._wakeup.wait()
+            else:
+                remaining_ns = deadline_ns - self._time_provider.now().nanoseconds
+                self._wakeup.wait(max(0, remaining_ns) / 1_000_000_000)
         return _Attempt.STOPPED
 
     def _process(self) -> _Attempt | None:
@@ -475,10 +498,47 @@ class InstanceRuntime:
                 return outcome
         if self.state is not InstanceRuntimeState.READY:
             return None
+        outcome = self._process_state_wait_timeout(adapter)
+        if outcome is not None:
+            return outcome
         shared = self._take_frame()
         if shared is None:
             return None
         return self._evaluate(adapter, shared)
+
+    def _process_state_wait_timeout(
+        self,
+        adapter: LiveSplitBridgeAdapter,
+    ) -> _Attempt | None:
+        runtime = self._scenario_runtime
+        if runtime is None:
+            return None
+        deadline_ns = runtime.state_wait_deadline_ns
+        now_ns = self._time_provider.now().nanoseconds
+        if deadline_ns is None or now_ns < deadline_ns:
+            return None
+        try:
+            update = adapter.confirm_timer_state()
+        except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+            self._fail(error)
+            return _Attempt.TERMINAL
+        except BridgeClientError as error:
+            self._connection_lost(error)
+            return _Attempt.CONNECTION_LOST
+        self._apply_update(update)
+        completed_at_ns = self._time_provider.now().nanoseconds
+        self._discard_frames_through(completed_at_ns)
+        if runtime.state_wait_deadline_ns is not None:
+            runtime.state_wait_timed_out(completed_at_ns)
+            self._log(
+                "bridge.state_wait_timeout",
+                session_id=adapter.session_id,
+                event_sequence=adapter.event_sequence,
+                state_epoch=adapter.state_epoch,
+                phase=update.snapshot.phase.name,
+                split_index=update.snapshot.split_index,
+            )
+        return None
 
     def _evaluate(
         self,
@@ -543,15 +603,24 @@ class InstanceRuntime:
         ):
             return None
         action = Action("reset")
-        result = adapter.execute_action(action, expected)
-        if result.execution is ActionExecution.NOT_DISPATCHED:
+        if runtime.pending_action is action or (
+            runtime.pending_action is not None
+            and runtime.pending_action.operation == "reset"
+        ):
+            return None
+        expected_epoch = runtime.state_epoch
+        runtime.external_action_pending(action, self._time_provider.now().nanoseconds)
+        result = adapter.execute_action(action, expected, expected_epoch)
+        if result.execution in (
+            ActionExecution.NOT_DISPATCHED,
+            ActionExecution.REJECTED,
+        ):
             runtime.action_not_dispatched(action)
         elif result.execution is ActionExecution.UNKNOWN:
             self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
             return _Attempt.CONNECTION_LOST
         else:
-            if result.update is not None:
-                self._apply_update(result.update)
+            runtime.action_accepted(action, self._time_provider.now().nanoseconds)
             self._publish_reset()
         return None
 
@@ -568,6 +637,7 @@ class InstanceRuntime:
         expected = runtime.current_snapshot
         if expected is None:
             return None
+        expected_state_epoch = runtime.state_epoch
         captured_at_ns = context.frame.captured_at.nanoseconds
         if self._reaction_time_ns <= 0:
             receiver = self._receiver
@@ -575,9 +645,16 @@ class InstanceRuntime:
                 outcome = self._drain_late_events(adapter, receiver)
                 if outcome is not None:
                     return outcome
-            return self._execute(adapter, runtime, action, expected, captured_at_ns)
+            return self._execute(
+                adapter,
+                runtime,
+                action,
+                expected,
+                expected_state_epoch,
+                captured_at_ns,
+            )
         return self._dispatch_after_reaction(
-            adapter, runtime, action, expected, captured_at_ns
+            adapter, runtime, action, expected, expected_state_epoch, captured_at_ns
         )
 
     def _dispatch_after_reaction(
@@ -586,6 +663,7 @@ class InstanceRuntime:
         runtime: ScenarioRuntime,
         action: Action,
         expected: LiveSplitSnapshot,
+        expected_state_epoch: int,
         captured_at_ns: int,
     ) -> _Attempt | None:
         due_at_ns = captured_at_ns + self._reaction_time_ns
@@ -624,7 +702,14 @@ class InstanceRuntime:
             if result is _ReactionResult.CANCELLED:
                 self._publish_cancel(action, "event")
                 return None
-        return self._execute(adapter, runtime, action, expected, captured_at_ns)
+        return self._execute(
+            adapter,
+            runtime,
+            action,
+            expected,
+            expected_state_epoch,
+            captured_at_ns,
+        )
 
     def _process_reaction_events(
         self,
@@ -681,11 +766,12 @@ class InstanceRuntime:
         current = runtime.current_snapshot
         if (
             current is not None
-            and received.kind is LiveSplitUpdateKind.PERIODIC
+            and received.kind
+            in (LiveSplitUpdateKind.PERIODIC, LiveSplitUpdateKind.RUN_CHANGED)
+            and not received.run_structure_changed
             and current == received.snapshot
         ):
-            # A normal periodic update does not change which action is valid;
-            # follow its revision so the deadline check is not falsely stale.
+            # Timing/context-only Run updates do not invalidate timer decisions.
             return _ReactionResult.OK, current, None
         # TRANSITION (manual split, reset, ...) or a rejected periodic update
         # changes the authoritative state: never send the stale action.
@@ -697,17 +783,21 @@ class InstanceRuntime:
         runtime: ScenarioRuntime,
         action: Action,
         expected: LiveSplitSnapshot,
+        expected_state_epoch: int,
         captured_at_ns: int,
     ) -> _Attempt | None:
         self._publish_reaction(action, captured_at_ns)
-        result = adapter.execute_action(action, expected)
-        if result.execution is ActionExecution.NOT_DISPATCHED:
+        result = adapter.execute_action(action, expected, expected_state_epoch)
+        if result.execution in (
+            ActionExecution.NOT_DISPATCHED,
+            ActionExecution.REJECTED,
+        ):
             runtime.action_not_dispatched(action)
         elif result.execution is ActionExecution.UNKNOWN:
             self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
             return _Attempt.CONNECTION_LOST
-        elif result.update is not None:
-            self._apply_update(result.update)
+        else:
+            runtime.action_accepted(action, self._time_provider.now().nanoseconds)
         return None
 
     def _wait_for_reaction(self, timeout_ns: int) -> None:
@@ -810,12 +900,29 @@ class InstanceRuntime:
         runtime = self._scenario_runtime
         if runtime is not None:
             runtime.apply_livesplit_update(update)
+        if update.kind in (
+            LiveSplitUpdateKind.TRANSITION,
+            LiveSplitUpdateKind.RESYNC,
+        ) or (
+            update.kind is LiveSplitUpdateKind.RUN_CHANGED
+            and update.run_structure_changed
+        ):
+            self._discard_frames_through(self._time_provider.now().nanoseconds)
 
     def _take_frame(self) -> SharedFrameEvaluation | None:
         with self._frame_lock:
             shared = self._pending_frame
             self._pending_frame = None
             return shared
+
+    def _discard_frames_through(self, captured_at_ns: int) -> None:
+        with self._frame_lock:
+            frame = self._pending_frame
+            if (
+                frame is not None
+                and frame.frame.captured_at.nanoseconds <= captured_at_ns
+            ):
+                self._pending_frame = None
 
     def _publish_observations(
         self,

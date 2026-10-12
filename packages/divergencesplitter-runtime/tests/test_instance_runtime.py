@@ -96,16 +96,26 @@ class ScriptedAdapter:
         self.handled: list[object] = []
         self.resynced: list[LiveSplitResyncReason] = []
         self.attempts: list[tuple[Action, LiveSplitSnapshot]] = []
+        self.not_dispatched = 0
+        self.confirmed = threading.Event()
         self.dispatch_times: list[int] = []
         self.closed = False
-        self.attached = 0
+        self.synchronized = 0
+        self.state_epoch = initial.state_epoch
+        self.session_id = initial.session_id
+        self.event_sequence = initial.event_sequence
         self._log = log
         self._clock = clock
 
-    def attach(self) -> LiveSplitUpdate:
-        self.attached += 1
+    def synchronize(self) -> LiveSplitUpdate:
+        self.synchronized += 1
         self.baseline = self.initial.snapshot
         return self.initial
+
+    def establish_event_cursor(
+        self, events: tuple[common_pb2.BridgeEvent, ...]
+    ) -> None:
+        del events
 
     def handle_event(self, event: object) -> object:
         if self._log is not None:
@@ -115,6 +125,7 @@ class ScriptedAdapter:
             raise event
         if isinstance(event, LiveSplitUpdate):
             self.baseline = event.snapshot
+            self.state_epoch = event.state_epoch
         return event
 
     def resync(
@@ -125,18 +136,39 @@ class ScriptedAdapter:
     ) -> LiveSplitUpdate:
         del event_sequence
         self.resynced.append(reason)
-        return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, self.baseline)
+        self.state_epoch += 1
+        return LiveSplitUpdate(
+            LiveSplitUpdateKind.RESYNC,
+            self.baseline,
+            session_id=1,
+            state_epoch=self.state_epoch,
+            run_structure_changed=True,
+        )
+
+    def confirm_timer_state(self) -> LiveSplitUpdate:
+        self.state_epoch += 1
+        self.confirmed.set()
+        return LiveSplitUpdate(
+            LiveSplitUpdateKind.PERIODIC,
+            self.baseline,
+            session_id=1,
+            state_epoch=self.state_epoch,
+        )
 
     def execute_action(
-        self, action: Action, expected_snapshot: LiveSplitSnapshot
+        self,
+        action: Action,
+        expected_snapshot: LiveSplitSnapshot,
+        expected_state_epoch: int,
     ) -> ActionOutcome:
         self.attempts.append((action, expected_snapshot))
         if self._clock is not None:
             self.dispatch_times.append(self._clock.nanoseconds)
-        if (
-            self.execute_result is ActionExecution.DISPATCHED
-            and expected_snapshot != self.baseline
+        if self.execute_result is ActionExecution.DISPATCHED and (
+            expected_snapshot != self.baseline
+            or expected_state_epoch != self.state_epoch
         ):
+            self.not_dispatched += 1
             return ActionOutcome(ActionExecution.NOT_DISPATCHED)
         return ActionOutcome(self.execute_result)
 
@@ -268,6 +300,16 @@ class RecordingDiagnostics:
         snapshot: LiveSplitSnapshot,
     ) -> None: ...
 
+    def action_dispatched(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+        session_id: int | None,
+        event_sequence: int | None,
+        state_epoch: int,
+    ) -> None: ...
+
     def action_succeeded(
         self,
         connection: LiveSplitConnection,
@@ -300,13 +342,6 @@ class RecordingDiagnostics:
         received_event_sequence: int,
     ) -> None: ...
 
-    def heartbeat_received(
-        self,
-        connection: LiveSplitConnection,
-        session_id: int,
-        event_sequence: int,
-    ) -> None: ...
-
     def resync_started(
         self,
         connection: LiveSplitConnection,
@@ -324,27 +359,21 @@ class RecordingDiagnostics:
 
 def snapshot(
     *,
-    session_id: int = 1,
-    state_revision: int = 0,
-    run_revision: int = 1,
     phase: TimerPhase = TimerPhase.RUNNING,
     split_index: int = 0,
     split_count: int = 1,
 ) -> LiveSplitSnapshot:
     return LiveSplitSnapshot(
-        session_id=session_id,
-        state_revision=state_revision,
-        run_revision=run_revision,
         phase=phase,
         split_index=split_index,
         split_count=split_count,
     )
 
 
-def run_info(revision: int = 1) -> LiveSplitRunInfo:
+def run_info() -> LiveSplitRunInfo:
     return LiveSplitRunInfo(
-        session_id=1,
-        run_revision=revision,
+        game_name="Game",
+        category_name="Any%",
         segments=(LiveSplitSegmentInfo(0, "A"),),
     )
 
@@ -500,7 +529,7 @@ def test_instance_owns_thread_reaches_ready_and_stops_cleanly() -> None:
     harness.start()
     try:
         harness.wait_ready()
-        assert harness.adapter.attached == 1
+        assert harness.adapter.synchronized == 1
         assert harness.instance.run_info == harness.initial.run_info
         assert harness.diagnostics.started
     finally:
@@ -727,7 +756,7 @@ def test_bridge_event_is_applied_before_frame_evaluation() -> None:
     try:
         harness.wait_ready()
         harness.push_event(
-            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=1))
+            LiveSplitUpdate(LiveSplitUpdateKind.RUN_CHANGED, snapshot(), state_epoch=1)
         )
         harness.instance.publish_frame(shared_frame(1))
         wait_for(lambda: "eval" in log)
@@ -744,7 +773,7 @@ def test_bridge_events_are_applied_in_receive_order() -> None:
         def handle_event(self, event: object) -> object:
             result = super().handle_event(event)
             if isinstance(event, LiveSplitUpdate):
-                handled.append(event.snapshot.state_revision)
+                handled.append(event.state_epoch)
             return result
 
     harness = Harness(
@@ -757,7 +786,10 @@ def test_bridge_events_are_applied_in_receive_order() -> None:
         for sequence in (1, 2, 3):
             harness.push_event(
                 LiveSplitUpdate(
-                    LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=sequence)
+                    LiveSplitUpdateKind.TRANSITION,
+                    snapshot(),
+                    event_sequence=sequence,
+                    state_epoch=sequence,
                 )
             )
         harness.instance.publish_frame(shared_frame(1))
@@ -785,7 +817,7 @@ def test_late_event_rejects_stale_action_without_rpc() -> None:
         harness.instance.publish_frame(shared_frame(1))
         assert entered.wait(3)
         harness.push_event(
-            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=1))
+            LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, snapshot(), state_epoch=1)
         )
         release.set()
         wait_for(lambda: bool(harness.adapter.attempts))
@@ -795,7 +827,8 @@ def test_late_event_rejects_stale_action_without_rpc() -> None:
 
     action, expected = harness.adapter.attempts[0]
     assert action == Action("split")
-    assert expected != harness.adapter.baseline
+    assert expected == harness.adapter.baseline
+    assert harness.adapter.not_dispatched == 1
 
 
 def test_action_is_dispatched_in_the_same_cycle() -> None:
@@ -803,9 +836,14 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
 
     class SignalingAdapter(ScriptedAdapter):
         def execute_action(
-            self, action: Action, expected_snapshot: LiveSplitSnapshot
+            self,
+            action: Action,
+            expected_snapshot: LiveSplitSnapshot,
+            expected_state_epoch: int,
         ) -> ActionOutcome:
-            result = super().execute_action(action, expected_snapshot)
+            result = super().execute_action(
+                action, expected_snapshot, expected_state_epoch
+            )
             dispatched.set()
             return result
 
@@ -823,6 +861,27 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
 
     assert [action for action, _ in harness.adapter.attempts] == [Action("split")]
     assert harness.diagnostics.resets == []
+
+
+def test_state_wait_timeout_runs_without_another_video_frame() -> None:
+    adapter = ScriptedAdapter(initial_update())
+    harness = Harness(make_scenario(RecordingCondition(True)), adapter=adapter)
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: len(adapter.attempts) == 1)
+        assert adapter.confirmed.wait(2)
+        wait_for(
+            lambda: (
+                harness.instance._scenario_runtime is not None
+                and harness.instance._scenario_runtime.pending_action is None
+            )
+        )
+    finally:
+        harness.stop()
+
+    assert len(adapter.attempts) == 1
 
 
 @pytest.mark.parametrize(
@@ -873,12 +932,17 @@ def test_evaluation_duration_ends_at_evaluate_return() -> None:
 
     class SlowActionAdapter(ScriptedAdapter):
         def execute_action(
-            self, action: Action, expected_snapshot: LiveSplitSnapshot
+            self,
+            action: Action,
+            expected_snapshot: LiveSplitSnapshot,
+            expected_state_epoch: int,
         ) -> ActionOutcome:
             # Action/RPC time must never be added to the evaluation duration.
             wall.nanoseconds = 999_999_999
             cpu.nanoseconds = 999_999_999
-            return super().execute_action(action, expected_snapshot)
+            return super().execute_action(
+                action, expected_snapshot, expected_state_epoch
+            )
 
     condition = RecordingCondition(True, on_evaluate=on_evaluate)
     harness = Harness(
@@ -1230,7 +1294,7 @@ def test_periodic_update_during_reaction_follows_expected_snapshot() -> None:
     clock = ManualClock(0)
     condition = RecordingCondition(True)
     adapter = ScriptedAdapter(initial_update(), clock=clock)
-    periodic = LiveSplitUpdate(LiveSplitUpdateKind.PERIODIC, snapshot(state_revision=1))
+    periodic = LiveSplitUpdate(LiveSplitUpdateKind.PERIODIC, snapshot(), state_epoch=1)
 
     def wait(timeout_ns: int) -> None:
         harness.receiver.push(
@@ -1262,7 +1326,7 @@ def test_transition_during_reaction_cancels_action() -> None:
     condition = RecordingCondition(True)
     adapter = ScriptedAdapter(initial_update(), clock=clock)
     transition = LiveSplitUpdate(
-        LiveSplitUpdateKind.TRANSITION, snapshot(state_revision=1)
+        LiveSplitUpdateKind.TRANSITION, snapshot(), state_epoch=1
     )
 
     def wait(timeout_ns: int) -> None:
@@ -1497,7 +1561,6 @@ def test_manual_reset_uses_snapshot_at_processing_time() -> None:
             LiveSplitUpdate(
                 LiveSplitUpdateKind.TRANSITION,
                 snapshot(
-                    state_revision=1,
                     phase=TimerPhase.NOT_RUNNING,
                     split_index=-1,
                 ),
@@ -1539,11 +1602,11 @@ def test_initial_sync_primes_baseline_from_queued_events() -> None:
     adapter = ScriptedAdapter(initial_update())
     duplicate = LiveSplitUpdate(
         LiveSplitUpdateKind.TRANSITION,
-        snapshot(state_revision=0),
+        snapshot(),
     )
     newer = LiveSplitUpdate(
         LiveSplitUpdateKind.TRANSITION,
-        snapshot(state_revision=3, split_index=0),
+        snapshot(split_index=0),
     )
     harness = Harness(
         make_scenario(RecordingCondition(False)),
@@ -1556,9 +1619,13 @@ def test_initial_sync_primes_baseline_from_queued_events() -> None:
     harness.start()
     try:
         harness.wait_ready()
-        wait_for(lambda: adapter.baseline == newer.snapshot and bool(adapter.handled))
+        wait_for(lambda: adapter.synchronized == 2)
         assert harness.instance._scenario_runtime is not None
-        assert harness.instance._scenario_runtime.current_snapshot == newer.snapshot
-        assert adapter.baseline == newer.snapshot
+        assert (
+            harness.instance._scenario_runtime.current_snapshot
+            == adapter.initial.snapshot
+        )
+        assert adapter.baseline == adapter.initial.snapshot
+        assert adapter.handled == []
     finally:
         harness.stop()

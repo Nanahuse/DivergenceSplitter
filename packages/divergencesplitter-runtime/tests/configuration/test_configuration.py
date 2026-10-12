@@ -66,9 +66,6 @@ def make_snapshot(
     phase: TimerPhase = TimerPhase.RUNNING,
 ) -> LiveSplitSnapshot:
     return LiveSplitSnapshot(
-        session_id=1,
-        state_revision=0,
-        run_revision=1,
         phase=phase,
         split_index=-1 if phase is TimerPhase.NOT_RUNNING else 0,
         split_count=split_count,

@@ -34,17 +34,11 @@ from livesplit_bridge import BridgeConnectionLostError
 
 def snapshot(
     *,
-    session_id: int = 1,
-    state_revision: int = 0,
-    run_revision: int = 1,
     phase: TimerPhase = TimerPhase.RUNNING,
     split_index: int = 0,
     split_count: int = 1,
 ) -> LiveSplitSnapshot:
     return LiveSplitSnapshot(
-        session_id=session_id,
-        state_revision=state_revision,
-        run_revision=run_revision,
         phase=phase,
         split_index=split_index,
         split_count=split_count,
@@ -65,6 +59,9 @@ class BridgeScript:
             deque()
         )
         self._snapshot = initial_snapshot
+        self._session_id = 1
+        self._state_epoch = 0
+        self._event_sequence = 0
         self._apply_actions = apply_actions
         self.actions: list[tuple[Action, LiveSplitSnapshot]] = []
         self.action_threads: list[int] = []
@@ -76,22 +73,43 @@ class BridgeScript:
         self.resync_entered = threading.Event()
         self._resync_release = threading.Event()
         self._block_resync = False
-        self._attach_count = 0
+        self._synchronize_count = 0
 
     @property
     def current_snapshot(self) -> LiveSplitSnapshot:
         with self._condition:
             return self._snapshot
 
-    def attach(self) -> LiveSplitUpdate:
-        self._attach_count += 1
-        if self._attach_count > 1 and self._block_resync:
+    def synchronize(self) -> LiveSplitUpdate:
+        self._synchronize_count += 1
+        if self._synchronize_count > 1 and self._block_resync:
             self.resync_entered.set()
             if not self._resync_release.wait(5):
                 raise TimeoutError("test did not release fresh attach")
         self.closed.clear()
         with self._condition:
-            return LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, self._snapshot)
+            return LiveSplitUpdate(
+                LiveSplitUpdateKind.INITIAL,
+                self._snapshot,
+                session_id=self._session_id,
+                event_sequence=self._event_sequence or None,
+                state_epoch=self._state_epoch,
+            )
+
+    @property
+    def state_epoch(self) -> int:
+        return self._state_epoch
+
+    @property
+    def session_id(self) -> int:
+        return self._session_id
+
+    @property
+    def event_sequence(self) -> int | None:
+        return self._event_sequence or None
+
+    def establish_event_cursor(self, events: tuple[object, ...]) -> None:
+        del events
 
     def receive(
         self,
@@ -115,20 +133,20 @@ class BridgeScript:
         self,
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
+        expected_state_epoch: int,
     ) -> ActionOutcome:
         with self._condition:
             actual = self._snapshot
             self.actions.append((action, expected_snapshot))
             self.action_threads.append(threading.get_ident())
-            if expected_snapshot != actual:
+            if expected_snapshot != actual or expected_state_epoch != self._state_epoch:
                 self.snapshot_mismatches.append((expected_snapshot, actual))
                 self._condition.notify_all()
                 return ActionOutcome(ActionExecution.NOT_DISPATCHED)
-            update: LiveSplitUpdate | None = None
             if self._apply_actions:
-                update = self._apply_action_locked(action)
+                self._apply_action_locked(action)
             self._condition.notify_all()
-        return ActionOutcome(ActionExecution.DISPATCHED, update)
+        return ActionOutcome(ActionExecution.DISPATCHED)
 
     def resync(
         self,
@@ -142,7 +160,25 @@ class BridgeScript:
             if not self._resync_release.wait(5):
                 raise TimeoutError("test did not release Bridge resynchronization")
         with self._condition:
-            return LiveSplitUpdate(LiveSplitUpdateKind.RESYNC, self._snapshot)
+            return LiveSplitUpdate(
+                LiveSplitUpdateKind.RESYNC,
+                self._snapshot,
+                session_id=self._session_id,
+                event_sequence=self._event_sequence or None,
+                state_epoch=self._state_epoch,
+                run_structure_changed=True,
+            )
+
+    def confirm_timer_state(self) -> LiveSplitUpdate:
+        with self._condition:
+            self._state_epoch += 1
+            return LiveSplitUpdate(
+                LiveSplitUpdateKind.PERIODIC,
+                self._snapshot,
+                session_id=self._session_id,
+                event_sequence=self._event_sequence or None,
+                state_epoch=self._state_epoch,
+            )
 
     def reconnect(self) -> LiveSplitUpdate:
         return self.resync(LiveSplitResyncReason.CONNECTION_LOST)
@@ -235,14 +271,19 @@ class BridgeScript:
     ) -> LiveSplitUpdate:
         current = self._snapshot
         self._snapshot = snapshot(
-            session_id=current.session_id,
-            state_revision=current.state_revision + 1,
-            run_revision=current.run_revision,
             phase=phase,
             split_index=split_index,
             split_count=current.split_count,
         )
-        update = LiveSplitUpdate(LiveSplitUpdateKind.TRANSITION, self._snapshot)
+        self._state_epoch += 1
+        self._event_sequence += 1
+        update = LiveSplitUpdate(
+            LiveSplitUpdateKind.TRANSITION,
+            self._snapshot,
+            session_id=self._session_id,
+            event_sequence=self._event_sequence,
+            state_epoch=self._state_epoch,
+        )
         self._events.append(update)
         return update
 
@@ -265,8 +306,20 @@ class ScriptedBridgeAdapter:
         self._script = self.scripts[connection]
         self._script.created_on = threading.get_ident()
 
-    def attach(self) -> LiveSplitUpdate:
-        return self._script.attach()
+    @property
+    def session_id(self) -> int:
+        return self._script.session_id
+
+    @property
+    def event_sequence(self) -> int | None:
+        return self._script.event_sequence
+
+    @property
+    def state_epoch(self) -> int:
+        return self._script.state_epoch
+
+    def synchronize(self) -> LiveSplitUpdate:
+        return self._script.synchronize()
 
     def handle_event(
         self,
@@ -280,8 +333,14 @@ class ScriptedBridgeAdapter:
         self,
         action: Action,
         expected_snapshot: LiveSplitSnapshot,
+        expected_state_epoch: int,
     ) -> ActionOutcome:
-        return self._script.execute_action(action, expected_snapshot)
+        return self._script.execute_action(
+            action, expected_snapshot, expected_state_epoch
+        )
+
+    def confirm_timer_state(self) -> LiveSplitUpdate:
+        return self._script.confirm_timer_state()
 
     def resync(
         self,
@@ -496,6 +555,17 @@ class RecordingDiagnostics:
     ) -> None:
         pass
 
+    def action_dispatched(
+        self,
+        connection: LiveSplitConnection,
+        action: Action,
+        snapshot: LiveSplitSnapshot,
+        session_id: int | None,
+        event_sequence: int | None,
+        state_epoch: int,
+    ) -> None:
+        pass
+
     def action_succeeded(
         self,
         connection: LiveSplitConnection,
@@ -529,14 +599,6 @@ class RecordingDiagnostics:
         baseline: LiveSplitSnapshot,
         received_session_id: int,
         received_event_sequence: int,
-    ) -> None:
-        pass
-
-    def heartbeat_received(
-        self,
-        connection: LiveSplitConnection,
-        session_id: int,
-        event_sequence: int,
     ) -> None:
         pass
 

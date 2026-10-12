@@ -50,13 +50,27 @@ class ScenarioRuntime:
             else (Rule(scenario.incomplete_condition, Action("undo")),)
         )
         self._snapshot: LiveSplitSnapshot | None = None
+        self._session_id: int | None = None
+        self._event_sequence: int | None = None
+        self._state_epoch = 0
         self._configuration_valid = True
         self._pending_action: Action | None = None
         self._action_started_at: int | None = None
+        self._state_wait_started_at: int | None = None
 
     @property
     def current_snapshot(self) -> LiveSplitSnapshot | None:
         return self._snapshot
+
+    @property
+    def state_epoch(self) -> int:
+        return self._state_epoch
+
+    @property
+    def state_wait_deadline_ns(self) -> int | None:
+        if self._state_wait_started_at is None:
+            return None
+        return self._state_wait_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
 
     def apply_livesplit_update(self, update: LiveSplitUpdate) -> None:
         snapshot = update.snapshot
@@ -68,52 +82,42 @@ class ScenarioRuntime:
             ):
                 self._log(logging.WARNING, "scenario_runtime.initial_sync_required")
                 return
-            self._establish_baseline(snapshot)
+            self._establish_baseline(update)
             return
 
-        if snapshot.session_id != current.session_id:
+        if update.session_id != self._session_id:
             if update.kind is not LiveSplitUpdateKind.RESYNC:
                 self._log(
                     logging.WARNING,
                     "scenario_runtime.session_resync_required",
-                    received_session_id=snapshot.session_id,
+                    received_session_id=update.session_id,
                 )
                 return
-            self._establish_baseline(snapshot)
+            self._establish_baseline(update)
             self._log(logging.INFO, "scenario_runtime.session_resynced")
             return
 
         # A resync confirms the authoritative state; it may carry the same
         # revision and is applied even when no new transition event arrived.
         if update.kind is LiveSplitUpdateKind.RESYNC:
-            if snapshot.state_revision < current.state_revision:
-                self._log(logging.DEBUG, "scenario_runtime.update_ignored")
-                return
-            self._apply_resync(snapshot, current)
+            self._apply_resync(update, current)
             return
 
         if update.kind is LiveSplitUpdateKind.INITIAL:
             self._log(logging.WARNING, "scenario_runtime.initial_update_ignored")
             return
 
-        if snapshot.state_revision < current.state_revision:
-            self._log(logging.WARNING, "scenario_runtime.revision_regressed")
-            return
-
-        run_changed = (
-            snapshot.run_revision != current.run_revision
-            or snapshot.split_count != current.split_count
-        )
-        if snapshot.state_revision == current.state_revision and not run_changed:
-            # Already applied locally, for example from an OperationResponse that
-            # preceded the matching broadcast event.
-            self._log(logging.DEBUG, "scenario_runtime.update_ignored")
-            return
-
+        run_changed = update.run_structure_changed
         self._snapshot = snapshot
+        self._session_id = update.session_id
+        self._event_sequence = update.event_sequence
+        self._state_epoch = update.state_epoch
         self._configuration_valid = self._validate_split_count(snapshot)
         if update.kind is LiveSplitUpdateKind.TRANSITION or run_changed:
-            self._apply_transition_resets(current, snapshot)
+            if run_changed:
+                self._reset_all_rules()
+            else:
+                self._apply_transition_resets(current, snapshot)
             self._clear_pending_action()
             self._log(
                 logging.INFO,
@@ -121,8 +125,7 @@ class ScenarioRuntime:
                 previous_phase=current.phase.name,
                 previous_split_index=current.split_index,
                 previous_split_count=current.split_count,
-                previous_state_revision=current.state_revision,
-                previous_run_revision=current.run_revision,
+                state_epoch=update.state_epoch,
             )
 
     def evaluate(self, context: FrameContext) -> Action | None:
@@ -146,31 +149,10 @@ class ScenarioRuntime:
                 return reset_action
 
         if self._pending_action is not None:
-            if self._action_started_at is None:
-                return None
-            elapsed = context.now.nanoseconds - self._action_started_at
-            if elapsed < SPLIT_TRANSITION_TIMEOUT_NANOSECONDS:
-                return None
-            self._reset_pending_action(snapshot)
-            action_started_at = self._action_started_at
-            self._clear_pending_action()
-            self._log(
-                logging.WARNING,
-                "scenario_runtime.transition_timeout",
-                action_started_at_ns=action_started_at,
-                action_deadline_ns=(
-                    None
-                    if action_started_at is None
-                    else action_started_at + SPLIT_TRANSITION_TIMEOUT_NANOSECONDS
-                ),
-                observed_at_ns=context.now.nanoseconds,
-            )
             return None
 
         if snapshot.phase is TimerPhase.NOT_RUNNING:
             rules, group = self._start_rules, "start"
-        elif snapshot.phase is TimerPhase.STARTING:
-            return None
         elif snapshot.phase is TimerPhase.ENDED:
             rules, group = self._incomplete_rules, "incomplete"
         else:
@@ -224,6 +206,47 @@ class ScenarioRuntime:
         if snapshot is not None:
             self._reset_pending_action(snapshot)
         self._clear_pending_action()
+
+    def action_accepted(self, action: Action, accepted_at_ns: int) -> None:
+        """Start the Bridge state wait only after a successful Control response."""
+        if self._pending_action != action:
+            return
+        self._state_wait_started_at = accepted_at_ns
+
+    @property
+    def pending_action(self) -> Action | None:
+        return self._pending_action
+
+    def external_action_pending(self, action: Action, decided_at_ns: int) -> None:
+        """Track a manual action using the same one-control-at-a-time gate."""
+        self._pending_action = action
+        self._action_started_at = decided_at_ns
+        self._state_wait_started_at = None
+
+    def state_wait_timed_out(self, observed_at_ns: int) -> None:
+        """Release an unconfirmed action and restart its relevant rules."""
+        action = self._pending_action
+        snapshot = self._snapshot
+        if action is None or snapshot is None:
+            return
+        if action.operation in ("split", "skip"):
+            split_index = self._evaluation_index(snapshot)
+            if split_index is not None:
+                self._reset_split_group(split_index)
+                self._log(
+                    logging.WARNING,
+                    "scenario_runtime.same_index_reentry",
+                    split_index=split_index,
+                    state_epoch=self._state_epoch,
+                )
+        else:
+            self._reset_pending_action(snapshot)
+        self._clear_pending_action()
+        self._log(
+            logging.WARNING,
+            "scenario_runtime.transition_timeout",
+            observed_at_ns=observed_at_ns,
+        )
 
     def _reset_pending_action(self, snapshot: LiveSplitSnapshot) -> None:
         action = self._pending_action
@@ -302,34 +325,34 @@ class ScenarioRuntime:
     def _clear_pending_action(self) -> None:
         self._pending_action = None
         self._action_started_at = None
+        self._state_wait_started_at = None
 
     def _apply_resync(
         self,
-        snapshot: LiveSplitSnapshot,
+        update: LiveSplitUpdate,
         current: LiveSplitSnapshot,
     ) -> None:
-        if snapshot.state_revision < current.state_revision:
-            self._log(logging.WARNING, "scenario_runtime.revision_regressed")
-            return
-        revision_advanced = snapshot.state_revision > current.state_revision
-        run_changed = (
-            snapshot.run_revision != current.run_revision
-            or snapshot.split_count != current.split_count
-        )
+        snapshot = update.snapshot
         self._snapshot = snapshot
+        self._session_id = update.session_id
+        self._event_sequence = update.event_sequence
+        self._state_epoch = update.state_epoch
         self._configuration_valid = self._validate_split_count(snapshot)
         self._clear_pending_action()
-        if revision_advanced or run_changed:
-            self._reset_all_rules()
+        self._reset_all_rules()
         self._log(
             logging.INFO,
             "scenario_runtime.resynced",
-            revision_advanced=revision_advanced,
-            run_changed=run_changed,
+            run_changed=update.run_structure_changed,
+            state_epoch=update.state_epoch,
         )
 
-    def _establish_baseline(self, snapshot: LiveSplitSnapshot) -> None:
+    def _establish_baseline(self, update: LiveSplitUpdate) -> None:
+        snapshot = update.snapshot
         self._snapshot = snapshot
+        self._session_id = update.session_id
+        self._event_sequence = update.event_sequence
+        self._state_epoch = update.state_epoch
         self._configuration_valid = self._validate_split_count(snapshot)
         self._clear_pending_action()
         self._reset_all_rules()
@@ -371,6 +394,11 @@ class ScenarioRuntime:
         ):
             self._reset_rule_group(self._incomplete_rules, "incomplete", None)
             self._reset_rule_group(self._reset_rules, "reset", None)
+        elif current.phase is TimerPhase.NOT_RUNNING and snapshot.phase in (
+            TimerPhase.RUNNING,
+            TimerPhase.PAUSED,
+        ):
+            self._reset_rule_group(self._start_rules, "start", None)
         elif snapshot.phase is TimerPhase.ENDED:
             self._reset_rule_group(self._incomplete_rules, "incomplete", None)
             return
@@ -467,9 +495,9 @@ class ScenarioRuntime:
             rule_group=group,
             rule_split_index=split_index,
             rule_index=rule_index,
-            session_id=snapshot.session_id,
-            state_revision=snapshot.state_revision,
-            run_revision=snapshot.run_revision,
+            session_id=self._session_id,
+            event_sequence=self._event_sequence,
+            state_epoch=self._state_epoch,
             exc_info=exc_info,
             **extra,
         )
@@ -487,9 +515,9 @@ class ScenarioRuntime:
         if snapshot is not None:
             fields.update(
                 split_index=snapshot.split_index,
-                session_id=snapshot.session_id,
-                state_revision=snapshot.state_revision,
-                run_revision=snapshot.run_revision,
+                session_id=self._session_id,
+                event_sequence=self._event_sequence,
+                state_epoch=self._state_epoch,
                 phase=snapshot.phase.name,
                 split_count=snapshot.split_count,
             )
