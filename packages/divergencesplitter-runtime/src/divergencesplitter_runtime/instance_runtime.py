@@ -893,12 +893,18 @@ class InstanceRuntime:
         adapter: LiveSplitBridgeAdapter,
         runtime: ScenarioRuntime,
     ) -> _Attempt | None:
-        # The LiveSplit state after a rejected Reset is authoritative. Read it
-        # with the same failure handling as the state-wait timeout: a query
-        # failure or session change follows the existing recovery path.
+        # The LiveSplit state after a rejected Reset is authoritative. A
+        # transient query failure (INVALID/session change/timeout/connection)
+        # recovers by reconnecting; a protocol or value fault is terminal.
         try:
             update = adapter.confirm_timer_state()
-        except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+        except BridgeRemoteError as error:
+            if error.code == common_pb2.INTERNAL_ERROR:
+                self._connection_lost(error)
+                return _Attempt.CONNECTION_LOST
+            self._fail(error)
+            return _Attempt.TERMINAL
+        except (BridgeProtocolError, ValueError) as error:
             self._fail(error)
             return _Attempt.TERMINAL
         except BridgeClientError as error:

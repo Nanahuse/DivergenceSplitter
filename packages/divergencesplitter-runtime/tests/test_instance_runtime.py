@@ -44,6 +44,7 @@ from divergencesplitter_runtime import (
 from livesplit_bridge import (
     BridgeConnectionLostError,
     BridgeProtocolError,
+    BridgeRemoteError,
     BridgeResponseTimeoutError,
     common_pb2,
 )
@@ -2076,6 +2077,55 @@ def test_rejected_reset_query_failure_recovers() -> None:
     assert first.reset_attempts == 1
     assert first.confirm_calls == 1
     assert harness.adapters[1].attempts == []
+
+
+def test_rejected_reset_remote_internal_error_reconnects() -> None:
+    def factory() -> ScriptedAdapter:
+        return _RejectingResetAdapter(
+            initial_update(split_count=1),
+            confirm_error=BridgeRemoteError(common_pb2.INTERNAL_ERROR, "internal"),
+        )
+
+    harness = Harness(_reset_scenario(True), adapter_factory=factory)
+    harness.start()
+    state = None
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: harness.instance.generation == 1)
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+        state = harness.instance.state
+    finally:
+        harness.stop()
+
+    assert state is InstanceRuntimeState.READY
+    first = harness.adapters[0]
+    assert isinstance(first, _RejectingResetAdapter)
+    assert first.reset_attempts == 1
+    assert first.confirm_calls == 1
+    # The rejected Reset is never automatically resent on the new connection.
+    assert harness.adapters[1].attempts == []
+
+
+def test_rejected_reset_non_recoverable_remote_error_fails() -> None:
+    adapter = _RejectingResetAdapter(
+        initial_update(split_count=1),
+        confirm_error=BridgeRemoteError(common_pb2.INVALID_REQUEST, "bad request"),
+    )
+    harness = Harness(_reset_scenario(True), adapter=adapter)
+    harness.start()
+    try:
+        harness.wait_ready()
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: harness.instance.state is InstanceRuntimeState.FAILED)
+        wait_for(lambda: not harness.thread_alive())
+    finally:
+        harness.instance.request_stop()
+        harness.join(2)
+
+    assert isinstance(harness.instance.error, BridgeRemoteError)
+    assert adapter.reset_attempts == 1
 
 
 def test_normal_split_does_not_query_timer_state() -> None:
