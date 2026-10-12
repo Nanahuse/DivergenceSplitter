@@ -21,9 +21,6 @@ def make_event(sequence: int) -> common_pb2.BridgeEvent:
         event_sequence=sequence,
         type=common_pb2.EVENT_TIMER_SPLIT,
         timer_state=common_pb2.TimerState(
-            session_id=1,
-            state_revision=sequence,
-            run_revision=1,
             phase=common_pb2.RUNNING,
             split_index=0,
         ),
@@ -135,7 +132,7 @@ def test_receiver_reports_connection_loss_and_stops() -> None:
     receiver.start()
     receiver.wait_until_started()
     try:
-        subscriber.push(BridgeConnectionLostError("heartbeats missing"))
+        subscriber.push(BridgeConnectionLostError("event connection closed"))
 
         messages = collect_events(receiver, 1)
         assert len(messages) == 1

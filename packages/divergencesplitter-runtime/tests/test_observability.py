@@ -167,13 +167,10 @@ class TestDetectorTree:
         assert tree.scenarios[0].reset_condition is None
 
 
-def make_run(
-    revision: int = 1,
-    name: str = "A",
-) -> LiveSplitRunInfo:
+def make_run(name: str = "A") -> LiveSplitRunInfo:
     return LiveSplitRunInfo(
-        session_id=1,
-        run_revision=revision,
+        game_name="Game",
+        category_name="Any%",
         segments=(LiveSplitSegmentInfo(0, name),),
     )
 
@@ -195,11 +192,11 @@ class TestInstanceRuns:
 
     def test_update_replaces_the_previous_run(self) -> None:
         diagnostics = OperationalDiagnostics(StringIO())
-        diagnostics.instance_run_changed(0, make_run(revision=1))
-        diagnostics.instance_run_changed(0, make_run(revision=2, name="B"))
+        diagnostics.instance_run_changed(0, make_run())
+        diagnostics.instance_run_changed(0, make_run(name="B"))
 
         assert diagnostics.instance_run_infos() == (
-            InstanceRunSnapshot(0, make_run(revision=2, name="B")),
+            InstanceRunSnapshot(0, make_run(name="B")),
         )
 
     def test_none_clears_the_scenario_run(self) -> None:

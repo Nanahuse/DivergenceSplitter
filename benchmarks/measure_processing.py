@@ -384,9 +384,15 @@ def _stub_adapter_type(update: LiveSplitUpdate) -> type:
             **_: object,
         ) -> None:
             del connection, diagnostics, rpc_timeout_ms
+            self.session_id = update.session_id
+            self.event_sequence = update.event_sequence
+            self.state_epoch = update.state_epoch
 
-        def attach(self) -> LiveSplitUpdate:
+        def synchronize(self) -> LiveSplitUpdate:
             return update
+
+        def establish_event_cursor(self, events: tuple[object, ...]) -> None:
+            del events
 
         def handle_event(self, event: object) -> object:
             return event
@@ -395,11 +401,16 @@ def _stub_adapter_type(update: LiveSplitUpdate) -> type:
             self,
             action: Action,
             expected: LiveSplitSnapshot,
+            expected_state_epoch: int,
         ) -> object:
+            del expected_state_epoch
             raise RuntimeError("benchmark bridge stub must not dispatch actions")
 
         def resync(self, reason: object) -> LiveSplitUpdate:
             del reason
+            return update
+
+        def confirm_timer_state(self) -> LiveSplitUpdate:
             return update
 
         def close(self) -> None:
@@ -559,14 +570,16 @@ def _execute_case(
 
     split_count = max(1, len(instances[0].scenario.splits))
     snapshot = LiveSplitSnapshot(
-        session_id=1,
-        state_revision=0,
-        run_revision=1,
         phase=TimerPhase.RUNNING,
         split_index=0,
         split_count=split_count,
     )
-    update = LiveSplitUpdate(LiveSplitUpdateKind.INITIAL, snapshot)
+    update = LiveSplitUpdate(
+        LiveSplitUpdateKind.INITIAL,
+        snapshot,
+        session_id=1,
+        state_epoch=1,
+    )
     adapter_type = _stub_adapter_type(update)
 
     peak_traced_bytes: int | None = None

@@ -302,7 +302,7 @@ def test_recording_reaches_finish_and_refires_after_external_undo(
 
 
 @pytest.mark.parametrize("failure", ["gap", "connection_loss"])
-def test_bridge_resynchronization_stops_evaluation_until_complete(
+def test_bridge_integrity_loss_reconnects_and_stops_evaluation_until_complete(
     tmp_path: Path,
     failure: str,
 ) -> None:
@@ -356,7 +356,9 @@ def test_bridge_resynchronization_stops_evaluation_until_complete(
         )
 
     assert script.snapshot_mismatches == []
-    assert len(diagnostics.connection_errors) == (failure == "connection_loss")
+    # Both a sequence gap and a connection loss discard the connections and
+    # reconnect rather than continuing on a query-only resync.
+    assert len(diagnostics.connection_errors) == 1
 
 
 def test_slow_processing_overwrites_buffer_and_returns_to_latest_frame(
@@ -495,10 +497,10 @@ def test_independent_instances_keep_one_shared_capture_across_reconnect(
     allow_b = threading.Event()
 
     class LateBridge(BridgeScript):
-        def attach(self) -> LiveSplitUpdate:
+        def synchronize(self) -> LiveSplitUpdate:
             if not allow_b.is_set():
                 raise BridgeResponseTimeoutError("not running")
-            return super().attach()
+            return super().synchronize()
 
     scripts = (
         BridgeScript(snapshot()),

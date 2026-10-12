@@ -91,7 +91,7 @@ port per instance:
 ```
 
 A version `1` Profile is migrated on load. Its Protocol v1 ZeroMQ endpoints are
-not convertible to a Protocol v2 WebSocket port, so their values are discarded
+not convertible to a Protocol v3 WebSocket port, so their values are discarded
 and each instance is assigned a fresh port starting at `54000` in file order.
 The next save writes the version `2` form.
 
@@ -294,20 +294,23 @@ NDI® is a registered trademark of Vizrt NDI AB.
 
 ## LiveSplit Bridge constraints
 
-Run a LiveSplit.Bridge instance exposing Protocol v2 on the WebSocket port each
+Run a LiveSplit.Bridge instance exposing Protocol v3 on the WebSocket port each
 scenario is configured with. The runtime connects to the RPC endpoint
-`ws://127.0.0.1:<port>/bridge/v2/rpc` and subscribes to
-`ws://127.0.0.1:<port>/bridge/v2/events`; only the port is stored in the
-Profile. The runtime uses synchronous Bridge calls on a dedicated instance
-thread per connection, so capture and processing do not wait for network
-responses. Timer state is taken from the Protocol v2 `TimerState` and Run
-segments from `RunState`; the two are paired by their exact `run_revision`, so a
-snapshot never mixes revisions. `event_sequence` continuity and heartbeat
-semantics are tracked by the Bridge adapter so scenarios only ever see an
-authoritative LiveSplit state. Actions are checked against the current state
-and are never blindly retried. When an operation succeeds, its
-`OperationResponse.timer_state` is applied immediately.
-A timeout after sending an action is reported as an unknown result, not retried.
+`ws://127.0.0.1:<port>/bridge/v3/rpc` and subscribes to
+`ws://127.0.0.1:<port>/bridge/v3/events`; only the port is stored in the
+Profile. RPC and Events use separate connections and threads per instance.
+Initial synchronization reads `TimerState` and `RunState` from one RPC session.
+Events carry a session ID and sequence; gaps stop control and trigger a fresh
+query. The protocol has no heartbeat event and does not provide an atomic
+boundary between a query and the event stream, so events received during
+synchronization are drained before the runtime starts.
+
+Control success confirms that Bridge handled the operation, but does not include
+the resulting timer state. The runtime waits up to one second for a state event
+and then queries `TimerState`. If a Split left the index unchanged, rules for
+that index are reset and evaluated again on a new frame. Control requests with
+unknown outcomes are never retried; the instance reconnects and resumes from
+fresh state.
 
 ## Performance
 

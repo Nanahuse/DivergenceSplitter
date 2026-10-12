@@ -665,7 +665,7 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
             IdleSubscriber,
         ),
     ):
-        adapter.return_value.attach.side_effect = BridgeProtocolError(
+        adapter.return_value.synchronize.side_effect = BridgeProtocolError(
             "incompatible protocol"
         )
         for _ in range(2):

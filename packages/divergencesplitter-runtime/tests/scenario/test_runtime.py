@@ -13,6 +13,7 @@ from divergencesplitter import (
 )
 from divergencesplitter_runtime import (
     LiveSplitSnapshot,
+    LiveSplitTransitionReason,
     LiveSplitUpdate,
     LiveSplitUpdateKind,
     ScenarioRuntime,
@@ -96,17 +97,11 @@ def make_scenario(
 
 def make_snapshot(
     *,
-    session_id: int = 1,
-    state_revision: int = 0,
-    run_revision: int = 1,
     phase: TimerPhase = TimerPhase.RUNNING,
     split_index: int = 0,
     split_count: int = 2,
 ) -> LiveSplitSnapshot:
     return LiveSplitSnapshot(
-        session_id=session_id,
-        state_revision=state_revision,
-        run_revision=run_revision,
         phase=phase,
         split_index=split_index,
         split_count=split_count,
@@ -116,8 +111,22 @@ def make_snapshot(
 def update(
     snapshot: LiveSplitSnapshot,
     kind: LiveSplitUpdateKind = LiveSplitUpdateKind.INITIAL,
+    *,
+    session_id: int = 1,
+    event_sequence: int | None = None,
+    state_epoch: int = 0,
+    run_structure_changed: bool = False,
+    transition: LiveSplitTransitionReason | None = None,
 ) -> LiveSplitUpdate:
-    return LiveSplitUpdate(kind=kind, snapshot=snapshot)
+    return LiveSplitUpdate(
+        kind=kind,
+        snapshot=snapshot,
+        session_id=session_id,
+        event_sequence=event_sequence,
+        state_epoch=state_epoch,
+        run_structure_changed=run_structure_changed,
+        transition=transition,
+    )
 
 
 def context(nanoseconds: int = 0) -> FrameContext:
@@ -184,12 +193,12 @@ class ScenarioRuntimeEvaluationTest(unittest.TestCase):
         assert runtime.evaluate(context()) == Action("start")
         assert (start.calls, reset.calls, split.calls) == (1, 0, 0)
 
-    def test_starting_evaluates_nothing(self) -> None:
+    def test_running_does_not_evaluate_start(self) -> None:
         start = RecordingCondition(True)
         runtime = ScenarioRuntime(make_scenario((), start_condition=start))
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(phase=TimerPhase.STARTING, split_index=0, split_count=1)
+                make_snapshot(phase=TimerPhase.RUNNING, split_index=0, split_count=1)
             )
         )
 
@@ -216,8 +225,9 @@ class ScenarioRuntimeEvaluationTest(unittest.TestCase):
         assert runtime.evaluate(context(10)) == Action("undo")
         assert runtime.evaluate(context(20)) is None
         assert incomplete.calls == 1
-        assert runtime.evaluate(context(1_000_000_011)) is None
-        assert runtime.evaluate(context(1_000_000_012)) == Action("undo")
+        runtime.action_accepted(Action("undo"), 10)
+        runtime.state_wait_timed_out(1_000_000_010)
+        assert runtime.evaluate(context(1_000_000_011)) == Action("undo")
 
     def test_manual_undo_resets_ended_conditions_before_running(self) -> None:
         incomplete = RecordingCondition(False)
@@ -236,7 +246,6 @@ class ScenarioRuntimeEvaluationTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    state_revision=1,
                     phase=TimerPhase.RUNNING,
                     split_index=0,
                     split_count=1,
@@ -362,7 +371,6 @@ class ScenarioRuntimeEvaluationTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    state_revision=1,
                     split_index=1,
                 ),
                 LiveSplitUpdateKind.TRANSITION,
@@ -390,80 +398,64 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         first = RecordingCondition(False)
         second = RecordingCondition(False)
         runtime = ScenarioRuntime(
-            make_scenario(
-                (
-                    (make_rule(first),),
-                    (make_rule(second),),
-                )
-            )
+            make_scenario(((make_rule(first),), (make_rule(second),)))
         )
         runtime.apply_livesplit_update(update(make_snapshot()))
         baseline = (first.resets, second.resets)
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(state_revision=1, split_index=1),
+                make_snapshot(split_index=1),
                 LiveSplitUpdateKind.TRANSITION,
+                state_epoch=1,
             )
         )
-        self.assertEqual(
-            (first.resets, second.resets),
-            (baseline[0], baseline[1] + 1),
-        )
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(
-                    state_revision=2,
-                    phase=TimerPhase.ENDED,
-                    split_index=2,
-                    split_count=2,
-                ),
-                LiveSplitUpdateKind.TRANSITION,
-            )
-        )
+        self.assertEqual((first.resets, second.resets), (baseline[0], baseline[1] + 1))
 
-    def test_pause_and_resume_do_not_reset_current_group(self) -> None:
+    def test_pause_resume_and_timing_only_run_update_keep_rule_state(self) -> None:
         condition = RecordingCondition(False)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
         runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
         baseline = condition.resets
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(
-                    state_revision=1,
-                    phase=TimerPhase.PAUSED,
-                    split_count=1,
-                ),
-                LiveSplitUpdateKind.TRANSITION,
+        for phase in (TimerPhase.PAUSED, TimerPhase.RUNNING):
+            runtime.apply_livesplit_update(
+                update(
+                    make_snapshot(phase=phase, split_count=1),
+                    LiveSplitUpdateKind.TRANSITION,
+                )
             )
-        )
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(
-                    state_revision=2,
-                    split_count=1,
-                ),
-                LiveSplitUpdateKind.TRANSITION,
+                make_snapshot(split_count=1),
+                LiveSplitUpdateKind.RUN_CHANGED,
+                state_epoch=1,
             )
         )
         self.assertEqual(condition.resets, baseline)
 
-    def test_same_position_transition_resets_destination_group(self) -> None:
-        condition = RecordingCondition(False)
-        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
-        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
-        baseline = condition.resets
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(
-                    state_revision=1,
-                    split_count=1,
-                ),
-                LiveSplitUpdateKind.TRANSITION,
+    def test_same_index_transition_restarts_only_that_split_group(self) -> None:
+        reset = RecordingCondition(False)
+        first = RecordingCondition(False)
+        second = RecordingCondition(False)
+        runtime = ScenarioRuntime(
+            make_scenario(
+                ((make_rule(first),), (make_rule(second),)), reset_conditions=(reset,)
             )
         )
-        self.assertEqual(condition.resets, baseline + 1)
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
+        baseline = (reset.resets, first.resets, second.resets)
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(split_count=2),
+                LiveSplitUpdateKind.TRANSITION,
+                state_epoch=1,
+            )
+        )
+        self.assertEqual(
+            (reset.resets, first.resets, second.resets),
+            (baseline[0], baseline[1] + 1, baseline[2]),
+        )
 
-    def test_confirmed_reset_and_state_changing_resync_reset_all_rules(self) -> None:
+    def test_reset_transition_resets_all_rules(self) -> None:
         reset = RecordingCondition(False)
         main = RecordingCondition(False)
         runtime = ScenarioRuntime(
@@ -474,251 +466,279 @@ class ScenarioRuntimeUpdateTest(unittest.TestCase):
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(
-                    state_revision=1,
-                    phase=TimerPhase.NOT_RUNNING,
-                    split_index=-1,
-                    split_count=1,
+                    phase=TimerPhase.NOT_RUNNING, split_index=-1, split_count=1
                 ),
                 LiveSplitUpdateKind.TRANSITION,
+                state_epoch=1,
+                transition=LiveSplitTransitionReason.RESET,
             )
         )
         self.assertEqual(
             (reset.resets, main.resets), (baseline[0] + 1, baseline[1] + 1)
         )
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(
-                    state_revision=2,
-                    split_count=1,
-                ),
-                LiveSplitUpdateKind.RESYNC,
-            )
-        )
-        self.assertEqual(
-            (reset.resets, main.resets), (baseline[0] + 2, baseline[1] + 2)
-        )
 
-    def test_unchanged_resync_retains_rule_state(self) -> None:
+    def test_session_change_is_ignored_on_the_current_runtime(self) -> None:
         condition = RecordingCondition(False)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
         runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
         baseline = condition.resets
+        # A different session must never be applied onto the current rules; a
+        # fresh runtime is established after reconnecting instead.
         runtime.apply_livesplit_update(
             update(
                 make_snapshot(split_count=1),
-                LiveSplitUpdateKind.RESYNC,
+                LiveSplitUpdateKind.TRANSITION,
+                session_id=2,
             )
         )
+        self.assertEqual(runtime.current_snapshot, make_snapshot(split_count=1))
         self.assertEqual(condition.resets, baseline)
 
-    def test_game_time_revision_does_not_stop_start_evaluation(self) -> None:
-        start = RecordingCondition(False)
-        runtime = ScenarioRuntime(make_scenario((), start_condition=start))
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(
-                    phase=TimerPhase.NOT_RUNNING,
-                    split_index=-1,
-                )
-            )
-        )
-        resets = start.resets
-        for revision in range(1, 4):
-            runtime.apply_livesplit_update(
-                update(
-                    make_snapshot(
-                        phase=TimerPhase.NOT_RUNNING,
-                        split_index=-1,
-                        state_revision=revision,
-                    ),
-                    LiveSplitUpdateKind.PERIODIC,
-                )
-            )
-            runtime.evaluate(context(revision))
-        self.assertEqual(start.calls, 3)
-        self.assertEqual(start.resets, resets)
-        assert runtime.current_snapshot is not None
-        self.assertEqual(runtime.current_snapshot.state_revision, 3)
-
-    def test_same_session_change_is_ignored_without_resync(self) -> None:
-        start = RecordingCondition(True)
-        runtime = ScenarioRuntime(make_scenario((), start_condition=start))
-        baseline = make_snapshot(
-            state_revision=2, phase=TimerPhase.NOT_RUNNING, split_index=-1
-        )
-        runtime.apply_livesplit_update(update(baseline))
-        # A mismatched session without a RESYNC must not replace the baseline.
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(
-                    session_id=2,
-                    state_revision=3,
-                    phase=TimerPhase.NOT_RUNNING,
-                    split_index=-1,
-                ),
-                LiveSplitUpdateKind.PERIODIC,
-            )
-        )
-        assert runtime.current_snapshot is not None
-        self.assertEqual(runtime.current_snapshot.session_id, 1)
-        self.assertEqual(runtime.evaluate(context()), Action("start"))
-        # A same-revision RESYNC for the original session retains rule state.
-        resets = start.resets
-        runtime.apply_livesplit_update(update(baseline, LiveSplitUpdateKind.RESYNC))
-        self.assertEqual(start.resets, resets)
-
-    def test_revision_regression_is_ignored_until_resync(self) -> None:
-        condition = RecordingCondition(True)
-        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
-        runtime.apply_livesplit_update(
-            update(make_snapshot(state_revision=2, split_count=1))
-        )
-        runtime.evaluate(context())
-        runtime.action_not_dispatched(Action("split"))
-        resets = condition.resets
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(state_revision=1, split_count=1),
-                LiveSplitUpdateKind.TRANSITION,
-            )
-        )
-        self.assertEqual(condition.resets, resets)
-        assert runtime.current_snapshot is not None
-        self.assertEqual(runtime.current_snapshot.state_revision, 2)
-
-    def test_resync_with_lower_revision_is_ignored(self) -> None:
-        condition = RecordingCondition(False)
-        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
-        runtime.apply_livesplit_update(
-            update(make_snapshot(state_revision=2, split_count=1))
-        )
-        baseline = condition.resets
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(state_revision=1, split_count=1),
-                LiveSplitUpdateKind.RESYNC,
-            )
-        )
-        self.assertEqual(condition.resets, baseline)
-        assert runtime.current_snapshot is not None
-        self.assertEqual(runtime.current_snapshot.state_revision, 2)
-
-    def test_session_change_requires_resync_and_resets_all(self) -> None:
-        condition = RecordingCondition(False)
-        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
-        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
-        baseline = condition.resets
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(session_id=2, split_count=1),
-                LiveSplitUpdateKind.TRANSITION,
-            )
-        )
-        self.assertIsNone(runtime.evaluate(context()))
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(session_id=2, state_revision=1, split_count=1),
-                LiveSplitUpdateKind.RESYNC,
-            )
-        )
-        self.assertEqual(condition.resets, baseline + 1)
-
-    def test_duplicate_and_regressed_revision_do_not_reset(self) -> None:
-        condition = RecordingCondition(False)
-        runtime = ScenarioRuntime(make_scenario(((make_rule(condition),),)))
-        runtime.apply_livesplit_update(
-            update(make_snapshot(state_revision=2, split_count=1))
-        )
-        baseline = condition.resets
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(state_revision=3, split_count=1),
-                LiveSplitUpdateKind.PERIODIC,
-            )
-        )
-        # Same revision as already applied: ignored.
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(state_revision=3, split_count=1),
-                LiveSplitUpdateKind.TRANSITION,
-            )
-        )
-        # Revisions only advance; a lower revision is ignored.
-        runtime.apply_livesplit_update(
-            update(
-                make_snapshot(state_revision=1, split_count=1),
-                LiveSplitUpdateKind.TRANSITION,
-            )
-        )
-        self.assertEqual(condition.resets, baseline)
-
-    def test_same_revision_run_change_applies(self) -> None:
+    def test_structural_run_change_resets_but_timing_change_does_not(self) -> None:
         reset = RecordingCondition(False)
         main = RecordingCondition(False)
         runtime = ScenarioRuntime(
             make_scenario(((make_rule(main),),), reset_conditions=(reset,))
         )
-        runtime.apply_livesplit_update(
-            update(make_snapshot(state_revision=2, run_revision=1, split_count=1))
-        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
         baseline = (reset.resets, main.resets)
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(state_revision=2, run_revision=2, split_count=1),
-                LiveSplitUpdateKind.PERIODIC,
+                make_snapshot(split_count=1),
+                LiveSplitUpdateKind.RUN_CHANGED,
+                state_epoch=1,
             )
         )
-        self.assertEqual((reset.resets, main.resets), (baseline[0], baseline[1] + 1))
+        self.assertEqual((reset.resets, main.resets), baseline)
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(split_count=1),
+                LiveSplitUpdateKind.RUN_CHANGED,
+                state_epoch=2,
+                run_structure_changed=True,
+            )
+        )
+        self.assertEqual(
+            (reset.resets, main.resets), (baseline[0] + 1, baseline[1] + 1)
+        )
 
-    def test_too_many_slots_stop_evaluation_until_valid_resync(self) -> None:
+    def test_invalid_split_count_recovers_on_structural_run_change(self) -> None:
         condition = RecordingCondition(True)
         runtime = ScenarioRuntime(make_scenario(((make_rule(condition),), None, None)))
         runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
         self.assertIsNone(runtime.evaluate(context()))
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(state_revision=1, split_count=3),
-                LiveSplitUpdateKind.RESYNC,
+                make_snapshot(split_count=3),
+                LiveSplitUpdateKind.RUN_CHANGED,
+                state_epoch=1,
+                run_structure_changed=True,
             )
         )
         self.assertEqual(runtime.evaluate(context()), Action(operation="split"))
 
-    def test_run_change_resets_all_rules(self) -> None:
+
+class ScenarioRuntimeTimeoutTest(unittest.TestCase):
+    def test_same_index_timeout_restarts_only_current_rules_and_allows_new_action(
+        self,
+    ) -> None:
         reset = RecordingCondition(False)
-        main = RecordingCondition(False)
+        condition = RecordingCondition(True)
+        other = RecordingCondition(False)
+        runtime = ScenarioRuntime(
+            make_scenario(
+                ((make_rule(condition),), (make_rule(other),)),
+                reset_conditions=(reset,),
+            )
+        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
+        action = runtime.evaluate(context(10))
+        self.assertEqual(action, Action(operation="split"))
+        assert action is not None
+        runtime.action_accepted(action, 100)
+        self.assertEqual(runtime.state_wait_deadline_ns, 1_000_000_100)
+        runtime.state_wait_timed_out(1_000_000_100)
+        self.assertIsNone(runtime.pending_action)
+        self.assertEqual(condition.resets, 2)
+        self.assertEqual(other.resets, 1)
+        self.assertEqual(reset.resets, 1)
+        self.assertEqual(
+            runtime.evaluate(context(1_000_000_101)), Action(operation="split")
+        )
+
+
+class ScenarioRuntimePendingResetTest(unittest.TestCase):
+    def _runtime_with_split_pending(
+        self,
+    ) -> tuple[ScenarioRuntime, RecordingCondition]:
+        reset = RecordingCondition(False)
+        main = RecordingCondition(True)
         runtime = ScenarioRuntime(
             make_scenario(((make_rule(main),),), reset_conditions=(reset,))
         )
         runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
-        baseline = (reset.resets, main.resets)
+        self.assertEqual(runtime.evaluate(context()), Action("split"))
+        runtime.action_accepted(Action("split"), 1)
+        return runtime, main
+
+    def test_rejected_reset_keeps_the_split_wait(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_not_dispatched(Action("reset"))
+
+        self.assertEqual(runtime.pending_action, Action("split"))
+        self.assertIsNone(runtime.reset_pending)
+        self.assertIsNone(runtime.evaluate(context(3)))
+
+    def test_accepted_reset_survives_a_stale_split_event(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_accepted(Action("reset"), 3)
+
+        self.assertIsNone(runtime.pending_action)
+        self.assertEqual(runtime.reset_pending, Action("reset"))
         runtime.apply_livesplit_update(
             update(
-                make_snapshot(state_revision=1, run_revision=2, split_count=2),
-                LiveSplitUpdateKind.RESYNC,
+                make_snapshot(split_count=1),
+                LiveSplitUpdateKind.TRANSITION,
+                state_epoch=4,
+                transition=LiveSplitTransitionReason.SPLIT,
             )
         )
-        self.assertEqual(
-            (reset.resets, main.resets), (baseline[0] + 1, baseline[1] + 1)
+        self.assertEqual(runtime.reset_pending, Action("reset"))
+
+    def test_reset_wait_blocks_a_new_normal_control(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_accepted(Action("reset"), 3)
+
+        self.assertIsNone(runtime.evaluate(context(4)))
+
+    def test_pause_transition_does_not_complete_a_split_wait(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(phase=TimerPhase.PAUSED, split_count=1),
+                LiveSplitUpdateKind.TRANSITION,
+                state_epoch=4,
+                transition=LiveSplitTransitionReason.PAUSE,
+            )
+        )
+        self.assertEqual(runtime.pending_action, Action("split"))
+
+    def test_run_changed_does_not_clear_a_pending_action(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(split_count=1),
+                LiveSplitUpdateKind.RUN_CHANGED,
+                state_epoch=4,
+            )
+        )
+        self.assertEqual(runtime.pending_action, Action("split"))
+
+    def test_reset_transition_releases_the_reset_wait(self) -> None:
+        runtime, _ = self._runtime_with_split_pending()
+        runtime.external_action_pending(Action("reset"), 2)
+        runtime.action_accepted(Action("reset"), 3)
+        runtime.apply_livesplit_update(
+            update(
+                make_snapshot(
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                    split_count=1,
+                ),
+                LiveSplitUpdateKind.TRANSITION,
+                state_epoch=4,
+                transition=LiveSplitTransitionReason.RESET,
+            )
+        )
+        self.assertIsNone(runtime.reset_pending)
+
+
+class ScenarioRuntimeRejectedResetTest(unittest.TestCase):
+    def test_same_phase_and_index_clears_pending_and_restarts_rules(self) -> None:
+        reset = RecordingCondition(False)
+        first = RecordingCondition(False)
+        second = RecordingCondition(False)
+        runtime = ScenarioRuntime(
+            make_scenario(
+                ((make_rule(first),), (make_rule(second),)),
+                reset_conditions=(reset,),
+            )
+        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
+        first.result = True
+        self.assertEqual(runtime.evaluate(context()), Action("split"))
+        runtime.action_accepted(Action("split"), 1)
+        runtime.external_action_pending(Action("reset"), 2)
+        baseline = (reset.resets, first.resets, second.resets)
+
+        runtime.settle_rejected_reset(
+            update(
+                make_snapshot(split_count=2),
+                LiveSplitUpdateKind.PERIODIC,
+                state_epoch=7,
+            )
         )
 
+        self.assertIsNone(runtime.pending_action)
+        self.assertIsNone(runtime.reset_pending)
+        self.assertEqual(runtime.state_epoch, 7)
+        self.assertEqual(
+            (reset.resets, first.resets, second.resets),
+            (baseline[0] + 1, baseline[1] + 1, baseline[2]),
+        )
 
-class ScenarioRuntimeTimeoutTest(unittest.TestCase):
-    def test_normal_timeout_resets_current_group_and_restarts(self) -> None:
+    def test_advanced_index_restarts_that_index(self) -> None:
         reset = RecordingCondition(False)
-        condition = RecordingCondition(True)
+        first = RecordingCondition(False)
+        second = RecordingCondition(True)
         runtime = ScenarioRuntime(
-            make_scenario(((make_rule(condition),),), reset_conditions=(reset,))
+            make_scenario(
+                ((make_rule(first),), (make_rule(second),)),
+                reset_conditions=(reset,),
+            )
+        )
+        runtime.apply_livesplit_update(update(make_snapshot(split_count=2)))
+        baseline = (first.resets, second.resets)
+
+        runtime.settle_rejected_reset(
+            update(
+                make_snapshot(split_count=2, split_index=1),
+                LiveSplitUpdateKind.PERIODIC,
+                state_epoch=3,
+            )
+        )
+
+        self.assertEqual((first.resets, second.resets), (baseline[0], baseline[1] + 1))
+        self.assertEqual(runtime.evaluate(context()), Action("split"))
+
+    def test_not_running_moves_to_start(self) -> None:
+        reset = RecordingCondition(False)
+        start = RecordingCondition(True)
+        runtime = ScenarioRuntime(
+            make_scenario((), start_condition=start, reset_conditions=(reset,))
         )
         runtime.apply_livesplit_update(update(make_snapshot(split_count=1)))
-        baseline = condition.resets
-        self.assertEqual(runtime.evaluate(context(10)), Action(operation="split"))
-        self.assertIsNone(runtime.evaluate(context(1_000_000_009)))
-        self.assertIsNone(runtime.evaluate(context(1_000_000_010)))
-        self.assertEqual(condition.resets, baseline + 1)
-        self.assertEqual(reset.calls, 3)
-        self.assertEqual(
-            runtime.evaluate(context(1_000_000_011)), Action(operation="split")
+        baseline = (start.resets, reset.resets)
+
+        runtime.settle_rejected_reset(
+            update(
+                make_snapshot(
+                    phase=TimerPhase.NOT_RUNNING,
+                    split_index=-1,
+                    split_count=1,
+                ),
+                LiveSplitUpdateKind.PERIODIC,
+                state_epoch=2,
+            )
         )
+
+        self.assertEqual(
+            (start.resets, reset.resets), (baseline[0] + 1, baseline[1] + 1)
+        )
+        self.assertEqual(runtime.evaluate(context()), Action("start"))
 
 
 if __name__ == "__main__":

@@ -197,7 +197,7 @@ def test_debug_rule_logs_include_score_threshold_and_cache_use() -> None:
     runtime.apply_livesplit_update(
         LiveSplitUpdate(
             LiveSplitUpdateKind.INITIAL,
-            LiveSplitSnapshot(1, 0, 1, TimerPhase.RUNNING, 0, 1),
+            LiveSplitSnapshot(TimerPhase.RUNNING, 0, 1),
         )
     )
     context = FrameContext(
@@ -227,15 +227,13 @@ def test_snapshot_mismatch_names_each_different_precondition() -> None:
     stream = StringIO()
     diagnostics = OperationalDiagnostics(stream)
     connection = LiveSplitConnection(54100)
-    expected = LiveSplitSnapshot(1, 2, 1, TimerPhase.RUNNING, 0, 2)
-    actual = LiveSplitSnapshot(1, 4, 1, TimerPhase.RUNNING, 1, 2)
+    expected = LiveSplitSnapshot(TimerPhase.RUNNING, 0, 2)
+    actual = LiveSplitSnapshot(TimerPhase.RUNNING, 1, 2)
 
     diagnostics.snapshot_mismatched(connection, Action("split"), expected, actual)
 
     output = stream.getvalue()
-    assert 'mismatched_fields=["state_revision","split_index"]' in output
-    assert "expected.state_revision=2" in output
-    assert "actual.state_revision=4" in output
+    assert 'mismatched_fields=["split_index"]' in output
     assert "expected.split_index=0" in output
     assert "actual.split_index=1" in output
 
