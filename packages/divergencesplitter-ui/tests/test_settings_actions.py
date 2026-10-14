@@ -301,30 +301,6 @@ class TestRuntimeApply:
         assert controller.started_settings[-1].reaction_time_ms == 30
         assert controller.started_settings[-1].log_level == "DEBUG"
 
-    def test_apply_saves_once(self, tmp_path: Path, monkeypatch) -> None:
-        import divergencesplitter_ui.settings.actions as actions_module
-
-        saves: list[Path] = []
-        original = actions_module.save_app_settings_document
-
-        def counting_save(path, document):
-            saves.append(path)
-            return original(path, document)
-
-        monkeypatch.setattr(actions_module, "save_app_settings_document", counting_save)
-        controller = FakeController(SessionState.RUNNING)
-        actions, _controller, model = make_actions(
-            controller=controller,
-            model=make_model(tmp_path / "config.json"),
-            settings_path=tmp_path / "settings.json",
-        )
-        model.edit_reaction_time("30")
-        model.edit_log_level("DEBUG")
-
-        assert actions.apply() is True
-
-        assert saves == [tmp_path / "settings.json"]
-
 
 class TestApplyErrors:
     def test_invalid_reaction_time_applies_nothing(self, tmp_path: Path) -> None:

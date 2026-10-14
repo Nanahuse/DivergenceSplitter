@@ -9,11 +9,6 @@ from divergencesplitter_ui.about import (
 
 
 class TestAboutInfo:
-    def test_application_name(self) -> None:
-        info = about_info()
-
-        assert info.application_name == APPLICATION_NAME
-
     def test_uses_generated_version(self) -> None:
         assert about_info() == AboutInfo(
             application_name=APPLICATION_NAME,
