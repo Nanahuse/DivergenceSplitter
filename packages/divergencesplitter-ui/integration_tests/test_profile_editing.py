@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from divergencesplitter_runtime.configuration.models import ResizeInterpolation
 from divergencesplitter_ui.session import SessionState
 
@@ -121,7 +119,9 @@ async def test_entering_input_refreshes_ndi_availability(
     await harness.navigate("profile")
     await harness.wait_until(lambda: harness.ndi_discovery.refresh_calls == 1)
     refreshes = harness.ndi_discovery.refresh_calls
-    await asyncio.sleep(0.05)
+    assert harness.app is not None and harness.app.profile_page is not None
+    for _ in range(3):
+        harness.app.profile_page.tick(harness.controller.state, visible=True)
     assert harness.ndi_discovery.refresh_calls == refreshes
     await harness.select("profile-source-type", "NDI")
     await harness.select("profile-ndi-source", "OBS")

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-
+from divergencesplitter.frame.camera import CameraCaptureSettings
 from divergencesplitter_ui.session import SessionState
 
 from integration_tests.conftest import StartApp
@@ -48,22 +47,45 @@ async def test_preview_is_updated_only_while_profile_is_visible(
     start_test_app: StartApp,
 ) -> None:
     harness = await start_test_app(with_initial_profile=True, release_on_run=False)
+    assert harness.app is not None and harness.app.profile_page is not None
     await harness.navigate("profile")
+    profile_page = harness.app.profile_page
+    preview_controls = (
+        profile_page.preview.control,
+        profile_page.input.opened_camera_label,
+    )
+    harness.preview_controller.capture_settings = CameraCaptureSettings(
+        width=1280, height=720, fps=30.0
+    )
     harness.page.update_calls.clear()
-    await asyncio.sleep(0.1)
-    visible_updates = list(harness.page.update_calls)
+    await harness.apply_profile_preview_cycle()
+    assert (
+        profile_page.input.opened_camera_label.value
+        == "Opened camera: 1280×720 @ 30.00 FPS"
+    )
+    assert harness.page.update_calls == [preview_controls]
 
     await harness.navigate("settings")
-    harness.page.update_calls.clear()
-    await asyncio.sleep(0.1)
-
-    assert visible_updates
-    assert all(harness.monitor.control not in update for update in visible_updates)
-    assert harness.app is not None and harness.app.profile_page is not None
-    assert all(
-        harness.app.profile_page.control not in update
-        for update in harness.page.update_calls
+    harness.preview_controller.capture_settings = CameraCaptureSettings(
+        width=1920, height=1080, fps=60.0
     )
+    harness.page.update_calls.clear()
+    await harness.apply_profile_preview_cycle()
+
+    assert harness.page.update_calls == []
+    assert (
+        profile_page.input.opened_camera_label.value
+        == "Opened camera: 1280×720 @ 30.00 FPS"
+    )
+
+    await harness.navigate("profile")
+    harness.page.update_calls.clear()
+    await harness.apply_profile_preview_cycle()
+    assert (
+        profile_page.input.opened_camera_label.value
+        == "Opened camera: 1920×1080 @ 60.00 FPS"
+    )
+    assert harness.page.update_calls == [preview_controls]
 
 
 async def test_dialog_does_not_force_monitor_repaint(start_test_app: StartApp) -> None:
