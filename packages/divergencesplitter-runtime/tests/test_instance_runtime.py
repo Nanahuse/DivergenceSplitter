@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import cast
 
 import numpy as np
@@ -98,6 +99,7 @@ class ScriptedAdapter:
         execute_result: ActionExecution = ActionExecution.DISPATCHED,
         log: list[str] | None = None,
         clock: ManualClock | None = None,
+        synchronization_responses: Sequence[LiveSplitUpdate] | None = None,
     ) -> None:
         self.initial = initial
         self.baseline = initial.snapshot
@@ -115,11 +117,21 @@ class ScriptedAdapter:
         self.event_sequence = initial.event_sequence
         self._log = log
         self._clock = clock
+        self._synchronization_responses = synchronization_responses
 
     def synchronize(self) -> LiveSplitUpdate:
+        index = self.synchronized
         self.synchronized += 1
-        self.baseline = self.initial.snapshot
-        return self.initial
+        response = self.initial
+        if self._synchronization_responses:
+            response = self._synchronization_responses[
+                min(index, len(self._synchronization_responses) - 1)
+            ]
+        self.baseline = response.snapshot
+        self.state_epoch = response.state_epoch
+        self.session_id = response.session_id
+        self.event_sequence = response.event_sequence
+        return response
 
     def establish_event_cursor(
         self, events: tuple[common_pb2.BridgeEvent, ...]
@@ -385,6 +397,28 @@ def wait_for(predicate: Callable[[], bool], timeout: float = 3) -> None:
         time.sleep(0.001)
 
 
+class EventSignalHandler(logging.Handler):
+    """Signal when a selected structured Runtime log event is complete."""
+
+    def __init__(self, *events: str) -> None:
+        super().__init__()
+        self.signals = {event: threading.Event() for event in events}
+
+    def emit(self, record: logging.LogRecord) -> None:
+        event = getattr(record, "event", None)
+        if event in self.signals:
+            self.signals[event].set()
+
+
+def event_logger(*events: str) -> tuple[logging.Logger, EventSignalHandler]:
+    handler = EventSignalHandler(*events)
+    logger = logging.getLogger(f"test.instance_runtime.{id(handler)}")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.addHandler(handler)
+    return logger, handler
+
+
 class ManualClock(TimeProvider):
     def __init__(self, nanoseconds: int = 0) -> None:
         self.nanoseconds = nanoseconds
@@ -415,6 +449,7 @@ class Harness:
         cpu_time_provider: ThreadTimeProvider | None = None,
         reaction_time_ms: int = 0,
         reaction_wait: Callable[[int], None] | None = None,
+        logger: logging.Logger | None = None,
         preload_events: tuple[BridgeEventReceived, ...] = (),
         preload_overflow: bool = False,
         receiver_factory: (
@@ -438,6 +473,7 @@ class Harness:
             LiveSplitConnection(54100),
             scenario,
             diagnostics=self.diagnostics,
+            logger=logger,
             reconnect_delay_seconds=0.001,
             receive_timeout_ms=1,
             reaction_time_ms=reaction_time_ms,
@@ -856,24 +892,26 @@ def test_action_is_dispatched_in_the_same_cycle() -> None:
 
 
 def test_state_wait_timeout_runs_without_another_video_frame() -> None:
+    logger, signals = event_logger("bridge.state_wait_timeout")
     adapter = ScriptedAdapter(initial_update())
-    harness = Harness(make_scenario(RecordingCondition(True)), adapter=adapter)
+    condition = RecordingCondition(True)
+    harness = Harness(make_scenario(condition), adapter=adapter, logger=logger)
     harness.start()
     try:
         harness.wait_ready()
         harness.instance.publish_frame(shared_frame(1))
         wait_for(lambda: len(adapter.attempts) == 1)
-        assert adapter.confirmed.wait(2)
-        wait_for(
-            lambda: (
-                harness.instance._scenario_runtime is not None
-                and harness.instance._scenario_runtime.pending_action is None
-            )
-        )
+        assert signals.signals["bridge.state_wait_timeout"].wait(3)
+        assert adapter.confirm_calls == 1
+        assert [action.operation for action, _ in adapter.attempts] == ["split"]
+
+        harness.instance.publish_frame(shared_frame(time.monotonic_ns()))
+        wait_for(lambda: len(adapter.attempts) == 2)
     finally:
         harness.stop()
 
-    assert len(adapter.attempts) == 1
+    assert [action.operation for action, _ in adapter.attempts] == ["split", "split"]
+    assert condition.calls == 2
 
 
 @pytest.mark.parametrize(
@@ -1537,7 +1575,8 @@ def test_manual_reset_is_noop_when_not_running() -> None:
     try:
         harness.wait_ready()
         harness.instance.request_reset()
-        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: harness.diagnostics.evaluated == [0])
     finally:
         harness.stop()
 
@@ -1559,10 +1598,17 @@ def test_manual_reset_uses_snapshot_at_processing_time() -> None:
                     phase=TimerPhase.NOT_RUNNING,
                     split_index=-1,
                 ),
+                state_epoch=1,
             )
         )
         harness.instance.request_reset()
-        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
+        wait_for(lambda: bool(harness.adapter.handled))
+        # The future capture time keeps this frame beyond the queued transition
+        # even if it is published before that update finishes applying.
+        harness.instance.publish_frame(
+            shared_frame(time.monotonic_ns() + 1_000_000_000)
+        )
+        wait_for(lambda: bool(harness.diagnostics.evaluated))
     finally:
         harness.stop()
 
@@ -1594,36 +1640,42 @@ def test_manual_reset_ignores_reaction_time() -> None:
 
 
 def test_initial_sync_primes_baseline_from_queued_events() -> None:
-    adapter = ScriptedAdapter(initial_update())
-    duplicate = LiveSplitUpdate(
-        LiveSplitUpdateKind.TRANSITION,
-        snapshot(),
+    first_sync = phase_update(TimerPhase.RUNNING)
+    final_sync = phase_update(TimerPhase.NOT_RUNNING)
+    adapter = ScriptedAdapter(
+        first_sync,
+        synchronization_responses=(first_sync, final_sync),
     )
-    newer = LiveSplitUpdate(
+    queued = LiveSplitUpdate(
         LiveSplitUpdateKind.TRANSITION,
-        snapshot(split_index=0),
+        snapshot(phase=TimerPhase.RUNNING, split_index=0),
+        state_epoch=1,
+    )
+    start = RecordingCondition(True)
+    split = RecordingCondition(True)
+    scenario = Scenario(
+        start_condition=start,
+        reset_condition=None,
+        incomplete_condition=None,
+        splits=((Rule(split, Action("split")),),),
     )
     harness = Harness(
-        make_scenario(RecordingCondition(False)),
+        scenario,
         adapter=adapter,
-        preload_events=(
-            BridgeEventReceived(cast(common_pb2.BridgeEvent, duplicate)),
-            BridgeEventReceived(cast(common_pb2.BridgeEvent, newer)),
-        ),
+        preload_events=(BridgeEventReceived(cast(common_pb2.BridgeEvent, queued)),),
     )
     harness.start()
     try:
         harness.wait_ready()
         wait_for(lambda: adapter.synchronized == 2)
-        assert harness.instance._scenario_runtime is not None
-        assert (
-            harness.instance._scenario_runtime.current_snapshot
-            == adapter.initial.snapshot
-        )
-        assert adapter.baseline == adapter.initial.snapshot
-        assert adapter.handled == []
+        harness.instance.publish_frame(shared_frame(1))
+        wait_for(lambda: bool(adapter.attempts))
     finally:
         harness.stop()
+
+    assert [action.operation for action, _ in adapter.attempts] == ["start"]
+    assert start.calls == 1
+    assert split.calls == 0
 
 
 # -- Regression: Reset priority during a reaction wait -------------------------
@@ -1649,7 +1701,6 @@ def test_manual_reset_during_reaction_cancels_unsent_split() -> None:
         harness.wait_ready()
         harness.instance.publish_frame(shared_frame(0))
         wait_for(lambda: bool(adapter.attempts))
-        wait_for(lambda: not harness.instance._manual_reset_requested.is_set())
     finally:
         harness.stop()
 
@@ -1995,59 +2046,99 @@ def _reset_scenario(reset_result: bool) -> Scenario:
 
 
 def test_rejected_auto_reset_fetches_timer_state_and_resumes() -> None:
+    logger, signals = event_logger("bridge.reset_rejected_reconciled")
     adapter = _RejectingResetAdapter(initial_update(split_count=1))
-    harness = Harness(_reset_scenario(True), adapter=adapter)
+    reset = RecordingCondition(True)
+    split = RecordingCondition(False)
+    scenario = Scenario(
+        start_condition=RecordingCondition(False),
+        reset_condition=reset,
+        incomplete_condition=None,
+        splits=((Rule(split, Action("split")),),),
+    )
+    harness = Harness(scenario, adapter=adapter, logger=logger)
     harness.start()
-    runtime = None
     try:
         harness.wait_ready()
         harness.instance.publish_frame(shared_frame(1))
-        wait_for(lambda: adapter.confirm_calls == 1)
-        runtime = harness.instance._scenario_runtime
+        assert signals.signals["bridge.reset_rejected_reconciled"].wait(3)
+        assert adapter.confirm_calls == 1
+        assert adapter.reset_attempts == 1
+
+        reset.result = False
+        split.result = True
+        harness.instance.publish_frame(shared_frame(time.monotonic_ns()))
+        wait_for(lambda: len(adapter.attempts) == 2)
     finally:
         harness.stop()
 
-    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert [action.operation for action, _ in adapter.attempts] == ["reset", "split"]
     assert adapter.reset_attempts == 1
-    assert runtime is not None
-    assert runtime.reset_pending is None
-    assert runtime.pending_action is None
+    assert adapter.confirm_calls == 1
 
 
 def test_rejected_manual_reset_fetches_timer_state_and_resumes() -> None:
+    logger, signals = event_logger("bridge.reset_rejected_reconciled")
     adapter = _RejectingResetAdapter(initial_update(split_count=1))
-    harness = Harness(make_scenario(RecordingCondition(False)), adapter=adapter)
+    reset = RecordingCondition(False)
+    split = RecordingCondition(False)
+    scenario = Scenario(
+        start_condition=RecordingCondition(False),
+        reset_condition=reset,
+        incomplete_condition=None,
+        splits=((Rule(split, Action("split")),),),
+    )
+    harness = Harness(scenario, adapter=adapter, logger=logger)
     harness.start()
-    runtime = None
     try:
         harness.wait_ready()
         harness.instance.request_reset()
-        wait_for(lambda: adapter.confirm_calls == 1)
-        runtime = harness.instance._scenario_runtime
+        assert signals.signals["bridge.reset_rejected_reconciled"].wait(3)
+        assert adapter.confirm_calls == 1
+        assert adapter.reset_attempts == 1
+
+        split.result = True
+        harness.instance.publish_frame(shared_frame(time.monotonic_ns()))
+        wait_for(lambda: len(adapter.attempts) == 2)
     finally:
         harness.stop()
 
-    assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert [action.operation for action, _ in adapter.attempts] == ["reset", "split"]
     assert adapter.reset_attempts == 1
-    assert runtime is not None
-    assert runtime.reset_pending is None
-    assert runtime.pending_action is None
+    assert adapter.confirm_calls == 1
 
 
 def test_rejected_reset_is_not_resent_without_a_new_frame() -> None:
     adapter = _RejectingResetAdapter(initial_update(split_count=1))
-    harness = Harness(_reset_scenario(True), adapter=adapter)
+    logger, signals = event_logger("bridge.reset_rejected_reconciled")
+    harness = Harness(_reset_scenario(True), adapter=adapter, logger=logger)
     harness.start()
     try:
         harness.wait_ready()
         harness.instance.publish_frame(shared_frame(1))
-        wait_for(lambda: adapter.confirm_calls == 1)
-        time.sleep(0.05)
-    finally:
+        assert signals.signals["bridge.reset_rejected_reconciled"].wait(3)
+        assert adapter.confirm_calls == 1
+
+        # A benign Bridge event wakes an additional worker cycle without
+        # supplying another frame. Stop joins that cycle after it is drained.
+        harness.push_event(
+            LiveSplitUpdate(
+                LiveSplitUpdateKind.PERIODIC,
+                snapshot(),
+                event_sequence=1,
+                state_epoch=2,
+            )
+        )
+        harness.receiver.wake()
+        wait_for(lambda: len(adapter.handled) == 1)
         harness.stop()
+    finally:
+        if harness.thread_alive():
+            harness.stop()
 
     assert adapter.reset_attempts == 1
     assert [action.operation for action, _ in adapter.attempts] == ["reset"]
+    assert adapter.confirm_calls == 1
 
 
 def test_rejected_reset_query_failure_recovers() -> None:
