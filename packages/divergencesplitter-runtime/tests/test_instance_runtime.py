@@ -911,6 +911,7 @@ def test_state_wait_timeout_runs_without_another_video_frame() -> None:
         harness.stop()
 
     assert [action.operation for action, _ in adapter.attempts] == ["split", "split"]
+    assert adapter.not_dispatched == 0
     assert condition.calls == 2
 
 
@@ -1674,6 +1675,7 @@ def test_initial_sync_primes_baseline_from_queued_events() -> None:
         harness.stop()
 
     assert [action.operation for action, _ in adapter.attempts] == ["start"]
+    assert adapter.not_dispatched == 0
     assert start.calls == 1
     assert split.calls == 0
 
@@ -2073,6 +2075,7 @@ def test_rejected_auto_reset_fetches_timer_state_and_resumes() -> None:
         harness.stop()
 
     assert [action.operation for action, _ in adapter.attempts] == ["reset", "split"]
+    assert adapter.not_dispatched == 0
     assert adapter.reset_attempts == 1
     assert adapter.confirm_calls == 1
 
@@ -2104,6 +2107,7 @@ def test_rejected_manual_reset_fetches_timer_state_and_resumes() -> None:
         harness.stop()
 
     assert [action.operation for action, _ in adapter.attempts] == ["reset", "split"]
+    assert adapter.not_dispatched == 0
     assert adapter.reset_attempts == 1
     assert adapter.confirm_calls == 1
 
