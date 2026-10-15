@@ -26,6 +26,7 @@ from divergencesplitter import (
     Scenario,
     VideoFileSource,
 )
+from divergencesplitter.frame.camera import CameraCaptureSettings
 from divergencesplitter_runtime.configuration.models import (
     AppSettings,
     InstanceConfiguration,
@@ -142,10 +143,13 @@ class FakeNdiDiscovery:
 class FakePreviewController:
     """The draft preview boundary without opening a camera, NDI, or video file."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, capture_settings: CameraCaptureSettings | None = None
+    ) -> None:
         self.started: list[object] = []
         self.stop_calls = 0
         self.transforms: list[object] = []
+        self._capture_settings = capture_settings
 
     def update_transform(self, transform: object) -> None:
         self.transforms.append(transform)
@@ -163,8 +167,12 @@ class FakePreviewController:
         return frame
 
     @property
-    def capture_settings(self) -> None:
-        return None
+    def capture_settings(self) -> CameraCaptureSettings | None:
+        return self._capture_settings
+
+    @capture_settings.setter
+    def capture_settings(self, settings: CameraCaptureSettings | None) -> None:
+        self._capture_settings = settings
 
     @property
     def error(self) -> None:

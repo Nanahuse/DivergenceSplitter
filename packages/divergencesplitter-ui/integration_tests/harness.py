@@ -145,6 +145,12 @@ class Harness:
                 raise AssertionError("condition was not satisfied before timeout")
             await asyncio.sleep(0.02)
 
+    async def apply_profile_preview_cycle(self) -> None:
+        """Run the application's real one-cycle Profile preview update."""
+
+        assert self.app is not None
+        await self.app._apply_profile_preview()
+
     async def navigate(self, view: str) -> None:
         """Select a navigation entry and wait for the view to become active."""
 
