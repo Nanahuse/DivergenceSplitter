@@ -284,12 +284,9 @@ class ProfilePage:
             return
         self._preview_was_active = False
         if self._started_preview_key is not None:
-            if self._pending_preview_command is not None:
-                # A start that has not reached the worker can be discarded.
-                self._pending_preview_command = None
-            else:
-                # No queued command means start_draft is complete or in flight.
-                self._pending_preview_command = self._preview_controller.stop
+            # Replace any queued start with a stop. A prior capture may still
+            # be running while a new source's start is waiting to be applied.
+            self._pending_preview_command = self._preview_controller.stop
         self._started_preview_key = None
 
     def _sync_preview_now(self) -> None:

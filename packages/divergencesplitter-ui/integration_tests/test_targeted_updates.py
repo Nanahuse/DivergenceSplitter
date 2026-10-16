@@ -130,20 +130,6 @@ async def test_navigation_stops_camera_preview_without_hidden_ui_updates(
     assert harness.page.update_calls == []
 
 
-async def test_navigation_cancels_camera_preview_start_before_capture_begins(
-    start_test_app: StartApp,
-) -> None:
-    harness = await start_test_app()
-    _camera_profile(harness)
-
-    await harness.navigate("profile")
-    await harness.navigate("settings")
-    await harness.apply_profile_preview_cycle()
-
-    assert harness.preview_controller.started == []
-    assert harness.preview_controller.stop_calls == 0
-
-
 async def test_camera_preview_restarts_after_returning_to_profile(
     start_test_app: StartApp,
 ) -> None:

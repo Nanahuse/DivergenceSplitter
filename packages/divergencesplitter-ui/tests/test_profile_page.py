@@ -119,7 +119,7 @@ class FakeNdiDiscovery:
 
 class FakePreviewController:
     def __init__(self) -> None:
-        self.started: list[tuple] = []
+        self.started: list[object] = []
         self.stop_calls = 0
         self.transforms: list = []
         self.take_frame_calls = 0
@@ -272,7 +272,7 @@ class TestPreviewLifecycle:
         assert len(preview.started) == 3
         assert preview.stop_calls == 2
 
-    def test_hidden_pending_start_is_cancelled_without_stopping(self) -> None:
+    def test_hidden_pending_start_is_replaced_by_one_stop(self) -> None:
         preview = FakePreviewController()
         page = make_page(preview=preview)
         page.tick(SessionState.IDLE, visible=True)
@@ -282,7 +282,66 @@ class TestPreviewLifecycle:
         asyncio.run(page.pump_preview(visible=False))
 
         assert preview.started == []
+        assert preview.stop_calls == 1
+
+    def test_hidden_pending_replacement_start_stops_existing_capture(self) -> None:
+        model = make_model()
+        preview = FakePreviewController()
+        page = make_page(model=model, preview=preview)
+        page.tick(SessionState.IDLE, visible=True)
+        asyncio.run(page.pump_preview(visible=True))
+        assert len(preview.started) == 1
+        assert isinstance(preview.started[0], CameraSourceConfiguration)
+        assert preview.started[0].device.name == "USB Camera"
+
+        model.set_camera_device(CameraBackend.DIRECT_SHOW, "USB Camera B", 8)
+        model.set_camera_mode(CameraModeConfiguration(1920, 1080, 30.0, "YUY2"))
+        page.tick(SessionState.IDLE, visible=True)
+        assert len(preview.started) == 1
+        frames_before_hidden_pump = preview.take_frame_calls
+
+        page.tick(SessionState.IDLE, visible=False)
+        assert asyncio.run(page.pump_preview(visible=False)) is False
+
+        assert len(preview.started) == 1
+        assert preview.stop_calls == 1
+        assert preview.take_frame_calls == frames_before_hidden_pump
+
+    def test_source_change_stop_reservation_survives_navigation(self) -> None:
+        model = make_model()
+        preview = FakePreviewController()
+        page = make_page(model=model, preview=preview)
+        page.tick(SessionState.IDLE, visible=True)
+        asyncio.run(page.pump_preview(visible=True))
+        assert len(preview.started) == 1
+
+        model.set_source_type(SourceType.VIDEO)
+        page.tick(SessionState.IDLE, visible=True)
+        page.tick(SessionState.IDLE, visible=False)
+        assert asyncio.run(page.pump_preview(visible=False)) is False
+
+        assert preview.stop_calls == 1
+        assert preview.take_frame_calls == 1
+
+    def test_returning_to_camera_before_reserved_stop_restarts_preview(self) -> None:
+        model = make_model()
+        preview = FakePreviewController()
+        page = make_page(model=model, preview=preview)
+        page.tick(SessionState.IDLE, visible=True)
+        asyncio.run(page.pump_preview(visible=True))
+
+        model.set_source_type(SourceType.VIDEO)
+        page.tick(SessionState.IDLE, visible=True)
+        model.set_source_type(SourceType.CAMERA)
+        page.tick(SessionState.IDLE, visible=True)
+        asyncio.run(page.pump_preview(visible=True))
+
+        assert len(preview.started) == 2
         assert preview.stop_calls == 0
+
+        page.tick(SessionState.IDLE, visible=False)
+        asyncio.run(page.pump_preview(visible=False))
+        assert preview.stop_calls == 1
 
     def test_hidden_sync_does_not_queue_a_preview_start(self) -> None:
         preview = FakePreviewController()
