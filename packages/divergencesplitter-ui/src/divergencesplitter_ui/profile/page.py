@@ -165,7 +165,7 @@ class ProfilePage:
 
         self._active_tab = tab
         self._tabs.selected_index = _TAB_ORDER.index(tab)
-        self.tick(self._controller.state, visible=True)
+        self.tick(self._controller.state, visible=self._was_visible)
 
     def preview_update_targets(self) -> tuple[ft.Control, ...]:
         """The controls one ``pump_preview`` cycle can change.
@@ -177,16 +177,25 @@ class ProfilePage:
 
         return (self._input.preview.control, self._input.opened_camera_label)
 
-    async def pump_preview(self) -> bool:
-        """Run one preview cycle: apply any pending start/stop, render a frame."""
+    async def pump_preview(self, *, visible: bool) -> bool:
+        """Run pending lifecycle commands, rendering only visible Input previews."""
 
-        command = self._pending_preview_command
-        if command is not None:
-            self._pending_preview_command = None
-            try:
-                await asyncio.to_thread(command)
-            except Exception as error:  # noqa: BLE001 - surfaced as preview status
-                self._on_status(f"preview: {error}")
+        if not visible:
+            self._deactivate_preview()
+            self._was_visible = False
+        await self._run_pending_preview_command()
+
+        # A navigation event can arrive while a start command is running in a
+        # worker thread. tick() then queues a stop; apply it before returning.
+        if (
+            not visible
+            or not self._was_visible
+            or self._active_tab is not ProfileTab.INPUT
+        ):
+            if self._pending_preview_command is not None:
+                await self._run_pending_preview_command()
+            return False
+
         changed = await self._input.preview.pump(self._preview_controller)
         changed |= self._input.set_capture_settings(
             self._preview_controller.capture_settings
@@ -195,6 +204,16 @@ class ProfilePage:
         if error is not None:
             self._on_status(f"preview: {error}")
         return changed
+
+    async def _run_pending_preview_command(self) -> None:
+        command = self._pending_preview_command
+        if command is None:
+            return
+        self._pending_preview_command = None
+        try:
+            await asyncio.to_thread(command)
+        except Exception as error:  # noqa: BLE001 - surfaced as preview status
+            self._on_status(f"preview: {error}")
 
     def tick(self, state: SessionState, *, visible: bool) -> bool:
         """Sync the page from the model; return whether anything changed."""
@@ -228,7 +247,7 @@ class ProfilePage:
         self._scenarios.set_profile_present(True)
         self._populate_input(draft)
         self._instances.apply(draft, edit_permission(self._controller.state))
-        if self._active_tab is ProfileTab.INPUT:
+        if self._was_visible and self._active_tab is ProfileTab.INPUT:
             self._sync_preview(draft)
 
     def teardown(self) -> None:
@@ -261,24 +280,32 @@ class ProfilePage:
         return True
 
     def _deactivate_preview(self) -> None:
-        if not self._preview_was_active:
+        if not self._preview_was_active and self._started_preview_key is None:
             return
         self._preview_was_active = False
-        self._pending_preview_command = self._preview_controller.stop
+        if self._started_preview_key is not None:
+            # Replace any queued start with a stop. A prior capture may still
+            # be running while a new source's start is waiting to be applied.
+            self._pending_preview_command = self._preview_controller.stop
         self._started_preview_key = None
 
     def _sync_preview_now(self) -> None:
         draft = self._model.draft
-        if draft is not None and self._active_tab is ProfileTab.INPUT:
+        if (
+            self._was_visible
+            and draft is not None
+            and self._active_tab is ProfileTab.INPUT
+        ):
             self._sync_preview(draft)
 
     def _sync_preview(self, draft: EditableProfile) -> None:
         transform = source_transform_from_editable(draft)
         self._preview_controller.update_transform(transform)
+        if not self._was_visible or self._active_tab is not ProfileTab.INPUT:
+            self._deactivate_preview()
+            return
         if is_active(self._controller.state):
-            if self._started_preview_key is not None:
-                self._pending_preview_command = self._preview_controller.stop
-                self._started_preview_key = None
+            self._deactivate_preview()
             return
         key = self._preview_key(draft)
         if key == self._started_preview_key:
@@ -335,7 +362,7 @@ class ProfilePage:
         index = int(event.control.selected_index or 0)
         if 0 <= index < len(_TAB_ORDER):
             self._active_tab = _TAB_ORDER[index]
-        self.tick(self._controller.state, visible=True)
+        self.tick(self._controller.state, visible=self._was_visible)
         self._request_update()
 
     def _on_input_changed(self) -> None:
