@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -121,6 +122,7 @@ class FakePreviewController:
         self.started: list[tuple] = []
         self.stop_calls = 0
         self.transforms: list = []
+        self.take_frame_calls = 0
 
     def update_transform(self, transform) -> None:
         self.transforms.append(transform)
@@ -132,7 +134,7 @@ class FakePreviewController:
         self.stop_calls += 1
 
     def take_frame(self):
-        return None
+        self.take_frame_calls += 1
 
     def normalize(self, frame):
         return frame
@@ -204,7 +206,7 @@ class TestPreviewLifecycle:
         preview = FakePreviewController()
         page = make_page(preview=preview)
         page.tick(SessionState.IDLE, visible=True)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
 
         assert len(preview.started) == 1
         assert preview.stop_calls == 0
@@ -215,13 +217,13 @@ class TestPreviewLifecycle:
         preview = FakePreviewController()
         page = make_page(model=model, preview=preview)
         page.tick(SessionState.IDLE, visible=True)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
         assert len(preview.started) == 1
         assert preview.stop_calls == 0
 
         model.set_source_type(SourceType.VIDEO)
         page.tick(SessionState.IDLE, visible=True)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
 
         assert len(preview.started) == 1
         assert preview.stop_calls == 1
@@ -233,7 +235,7 @@ class TestPreviewLifecycle:
         page = make_page(preview=preview, controller=controller)
 
         page.tick(SessionState.RUNNING, visible=True)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
 
         assert preview.started == []
         assert preview.stop_calls == 0
@@ -242,31 +244,100 @@ class TestPreviewLifecycle:
         preview = FakePreviewController()
         page = make_page(preview=preview)
         page.tick(SessionState.IDLE, visible=True)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
         assert len(preview.started) == 1
 
         page.tick(SessionState.IDLE, visible=False)
-        asyncio.run(page.pump_preview())
+        assert asyncio.run(page.pump_preview(visible=False)) is False
         assert preview.stop_calls == 1
 
         page.tick(SessionState.IDLE, visible=True)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
         assert len(preview.started) == 2
         assert preview.stop_calls == 1
 
         page.select_tab(ProfileTab.SCENARIOS)
-        asyncio.run(page.pump_preview())
+        calls_before_scenarios = preview.take_frame_calls
+        assert asyncio.run(page.pump_preview(visible=True)) is False
         assert preview.stop_calls == 2
+        assert preview.take_frame_calls == calls_before_scenarios
 
         page.tick(SessionState.IDLE, visible=True)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
         assert len(preview.started) == 2
         assert preview.stop_calls == 2
 
         page.select_tab(ProfileTab.INPUT)
-        asyncio.run(page.pump_preview())
+        asyncio.run(page.pump_preview(visible=True))
         assert len(preview.started) == 3
         assert preview.stop_calls == 2
+
+    def test_hidden_pending_start_is_cancelled_without_stopping(self) -> None:
+        preview = FakePreviewController()
+        page = make_page(preview=preview)
+        page.tick(SessionState.IDLE, visible=True)
+        page.tick(SessionState.IDLE, visible=False)
+
+        asyncio.run(page.pump_preview(visible=False))
+        asyncio.run(page.pump_preview(visible=False))
+
+        assert preview.started == []
+        assert preview.stop_calls == 0
+
+    def test_hidden_sync_does_not_queue_a_preview_start(self) -> None:
+        preview = FakePreviewController()
+        page = make_page(preview=preview)
+        page.populate()
+        page.tick(SessionState.IDLE, visible=False)
+
+        asyncio.run(page.pump_preview(visible=False))
+
+        assert preview.started == []
+        assert preview.stop_calls == 0
+
+    def test_hidden_repeated_pumps_do_not_repeat_stop(self) -> None:
+        preview = FakePreviewController()
+        page = make_page(preview=preview)
+        page.tick(SessionState.IDLE, visible=True)
+        asyncio.run(page.pump_preview(visible=True))
+        page.tick(SessionState.IDLE, visible=False)
+
+        for _ in range(3):
+            asyncio.run(page.pump_preview(visible=False))
+
+        assert len(preview.started) == 1
+        assert preview.stop_calls == 1
+
+    def test_leaving_while_start_is_running_stops_after_start_completes(self) -> None:
+        class BlockingPreviewController(FakePreviewController):
+            def __init__(self) -> None:
+                super().__init__()
+                self.start_entered = threading.Event()
+                self.finish_start = threading.Event()
+
+            def start_draft(self, configuration: object) -> None:
+                self.start_entered.set()
+                if not self.finish_start.wait(timeout=5):
+                    raise AssertionError("test did not release the preview start")
+                super().start_draft(configuration)
+
+        async def exercise_transition() -> None:
+            preview = BlockingPreviewController()
+            page = make_page(preview=preview)
+            page.tick(SessionState.IDLE, visible=True)
+            pump = asyncio.create_task(page.pump_preview(visible=True))
+            entered = await asyncio.to_thread(preview.start_entered.wait, 5)
+            assert entered
+
+            page.tick(SessionState.IDLE, visible=False)
+            preview.finish_start.set()
+            assert await pump is False
+
+            assert len(preview.started) == 1
+            assert preview.stop_calls == 1
+            assert preview.take_frame_calls == 0
+
+        asyncio.run(exercise_transition())
 
 
 class TestPreviewUpdateTargets:

@@ -412,6 +412,10 @@ class FletApplication:
         self._active_view = view
         for candidate, container in self._views.items():
             container.visible = candidate is view
+        if self._profile_page is not None:
+            self._profile_page.tick(
+                self._controller.state, visible=view is AppView.PROFILE
+            )
         if self._navigation is not None:
             self._navigation.select(view)
         if self._page is not None:
@@ -519,9 +523,12 @@ class FletApplication:
 
     async def _apply_profile_preview(self) -> None:
         profile_page = self._profile_page
-        if profile_page is None or self._active_view is not AppView.PROFILE:
+        if profile_page is None:
             return
-        if not await profile_page.pump_preview():
+        visible = self._active_view is AppView.PROFILE
+        changed = await profile_page.pump_preview(visible=visible)
+        # The view can change while a start or stop runs in a worker thread.
+        if not changed or self._active_view is not AppView.PROFILE:
             return
         if self._page is not None:
             self._page.update(*profile_page.preview_update_targets())
