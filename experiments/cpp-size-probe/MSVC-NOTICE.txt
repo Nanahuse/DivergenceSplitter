@@ -1,0 +1,14 @@
+Microsoft Visual C++ Runtime
+
+The unmodified Microsoft runtime DLLs in bin/ are from the Visual Studio
+redistributable directory, deployed app-locally using CMake's
+InstallRequiredSystemLibraries module. They remain separately licensed by
+Microsoft under the applicable Visual Studio terms.
+
+Deployment method:
+https://learn.microsoft.com/en-us/cpp/windows/choosing-a-deployment-method
+Redistributable files and applicable license terms:
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+https://visualstudio.microsoft.com/license-terms/
+
+The MSVC toolset version used is recorded in build-metadata/toolchain.json.

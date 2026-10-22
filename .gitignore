@@ -211,6 +211,9 @@ packages/divergencesplitter-ui/src/divergencesplitter_ui/_version.py
 # Ruff stuff:
 .ruff_cache/
 
+# C++ size probe vcpkg binary cache (CI/local build output)
+.vcpkg-binary-cache/
+
 # PyPI configuration file
 .pypirc
 

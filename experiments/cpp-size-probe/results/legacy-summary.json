@@ -1,0 +1,176 @@
+{
+  "schema": 1,
+  "label": "Python/Flet main f3ecd17",
+  "kind": "legacy",
+  "measurement": "measured",
+  "classification": "path heuristic",
+  "unpacked_bytes": 336741879,
+  "zip_bytes": 120071454,
+  "zip_sha256": "f33bd870c15d65b64a67cbe3ec638aa12ac46ce659613c6bc753593271d673e5",
+  "zip_settings": {
+    "method": "DEFLATE",
+    "level": 6,
+    "timestamp": "2020-01-01T00:00:00",
+    "ordering": "relative path, case sensitive",
+    "python": "3.14.6",
+    "zlib": "1.3.1.zlib-ng"
+  },
+  "categories": {
+    "Application": 184220,
+    "Flet/Flutter": 46016144,
+    "MSVC Runtime": 872240,
+    "NDI": 30666116,
+    "OpenCV (including NumPy)": 199826100,
+    "Other": 1473139,
+    "Python (runtime + other packages)": 57703920
+  },
+  "file_count": 3727,
+  "ndi_status": "Not evaluated by this tool",
+  "provenance": "https://github.com/Nanahuse/DivergenceSplitter/actions/runs/38922970221 artifact 12055417786",
+  "source_artifact": {
+    "bytes": 119173986,
+    "sha256": "c17638a2e7dd7572cc7a2bddffa5f12da92a9c816e5a52726f18bb250e82b494"
+  },
+  "largest_files": [
+    {
+      "path": "DivergenceSplitter/site-packages/cv2/cv2.pyd",
+      "bytes": 112898048,
+      "category": "OpenCV (including NumPy)",
+      "owner": "path heuristic",
+      "sha256": "ae833b9b5771f5932200bd3b8ad0f483f4fbec92cbdbd26d21d38fe524c60e66"
+    },
+    {
+      "path": "DivergenceSplitter/site-packages/cv2/opencv_videoio_ffmpeg500_64.dll",
+      "bytes": 30876160,
+      "category": "OpenCV (including NumPy)",
+      "owner": "path heuristic",
+      "sha256": "7aabff029d1fa47cf56ede4dbbe05dc62da3208f07cd16471d4c966a33f9aa31"
+    },
+    {
+      "path": "DivergenceSplitter/site-packages/NDIlib/Processing.NDI.Lib.x64.dll",
+      "bytes": 29863120,
+      "category": "NDI",
+      "owner": "path heuristic",
+      "sha256": "2b6602075868ba4401f82f417d72424805d69b11ca86078023d0d489ff45dd84"
+    },
+    {
+      "path": "DivergenceSplitter/flutter_windows.dll",
+      "bytes": 21284864,
+      "category": "Flet/Flutter",
+      "owner": "path heuristic",
+      "sha256": "890b23404e770d3a01a978e6ee8dbeef9006c85c39a9f5d75e3f91e5bcf3bb80"
+    },
+    {
+      "path": "DivergenceSplitter/site-packages/numpy.libs/libscipy_openblas64_-ed4f167a5330424524f45258e7ca2c8d.dll",
+      "bytes": 20589056,
+      "category": "OpenCV (including NumPy)",
+      "owner": "path heuristic",
+      "sha256": "ed4f167a5330424524f45258e7ca2c8d7f03c0cba1f30ee4985553ac1f88ecf8"
+    },
+    {
+      "path": "DivergenceSplitter/data/app.so",
+      "bytes": 16319376,
+      "category": "Flet/Flutter",
+      "owner": "path heuristic",
+      "sha256": "8fd57df4ef3342301688b540dac215ec36eb7628d1c7992e0219f27cedece6df"
+    },
+    {
+      "path": "DivergenceSplitter/python314.dll",
+      "bytes": 7046656,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "e2277c6cb6dd8fe7f18c97213da532364fcc99a3b8ebe20634f676846854946f"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/libcrypto-3.dll",
+      "bytes": 6242552,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "53c529145339fb042a3dcd3a09c2d7753204f8b4fc79d99e0d31e69a33985958"
+    },
+    {
+      "path": "DivergenceSplitter/site-packages/numpy/_core/_multiarray_umath.cp314-win_amd64.pyd",
+      "bytes": 3865600,
+      "category": "OpenCV (including NumPy)",
+      "owner": "path heuristic",
+      "sha256": "71521656365044a41c155d5e7c2caa47cef75a5e120e93afb82c928484aa82a7"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/tcl90.dll",
+      "bytes": 3369299,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "a1fb45f963b05cb083a97df1449c2023b484eb921d40a463da7501b0f60e0f70"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/_zstd_d.pyd",
+      "bytes": 2661888,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "e338b25dfa8ffd3aae6aef5eb6f7664a1a37e62c7e71976e3c10d8582114d9e8"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/tcl9tk90.dll",
+      "bytes": 2138360,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "31f625c52e65d29d126e710ed8bab2ec964cb770e4fc59bc329dfff02cb6ddcf"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/sqlite3_d.dll",
+      "bytes": 2064384,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "fc6b5de4522f6a23f3823447dbb096234ac87b22582124cd602bf4018b17cd71"
+    },
+    {
+      "path": "DivergenceSplitter/data/flutter_assets/fonts/MaterialIcons-Regular.otf",
+      "bytes": 1645184,
+      "category": "Flet/Flutter",
+      "owner": "path heuristic",
+      "sha256": "d9865b671a09d683d13a863089d8825e0f61a37696ce5d7d448bc8023aa62453"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/sqlite3.dll",
+      "bytes": 1570816,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "1f51e2d89cdc6f7b4cce8be181c5686e878cb93d927012bf360f9d727b8a7dac"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/libssl-3.dll",
+      "bytes": 1329912,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "b17a87979862d19241edc4318f967e24c3ec356ed6c2368f561179fab2311001"
+    },
+    {
+      "path": "DivergenceSplitter/DLLs/unicodedata_d.pyd",
+      "bytes": 935424,
+      "category": "Python (runtime + other packages)",
+      "owner": "path heuristic",
+      "sha256": "e71b0d18924c42c73b27fe2e60f8a2dc9275b08dd012bd7c05c35c55c54692b7"
+    },
+    {
+      "path": "DivergenceSplitter/data/icudtl.dat",
+      "bytes": 862304,
+      "category": "Flet/Flutter",
+      "owner": "path heuristic",
+      "sha256": "998367809a821d595928089c197b3f7959f0420f81f79d4d0daee53378492ed5"
+    },
+    {
+      "path": "DivergenceSplitter/site-packages/numpy/_core/_simd.cp314-win_amd64.pyd",
+      "bytes": 831488,
+      "category": "OpenCV (including NumPy)",
+      "owner": "path heuristic",
+      "sha256": "c7aafc9c574b75318aad03091aa0379b818d318f298bed57f2720903673c1d71"
+    },
+    {
+      "path": "DivergenceSplitter/site-packages/NDIlib/NDIlib.cp314-win_amd64.pyd",
+      "bytes": 788480,
+      "category": "NDI",
+      "owner": "path heuristic",
+      "sha256": "1e3f7856ecf41296caf30ecf0081d87f5104d28aaf6f24602bb325539a359e0e"
+    }
+  ]
+}
