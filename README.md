@@ -357,6 +357,10 @@ sequences multiple Rules and their Actions.
 
 ## Windows distribution
 
+C++23 / Qt Widgets移行の配布容量検証は、既存アプリから独立した
+[`experiments/cpp-size-probe`](experiments/cpp-size-probe/README.md) を参照。
+現行Windows Artifactの実測、vcpkg manifest、最小アプリ、配布・比較CIを含む。
+
 The `Windows distribution` CI workflow builds the desktop UI and AutoSplit
 Converter sequentially in one Windows job. Its `DivergenceSplitter-windows-x64`
 artifact downloads as a GitHub Actions ZIP:

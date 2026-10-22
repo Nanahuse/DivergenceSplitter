@@ -1,0 +1,15 @@
+{
+  "name": "divergencesplitter-size-probe",
+  "version-string": "0.1.0",
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
+  "dependencies": [
+    { "name": "qtbase", "features": ["windeployqt"] },
+    "qtwebsockets",
+    { "name": "opencv4", "features": ["contrib"] }
+  ],
+  "overrides": [
+    { "name": "qtbase", "version": "6.11.1", "port-version": 1 },
+    { "name": "qtwebsockets", "version": "6.11.1" },
+    { "name": "opencv4", "version": "4.12.0", "port-version": 7 }
+  ]
+}

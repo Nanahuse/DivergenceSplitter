@@ -1,0 +1,190 @@
+{
+  "schema": 1,
+  "label": "C++23 Qt Widgets dependency probe",
+  "kind": "cpp",
+  "measurement": "measured",
+  "classification": "vcpkg ownership + dependency graph",
+  "unpacked_bytes": 107654765,
+  "zip_bytes": 44305216,
+  "zip_sha256": "7f279f743c6da9aac650f26e463a98e1af364239aed67f91bdcd561b37684f82",
+  "zip_settings": {
+    "method": "DEFLATE",
+    "level": 6,
+    "timestamp": "2020-01-01T00:00:00",
+    "ordering": "relative path, case sensitive",
+    "python": "3.14.6",
+    "zlib": "1.3.1.zlib-ng"
+  },
+  "categories": {
+    "Application": 55808,
+    "MSVC Runtime": 1646032,
+    "Notices and metadata": 5522668,
+    "OpenCV (including dependencies)": 10115072,
+    "Other": 1153,
+    "Qt (including dependencies/plugins)": 68733440,
+    "Shared Qt/OpenCV dependencies": 1012224,
+    "Windows SDK graphics runtime (Qt deployment)": 20568368
+  },
+  "file_count": 142,
+  "ndi_status": "UNVERIFIED: official SDK/runtime not supplied; NDI bytes excluded",
+  "provenance": "local working tree based on b941b32847f01c4f80e54c46c3c27926f925edce",
+  "toolchain": {
+    "runner_image": "local",
+    "msvc_tools": "14.51.36231",
+    "windows_sdk": "10.0.26100.0\\",
+    "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+    "ninja": "1.13.2",
+    "source_commit": "local working tree",
+    "triplet": "x64-windows",
+    "ndi_sdk_archive_sha256": "not supplied"
+  },
+  "verification": {
+    "release_build": "passed locally",
+    "ctest": "passed",
+    "deployed_executable": "passed with developer PATH removed",
+    "clean_github_ci": "not run",
+    "ndi": "unverified; SDK not supplied"
+  },
+  "largest_files": [
+    {
+      "path": "bin/icudt78.dll",
+      "bytes": 33110528,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "icu, qtbase",
+      "sha256": "76a1e4484bc9b82b93a16589c05fc6e25f6d8995235c8027d09274f600d4e58e"
+    },
+    {
+      "path": "bin/dxcompiler.dll",
+      "bytes": 14317000,
+      "category": "Windows SDK graphics runtime (Qt deployment)",
+      "owner": "Microsoft Windows SDK redistributable",
+      "sha256": "a5aa1d9a95bf9ea68eff4502eb687161464bb5a505e817782b7a770a2a312044"
+    },
+    {
+      "path": "bin/Qt6Gui.dll",
+      "bytes": 6998016,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "qtbase",
+      "sha256": "679553ffffd82c24f6268fa21e9af69dd550e82516d94e678b2ca8ef646e2d3b"
+    },
+    {
+      "path": "bin/Qt6Widgets.dll",
+      "bytes": 6158336,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "qtbase",
+      "sha256": "c2b06233837953fe333141c9ae5c15387e7a191006e955a3ddbfc31e361bb61c"
+    },
+    {
+      "path": "bin/libcrypto-3-x64.dll",
+      "bytes": 5358080,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "openssl, qtbase",
+      "sha256": "11f41b0582cb017a539e1eda11f1cdf986274c03e098f9ebf97181d2adb7f2f8"
+    },
+    {
+      "path": "bin/Qt6Core.dll",
+      "bytes": 5313024,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "qtbase",
+      "sha256": "4c64736c3aee53fa9b2a446ef73745b276e99b98053bf249dc37f0dc82881852"
+    },
+    {
+      "path": "bin/d3dcompiler_47.dll",
+      "bytes": 4741568,
+      "category": "Windows SDK graphics runtime (Qt deployment)",
+      "owner": "Microsoft Windows SDK redistributable",
+      "sha256": "e407b9ffadef47e87994dc488214f75405cf04ee99589f2315fc7ab99fd1dfe2"
+    },
+    {
+      "path": "bin/opencv_imgproc4.dll",
+      "bytes": 4513792,
+      "category": "OpenCV (including dependencies)",
+      "owner": "opencv4",
+      "sha256": "2885e1647f09b7d99b3e5ad53ed43e90f060a12a222f94d79fee0a6b0bedd12f"
+    },
+    {
+      "path": "bin/opencv_core4.dll",
+      "bytes": 3058688,
+      "category": "OpenCV (including dependencies)",
+      "owner": "opencv4",
+      "sha256": "ba464dc0a8ff9af58e687596d1aa09da59b7ca429c63d163ed6ee73a54df4530"
+    },
+    {
+      "path": "bin/icuin78.dll",
+      "bytes": 2807296,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "icu, qtbase",
+      "sha256": "d711a8b54f7dfa5aa619cae923a5ce4cc404d12820adc8403f4e9272c9ce7e2b"
+    },
+    {
+      "path": "build-metadata/qtbase-vcpkg.spdx.json",
+      "bytes": 2257913,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a28c8d9fb2cd3c05bf27762af340343663604ed6c8982dd4f4ddd30b4720cee7"
+    },
+    {
+      "path": "bin/icuuc78.dll",
+      "bytes": 1845248,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "icu, qtbase",
+      "sha256": "6685516d91464fbe68cde184a304eaad9422f34a089abaf721797d8a5928ea18"
+    },
+    {
+      "path": "bin/Qt6Network.dll",
+      "bytes": 1628160,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "qtbase",
+      "sha256": "55b2d27dad28b325d7c1c2ee4cfc909ce8a8d4c3c9a46e604850ba651b157ef1"
+    },
+    {
+      "path": "bin/dxil.dll",
+      "bytes": 1509800,
+      "category": "Windows SDK graphics runtime (Qt deployment)",
+      "owner": "Microsoft Windows SDK redistributable",
+      "sha256": "95ac1bb413178c4596f49498e912c270f8f343282b63840f174cbf5154ad1557"
+    },
+    {
+      "path": "bin/harfbuzz.dll",
+      "bytes": 1201152,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "harfbuzz, qtbase",
+      "sha256": "5de248e7a66fd2a254e347354c6549c193c054ef38c61e55555f38800ccb8632"
+    },
+    {
+      "path": "Qt6/plugins/platforms/qwindows.dll",
+      "bytes": 944640,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "qtbase",
+      "sha256": "efb5abc6749afca4fe1a3587f1aa87c4a18184c1742131fa5e4ebcc16e8a64c3"
+    },
+    {
+      "path": "bin/jpeg62.dll",
+      "bytes": 722944,
+      "category": "Shared Qt/OpenCV dependencies",
+      "owner": "libjpeg-turbo",
+      "sha256": "1c0c783f404903ea7454232dd45df5fc15602a3be1b9d8574eb1ccaa5249b382"
+    },
+    {
+      "path": "bin/freetype.dll",
+      "bytes": 707072,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "freetype, qtbase",
+      "sha256": "a6b4a55caa067c54423185c20b168ec0fe30d5bc8f1ab447ff11aa781e323956"
+    },
+    {
+      "path": "bin/zstd.dll",
+      "bytes": 657920,
+      "category": "Qt (including dependencies/plugins)",
+      "owner": "qtbase, zstd",
+      "sha256": "4124f3c6107fbb8c63d88d5f4bff29a1bfbb23833a59824360a503d441ac1a68"
+    },
+    {
+      "path": "bin/msvcp140.dll",
+      "bytes": 643512,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+    }
+  ]
+}
