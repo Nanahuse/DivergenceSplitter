@@ -1,6 +1,6 @@
 # ローカル実測結果（2026-10-22）
 
-標準のvcpkg構成でQt 6 Widgets・OpenCV Contribを使用するC++23最小アプリを実ビルドし、配布フォルダーとZIPを測定した。**C++側はNDIを含まない。完全移植版の容量や、その削減率を示す結果ではない。クリーンなGitHub Actionsでの実行は未実施。**
+標準のvcpkg構成でQt 6 Widgets・OpenCV Contribを使用するC++23最小アプリを実ビルドし、配布フォルダーとZIPを測定した。**C++側はNDIを含まない。完全移植版の容量や、その削減率を示す結果ではない。** この文書はローカル測定時の記録であり、その後に成功したクリーンなGitHub Actionsでの検証は [Windows CI実測結果](ci.md) を参照。
 
 ## 同じZIP条件での比較
 
@@ -45,7 +45,7 @@ Qt Deployが収集した `d3dcompiler_47.dll`、`dxcompiler.dll`、`dxil.dll` �
 
 ## 環境と再現用データ
 
-- ソース：ローカル作業ツリー（基点commit `b941b32847f01c4f80e54c46c3c27926f925edce`）。GitHubへ未push。
+- 測定時のソース：ローカル作業ツリー（基点commit `b941b32847f01c4f80e54c46c3c27926f925edce`）。その後、専用ブランチへpushしてPR #152を作成した。
 - MSVC compiler `19.51.36252.0`、toolset `14.51.36231`（Visual Studio 2026）。
 - Windows SDK `10.0.26100.0`、CMake `4.3.1-msvc1`、Ninja `1.13.2`。
 - vcpkg `9e593bb18ea69cc5095e012465dcd675a822ed0d`、Qt Base `6.11.1#1`、Qt WebSockets `6.11.1`、OpenCV `4.12.0#7`、`x64-windows`。
@@ -60,4 +60,4 @@ NDI公式SDKが未提供のため、公式ヘッダーを使うコードのコ�
 
 また、現行版はopencv-contrib-python `5.0.0.93`、C++側はOpenCV `4.12.0#7` で、動画バックエンドや同梱機能も異なる。C++側には完全なGUI、Scenario Runtime、Detector、設定処理、製品アセットを実装していない。これらの増分は未推定。
 
-今回の実測は「標準構成のQt/OpenCVを使う最小アプリ」の容量基準として利用できる。CIでは `windows-2025` にインストールされたMSVCを使用し、ローカルとのツールチェーン差を実測後に確認する。NDIは今回のPRでは未検証のままとし、完全移植版の容量は推定しない。
+今回の実測は「標準構成のQt/OpenCVを使う最小アプリ」の容量基準として利用できる。その後、`windows-2025` にインストールされたMSVCでクリーンCIに成功し、ローカルとの差を [CI実測結果](ci.md) に記録した。NDIは今回のPRでは未検証のままとし、完全移植版の容量は推定しない。

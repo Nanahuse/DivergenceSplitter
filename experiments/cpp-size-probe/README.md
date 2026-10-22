@@ -89,7 +89,7 @@ C++版の区分はvcpkgの導入ファイル一覧と依存グラフで求める
 
 ## 完了判定と結果
 
-[ローカルでの実測比較](results/comparison.md) と [現行版の測定結果](results/legacy.md) を参照。NDIを除くC++構成は実ビルド・配布起動・ZIP展開後起動まで成功し、展開後107,654,765 bytes、ZIP 44,305,216 bytesだった。クリーンなGitHub ActionsとNDIを含む構成は未検証。
+[Windows CI実測結果](results/ci.md)、[ローカルでの実測比較](results/comparison.md)、[現行版の測定結果](results/legacy.md) を参照。NDIを除くC++構成はクリーンなWindows CIでReleaseビルド・CTest・配布起動・ZIP展開後起動まで成功した。CIで展開後107,651,764 bytes、ZIP 44,304,402 bytes、ローカルで展開後107,654,765 bytes、ZIP 44,305,216 bytesだった。NDIを含む構成は未検証。
 
 1. クリーンなWindows CIでmanifestの依存解決とReleaseビルドが成功する。
 2. CTest、ライセンス/DLL検証、配布exe起動テストが成功する。
