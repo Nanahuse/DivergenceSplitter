@@ -99,6 +99,8 @@ jobs:
             build/gui-comparison-reports/${{ matrix.candidate }}/*.zip
             build/gui-comparison-reports/${{ matrix.candidate }}-build.log
             build/gui-comparison/${{ matrix.candidate }}/*-gui.*
+            build/gui-comparison/${{ matrix.candidate }}/*-view.*
+            build/gui-comparison/${{ matrix.candidate }}/exit-hold.json
             build/gui-comparison/${{ matrix.candidate }}/gui-tests.xml
             build/gui-tool-tests.xml
           compression-level: 0

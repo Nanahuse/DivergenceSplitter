@@ -65,6 +65,7 @@ public:
         connect(&timer_, &QTimer::timeout, this, [this] { tick(); });
         timer_.start();
         session_.renderer = "Qt Widgets / raster / QStandardItemModel";
+        if (session_.options.dark) toggle_theme();
     }
     int result() const { return session_.error.empty() ? 0 : 1; }
     Probe probe() const override {
@@ -306,6 +307,7 @@ private:
             palette.setColor(QPalette::Window, QColor(35, 37, 42)); palette.setColor(QPalette::WindowText, Qt::white);
             palette.setColor(QPalette::Base, QColor(25, 27, 31)); palette.setColor(QPalette::AlternateBase, QColor(40, 42, 47));
             palette.setColor(QPalette::Text, Qt::white); palette.setColor(QPalette::Button, QColor(50, 53, 60)); palette.setColor(QPalette::ButtonText, Qt::white);
+            palette.setColor(QPalette::PlaceholderText, QColor(160, 160, 160));
         } else palette = QApplication::style()->standardPalette();
         QApplication::setPalette(palette);
     }

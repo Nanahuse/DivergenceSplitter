@@ -67,6 +67,27 @@ if(NOT GUI_CANDIDATE STREQUAL "none")
                 ENVIRONMENT "QT_PLUGIN_PATH=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/plugins")
         endif()
     endforeach()
+    foreach(view diagnostics profile)
+        set(view_args --large --seconds 2 --page ${view})
+        if(view STREQUAL "profile")
+            list(APPEND view_args --dark)
+        endif()
+        add_test(NAME ${GUI_CANDIDATE}-${view}-capture COMMAND ${gui_target} ${view_args}
+            --report "${CMAKE_CURRENT_BINARY_DIR}/${view}-view.json"
+            --capture "${CMAKE_CURRENT_BINARY_DIR}/${view}-view.png")
+        set_tests_properties(${GUI_CANDIDATE}-${view}-capture PROPERTIES TIMEOUT 20)
+        if(GUI_CANDIDATE STREQUAL "qt")
+            set_tests_properties(${GUI_CANDIDATE}-${view}-capture PROPERTIES
+                ENVIRONMENT "QT_PLUGIN_PATH=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/plugins")
+        endif()
+    endforeach()
+    add_test(NAME ${GUI_CANDIDATE}-exit-during-hold COMMAND ${gui_target} --hold-on-exit --seconds 1
+        --report "${CMAKE_CURRENT_BINARY_DIR}/exit-hold.json")
+    set_tests_properties(${GUI_CANDIDATE}-exit-during-hold PROPERTIES TIMEOUT 15)
+    if(GUI_CANDIDATE STREQUAL "qt")
+        set_tests_properties(${GUI_CANDIDATE}-exit-during-hold PROPERTIES
+            ENVIRONMENT "QT_PLUGIN_PATH=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/plugins")
+    endif()
     install(TARGETS ${gui_target} RUNTIME DESTINATION bin)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION bin)
     include(InstallRequiredSystemLibraries)

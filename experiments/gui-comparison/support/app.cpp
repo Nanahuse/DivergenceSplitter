@@ -43,6 +43,8 @@ Options Options::parse(int argc, char** argv) {
         };
         if (arg == "--self-test") options.self_test = true;
         else if (arg == "--large") options.large = true;
+        else if (arg == "--dark") options.dark = true;
+        else if (arg == "--hold-on-exit") options.hold_on_exit = true;
         else if (arg == "--seconds") options.seconds = std::stod(value());
         else if (arg == "--warmup") options.warmup = std::stod(value());
         else if (arg == "--exercise") options.exercise = true;
@@ -59,8 +61,10 @@ Options Options::parse(int argc, char** argv) {
     }
     if (!std::isfinite(options.seconds) || !std::isfinite(options.warmup) || options.seconds < 0 || options.warmup < 0)
         throw std::invalid_argument("Run duration must be finite and nonnegative");
-    if (options.self_test && (options.warmup || options.exercise || options.page != Page::monitor))
+    if (options.self_test && (options.warmup || options.exercise || options.page != Page::monitor || options.hold_on_exit))
         throw std::invalid_argument("Self-test cannot be mixed with benchmark options");
+    if (options.hold_on_exit && (options.warmup || options.seconds <= 0 || options.seconds >= 2 || options.exercise || options.page != Page::monitor))
+        throw std::invalid_argument("Exit-hold test requires Monitor, no warmup/exercise, and a duration below two seconds");
     return options;
 }
 Session::Session(Options value, std::string candidate)
@@ -119,6 +123,7 @@ void Session::exercise(Driver& driver) {
     if (!page_initialized_) {
         page_initialized_ = true;
         driver.perform(options.page == Page::monitor ? Action::monitor : options.page == Page::diagnostics ? Action::diagnostics : Action::profile);
+        if (options.hold_on_exit) driver.perform(Action::reset_press);
         exercise_at_ = now; return;
     }
     if (!options.exercise) {
@@ -140,6 +145,7 @@ double Session::elapsed() const {
 }
 bool Session::expired() const { return !error.empty() || (options.seconds > 0 && elapsed() >= options.warmup + options.seconds); }
 void Session::write_report() const {
+    if (options.hold_on_exit && engine.state()->resets != 0) throw std::runtime_error("Exit during hold fired Reset");
     if (options.report.empty()) return;
     if (options.report.has_parent_path()) std::filesystem::create_directories(options.report.parent_path());
     std::ofstream out(options.report);
@@ -148,6 +154,9 @@ void Session::write_report() const {
         << "{\n  \"candidate\": " << quoted(candidate_)
         << ",\n  \"large\": " << (options.large ? "true" : "false")
         << ",\n  \"self_test\": " << (options.self_test ? "true" : "false")
+        << ",\n  \"startup_dark_requested\": " << (options.dark ? "true" : "false")
+        << ",\n  \"exit_during_hold_test\": " << (options.hold_on_exit ? "true" : "false")
+        << ",\n  \"reset_requests_count\": " << engine.state()->resets
         << ",\n  \"error\": " << quoted(error)
         << ",\n  \"renderer\": " << quoted(renderer)
         << ",\n  \"elapsed_seconds\": " << elapsed()
@@ -176,7 +185,9 @@ void Session::write_report() const {
         const auto& sample = memory_samples_[i];
         out << (i ? "," : "") << "[" << sample.seconds << "," << sample.private_bytes << "," << sample.working_set << "]";
     }
-    out << "],\n  \"not_verified\": [\"physical mouse/keyboard and IME\", \"real display present latency\", \"per-monitor DPI transition\", \"positive file selection\", \"NDI\"]\n}\n";
+    out << "],\n  \"not_verified\": [\"physical mouse/keyboard and IME\", \"real display present latency\", \"per-monitor DPI transition\", \"positive file selection\", \"NDI\"";
+    if (candidate_ == "wx") out << ", \"native runtime theme switching requires process restart\"";
+    out << "]\n}\n";
 }
 std::string score_text(double score) {
     std::ostringstream out;

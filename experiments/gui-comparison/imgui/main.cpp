@@ -49,6 +49,7 @@ public:
         IMGUI_CHECKVERSION(); ImGui::CreateContext();
         auto& io = ImGui::GetIO(); io.IniFilename = nullptr; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         ImGui::StyleColorsLight(); base_style_ = ImGui::GetStyle();
+        dark_ = session_.options.dark;
         dpi_ = float(GetDpiForWindow(hwnd_)) / 96.0f; apply_style();
         if (!ImGui_ImplWin32_Init(hwnd_) || !ImGui_ImplDX11_Init(device_.Get(), context_.Get())) throw std::runtime_error("ImGui backend init failed");
         ShowWindow(hwnd_, SW_SHOW); UpdateWindow(hwnd_);

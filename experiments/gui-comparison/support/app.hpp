@@ -15,6 +15,8 @@ enum class Action {
 struct Options {
     bool self_test = false;
     bool large = false;
+    bool dark = false;
+    bool hold_on_exit = false;
     double seconds = 0;
     double warmup = 0;
     Page page = Page::monitor;

@@ -35,6 +35,7 @@ class Window final : public wxFrame, public Driver {
 public:
     explicit Window(Session& session) : wxFrame(nullptr, wxID_ANY, "DivergenceSplitter comparison - wxWidgets", wxDefaultPosition, {1100, 760}),
         session_(session), script_(session), timer_(this) {
+        dark_ = session_.options.dark;
         auto root = new wxPanel(this); auto layout = new wxBoxSizer(wxVERTICAL);
         auto toolbar = new wxBoxSizer(wxHORIZONTAL);
         button(root, toolbar, "Start", [this] { session_.engine.set_running(true); });
@@ -45,7 +46,11 @@ public:
         reset_->Bind(wxEVT_MOUSE_CAPTURE_LOST, [this](wxMouseCaptureLostEvent&) { hold_.cancel(); });
         reset_->Bind(wxEVT_KILL_FOCUS, [this](wxFocusEvent& event) { cancel_hold(); event.Skip(); });
         mutate_ = button(root, toolbar, "Add/remove diagnostic branch", [this] { if (!session_.engine.mutate_topology()) status_->SetLabel("Topology input busy"); });
-        theme_ = button(root, toolbar, "Light / dark", [this] { dark_ = !dark_; wxTheApp->SetAppearance(dark_ ? wxApp::Appearance::Dark : wxApp::Appearance::Light); });
+        theme_ = button(root, toolbar, "Light / dark", [this] {
+            const auto result = wxTheApp->SetAppearance(dark_ ? wxApp::Appearance::Light : wxApp::Appearance::Dark);
+            if (result == wxApp::AppearanceResult::Ok) dark_ = !dark_;
+            else theme_->SetLabel("Theme: restart required");
+        });
         layout->Add(toolbar, 0, wxEXPAND);
         status_ = new wxStaticText(root, wxID_ANY, "Starting"); layout->Add(status_, 0, wxEXPAND | wxALL, 5);
         tabs_ = new wxNotebook(root, wxID_ANY); layout->Add(tabs_, 1, wxEXPAND | wxALL, 5);
@@ -61,7 +66,7 @@ public:
             if (!finishing_ && event.CanVeto() && session_.profile.dirty() && !confirm_discard()) { event.Veto(); return; }
             timer_.Stop(); release_diagnostics(); session_.engine.stop(); Destroy();
         });
-        timer_.Start(67);
+        timer_.Start(16); // Native heartbeat may be quantized; payload uses common 15Hz deadlines.
         session_.renderer = "wxWidgets MSW / wxTreeListCtrl";
     }
     Probe probe() const override {
@@ -273,22 +278,24 @@ private:
         try {
             auto now = std::chrono::steady_clock::now(); if (hold_.poll(now)) session_.engine.reset_all();
             reset_->SetLabel(text("Reset All " + std::to_string(int(hold_.progress(now) * 100)) + "%"));
-            auto state = session_.engine.state(); status_->SetLabel(text(std::string(state->running ? "Running" : "Stopped") + " | sequence " + std::to_string(state->sequence) + " | reset " + std::to_string(state->resets)));
-            if (tabs_->GetSelection() == 0) {
-                if (auto frame = session_.engine.frame()) { preview_->SetBitmap(wxBitmap(image(frame->image).Scale(480, 270, wxIMAGE_QUALITY_HIGH))); session_.observe_frame(*frame); }
-                if (cards_topology_ != state->topology) {
-                    card_layout_->Clear(true); card_labels_.clear();
-                    for (const auto& scenario : state->applied_profile->scenarios) {
-                        (void)scenario; auto label = new wxStaticText(cards_, wxID_ANY, "", wxDefaultPosition, {200, 65}, wxBORDER_SIMPLE);
-                        card_layout_->Add(label, 0, wxEXPAND | wxALL, 4); card_labels_.push_back(label);
+            if (cadence_.due(now)) {
+                auto state = session_.engine.state(); status_->SetLabel(text(std::string(state->running ? "Running" : "Stopped") + " | sequence " + std::to_string(state->sequence) + " | reset " + std::to_string(state->resets)));
+                if (tabs_->GetSelection() == 0) {
+                    if (auto frame = session_.engine.frame()) { preview_->SetBitmap(wxBitmap(image(frame->image).Scale(480, 270, wxIMAGE_QUALITY_HIGH))); session_.observe_frame(*frame); }
+                    if (cards_topology_ != state->topology) {
+                        card_layout_->Clear(true); card_labels_.clear();
+                        for (const auto& scenario : state->applied_profile->scenarios) {
+                            (void)scenario; auto label = new wxStaticText(cards_, wxID_ANY, "", wxDefaultPosition, {200, 65}, wxBORDER_SIMPLE);
+                            card_layout_->Add(label, 0, wxEXPAND | wxALL, 4); card_labels_.push_back(label);
+                        }
+                        cards_topology_ = state->topology; cards_->FitInside(); cards_->Layout();
                     }
-                    cards_topology_ = state->topology; cards_->FitInside(); cards_->Layout();
-                }
-                std::size_t card = 0;
-                for (std::size_t i = 0; i < state->topology->nodes.size(); ++i) if (state->topology->nodes[i].kind == NodeKind::scenario) {
-                    auto& metric = state->metrics[i]; card_labels_.at(card++)->SetLabel(text(state->topology->nodes[i].label + "\n" + (!metric.enabled ? "Disabled" : metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score)));
-                }
-            } else if (tabs_->GetSelection() == 1) { sync_tree(); update_values(*state); }
+                    std::size_t card = 0;
+                    for (std::size_t i = 0; i < state->topology->nodes.size(); ++i) if (state->topology->nodes[i].kind == NodeKind::scenario) {
+                        auto& metric = state->metrics[i]; card_labels_.at(card++)->SetLabel(text(state->topology->nodes[i].label + "\n" + (!metric.enabled ? "Disabled" : metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score)));
+                    }
+                } else if (tabs_->GetSelection() == 1) { sync_tree(); update_values(*state); }
+            }
             session_.sample_process(); session_.exercise(*this);
             if ((session_.options.self_test && script_.tick(*this)) || session_.expired()) finish();
         } catch (const std::exception& error) { session_.error = error.what(); finish(); }
@@ -300,7 +307,7 @@ private:
         try { session_.write_report(); } catch (const std::exception& error) { session_.error = error.what(); std::cerr << error.what() << '\n'; }
         Close(true);
     }
-    Session& session_; ContractScript script_; ResetHold hold_; wxTimer timer_;
+    Session& session_; ContractScript script_; ResetHold hold_; wxTimer timer_; PreviewCadence cadence_;
     wxNotebook* tabs_{}; wxStaticText *status_{}, *error_{}; wxStaticBitmap* preview_{};
     wxScrolledWindow *cards_{}, *reference_panel_{}; wxBoxSizer *card_layout_{}, *reference_layout_{};
     std::vector<wxStaticText*> card_labels_; wxTreeListCtrl* tree_{}; wxGrid* grid_{}; wxChoice* source_{}; wxTextCtrl* file_{};
@@ -313,7 +320,12 @@ private:
 Session* active_session = nullptr;
 class App : public wxApp {
 public:
-    bool OnInit() override { wxInitAllImageHandlers(); auto window = new Window(*active_session); SetTopWindow(window); window->Show(); return true; }
+    bool OnInit() override {
+        if (active_session->options.dark && SetAppearance(Appearance::Dark) != AppearanceResult::Ok) {
+            active_session->error = "Native dark appearance could not be initialized"; return false;
+        }
+        wxInitAllImageHandlers(); auto window = new Window(*active_session); SetTopWindow(window); window->Show(); return true;
+    }
 };
 }
 wxIMPLEMENT_APP_NO_MAIN(App);

@@ -35,7 +35,7 @@ ImGuiの毎フレームの宣言呼び出しと、retained-modeのウィジェ�
 - immutableな階層と安定ID、値のsnapshot、RGBA画像、入力設定を渡す。
 - 映像と状態はlatest-onlyの共有スロットを使い、毎フレームのイベントやsnapshotを無制限に蓄積しない。
 - producerはUIコールバックを呼ばない。通知を選ぶ実装はUI側でcoalesceし、pending通知は最大1件にする。
-- 停止はworkerをjoinしてからUI側リソースを破棄する。スナップショットは所有権付きで読み、別スレッドが変更中のバッファをUIへ貸さない。
+- 終了時はworkerをjoinしてからバックエンドを破棄する。UI側画像ハンドルはUIスレッドで解放し、producerはそれに触れない。スナップショットは所有権付きで読み、別スレッドが変更中のバッファをUIへ貸さない。
 - 設定のdraft、Apply後の設定、runningの状態を分離し、Apply失敗のエラーを表示する。
 - OpenCVの参照画像デコード・基本処理は共通の画像層で行い、全候補で同じPNG入力とパラメーターを使う。GUIごとに処理アルゴリズムを再実装しない。
 
@@ -111,4 +111,4 @@ tools/build_gui_comparison.ps1 -Candidate wx
 tools/build_gui_comparison.ps1 -Candidate imgui
 ```
 
-出力は `dist/gui-comparison/<candidate>/`、ZIP・ファイル別レポート・起動ログ・時間は `build/gui-comparison-reports/<candidate>/`。ImGuiは標準portに従い静的リンクし、exe内の分を容量へ含める。各アプリは `--seconds 120 --warmup 30 --page monitor`、`--page diagnostics`、`--large`、`--exercise`、`--report <path>`、`--capture <png>` を受け付ける。計測はGUI取込であり、表示器へのpresentではない。定常測定・長時間測定・仕様変更の評価結果は、実行してから記録する。
+出力は `dist/gui-comparison/<candidate>/`、ZIP・ファイル別レポート・起動ログ・時間は `build/gui-comparison-reports/<candidate>/`。ImGuiは標準portに従い静的リンクし、exe内の分を容量へ含める。各アプリは `--seconds 120 --warmup 30 --page monitor`、`--page diagnostics`、`--large`、`--dark`、`--exercise`、`--report <path>`、`--capture <png>` を受け付ける。計測はGUI取込であり、表示器へのpresentではない。wxWidgetsのnative明暗切替は起動時指定のみで、実行中の切替には再起動が必要。定常測定・長時間測定・仕様変更の評価結果は、実行してから記録する。
