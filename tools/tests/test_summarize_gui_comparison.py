@@ -71,6 +71,40 @@ def test_no_frame_intake_is_unavailable_instead_of_zero_latency(tmp_path: Path) 
     assert group["median_process_creation_to_first_intake_ms"] is None
 
 
+def test_numbered_diagnostics_and_soak_runs_are_grouped_and_required(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "measurements"
+    measurements(source)
+    env = {
+        "repeats": 1,
+        "diagnostics_repeats": 3,
+        "soak_repeats": 3,
+        "soak_seconds_per_candidate_and_dataset": 180,
+    }
+    (source / "environment.json").write_text(json.dumps(env), encoding="utf-8")
+    for c in ("qt", "wx", "imgui"):
+        for dataset in ("small", "large"):
+            original = source / f"{c}-{dataset}-diagnostics.json"
+            contents = original.read_text(encoding="utf-8")
+            original.unlink()
+            for mode in ("diagnostics", "soak"):
+                for repeat in (1, 2, 3):
+                    (source / f"{c}-{dataset}-{mode}-{repeat}.json").write_text(
+                        contents, encoding="utf-8"
+                    )
+    (source / "completed.json").write_text('{"cases": 42}', encoding="utf-8")
+    output = tmp_path / "summary.json"
+    summarize(source, output)
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["aggregates"]["qt/small/diagnostics"]["runs"] == 3
+    assert result["aggregates"]["wx/large/soak"]["runs"] == 3
+    (source / "imgui-large-diagnostics-3.json").unlink()
+    (source / "completed.json").write_text('{"cases": 41}', encoding="utf-8")
+    with pytest.raises(ValueError, match="Missing Diagnostics"):
+        summarize(source, output)
+
+
 @pytest.mark.parametrize("invalidated", [False, True])
 def test_incomplete_or_invalidated_measurements_cannot_be_reported_as_success(
     tmp_path: Path, invalidated: bool

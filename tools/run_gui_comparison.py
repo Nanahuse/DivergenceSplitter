@@ -13,6 +13,46 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
+def plan_cases(
+    seconds: int, repeats: int, soak: int, diagnostics_repeats: int, soak_repeats: int
+) -> list[tuple[str, bool, str, int, bool, str]]:
+    cases = []
+    for repeat in range(repeats):
+        candidates = ("qt", "wx", "imgui") if repeat % 2 == 0 else ("imgui", "wx", "qt")
+        for large in (False, True):
+            for candidate in candidates:
+                cases.append(
+                    (
+                        candidate,
+                        large,
+                        f"monitor-{repeat + 1}",
+                        seconds,
+                        False,
+                        "monitor",
+                    )
+                )
+    # Keep each mode separate; alternate candidate order between repetitions.
+    for large in (False, True):
+        for repeat in range(max(diagnostics_repeats, soak_repeats if soak else 0)):
+            candidates = (
+                ("qt", "wx", "imgui") if repeat % 2 == 0 else ("imgui", "wx", "qt")
+            )
+            for candidate in candidates:
+                if repeat < diagnostics_repeats:
+                    label = (
+                        "diagnostics"
+                        if diagnostics_repeats == 1
+                        else f"diagnostics-{repeat + 1}"
+                    )
+                    cases.append(
+                        (candidate, large, label, seconds, False, "diagnostics")
+                    )
+                if soak and repeat < soak_repeats:
+                    label = "soak" if soak_repeats == 1 else f"soak-{repeat + 1}"
+                    cases.append((candidate, large, label, soak, True, "monitor"))
+    return cases
+
+
 def validate_report(
     report: Path, candidate: str, large: bool, duration: int, exercise: bool
 ) -> dict:
@@ -44,6 +84,8 @@ def run(
     seconds: int,
     repeats: int,
     soak: int,
+    diagnostics_repeats: int = 1,
+    soak_repeats: int = 1,
     resume: bool = False,
 ) -> None:
     distribution = distribution.resolve()
@@ -83,6 +125,8 @@ def run(
         "warmup_seconds": warmup,
         "measurement_seconds": seconds,
         "repeats": repeats,
+        "diagnostics_repeats": diagnostics_repeats,
+        "soak_repeats": soak_repeats,
         "soak_seconds_per_candidate_and_dataset": soak,
         "method": "Serial visible GUI processes; foreground focus/occlusion not enforced. Shared worker included in process CPU. Intake is not scanout. Other desktop activity is uncontrolled.",
     }
@@ -97,9 +141,16 @@ def run(
             "warmup_seconds",
             "measurement_seconds",
             "repeats",
+            "diagnostics_repeats",
+            "soak_repeats",
             "soak_seconds_per_candidate_and_dataset",
         ):
-            if previous[key] != metadata[key]:
+            previous_value = (
+                previous.get(key, 1)
+                if key in ("diagnostics_repeats", "soak_repeats")
+                else previous[key]
+            )
+            if previous_value != metadata[key]:
                 raise ValueError(
                     f"Cannot resume with changed measurement condition: {key}"
                 )
@@ -119,30 +170,7 @@ def run(
     (output / "environment.json").write_text(
         json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
     )
-    cases = []
-    # Alternate candidate order between repetitions to limit systematic order bias.
-    for repeat in range(repeats):
-        candidates = ("qt", "wx", "imgui") if repeat % 2 == 0 else ("imgui", "wx", "qt")
-        for large in (False, True):
-            for candidate in candidates:
-                cases.append(
-                    (
-                        candidate,
-                        large,
-                        f"monitor-{repeat + 1}",
-                        seconds,
-                        False,
-                        "monitor",
-                    )
-                )
-    # Separate Diagnostics measurement and capture; never mix these with Monitor.
-    for large in (False, True):
-        for candidate in ("qt", "wx", "imgui"):
-            cases.append(
-                (candidate, large, "diagnostics", seconds, False, "diagnostics")
-            )
-            if soak:
-                cases.append((candidate, large, "soak", soak, True, "monitor"))
+    cases = plan_cases(seconds, repeats, soak, diagnostics_repeats, soak_repeats)
     for candidate, large, label, duration, exercise, page in cases:
         name = f"{candidate}-{'large' if large else 'small'}-{label}"
         root = (distribution / candidate).resolve()
@@ -175,7 +203,7 @@ def run(
             command.append("--large")
         if exercise:
             command.append("--exercise")
-        if label == "diagnostics":
+        if page == "diagnostics":
             command.extend(("--capture", str((output / f"{name}.png").resolve())))
         print(f"START {name}: warmup {warmup}s + measure {duration}s", flush=True)
         log_path = output / f"{name}.log"
@@ -220,6 +248,8 @@ def main() -> None:
     parser.add_argument("--warmup", type=int, default=30)
     parser.add_argument("--seconds", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--diagnostics-repeats", type=int, default=1)
+    parser.add_argument("--soak-repeats", type=int, default=1)
     parser.add_argument("--soak", type=int, default=1800)
     parser.add_argument(
         "--resume",
@@ -227,7 +257,14 @@ def main() -> None:
         help="Reuse validated cases only with identical binaries and conditions",
     )
     args = parser.parse_args()
-    if args.warmup < 0 or args.seconds <= 0 or args.repeats <= 0 or args.soak < 0:
+    if (
+        args.warmup < 0
+        or args.seconds <= 0
+        or args.repeats <= 0
+        or args.soak < 0
+        or args.diagnostics_repeats <= 0
+        or args.soak_repeats <= 0
+    ):
         parser.error(
             "Durations and repetitions must be positive (warmup/soak may be zero)"
         )
@@ -237,6 +274,8 @@ def main() -> None:
         warmup=args.warmup,
         seconds=args.seconds,
         repeats=args.repeats,
+        diagnostics_repeats=args.diagnostics_repeats,
+        soak_repeats=args.soak_repeats,
         soak=args.soak,
         resume=args.resume,
     )

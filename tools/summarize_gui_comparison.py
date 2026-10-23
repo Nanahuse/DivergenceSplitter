@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import defaultdict
 from itertools import pairwise
 from pathlib import Path
@@ -53,13 +54,12 @@ def summarize(source: Path, output: Path) -> None:
                 (second[0] - first[0] for first, second in pairwise(samples)),
                 default=0,
             )
-        mode = (
-            "soak"
-            if path.stem.endswith("soak")
-            else "diagnostics"
-            if path.stem.endswith("diagnostics")
-            else "monitor"
+        name = re.fullmatch(
+            r"[^-]+-(?:small|large)-(monitor|diagnostics|soak)(?:-\d+)?", path.stem
         )
+        if name is None:
+            raise ValueError(f"Unknown measurement case: {path.name}")
+        mode = name.group(1)
         dataset = "large" if record["large"] else "small"
         record["mode"] = mode
         groups[f"{record['candidate']}/{dataset}/{mode}"].append(record)
@@ -70,12 +70,13 @@ def summarize(source: Path, output: Path) -> None:
         for dataset in ("small", "large"):
             if len(groups[f"{candidate}/{dataset}/monitor"]) != environment["repeats"]:
                 raise ValueError("Missing Monitor repetition")
-            if len(groups[f"{candidate}/{dataset}/diagnostics"]) != 1:
-                raise ValueError("Missing Diagnostics measurement")
-            if (
-                environment["soak_seconds_per_candidate_and_dataset"]
-                and len(groups[f"{candidate}/{dataset}/soak"]) != 1
+            if len(groups[f"{candidate}/{dataset}/diagnostics"]) != environment.get(
+                "diagnostics_repeats", 1
             ):
+                raise ValueError("Missing Diagnostics measurement")
+            if environment["soak_seconds_per_candidate_and_dataset"] and len(
+                groups[f"{candidate}/{dataset}/soak"]
+            ) != environment.get("soak_repeats", 1):
                 raise ValueError("Missing soak measurement")
     aggregates = {}
     for key, values in groups.items():
