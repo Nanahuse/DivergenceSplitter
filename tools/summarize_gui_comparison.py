@@ -105,10 +105,13 @@ def summarize(source: Path, output: Path) -> None:
                 median(
                     item["process_creation_to_first_intake_ms"]
                     for item in values
-                    if item["process_creation_to_first_intake_ms"] >= 0
+                    if item["gui_frame_intakes"]
+                    and item["process_creation_to_first_intake_ms"] >= 0
                 )
                 if any(
-                    item["process_creation_to_first_intake_ms"] >= 0 for item in values
+                    item["gui_frame_intakes"]
+                    and item["process_creation_to_first_intake_ms"] >= 0
+                    for item in values
                 )
                 else None
             ),

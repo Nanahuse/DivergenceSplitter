@@ -1,14 +1,14 @@
 # Phase 1：技術条件の調査（2026-10-23）
 
-比較対象はQt Widgets、wxWidgets、Dear ImGuiの3候補。公式資料と固定vcpkg checkoutの調査に加え、ローカルの共通GUI・配布起動を検証した。クリーンCIの結果は実行後に追記する。資料確認だけで合格・不合格・採用にはしない。
+比較対象はQt Widgets、wxWidgets、Dear ImGuiの3候補。公式資料と固定vcpkg checkoutの調査に加え、ローカルの共通GUI・配布起動を検証した。3候補ともクリーンWindows CIとキャッシュ利用CIでReleaseビルド・CTest・ZIP展開後起動に成功した。測定値は [CI記録](results/ci-distribution.json) を参照。資料確認だけで合格・不合格・採用にはしない。
 
 ## 候補ごとの経路
 
 | 実装 | 第一候補の取得・ビルド経路 | 固定vcpkg baselineで確認できた版 | 配布・追加管理の確認事項 | 実測状態 |
 | --- | --- | --- | --- | --- |
-| Qt Widgets | vcpkg / CMake / Ninja | qtbase 6.11.1#1 | Qt Deploy、plugins、LGPLとthird-party通知 | 共通GUI・小規模/大量CTest・配布/ZIP展開後起動がローカル成功 |
-| wxWidgets | vcpkg / CMake / Ninja | wxwidgets 3.3.1#1 | MSWのcontrolとDataView、DLL、イベントと画像寿命、標準featureの推移依存 | 共通GUI・小規模/大量CTest・配布/ZIP展開後起動がローカル成功 |
-| Dear ImGui | vcpkg / CMake / Ninja、Win32 + D3D11 backend | imgui 1.92.8#1 | platform/renderer backend、フォント、テクスチャ寿命、ファイル選択手段 | 共通GUI・小規模/大量CTest・配布/ZIP展開後起動がローカル成功 |
+| Qt Widgets | vcpkg / CMake / Ninja | qtbase 6.11.1#1 | Qt Deploy、plugins、LGPLとthird-party通知 | 共通GUI・小規模/大量CTest・配布/ZIP展開後起動がローカル・Windows CI成功 |
+| wxWidgets | vcpkg / CMake / Ninja | wxwidgets 3.3.1#1 | MSWのcontrolとDataView、DLL、イベントと画像寿命、標準featureの推移依存 | 共通GUI・小規模/大量CTest・配布/ZIP展開後起動がローカル・Windows CI成功 |
+| Dear ImGui | vcpkg / CMake / Ninja、Win32 + D3D11 backend | imgui 1.92.8#1 | platform/renderer backend、フォント、テクスチャ寿命、ファイル選択手段 | 共通GUI・小規模/大量CTest・配布/ZIP展開後起動がローカル・Windows CI成功 |
 
 baselineはPR #152と同じ `9e593bb18ea69cc5095e012465dcd675a822ed0d`。`vcpkg.json` に3候補のfeatureとoverrideを固定した。vcpkg本体もこのcommitで照合する。Dear ImGuiの標準portはstatic-onlyで、公式Win32/DX11 backendを含めてexeへリンクする。
 

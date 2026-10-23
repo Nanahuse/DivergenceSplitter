@@ -30,7 +30,7 @@ ImGuiの毎フレームの宣言呼び出しと、retained-modeのウィジェ�
 
 ## データとスレッド境界
 
-共通層は標準C++23型だけを公開する。Qt型、WinRT型、OpenCVのMat、各UIのコールバックやdispatcherを公開境界へ入れない。UIアダプターがイベントループ、描画、binding、モデル通知、画像ハンドルの所有と破棄を実装する。
+共通層は標準C++23型だけを公開する。Qt型、wx型、ImGui型、OpenCVのMat、各UIのコールバックやdispatcherを公開境界へ入れない。UIアダプターがイベントループ、描画、binding、モデル通知、画像ハンドルの所有と破棄を実装する。
 
 - immutableな階層と安定ID、値のsnapshot、RGBA画像、入力設定を渡す。
 - 映像と状態はlatest-onlyの共有スロットを使い、毎フレームのイベントやsnapshotを無制限に蓄積しない。
@@ -95,7 +95,7 @@ ctest --test-dir build/gui-comparison-common --output-on-failure
 
 画像・状態はlatest-only、構造変更コマンドは最大32件を保持し、満杯の場合は呼出元へbusyを返す。workerは制御ロックを短時間だけ保持して要求を取り出し、階層構築と画像生成はロックの外で行う。ProfileEditorはUI所有スレッド専用。3候補のMonitor、Diagnostics、Profile、ダイアログ、長押しResetを実装し、Applyをworker側の設定・階層へ反映する。共通のOpenCV層でPNG、動画入力、GaussianBlur、PHashを実際に実行する。
 
-`.github/workflows/gui-comparison-common.yml` は3候補のWindows Releaseビルド、共通契約、小規模・大量ノードの実GUI契約、配布DLL・通知検証、ZIP生成と展開後GUI契約を検証する。CI結果は実行後に記録する。初回とキャッシュ利用時は区別する。
+`.github/workflows/gui-comparison-common.yml` は3候補のWindows Releaseビルド、共通契約、小規模・大量ノードの実GUI契約、配布DLL・通知検証、ZIP生成と展開後GUI契約を検証する。3候補ともクリーンWindows CIとキャッシュ利用CIに成功した。実測値・初回とキャッシュの区別は [比較レポート](results/comparison.md) と [CI記録](results/ci-distribution.json) を参照。
 
 初期試作のローカル配布検証では、3候補とも開発用PATHを除いた配布フォルダーと新規ZIP展開先からのGUI契約に成功した。展開後 / DEFLATE level 6の内側ZIPは、Qt 107,504,644 / 44,268,303 bytes、wxWidgets 25,695,884 / 9,209,868 bytes、Dear ImGui 14,693,027 / 5,480,694 bytes（NDIなし）。変更前の作業ツリーでの実測であり、後続の変更やCIの値は別記録とする。
 
