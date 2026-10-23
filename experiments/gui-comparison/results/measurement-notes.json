@@ -1,0 +1,69 @@
+{
+  "scope": "Measured synthetic common GUI only; no NDI or Scenario Runtime",
+  "completed_utc": "2026-10-23T19:11:26.314808+00:00",
+  "validated_cases": 42,
+  "early_exit": {
+    "case": "qt-small-soak",
+    "application_exit_code": 0,
+    "report_created": false,
+    "counted_as_success": false,
+    "cause": "Unknown; exception log empty. Window close is possible but not established. Did not recur on retry.",
+    "associated_execution_request_ended_utc": "2026-10-23T14:16:45.0567817Z"
+  },
+  "verification": {
+    "performed_utc": "2026-10-23T19:15:23.705018+00:00",
+    "all_staged_file_size_and_sha256_match_local_distribution_reports": true,
+    "staged_file_counts": {
+      "qt": 137,
+      "wx": 77,
+      "imgui": 62
+    },
+    "all_application_sha256_match_measurement_start": true,
+    "all_distribution_zip_sha256_match_local_distribution_reports": true,
+    "no_unexpected_staged_files": true
+  },
+  "execution_requests": [
+    {
+      "started_utc": "2026-10-23T13:08:01.1331282Z",
+      "api": "SetThreadExecutionState",
+      "system_and_display_required": true,
+      "scope": "Temporary while this measurement runner is active; no power-plan or lock-policy changes",
+      "ended_utc": "2026-10-23T14:16:45.0567817Z"
+    },
+    {
+      "started_utc": "2026-10-23T15:56:10.8147874Z",
+      "api": "SetThreadExecutionState",
+      "system_and_display_required": true,
+      "scope": "Temporary while this measurement runner is active; no power-plan or lock-policy changes",
+      "ended_utc": "2026-10-23T19:11:26.3513306Z"
+    }
+  ],
+  "limitations": [
+    "Original environment method says foreground; foreground focus and occlusion were not measured or enforced. Visible windows were requested.",
+    "Background desktop activity and thermal/clock behavior uncontrolled. No universal library performance ranking.",
+    "Brief Python tool unit tests ran during the resumed small Qt soak; no native builds or dependency installs ran during the measurements. Monitor measurements preceded them.",
+    "Private commit is not GPU memory; OS/GPU handles and heap allocation causes not measured.",
+    "wx small Diagnostics recorded 2 cumulative reference requests; the extra request timing/cause is unknown.",
+    "Physical input, IME, actual DPI transitions, positive file selection and score/state-to-display latency remain unverified."
+  ],
+  "excluded_prior_data": [
+    "gui-measurements-full: concurrent pytest load; invalidated",
+    "gui-measurements-full-clean: cadence calibration; invalidated"
+  ],
+  "chart": {
+    "tool": "Matplotlib 3.10.7",
+    "source": "https://pypi.org/project/matplotlib/3.10.7/",
+    "units": "decimal MB",
+    "lines": "minute medians",
+    "upper_shading": "observed sample min/max per minute, not confidence intervals",
+    "repetitions_per_soak_configuration": 1
+  },
+  "resumes": [
+    {
+      "utc": "2026-10-23T15:55:53.742410+00:00",
+      "runner_source_commit": "3ba38b2899c40a2628f6a1bcd80cdcf3776cc0a7",
+      "runner_working_tree_dirty": true,
+      "reason": "Retry cases without a report; keep and revalidate completed cases. Binary hashes unchanged."
+    }
+  ]
+}

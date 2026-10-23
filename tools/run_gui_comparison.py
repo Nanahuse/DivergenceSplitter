@@ -84,7 +84,7 @@ def run(
         "measurement_seconds": seconds,
         "repeats": repeats,
         "soak_seconds_per_candidate_and_dataset": soak,
-        "method": "Serial foreground GUI processes; shared worker included in process CPU. Intake is not scanout. Other desktop activity is uncontrolled.",
+        "method": "Serial visible GUI processes; foreground focus/occlusion not enforced. Shared worker included in process CPU. Intake is not scanout. Other desktop activity is uncontrolled.",
     }
     if resume:
         previous = json.loads((output / "environment.json").read_text(encoding="utf-8"))

@@ -100,7 +100,7 @@ Developer PowerShellで固定vcpkgを `VCPKG_ROOT` に指定し、`tools/build_g
 
 ## 同一Windowsマシンでの性能測定
 
-Monitorは30秒warmup + 120秒測定を5回、両データ規模・全候補で直列実行した。試行ごとに候補順を反転。測定source `0d2adee` のruntimeは `786350a` と同一。Windows 11 `10.0.26200`、AMD64 Family25 Model116、12 logical CPUs、Balanced電源。通常のデスクトップ活動は統制していない。shared workerのCPUを含み、GUI単独の負荷ではない。
+全42ケースは2026-10-23 19:11:26 UTCに完了した。Monitorは30秒warmup + 120秒測定を5回、両データ規模・全候補で直列実行した。試行ごとに候補順を反転。測定source `0d2adee` のruntimeは `786350a` と同一。Windows 11 `10.0.26200`、AMD64 Family25 Model116、12 logical CPUs、Balanced電源。通常のデスクトップ活動、ウィンドウの前景・遮蔽は統制・記録していない。shared workerのCPUを含み、GUI単独の負荷ではない。
 
 | 候補・規模 | CPU中央値（1論理core=100%） | 入力Hz中央値 | GUI取込Hz中央値 | 最大sampled private MB | 取込時frame age p95の中央値 ms |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -111,11 +111,57 @@ Monitorは30秒warmup + 120秒測定を5回、両データ規模・全候補で�
 | ImGui small | 20.75% | 59.28 | 15.00 | 69.08 | 26.95 |
 | ImGui large | 21.24% | 59.29 | 15.00 | 66.52 | 26.64 |
 
-MBは1,000,000 bytes。CPUはCPU秒/実測秒で、12 coreで割ったPC全体の使用率ではない。private/working setは500msごとのsample最大で、OSの厳密な瞬間peakやGPUメモリではない。p95は各runのp95を5回の中央値にした値。取込はscanout/presentや物理入力応答ではない。起動時のプロセス生成→初回取込も記録するが、Diagnosticsだけのrunでは取込なしを0msと誤表示せず、N/Aにする。
+MBは1,000,000 bytes。CPUはCPU秒/実測秒で、12 coreで割ったPC全体の使用率ではない。private/working setは約500ms間隔のsample最大で、OSの厳密な瞬間peakやGPUメモリではない。p95は各runのp95を5回の中央値にした値。取込はscanout/presentや物理入力応答ではない。起動時のプロセス生成→初回取込の中央値は、small/largeの順でQt 145/143ms、wx 125/140ms、ImGui 126/123ms。Diagnosticsだけのrunでは測定中の取込なしを0msと誤表示せず、N/Aにする。
 
-定常Monitor 30ケースとsmall Qt Diagnosticsは完了。30分反復試験の最初の試行は約3分で終了コード0のままreportを残さず終了したため未完了とした。例外ログはなく、終了理由は特定できない。ウィンドウを閉じた場合にも起こり得るが、原因と断定しない。runnerへreport有無・測定時間の検証と、binary SHA256/環境/設定を照合する再開機能を追加し、同じ配布exeで未完了ケースから再試行中。未完了の42ケースを成功とは扱わない。
+入力の60Hzは目標周期であり、全試行で厳密に60Hzを達成したわけではない。10試行の範囲はQt 59.98–60.00Hz、wx 55.74–59.92Hz、ImGui 55.19–59.83Hz。一部試行での低下原因は切り分けていない。GUI取込は約15Hzで進行したが、この試作と環境の結果をライブラリ固有の性能順位にはしない。
 
-長時間測定と全ケースの要約は完了後に追記する。最初の失敗ログ、再開時刻、元のsourceとbinary hashは保持する。小規模と大量データの各30分で、Diagnostics展開/構造変更/画像解放、Monitor、pause、Profile、再開を反復する。ここでのpause/resumeと、共通テストのworker thread start/joinを混同しない。
+### Diagnosticsの定常計測
+
+各30秒warmup + 120秒を1回。測定中は階層を維持してスコアを更新し、最初のDetectorを展開した。全6ケースでwarmup後の階層再構築は0回だった。
+
+| 候補・規模 | CPU（1論理core=100%） | 最大sampled private MB | 値更新周期 Hz | 参照要求の累計 |
+| --- | ---: | ---: | ---: | ---: |
+| Qt small | 11.91% | 20.68 | 14.92 | 1 |
+| Qt large | 15.06% | 34.20 | 14.91 | 1 |
+| wx small | 31.87% | 16.06 | 15.00 | 2 |
+| wx large | 41.37% | 21.36 | 14.99 | 1 |
+| ImGui small | 17.72% | 62.86 | 15.00 | 1 |
+| ImGui large | 17.72% | 62.05 | 15.00 | 1 |
+
+参照要求はwarmupを含む累計。wx smallの追加1回は発生時点・原因を特定できていないため、全ケースで1回だけだったとは扱わない。別のGUI契約では、値更新中の参照再生成がないことを確認している。状態更新の通知→表示遅延そのものは未測定。
+
+### 30分の切替・構造変更・画像解放
+
+各ケースは30秒warmupの後に1800秒測定。Diagnostics展開/構造変更/collapse、Monitor、pause、Profile、再開の8操作を繰り返した。pause/resumeは処理状態の切替であり、共通テストの20回のworker thread start/joinとは別。全6ケースで終了コード0、error空、非表示時の参照画像残留エラーなし。操作数はwarmupを含む。
+
+| 候補・規模 | 操作ステップ | 参照要求 | 最大sampled private MB | 最初→最後の1分中央値差 MB |
+| --- | ---: | ---: | ---: | ---: |
+| Qt small | 6,828 | 854 | 32.797 | +0.727 |
+| Qt large | 6,828 | 854 | 50.545 | +4.868 |
+| wx small | 6,913 | 864 | 18.735 | +1.608 |
+| wx large | 6,880 | 860 | 24.789 | +2.097 |
+| ImGui small | 7,036 | 880 | 69.734 | +0.262 |
+| ImGui large | 7,053 | 882 | 74.572 | +0.741 |
+
+![30分のprocess private commit推移](memory-soak.png)
+
+[SVG](memory-soak.svg)。上段は1分ごとの中央値とsample最小/最大の帯、下段は最初の1分中央値との差。帯は信頼区間ではない。Qt largeは初期に増加した後、おおむね44–46MBの中央値で推移した。OS/GPU handle数とheapの割当原因は測定しておらず、30分の観測だけでリークがないとは断定しない。全42ケースのmemory sample間隔の最大は約0.611秒だったが、これは入力応答の保証ではない。
+
+反復中はpauseと画面切替があるため、1800秒全体の生成/画像取込HzをMonitorの60/15Hzと比較しない。古い画像を読み飛ばすskipped counterも、latest-onlyとして意図した挙動を含む。
+
+### 中断・再開と生データ
+
+最初のQt small反復試行は約3分で終了コード0のままreportを残さず終了したため、未完了として記録した。例外ログはなく原因は不明。ウィンドウを閉じた場合にも起こり得るが断定しない。runnerへreport有無・測定時間の検証と、binary SHA256/環境/設定を照合する再開機能を追加した。完了済み31ケースを再検証して保持し、未完了ケースを同じ配布exeで再試行した。早期終了は再現しなかったが、原因解決済みとは扱わない。
+
+終了後、全候補の配布全ファイル（Qt 137、wx 77、ImGui 62ファイル）とZIPを保存済みのSHA256と再照合し、一致した。計測中だけのスリープ・表示オフ抑制要求も終了時に解除した。[再開と検証記録](measurement-notes.json)、[42件の生JSONと実行環境](measurements/)、[全run・1分集計の要約](local-performance.json) を残す。先行の校正用測定、pytestの並行負荷が混入した無効測定は、このデータセットへ混ぜていない。
+
+生データから集計を再現できる。新しい出力先を使う。
+
+```powershell
+uv run python tools/summarize_gui_comparison.py --source experiments/gui-comparison/results/measurements --output build/gui-performance-regenerated.json
+```
+
+測定をやり直す場合は、再ビルド後に新しいフォルダーで `uv run python tools/run_gui_comparison.py --output build/gui-measurements-new` を使う。既定で30秒warmup、120秒×5回、両規模のDiagnostics各1回、1800秒反復各1回。中断後は同じコマンドへ `--resume` を付ける。バイナリ・電源等の条件が変わった場合は再開を拒否する。GUIを閉じてreportがなければ終了コード0でも成功にはしない。
 
 ## 配布容量（選定での重要度は低）
 
@@ -137,4 +183,4 @@ Qtはicudt78.dll 33,110,528 bytes、dxcompiler.dll 14,261,192 bytes、Qt6Gui.dll
 
 固定vcpkg checkoutから各portのcopyright/SPDX、source参照、MSVC/SDK通知を配布し、DLL所有者と通知の存在を検証する。QtはmoduleごとのLGPL等とthird-party条件、wxはwxWindows例外を含む条件、ImGuiはMIT通知を記録した。[技術条件と公式資料](../technical-feasibility.md) を参照。ImGui test engineは追加していない。通知の自動収集だけで製品配布に必要な全対応が完了したとは扱わない。
 
-クリーンCI・ZIP配布と共通操作の自動試験は3候補とも実現した。一方、実画面DPI/IME/物理操作、wxの実行中テーマ切替、スクロールアンカー、画面復元、長時間試験の最終結果が残る。これらを未達・未検証のまま示し、容量や行数だけで採用候補を決定しない。mainへのマージはユーザーの結果確認後の判断とする。
+クリーンCI・ZIP配布、共通操作の自動試験、両データ規模の30分反復は3候補とも実現した。一方、実画面DPI/IME/物理操作、wxの実行中テーマ切替、スクロールアンカー、画面復元、状態更新/操作の実表示遅延が残る。Qt初回の原因不明の早期終了とwx smallの参照要求追加1回も記録した。これらを未達・未検証・原因未特定のまま示し、容量や行数だけで採用候補を決定しない。mainへのマージはユーザーの結果確認後の判断とする。

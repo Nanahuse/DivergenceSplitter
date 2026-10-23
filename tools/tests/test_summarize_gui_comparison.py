@@ -59,7 +59,7 @@ def test_no_frame_intake_is_unavailable_instead_of_zero_latency(tmp_path: Path) 
     path = source / "qt-small-diagnostics.json"
     record = json.loads(path.read_text(encoding="utf-8"))
     record.update(
-        gui_frame_intakes=0, frame_age_p95_ms=0, process_creation_to_first_intake_ms=-1
+        gui_frame_intakes=0, frame_age_p95_ms=0, process_creation_to_first_intake_ms=100
     )
     path.write_text(json.dumps(record), encoding="utf-8")
     output = tmp_path / "summary.json"

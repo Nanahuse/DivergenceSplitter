@@ -111,4 +111,6 @@ tools/build_gui_comparison.ps1 -Candidate wx
 tools/build_gui_comparison.ps1 -Candidate imgui
 ```
 
-出力は `dist/gui-comparison/<candidate>/`、ZIP・ファイル別レポート・起動ログ・時間は `build/gui-comparison-reports/<candidate>/`。ImGuiは標準portに従い静的リンクし、exe内の分を容量へ含める。各アプリは `--seconds 120 --warmup 30 --page monitor`、`--page diagnostics`、`--large`、`--dark`、`--exercise`、`--report <path>`、`--capture <png>` を受け付ける。計測はGUI取込であり、表示器へのpresentではない。wxWidgetsのnative明暗切替は起動時指定のみで、実行中の切替には再起動が必要。定常測定・長時間測定・仕様変更の評価結果は、実行してから記録する。
+出力は `dist/gui-comparison/<candidate>/`、ZIP・ファイル別レポート・起動ログ・時間は `build/gui-comparison-reports/<candidate>/`。ImGuiは標準portに従い静的リンクし、exe内の分を容量へ含める。各アプリは `--seconds 120 --warmup 30 --page monitor`、`--page diagnostics`、`--large`、`--dark`、`--exercise`、`--report <path>`、`--capture <png>` を受け付ける。計測はGUI取込であり、表示器へのpresentではない。wxWidgetsのnative明暗切替は起動時指定のみで、実行中の切替には再起動が必要。
+
+定常Monitor 30ケース、Diagnostics 6ケース、30分反復6ケースを完了した。[比較レポート](results/comparison.md) に生データ、集計再現手順、メモリ推移、同じ仕様変更による保守性評価、残る未検証事項をまとめる。採用・mainへのマージは未決定。

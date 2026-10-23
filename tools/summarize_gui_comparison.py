@@ -124,6 +124,8 @@ def summarize(source: Path, output: Path) -> None:
             "CPU percentage is one logical core equivalent, not total-machine utilization",
             "Frame intake is not display scanout or physical input response",
             "Private commit is not GPU memory",
+            "Foreground focus/occlusion was not captured; visible windows were requested",
+            "Score/state update latency and OS/GPU handle counts were not measured",
             "Desktop activity and power behavior uncontrolled; no universal performance ranking",
             "No NDI or Scenario Runtime",
         ],
