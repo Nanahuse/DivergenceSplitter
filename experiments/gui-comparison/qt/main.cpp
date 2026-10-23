@@ -95,7 +95,7 @@ public:
             break;
         case Action::mutate: mutate_->click(); break;
         case Action::invalid_draft: table_->item(0, 0)->setText(""); break;
-        case Action::valid_draft: table_->item(0, 0)->setText("Edited scenario"); break;
+        case Action::valid_draft: table_->item(0, 0)->setText("Edited scenario"); table_->item(0, 2)->setCheckState(Qt::Unchecked); break;
         case Action::apply: apply_->click(); break;
         case Action::add_scenario: add_->click(); break;
         case Action::remove_scenario: table_->selectRow(table_->rowCount() - 1); remove_->click(); break;
@@ -106,7 +106,7 @@ public:
             break;
         }
         case Action::unsaved_cancel:
-            table_->item(0, 0)->setText("Unsaved");
+            table_->item(0, 2)->setCheckState(Qt::Checked);
             QTimer::singleShot(50, this, [] {
                 if (auto dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) dialog->button(QMessageBox::Cancel)->click();
             });
@@ -180,7 +180,7 @@ private:
             else ++file_cancels_;
         });
         layout->addLayout(source_row);
-        table_ = new QTableWidget; table_->setColumnCount(2); table_->setHorizontalHeaderLabels({"Scenario name", "Port"});
+        table_ = new QTableWidget; table_->setColumnCount(3); table_->setHorizontalHeaderLabels({"Scenario name", "Port", "Enabled"});
         table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); layout->addWidget(table_, 1);
         auto buttons = new QHBoxLayout;
         add_ = button("Add Scenario", buttons, [this] { session_.profile.add_scenario(); sync_form(); table_->selectRow(table_->rowCount() - 1); });
@@ -207,7 +207,8 @@ private:
             if (syncing_) return;
             auto& row = session_.profile.draft.scenarios.at(std::size_t(item->row()));
             if (item->column() == 0) row.name = item->text().toUtf8().toStdString();
-            else { bool ok = false; row.port = item->text().toInt(&ok); if (!ok) row.port = 0; }
+            else if (item->column() == 1) { bool ok = false; row.port = item->text().toInt(&ok); if (!ok) row.port = 0; }
+            else row.enabled = item->checkState() == Qt::Checked;
         });
         tabs_->addTab(page, "Profile"); sync_form();
     }
@@ -218,6 +219,8 @@ private:
         for (int i = 0; i < table_->rowCount(); ++i) {
             const auto& row = session_.profile.draft.scenarios[std::size_t(i)];
             table_->setItem(i, 0, new QTableWidgetItem(text(row.name))); table_->setItem(i, 1, new QTableWidgetItem(QString::number(row.port)));
+            auto enabled = new QTableWidgetItem; enabled->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable);
+            enabled->setCheckState(row.enabled ? Qt::Checked : Qt::Unchecked); table_->setItem(i, 2, enabled);
         }
         syncing_ = false;
     }
@@ -290,7 +293,7 @@ private:
             const auto id = index.data(Qt::UserRole).toULongLong();
             if (auto found = metrics.find(id); found != metrics.end()) {
                 const auto& metric = *found->second;
-                model_->setData(index.siblingAtColumn(1), text(score_text(metric.score) + (metric.active ? " active" : " waiting")));
+                model_->setData(index.siblingAtColumn(1), text(score_text(metric.score) + (!metric.enabled ? " disabled" : metric.active ? " active" : " waiting")));
             }
         }
         ++session_.counters.value_updates;
@@ -329,7 +332,7 @@ private:
                 std::size_t card = 0;
                 for (std::size_t i = 0; i < state->topology->nodes.size(); ++i) if (state->topology->nodes[i].kind == NodeKind::scenario) {
                     const auto& metric = state->metrics[i];
-                    card_labels_.at(card++)->setText(text(state->topology->nodes[i].label + "\n" + (metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score)));
+                    card_labels_.at(card++)->setText(text(state->topology->nodes[i].label + "\n" + (!metric.enabled ? "Disabled" : metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score)));
                 }
             } else if (tabs_->currentIndex() == 1) { sync_tree(); update_values(*state); }
             session_.sample_process(); session_.exercise(*this);

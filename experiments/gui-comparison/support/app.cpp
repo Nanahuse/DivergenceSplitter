@@ -232,8 +232,10 @@ bool ContractScript::tick(Driver& driver) {
             session_.checks.push_back("C02_invalid_apply_keeps_applied_profile");
             driver.perform(Action::valid_draft); driver.perform(Action::apply); next(); break;
         case 8:
-            if (p.dirty || p.errors || state->applied_profile->scenarios.front().name != "Edited scenario") break;
+            if (p.dirty || p.errors || state->applied_profile->scenarios.front().name != "Edited scenario" || state->applied_profile->scenarios.front().enabled) break;
+            require(!state->topology->nodes.front().enabled && !state->metrics.front().enabled && !state->metrics.front().active, "Disabled scenario still evaluates as enabled");
             session_.checks.push_back("C01_valid_apply_reaches_worker");
+            session_.checks.push_back("MC01_enabled_draft_apply_and_backend");
             scenarios_ = p.draft_count; driver.perform(Action::add_scenario); next(); break;
         case 9:
             if (p.draft_count != scenarios_ + 1) break;
@@ -245,6 +247,8 @@ bool ContractScript::tick(Driver& driver) {
         case 11:
             if (p.busy || !p.file_cancels || !p.discard_cancels) break;
             require(p.dirty, "Unsaved confirmation Cancel discarded draft");
+            require(session_.profile.draft.scenarios.front().enabled && !session_.profile.applied().scenarios.front().enabled,
+                "Enabled-only draft/Apply state was lost during confirmation");
             session_.checks.push_back("C03_actual_file_dialog_cancel");
             session_.checks.push_back("C03_actual_unsaved_confirmation_cancel");
             driver.perform(Action::discard); driver.perform(Action::monitor);

@@ -67,8 +67,8 @@ std::shared_ptr<const State> Simulation::advance(Time now) {
     state->metrics.reserve(topology_->nodes.size());
     for (const auto& node : topology_->nodes) {
         auto score = double((sequence_ + node.id * 7) % 1000) / 1000.0;
-        state->metrics.push_back({node.id, score, running_ && score >= 0.7,
-            running_ && (sequence_ / 120 + node.id) % 7 != 0});
+        state->metrics.push_back({node.id, score, running_ && node.enabled && score >= 0.7,
+            running_ && node.enabled && (sequence_ / 120 + node.id) % 7 != 0, node.enabled});
     }
     return state;
 }
@@ -82,12 +82,14 @@ void Simulation::mutate_topology() {
         });
         dynamic_condition_ = 0;
     } else {
-        const auto rule = std::ranges::find_if(next->nodes, [](const Node& node) {
+        const auto parent_rule = std::ranges::find_if(next->nodes, [](const Node& node) {
             return node.kind == NodeKind::rule;
-        })->id;
+        });
+        const auto rule = parent_rule->id;
+        const auto enabled = parent_rule->enabled;
         dynamic_condition_ = next_id_++;
-        next->nodes.push_back({dynamic_condition_, rule, NodeKind::condition, "Dynamic condition"});
-        next->nodes.push_back({next_id_++, dynamic_condition_, NodeKind::detector, "Dynamic detector"});
+        next->nodes.push_back({dynamic_condition_, rule, NodeKind::condition, "Dynamic condition", enabled});
+        next->nodes.push_back({next_id_++, dynamic_condition_, NodeKind::detector, "Dynamic detector", enabled});
     }
     topology_ = std::move(next);
 }
@@ -104,6 +106,7 @@ void Simulation::apply_profile(const Profile& profile) {
     next->revision = topology_->revision + 1;
     std::unordered_map<std::uint64_t, NodeId> next_roots;
     for (const auto& scenario : profile.scenarios) {
+        const auto first = next->nodes.size();
         if (auto found = scenario_roots_.find(scenario.id); found != scenario_roots_.end()) {
             auto nodes = groups.at(found->second);
             nodes.front().label = scenario.name;
@@ -123,6 +126,7 @@ void Simulation::apply_profile(const Profile& profile) {
                 }
             }
         }
+        for (auto i = first; i < next->nodes.size(); ++i) next->nodes[i].enabled = scenario.enabled;
     }
     if (std::ranges::none_of(next->nodes, [this](const Node& n) { return n.id == dynamic_condition_; })) {
         dynamic_condition_ = 0;

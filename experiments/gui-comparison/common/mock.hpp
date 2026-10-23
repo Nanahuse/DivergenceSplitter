@@ -21,6 +21,7 @@ struct Node {
     NodeId parent; // 0 denotes a root.
     NodeKind kind;
     std::string label;
+    bool enabled = true;
 };
 struct Topology {
     std::uint64_t revision = 0;
@@ -37,6 +38,7 @@ struct Metric {
     double score;
     bool active;
     bool connected;
+    bool enabled = true;
 };
 struct Profile;
 struct State {
@@ -141,6 +143,7 @@ struct ScenarioSettings {
     std::uint64_t id;
     std::string name;
     int port;
+    bool enabled = true;
     bool operator==(const ScenarioSettings&) const = default;
 };
 struct Profile {

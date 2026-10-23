@@ -69,6 +69,38 @@ void profile_contract() {
     editor.draft.scenarios[1].name = editor.draft.scenarios[0].name;
     require(!editor.apply().empty(), "Duplicate names accepted");
 }
+void enabled_change_contract() {
+    Simulation simulation;
+    const auto before = simulation.advance(Time{});
+    ProfileEditor editor(*before->applied_profile);
+    editor.draft.scenarios.front().enabled = false;
+    require(editor.dirty() && editor.applied().scenarios.front().enabled, "Enabled edit leaked into applied settings");
+    editor.draft.scenarios.front().name = "";
+    require(!editor.apply().empty() && editor.applied().scenarios.front().enabled, "Invalid Apply committed enabled");
+    editor.draft.scenarios.front().name = "Disabled scenario";
+    require(editor.apply().empty(), "Enabled Apply failed");
+    simulation.apply_profile(editor.applied());
+    const auto after = simulation.advance(Time{} + 1s);
+    require(before->applied_profile->scenarios.front().enabled, "Previous snapshot changed after Apply");
+    require(!after->applied_profile->scenarios.front().enabled, "Worker settings lost enabled");
+    for (std::size_t i = 0; i < 28; ++i) {
+        require(after->topology->nodes[i].id == before->topology->nodes[i].id, "Enabled change replaced stable IDs");
+        require(!after->metrics[i].enabled && !after->metrics[i].active && !after->metrics[i].connected, "Disabled descendants remained active");
+    }
+    require(after->metrics[28].enabled, "Enabled change affected another scenario");
+    simulation.mutate_topology();
+    const auto dynamic = simulation.advance(Time{} + 1500ms);
+    require(!dynamic->metrics.back().enabled, "Dynamic nodes under disabled scenario became enabled");
+    editor.draft.scenarios.front().enabled = true;
+    require(editor.dirty(), "Enabled-only edit was not dirty");
+    editor.discard();
+    require(!editor.dirty() && !editor.draft.scenarios.front().enabled, "Discard did not restore enabled");
+    editor.remove_scenario(1); editor.add_scenario();
+    simulation.apply_profile(editor.draft);
+    const auto removed = simulation.advance(Time{} + 2s);
+    require(removed->topology->nodes.front().id == before->topology->nodes[28].id, "Removing scenario changed surviving IDs");
+    require(removed->applied_profile->scenarios.back().enabled, "New scenario must default to enabled");
+}
 void hold_contract() {
     ResetHold hold;
     const Time now{};
@@ -156,6 +188,7 @@ int main() {
         catch (const std::invalid_argument&) { invalid_shape = true; }
         require(invalid_shape, "Invalid fixture dimensions accepted");
         profile_contract();
+        enabled_change_contract();
         hold_contract();
         latest_contract();
         worker_contract();

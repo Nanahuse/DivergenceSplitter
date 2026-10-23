@@ -79,6 +79,11 @@ public:
             wxGridEvent event(grid_->GetId(), wxEVT_GRID_CELL_CHANGED, grid_, 0, 0);
             grid_->GetEventHandler()->ProcessEvent(event);
         };
+        auto enabled = [this](bool value) {
+            grid_->SetCellValue(0, 2, value ? "1" : "");
+            wxGridEvent event(grid_->GetId(), wxEVT_GRID_CELL_CHANGED, grid_, 0, 2);
+            grid_->GetEventHandler()->ProcessEvent(event);
+        };
         switch (action) {
         case Action::monitor: tabs_->SetSelection(0); break;
         case Action::diagnostics: tabs_->SetSelection(1); break;
@@ -93,7 +98,7 @@ public:
         case Action::collapse: if (items_.contains(first_detector())) tree_->Collapse(items_.at(first_detector())); refresh_references(); break;
         case Action::mutate: click(mutate_); break;
         case Action::invalid_draft: name(""); break;
-        case Action::valid_draft: name("Edited scenario"); break;
+        case Action::valid_draft: name("Edited scenario"); enabled(false); break;
         case Action::apply: click(apply_); break;
         case Action::add_scenario: click(add_); break;
         case Action::remove_scenario: grid_->SetGridCursor(grid_->GetNumberRows() - 1, 0); click(remove_); break;
@@ -102,7 +107,7 @@ public:
             if (session_.profile.draft != before) throw std::runtime_error("File cancel changed draft"); break;
         }
         case Action::unsaved_cancel: {
-            name("Unsaved"); CancelNativeDialog cancel(true); click(fresh_); break;
+            enabled(true); CancelNativeDialog cancel(true); click(fresh_); break;
         }
         case Action::discard: click(discard_); break;
         case Action::reset_press: { wxMouseEvent event(wxEVT_LEFT_DOWN); event.SetEventObject(reset_); reset_->GetEventHandler()->ProcessEvent(event); break; }
@@ -153,7 +158,8 @@ private:
             else ++file_cancels_;
         });
         layout->Add(row, 0, wxEXPAND);
-        grid_ = new wxGrid(page, wxID_ANY); grid_->CreateGrid(0, 2); grid_->SetColLabelValue(0, "Scenario name"); grid_->SetColLabelValue(1, "Port");
+        grid_ = new wxGrid(page, wxID_ANY); grid_->CreateGrid(0, 3); grid_->SetColLabelValue(0, "Scenario name"); grid_->SetColLabelValue(1, "Port");
+        grid_->SetColLabelValue(2, "Enabled"); grid_->SetColFormatBool(2); grid_->SetColSize(2, 100);
         grid_->SetColSize(0, 380); grid_->SetColSize(1, 160); layout->Add(grid_, 1, wxEXPAND | wxALL, 3);
         auto buttons = new wxBoxSizer(wxHORIZONTAL);
         add_ = button(page, buttons, "Add Scenario", [this] { session_.profile.add_scenario(); sync_form(); grid_->SetGridCursor(grid_->GetNumberRows() - 1, 0); });
@@ -178,7 +184,8 @@ private:
             if (syncing_) return;
             auto& value = session_.profile.draft.scenarios.at(std::size_t(event.GetRow()));
             if (event.GetCol() == 0) value.name = grid_->GetCellValue(event.GetRow(), 0).ToStdString(wxConvUTF8);
-            else { long port = 0; grid_->GetCellValue(event.GetRow(), 1).ToLong(&port); value.port = int(port); }
+            else if (event.GetCol() == 1) { long port = 0; grid_->GetCellValue(event.GetRow(), 1).ToLong(&port); value.port = int(port); }
+            else value.enabled = grid_->GetCellValue(event.GetRow(), 2) == "1";
         });
         page->SetSizer(layout); tabs_->AddPage(page, "Profile"); sync_form();
     }
@@ -187,7 +194,11 @@ private:
         const auto count = int(session_.profile.draft.scenarios.size());
         if (grid_->GetNumberRows() < count) grid_->AppendRows(count - grid_->GetNumberRows());
         else if (grid_->GetNumberRows() > count) grid_->DeleteRows(count, grid_->GetNumberRows() - count);
-        for (int i = 0; i < count; ++i) { const auto& value = session_.profile.draft.scenarios[std::size_t(i)]; grid_->SetCellValue(i, 0, text(value.name)); grid_->SetCellValue(i, 1, wxString::Format("%d", value.port)); }
+        for (int i = 0; i < count; ++i) {
+            const auto& value = session_.profile.draft.scenarios[std::size_t(i)];
+            grid_->SetCellValue(i, 0, text(value.name)); grid_->SetCellValue(i, 1, wxString::Format("%d", value.port));
+            grid_->SetCellValue(i, 2, value.enabled ? "1" : "");
+        }
         syncing_ = false;
     }
     bool confirm_discard() {
@@ -246,7 +257,7 @@ private:
     void update_values(const State& state) {
         tree_->Freeze();
         for (const auto& metric : state.metrics) if (items_.contains(metric.id) && ancestors_expanded(items_.at(metric.id), false)) {
-            tree_->SetItemText(items_.at(metric.id), 1, text(score_text(metric.score) + (metric.active ? " active" : " waiting")));
+            tree_->SetItemText(items_.at(metric.id), 1, text(score_text(metric.score) + (!metric.enabled ? " disabled" : metric.active ? " active" : " waiting")));
         }
         tree_->Thaw(); ++session_.counters.value_updates;
     }
@@ -273,7 +284,7 @@ private:
                 }
                 std::size_t card = 0;
                 for (std::size_t i = 0; i < state->topology->nodes.size(); ++i) if (state->topology->nodes[i].kind == NodeKind::scenario) {
-                    auto& metric = state->metrics[i]; card_labels_.at(card++)->SetLabel(text(state->topology->nodes[i].label + "\n" + (metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score)));
+                    auto& metric = state->metrics[i]; card_labels_.at(card++)->SetLabel(text(state->topology->nodes[i].label + "\n" + (!metric.enabled ? "Disabled" : metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score)));
                 }
             } else if (tabs_->GetSelection() == 1) { sync_tree(); update_values(*state); }
             session_.sample_process(); session_.exercise(*this);
@@ -283,7 +294,9 @@ private:
     void finish() {
         if (finishing_) return; finishing_ = true; timer_.Stop(); cancel_hold();
         try { capture(); } catch (const std::exception& error) { session_.error = error.what(); }
-        release_diagnostics(); session_.engine.stop(); session_.write_report(); Close(true);
+        release_diagnostics(); session_.engine.stop();
+        try { session_.write_report(); } catch (const std::exception& error) { session_.error = error.what(); std::cerr << error.what() << '\n'; }
+        Close(true);
     }
     Session& session_; ContractScript script_; ResetHold hold_; wxTimer timer_;
     wxNotebook* tabs_{}; wxStaticText *status_{}, *error_{}; wxStaticBitmap* preview_{};

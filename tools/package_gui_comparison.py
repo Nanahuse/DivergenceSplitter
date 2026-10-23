@@ -24,6 +24,7 @@ EXPECTED_CHECKS = {
     "D03_dynamic_topology_retains_surviving_expansion",
     "C02_invalid_apply_keeps_applied_profile",
     "C01_valid_apply_reaches_worker",
+    "MC01_enabled_draft_apply_and_backend",
     "C03_actual_file_dialog_cancel",
     "C03_actual_unsaved_confirmation_cancel",
     "R01_hold_cancel_and_single_trigger",

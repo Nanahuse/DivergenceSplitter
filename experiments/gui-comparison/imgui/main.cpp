@@ -104,12 +104,12 @@ public:
         case Action::collapse: open_requests_[first_detector()] = false; break;
         case Action::mutate: queue_click("Mutate"); break;
         case Action::invalid_draft: input_.push_back({"Name", "", true}); break;
-        case Action::valid_draft: input_.push_back({"Name", "Edited scenario", true}); break;
+        case Action::valid_draft: input_.push_back({"Name", "Edited scenario", true}); queue_click("Enabled"); break;
         case Action::apply: queue_click("Apply"); break;
         case Action::add_scenario: queue_click("Add Scenario"); break;
         case Action::remove_scenario: queue_click("Remove Scenario"); break;
         case Action::file_cancel: cancel_file_ = true; queue_click("Browse..."); break;
-        case Action::unsaved_cancel: input_.push_back({"Name", "Unsaved", true}); cancel_discard_ = true; queue_click("New Profile"); break;
+        case Action::unsaved_cancel: queue_click("Enabled"); cancel_discard_ = true; queue_click("New Profile"); break;
         case Action::discard: queue_click("Discard"); break;
         case Action::reset_press: input_.push_back({"Reset All", "", false, true}); break;
         case Action::reset_release: ImGui::GetIO().AddMouseButtonEvent(0, false); break;
@@ -221,7 +221,7 @@ private:
             const auto& node = display_->topology->nodes[i]; const auto& metric = display_->metrics[i];
             ImGui::PushID(reinterpret_cast<void*>(std::uintptr_t(node.id)));
             ImGui::BeginChild("card", {0, 70 * dpi_}, ImGuiChildFlags_Borders);
-            ImGui::TextUnformatted(node.label.c_str()); ImGui::Text("%s | %.3f", metric.connected ? "Connected" : "Disconnected", metric.score);
+            ImGui::TextUnformatted(node.label.c_str()); ImGui::Text("%s | %.3f", !metric.enabled ? "Disabled" : metric.connected ? "Connected" : "Disconnected", metric.score);
             ImGui::EndChild(); ImGui::PopID();
         }
         ImGui::EndChild();
@@ -233,7 +233,7 @@ private:
             ImGui::SetNextItemOpen(found->second, ImGuiCond_Always); open_requests_.erase(found);
         }
         const bool open = ImGui::TreeNodeEx("node", ImGuiTreeNodeFlags_SpanAllColumns, "%s", node.label.c_str());
-        ImGui::TableNextColumn(); ImGui::Text("%.3f %s", metric.score, metric.active ? "active" : "waiting");
+        ImGui::TableNextColumn(); ImGui::Text("%.3f %s", metric.score, !metric.enabled ? "disabled" : metric.active ? "active" : "waiting");
         if (open) {
             expanded_.insert(node.id);
             if (node.kind == NodeKind::detector) {
@@ -285,13 +285,14 @@ private:
         auto& draft = session_.profile.draft;
         int source = int(draft.source); if (ImGui::Combo("Input source", &source, "Synthetic camera\0Synthetic file\0")) draft.source = Source(source);
         ImGui::InputText("File path", &draft.file); ImGui::SameLine(); button("Browse...", [this] { browse(); });
-        if (ImGui::BeginTable("profile-rows", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY, {0, -80 * dpi_})) {
-            ImGui::TableSetupColumn("Scenario"); ImGui::TableSetupColumn("Port"); ImGui::TableSetupColumn("Selection"); ImGui::TableHeadersRow();
+        if (ImGui::BeginTable("profile-rows", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY, {0, -80 * dpi_})) {
+            ImGui::TableSetupColumn("Scenario"); ImGui::TableSetupColumn("Port"); ImGui::TableSetupColumn("Enabled"); ImGui::TableSetupColumn("Selection"); ImGui::TableHeadersRow();
             for (std::size_t i = 0; i < draft.scenarios.size(); ++i) {
                 auto& value = draft.scenarios[i]; ImGui::PushID(reinterpret_cast<void*>(std::uintptr_t(value.id)));
                 ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
                 ImGui::InputText("##name", &value.name); if (!i) remember("Name");
                 ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::InputInt("##port", &value.port);
+                ImGui::TableNextColumn(); ImGui::Checkbox("##enabled", &value.enabled); if (!i) remember("Enabled");
                 ImGui::TableNextColumn(); if (ImGui::Selectable("Select", selected_ == value.id)) selected_ = value.id;
                 ImGui::PopID();
             }
