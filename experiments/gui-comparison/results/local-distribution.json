@@ -1,0 +1,480 @@
+{
+  "measurement": "measured",
+  "source_commit": "7d91470",
+  "scope": "Local common GUI after Scenario.enabled; NDI excluded. Not a performance ranking.",
+  "candidates": {
+    "qt": {
+      "unpacked_bytes": 107510788,
+      "zip_bytes": 44271585,
+      "zip_sha256": "0f65f31333074e906ac3821fd9451bd9f3e2e48c7dc8d024e12ff9e35b90f9e5",
+      "zip_settings": {
+        "method": "DEFLATE",
+        "level": 6,
+        "timestamp": "2020-01-01T00:00:00",
+        "ordering": "relative path, case sensitive",
+        "python": "3.14.6",
+        "zlib": "1.3.1.zlib-ng"
+      },
+      "categories": {
+        "Application (including statically linked GUI code)": 251392,
+        "GUI and dependencies/plugins": 68524032,
+        "MSVC Runtime": 1646032,
+        "Notices and metadata": 5392515,
+        "OpenCV and dependencies": 10115072,
+        "Other": 1153,
+        "Shared GUI/OpenCV dependencies": 1012224,
+        "Windows SDK graphics runtime": 20568368
+      },
+      "verification": {
+        "installed_small_gui_contract": "passed with developer PATH removed",
+        "extracted_zip_large_gui_contract": "passed with developer PATH removed"
+      },
+      "largest_files": [
+        {
+          "path": "bin/icudt78.dll",
+          "bytes": 33110528,
+          "category": "GUI and dependencies/plugins",
+          "owner": "icu, qtbase",
+          "sha256": "76a1e4484bc9b82b93a16589c05fc6e25f6d8995235c8027d09274f600d4e58e"
+        },
+        {
+          "path": "bin/dxcompiler.dll",
+          "bytes": 14317000,
+          "category": "Windows SDK graphics runtime",
+          "owner": "Windows SDK redistributable",
+          "sha256": "a5aa1d9a95bf9ea68eff4502eb687161464bb5a505e817782b7a770a2a312044"
+        },
+        {
+          "path": "bin/Qt6Gui.dll",
+          "bytes": 6998016,
+          "category": "GUI and dependencies/plugins",
+          "owner": "qtbase",
+          "sha256": "679553ffffd82c24f6268fa21e9af69dd550e82516d94e678b2ca8ef646e2d3b"
+        },
+        {
+          "path": "bin/Qt6Widgets.dll",
+          "bytes": 6158336,
+          "category": "GUI and dependencies/plugins",
+          "owner": "qtbase",
+          "sha256": "c2b06233837953fe333141c9ae5c15387e7a191006e955a3ddbfc31e361bb61c"
+        },
+        {
+          "path": "bin/libcrypto-3-x64.dll",
+          "bytes": 5358080,
+          "category": "GUI and dependencies/plugins",
+          "owner": "openssl, qtbase",
+          "sha256": "11f41b0582cb017a539e1eda11f1cdf986274c03e098f9ebf97181d2adb7f2f8"
+        },
+        {
+          "path": "bin/Qt6Core.dll",
+          "bytes": 5313024,
+          "category": "GUI and dependencies/plugins",
+          "owner": "qtbase",
+          "sha256": "4c64736c3aee53fa9b2a446ef73745b276e99b98053bf249dc37f0dc82881852"
+        },
+        {
+          "path": "bin/d3dcompiler_47.dll",
+          "bytes": 4741568,
+          "category": "Windows SDK graphics runtime",
+          "owner": "Windows SDK redistributable",
+          "sha256": "e407b9ffadef47e87994dc488214f75405cf04ee99589f2315fc7ab99fd1dfe2"
+        },
+        {
+          "path": "bin/opencv_imgproc4.dll",
+          "bytes": 4513792,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "2885e1647f09b7d99b3e5ad53ed43e90f060a12a222f94d79fee0a6b0bedd12f"
+        },
+        {
+          "path": "bin/opencv_core4.dll",
+          "bytes": 3058688,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "ba464dc0a8ff9af58e687596d1aa09da59b7ca429c63d163ed6ee73a54df4530"
+        },
+        {
+          "path": "bin/icuin78.dll",
+          "bytes": 2807296,
+          "category": "GUI and dependencies/plugins",
+          "owner": "icu, qtbase",
+          "sha256": "d711a8b54f7dfa5aa619cae923a5ce4cc404d12820adc8403f4e9272c9ce7e2b"
+        }
+      ],
+      "timings": {
+        "binary_cache_hit": null,
+        "phases_seconds": {
+          "configure_including_dependencies": 4.0553438,
+          "release_build": 2.4447963,
+          "ctest": 11.9330484,
+          "install_deploy": 4.2820427,
+          "package_and_zip_launch": 15.2323508
+        },
+        "total_seconds": 37.9982614
+      },
+      "toolchain": {
+        "candidate": "qt",
+        "image": "local",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "local working tree",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "gui_contracts": {
+        "small": {
+          "error": "",
+          "checks": [
+            "M01_monitor_and_latest_preview",
+            "D02_value_updates_preserve_tree_expansion_scroll",
+            "D05_collapse_releases_reference",
+            "D04_hidden_diagnostics_stops_materialization",
+            "D03_dynamic_topology_retains_surviving_expansion",
+            "C02_invalid_apply_keeps_applied_profile",
+            "C01_valid_apply_reaches_worker",
+            "MC01_enabled_draft_apply_and_backend",
+            "C03_actual_file_dialog_cancel",
+            "C03_actual_unsaved_confirmation_cancel",
+            "R01_hold_cancel_and_single_trigger",
+            "U01_theme_resize_handlers"
+          ],
+          "renderer": "Qt Widgets / raster / QStandardItemModel"
+        },
+        "large": {
+          "error": "",
+          "checks": [
+            "M01_monitor_and_latest_preview",
+            "D02_value_updates_preserve_tree_expansion_scroll",
+            "D05_collapse_releases_reference",
+            "D04_hidden_diagnostics_stops_materialization",
+            "D03_dynamic_topology_retains_surviving_expansion",
+            "C02_invalid_apply_keeps_applied_profile",
+            "C01_valid_apply_reaches_worker",
+            "MC01_enabled_draft_apply_and_backend",
+            "C03_actual_file_dialog_cancel",
+            "C03_actual_unsaved_confirmation_cancel",
+            "R01_hold_cancel_and_single_trigger",
+            "U01_theme_resize_handlers"
+          ],
+          "renderer": "Qt Widgets / raster / QStandardItemModel"
+        }
+      }
+    },
+    "wx": {
+      "unpacked_bytes": 25703564,
+      "zip_bytes": 9213678,
+      "zip_sha256": "ee62ebaa4864118412cb57dc1b25e5171b06c7debc10a7d20e29f5cb8973c083",
+      "zip_settings": {
+        "method": "DEFLATE",
+        "level": 6,
+        "timestamp": "2020-01-01T00:00:00",
+        "ordering": "relative path, case sensitive",
+        "python": "3.14.6",
+        "zlib": "1.3.1.zlib-ng"
+      },
+      "categories": {
+        "Application (including statically linked GUI code)": 321536,
+        "GUI and dependencies/plugins": 10698752,
+        "MSVC Runtime": 1646032,
+        "Notices and metadata": 1908862,
+        "OpenCV and dependencies": 8799744,
+        "Other": 1086,
+        "Shared GUI/OpenCV dependencies": 2327552
+      },
+      "verification": {
+        "installed_small_gui_contract": "passed with developer PATH removed",
+        "extracted_zip_large_gui_contract": "passed with developer PATH removed"
+      },
+      "largest_files": [
+        {
+          "path": "bin/wxmsw331u_core_vc_x64_custom.dll",
+          "bytes": 7554560,
+          "category": "GUI and dependencies/plugins",
+          "owner": "wxwidgets",
+          "sha256": "1c84b2c6038d6e594d63bf6067f78ced1ad81fd407bd9bd1d5ef19f485152923"
+        },
+        {
+          "path": "bin/opencv_imgproc4.dll",
+          "bytes": 4513792,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "2885e1647f09b7d99b3e5ad53ed43e90f060a12a222f94d79fee0a6b0bedd12f"
+        },
+        {
+          "path": "bin/opencv_core4.dll",
+          "bytes": 3058688,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "ba464dc0a8ff9af58e687596d1aa09da59b7ca429c63d163ed6ee73a54df4530"
+        },
+        {
+          "path": "bin/wxbase331u_vc_x64_custom.dll",
+          "bytes": 2571776,
+          "category": "GUI and dependencies/plugins",
+          "owner": "wxwidgets",
+          "sha256": "6c1997a1a394ef950626ba1ce0150b142684dc63f20e235e501debca198acbcd"
+        },
+        {
+          "path": "bin/jpeg62.dll",
+          "bytes": 722944,
+          "category": "Shared GUI/OpenCV dependencies",
+          "owner": "libjpeg-turbo",
+          "sha256": "1c0c783f404903ea7454232dd45df5fc15602a3be1b9d8574eb1ccaa5249b382"
+        },
+        {
+          "path": "bin/msvcp140.dll",
+          "bytes": 643512,
+          "category": "MSVC Runtime",
+          "owner": "MSVC redistributable",
+          "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+        },
+        {
+          "path": "bin/opencv_videoio4.dll",
+          "bytes": 608256,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "89b67fcd23421975a109934c9dc66daf5cd459bf3c68f841fe38fdda3e0812ef"
+        },
+        {
+          "path": "bin/pcre2-16.dll",
+          "bytes": 572416,
+          "category": "GUI and dependencies/plugins",
+          "owner": "pcre2, wxwidgets",
+          "sha256": "0c40f576f6d0c8b2f3e7fca31b2afba9a0c77bd26c40cde3f6ea12bbe8599155"
+        },
+        {
+          "path": "bin/tiff.dll",
+          "bytes": 495104,
+          "category": "Shared GUI/OpenCV dependencies",
+          "owner": "tiff",
+          "sha256": "d2e4f27fb734440038ac1ee09869ffaeca3f774afdb773c88f4489a7eb59c6a6"
+        },
+        {
+          "path": "bin/opencv_imgcodecs4.dll",
+          "bytes": 487936,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "dc43ace7165d07be47f40cdfafae65b43adf24fcd4b2e7a60001cd6a8e1d9d33"
+        }
+      ],
+      "timings": {
+        "binary_cache_hit": null,
+        "phases_seconds": {
+          "configure_including_dependencies": 3.6661252,
+          "release_build": 3.900068,
+          "ctest": 12.2316508,
+          "install_deploy": 1.6481204,
+          "package_and_zip_launch": 13.5092939
+        },
+        "total_seconds": 35.0012152
+      },
+      "toolchain": {
+        "candidate": "wx",
+        "image": "local",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "local working tree",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "gui_contracts": {
+        "small": {
+          "error": "",
+          "checks": [
+            "M01_monitor_and_latest_preview",
+            "D02_value_updates_preserve_tree_expansion_scroll",
+            "D05_collapse_releases_reference",
+            "D04_hidden_diagnostics_stops_materialization",
+            "D03_dynamic_topology_retains_surviving_expansion",
+            "C02_invalid_apply_keeps_applied_profile",
+            "C01_valid_apply_reaches_worker",
+            "MC01_enabled_draft_apply_and_backend",
+            "C03_actual_file_dialog_cancel",
+            "C03_actual_unsaved_confirmation_cancel",
+            "R01_hold_cancel_and_single_trigger",
+            "U01_theme_resize_handlers"
+          ],
+          "renderer": "wxWidgets MSW / wxTreeListCtrl"
+        },
+        "large": {
+          "error": "",
+          "checks": [
+            "M01_monitor_and_latest_preview",
+            "D02_value_updates_preserve_tree_expansion_scroll",
+            "D05_collapse_releases_reference",
+            "D04_hidden_diagnostics_stops_materialization",
+            "D03_dynamic_topology_retains_surviving_expansion",
+            "C02_invalid_apply_keeps_applied_profile",
+            "C01_valid_apply_reaches_worker",
+            "MC01_enabled_draft_apply_and_backend",
+            "C03_actual_file_dialog_cancel",
+            "C03_actual_unsaved_confirmation_cancel",
+            "R01_hold_cancel_and_single_trigger",
+            "U01_theme_resize_handlers"
+          ],
+          "renderer": "wxWidgets MSW / wxTreeListCtrl"
+        }
+      }
+    },
+    "imgui": {
+      "unpacked_bytes": 14699683,
+      "zip_bytes": 5484813,
+      "zip_sha256": "8ec47672747943f8e2ab292587fd1e3d71519e3df39227cae42cd82751d6b225",
+      "zip_settings": {
+        "method": "DEFLATE",
+        "level": 6,
+        "timestamp": "2020-01-01T00:00:00",
+        "ordering": "relative path, case sensitive",
+        "python": "3.14.6",
+        "zlib": "1.3.1.zlib-ng"
+      },
+      "categories": {
+        "Application (including statically linked GUI code)": 624640,
+        "MSVC Runtime": 1646032,
+        "Notices and metadata": 1300629,
+        "OpenCV and dependencies": 11127296,
+        "Other": 1086
+      },
+      "verification": {
+        "installed_small_gui_contract": "passed with developer PATH removed",
+        "extracted_zip_large_gui_contract": "passed with developer PATH removed"
+      },
+      "largest_files": [
+        {
+          "path": "bin/opencv_imgproc4.dll",
+          "bytes": 4513792,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "2885e1647f09b7d99b3e5ad53ed43e90f060a12a222f94d79fee0a6b0bedd12f"
+        },
+        {
+          "path": "bin/opencv_core4.dll",
+          "bytes": 3058688,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "ba464dc0a8ff9af58e687596d1aa09da59b7ca429c63d163ed6ee73a54df4530"
+        },
+        {
+          "path": "bin/jpeg62.dll",
+          "bytes": 722944,
+          "category": "OpenCV and dependencies",
+          "owner": "libjpeg-turbo",
+          "sha256": "1c0c783f404903ea7454232dd45df5fc15602a3be1b9d8574eb1ccaa5249b382"
+        },
+        {
+          "path": "bin/msvcp140.dll",
+          "bytes": 643512,
+          "category": "MSVC Runtime",
+          "owner": "MSVC redistributable",
+          "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+        },
+        {
+          "path": "bin/comparison-imgui.exe",
+          "bytes": 624640,
+          "category": "Application (including statically linked GUI code)",
+          "owner": "application",
+          "sha256": "8cba4ef602f28082bcc0d0689964df18be40a98d5c87a87ad44586b6fa0c1795"
+        },
+        {
+          "path": "bin/opencv_videoio4.dll",
+          "bytes": 608256,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "89b67fcd23421975a109934c9dc66daf5cd459bf3c68f841fe38fdda3e0812ef"
+        },
+        {
+          "path": "bin/tiff.dll",
+          "bytes": 495104,
+          "category": "OpenCV and dependencies",
+          "owner": "tiff",
+          "sha256": "d2e4f27fb734440038ac1ee09869ffaeca3f774afdb773c88f4489a7eb59c6a6"
+        },
+        {
+          "path": "bin/opencv_imgcodecs4.dll",
+          "bytes": 487936,
+          "category": "OpenCV and dependencies",
+          "owner": "opencv4",
+          "sha256": "dc43ace7165d07be47f40cdfafae65b43adf24fcd4b2e7a60001cd6a8e1d9d33"
+        },
+        {
+          "path": "build-metadata/abseil-vcpkg.spdx.json",
+          "bytes": 461678,
+          "category": "Notices and metadata",
+          "owner": "",
+          "sha256": "a124e81b401ac2f40a7a4c1b7e4b6314b27406dc9a2c3f3e313668cea9c1c9c8"
+        },
+        {
+          "path": "build-metadata/opencv4-vcpkg.spdx.json",
+          "bytes": 416679,
+          "category": "Notices and metadata",
+          "owner": "",
+          "sha256": "2bb9488bd346629d2e137f58fd256a08c442b8942655db65de3916acf44deb3f"
+        }
+      ],
+      "timings": {
+        "binary_cache_hit": null,
+        "phases_seconds": {
+          "configure_including_dependencies": 3.5975414,
+          "release_build": 2.5184361,
+          "ctest": 11.7899211,
+          "install_deploy": 1.398864,
+          "package_and_zip_launch": 12.4231722
+        },
+        "total_seconds": 31.7715266
+      },
+      "toolchain": {
+        "candidate": "imgui",
+        "image": "local",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "local working tree",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "gui_contracts": {
+        "small": {
+          "error": "",
+          "checks": [
+            "M01_monitor_and_latest_preview",
+            "D02_value_updates_preserve_tree_expansion_scroll",
+            "D05_collapse_releases_reference",
+            "D04_hidden_diagnostics_stops_materialization",
+            "D03_dynamic_topology_retains_surviving_expansion",
+            "C02_invalid_apply_keeps_applied_profile",
+            "C01_valid_apply_reaches_worker",
+            "MC01_enabled_draft_apply_and_backend",
+            "C03_actual_file_dialog_cancel",
+            "C03_actual_unsaved_confirmation_cancel",
+            "R01_hold_cancel_and_single_trigger",
+            "U01_theme_resize_handlers"
+          ],
+          "renderer": "Dear ImGui / Win32 / D3D11 hardware"
+        },
+        "large": {
+          "error": "",
+          "checks": [
+            "M01_monitor_and_latest_preview",
+            "D02_value_updates_preserve_tree_expansion_scroll",
+            "D05_collapse_releases_reference",
+            "D04_hidden_diagnostics_stops_materialization",
+            "D03_dynamic_topology_retains_surviving_expansion",
+            "C02_invalid_apply_keeps_applied_profile",
+            "C01_valid_apply_reaches_worker",
+            "MC01_enabled_draft_apply_and_backend",
+            "C03_actual_file_dialog_cancel",
+            "C03_actual_unsaved_confirmation_cancel",
+            "R01_hold_cancel_and_single_trigger",
+            "U01_theme_resize_handlers"
+          ],
+          "renderer": "Dear ImGui / Win32 / D3D11 hardware"
+        }
+      }
+    }
+  }
+}
