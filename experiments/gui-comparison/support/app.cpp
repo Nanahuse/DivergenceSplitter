@@ -230,9 +230,21 @@ bool ContractScript::tick(Driver& driver) {
             if (!p.expanded || p.references != 1) break;
             revision_ = state->topology->revision; driver.perform(Action::mutate); next(); break;
         case 6:
-            if (state->topology->revision == revision_ || waited < .15) break;
-            require(p.expanded && p.references == 1, "Topology change lost surviving detector expansion");
+            if (waited < .15) break;
+            if (mutation_phase_ == 0) {
+                if (state->topology->revision == revision_) break;
+                require(p.expanded && p.references == 1, "Topology change lost surviving detector expansion");
+                driver.perform(Action::expand_dynamic); mutation_phase_ = 1; since_ = now; break;
+            }
+            if (mutation_phase_ == 1) {
+                if (p.references != 2) break;
+                revision_ = state->topology->revision; driver.perform(Action::mutate);
+                mutation_phase_ = 2; since_ = now; break;
+            }
+            if (state->topology->revision == revision_ || p.references != 1) break;
+            require(p.expanded, "Deleting another expanded detector lost surviving expansion");
             session_.checks.push_back("D03_dynamic_topology_retains_surviving_expansion");
+            session_.checks.push_back("D05_deleted_expanded_detector_releases_reference");
             driver.perform(Action::profile); driver.perform(Action::invalid_draft); driver.perform(Action::apply); next(); break;
         case 7:
             if (!p.errors || !p.dirty) break;

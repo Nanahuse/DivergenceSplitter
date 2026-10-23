@@ -95,10 +95,11 @@ public:
         case Action::monitor: set_page(Page::monitor); break;
         case Action::diagnostics: set_page(Page::diagnostics); break;
         case Action::profile: set_page(Page::profile); break;
-        case Action::expand: {
+        case Action::expand:
+        case Action::expand_dynamic: {
             auto topology = session_.engine.state()->topology;
             std::unordered_map<NodeId, NodeId> parents; for (const auto& node : topology->nodes) parents[node.id] = node.parent;
-            for (auto id = first_detector(); id; id = parents.at(id)) open_requests_[id] = true;
+            for (auto id = action == Action::expand ? first_detector() : topology->nodes.back().id; id; id = parents.at(id)) open_requests_[id] = true;
             break;
         }
         case Action::collapse: open_requests_[first_detector()] = false; break;
@@ -238,7 +239,7 @@ private:
             expanded_.insert(node.id);
             if (node.kind == NodeKind::detector) {
                 wanted_references_.insert(node.id);
-                if (!references_.contains(node.id)) references_.emplace(node.id, texture(reference_image(session_.engine, node.id)));
+                if (!references_.contains(node.id)) references_.emplace(node.id, texture(reference_image(session_.engine, node.id, shown_)));
                 ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted("Reference shown below");
             } else for (auto child : children_[node.id]) draw_node(child);
             ImGui::TreePop();

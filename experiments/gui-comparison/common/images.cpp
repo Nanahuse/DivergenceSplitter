@@ -24,8 +24,8 @@ Image decode_reference(const Image& source) {
     return result;
 }
 }
-Image reference_image(MockEngine& engine, NodeId detector) {
-    return decode_reference(engine.reference(detector));
+Image reference_image(MockEngine& engine, NodeId detector, std::shared_ptr<const Topology> snapshot) {
+    return decode_reference(engine.reference(detector, std::move(snapshot)));
 }
 void save_png(const Image& image, const std::filesystem::path& path) {
     cv::Mat bgr;

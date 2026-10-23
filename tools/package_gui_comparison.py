@@ -22,6 +22,7 @@ EXPECTED_CHECKS = {
     "D05_collapse_releases_reference",
     "D04_hidden_diagnostics_stops_materialization",
     "D03_dynamic_topology_retains_surviving_expansion",
+    "D05_deleted_expanded_detector_releases_reference",
     "C02_invalid_apply_keeps_applied_profile",
     "C01_valid_apply_reaches_worker",
     "MC01_enabled_draft_apply_and_backend",

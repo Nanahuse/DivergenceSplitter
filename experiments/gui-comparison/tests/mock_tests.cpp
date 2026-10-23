@@ -184,6 +184,28 @@ void worker_contract() {
         engine.stop();
     }
 }
+void reference_snapshot_contract() {
+    MockEngine engine({{}, 64, 36});
+    const auto snapshot = engine.state()->topology;
+    const auto detector = std::ranges::find_if(snapshot->nodes, [](const Node& node) { return node.kind == NodeKind::detector; })->id;
+    ProfileEditor editor(*engine.state()->applied_profile);
+    editor.remove_scenario(editor.draft.scenarios.front().id);
+    require(engine.apply_profile(editor.draft).empty(), "Scenario removal was rejected");
+    engine.start();
+    eventually([&] { return engine.state()->applied_profile->scenarios.size() == 2; });
+    require(engine.reference(detector, snapshot).rgba.size() == 160 * 90 * 4, "Retained UI snapshot could not generate a reference after worker removal");
+    bool rejected = false;
+    try { (void)engine.reference(detector); } catch (const std::invalid_argument&) { rejected = true; }
+    require(rejected, "Removed detector accepted without a retained snapshot");
+    engine.stop();
+    for (int repeat = 0; repeat < 20; ++repeat) {
+        const auto sequence = engine.state()->sequence;
+        engine.start();
+        eventually([&] { return engine.state()->sequence > sequence; });
+        engine.stop();
+        require(!engine.frame(), "Worker lifecycle retained a latest frame after join");
+    }
+}
 }
 int main() {
     try {
@@ -198,6 +220,7 @@ int main() {
         hold_contract();
         latest_contract();
         worker_contract();
+        reference_snapshot_contract();
         std::cout << "PASS: fixtures, stable IDs, immutable values/pixels, latest-only, profile, hold, worker lifecycle\n";
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

@@ -82,8 +82,9 @@ public:
         case Action::monitor: tabs_->setCurrentIndex(0); break;
         case Action::diagnostics: tabs_->setCurrentIndex(1); break;
         case Action::profile: tabs_->setCurrentIndex(2); break;
-        case Action::expand: {
-            auto found = items_.find(first_detector());
+        case Action::expand:
+        case Action::expand_dynamic: {
+            auto found = items_.find(action == Action::expand ? first_detector() : session_.engine.state()->topology->nodes.back().id);
             if (found == items_.end()) break;
             std::vector<QModelIndex> path;
             for (auto index = found->second->index(); index.isValid(); index = index.parent()) path.push_back(index);
@@ -246,7 +247,7 @@ private:
             if (node.kind != NodeKind::detector || !expanded_and_visible(node.id)) continue;
             wanted.insert(node.id);
             if (!references_.contains(node.id)) {
-                auto label = new QLabel; label->setPixmap(QPixmap::fromImage(image(reference_image(session_.engine, node.id))));
+                auto label = new QLabel; label->setPixmap(QPixmap::fromImage(image(reference_image(session_.engine, node.id, shown_))));
                 reference_layout_->addWidget(label); references_[node.id] = label;
             }
         }

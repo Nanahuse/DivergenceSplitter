@@ -10,7 +10,7 @@ enum class Action {
     monitor, diagnostics, profile, expand, collapse, mutate,
     invalid_draft, valid_draft, apply, add_scenario, remove_scenario,
     unsaved_cancel, file_cancel, discard, reset_press, reset_release,
-    reset_cancel, theme, resize, start, stop, scroll
+    reset_cancel, theme, resize, start, stop, scroll, expand_dynamic
 };
 struct Options {
     bool self_test = false;
@@ -93,6 +93,7 @@ private:
     void require(bool condition, const char* message);
     Session& session_;
     int step_ = 0;
+    int mutation_phase_ = 0;
     Time since_ = std::chrono::steady_clock::now();
     Time started_ = since_;
     std::uint64_t builds_ = 0, requests_ = 0, revision_ = 0, resets_ = 0, updates_ = 0;

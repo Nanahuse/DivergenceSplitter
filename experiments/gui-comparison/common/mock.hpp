@@ -119,7 +119,7 @@ public:
     [[nodiscard]] std::shared_ptr<const State> state() const { return state_.read(); }
     [[nodiscard]] std::shared_ptr<const Frame> frame() const { return frame_.read(); }
     // Invoked by an adapter only when its reference section becomes visible.
-    [[nodiscard]] Image reference(NodeId detector);
+    [[nodiscard]] Image reference(NodeId detector, std::shared_ptr<const Topology> snapshot = {});
     [[nodiscard]] std::uint64_t reference_requests() const { return reference_requests_.load(); }
     [[nodiscard]] std::uint64_t generated_frames() const { return generated_frames_.load(); }
 private:

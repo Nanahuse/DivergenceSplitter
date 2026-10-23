@@ -214,12 +214,12 @@ void MockEngine::run(std::stop_token stop) {
         std::this_thread::sleep_until(deadline);
     }
 }
-Image MockEngine::reference(NodeId detector) {
-    auto current = state();
-    const auto found = std::ranges::find_if(current->topology->nodes, [detector](const Node& n) {
+Image MockEngine::reference(NodeId detector, std::shared_ptr<const Topology> snapshot) {
+    if (!snapshot) snapshot = state()->topology;
+    const auto found = std::ranges::find_if(snapshot->nodes, [detector](const Node& n) {
         return n.id == detector && n.kind == NodeKind::detector;
     });
-    if (found == current->topology->nodes.end()) throw std::invalid_argument("Unknown detector");
+    if (found == snapshot->nodes.end()) throw std::invalid_argument("Unknown detector");
     ++reference_requests_;
     return make_image(160, 90, detector);
 }

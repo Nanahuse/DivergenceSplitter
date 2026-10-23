@@ -88,8 +88,9 @@ public:
         case Action::monitor: tabs_->SetSelection(0); break;
         case Action::diagnostics: tabs_->SetSelection(1); break;
         case Action::profile: tabs_->SetSelection(2); break;
-        case Action::expand: {
-            auto found = items_.find(first_detector()); if (found == items_.end()) break;
+        case Action::expand:
+        case Action::expand_dynamic: {
+            auto found = items_.find(action == Action::expand ? first_detector() : session_.engine.state()->topology->nodes.back().id); if (found == items_.end()) break;
             std::vector<wxTreeListItem> path;
             for (auto item = found->second; item.IsOk() && item != tree_->GetRootItem(); item = tree_->GetItemParent(item)) path.push_back(item);
             for (auto it = path.rbegin(); it != path.rend(); ++it) tree_->Expand(*it);
@@ -224,7 +225,7 @@ private:
             if (node.kind != NodeKind::detector || !ancestors_expanded(items_.at(node.id), true)) continue;
             wanted.insert(node.id);
             if (!references_.contains(node.id)) {
-                auto bitmap = new wxStaticBitmap(reference_panel_, wxID_ANY, wxBitmap(image(reference_image(session_.engine, node.id))));
+                auto bitmap = new wxStaticBitmap(reference_panel_, wxID_ANY, wxBitmap(image(reference_image(session_.engine, node.id, shown_))));
                 reference_layout_->Add(bitmap, 0, wxALL, 3); references_[node.id] = bitmap;
             }
         }
