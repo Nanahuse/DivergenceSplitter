@@ -4,13 +4,13 @@
 
 ## ローカルの機能・配布検証
 
-変更前 `9a96bf7`、同じScenario.enabled仕様変更後 `7d91470`。変更後の3候補はC++23 / MSVC / x64 Release、共通CTest、小規模84ノードと大量10,220ノードのGUI契約に成功した。配布フォルダーの小規模テストと、ZIP新規展開先の大量テストも開発用PATHを除いて成功した。配布検証ツールのpytestは22件成功。Ruff・tyはリポジトリ全体で成功。
+変更前 `9a96bf7`、同じScenario.enabled仕様変更後 `7d91470`。以後、展開中Detector削除・snapshot寿命・周期・ツールチェーンを検証し、最新のローカル測定版は `786350a`。3候補ともC++23 / MSVC / x64 Release、CTest 6件に成功した（共通契約1、小規模84ノードと大量10,220ノードのGUI契約2、Diagnostics/暗色Profileの起動・画面保存2、長押し途中の終了1）。配布フォルダーの小規模テストと、ZIP新規展開先の大量テストも開発用PATHを除いて成功した。配布・集計検証ツールのpytestは25件成功。Ruff・tyはリポジトリ全体で成功。
 
 | 候補 | 展開後 bytes | 配布ZIP bytes |
 | --- | ---: | ---: |
-| Qt Widgets | 107,510,788 | 44,271,585 |
-| wxWidgets | 25,703,564 | 9,213,678 |
-| Dear ImGui | 14,699,683 | 5,484,813 |
+| Qt Widgets | 107,513,348 | 44,273,201 |
+| wxWidgets | 25,706,636 | 9,215,371 |
+| Dear ImGui | 14,703,267 | 5,486,109 |
 
 Python 3.14.6 / DEFLATE level 6、順序・日時正規化は全候補同一。ImGuiの公式backendを含む静的リンク分はexeに計上する。DLLの共有依存は一度だけ計上する。大きいファイル・分類・SHA256・ビルド環境は [要約JSON](local-distribution.json)、ファイル全件CSV・ZIP・GUI生ログはビルド出力に保存した。ローカルでは既存binary cacheを利用しているため、依存導入時間をコールドビルド時間とは呼ばない。
 
@@ -29,6 +29,14 @@ Python 3.14.6 / DEFLATE level 6、順序・日時正規化は全候補同一。I
 3候補ともUI以外のworkerからGUIを直接呼ばず、GUI所有のタイマー／ループでimmutableなlatest snapshotを採用する。状態のイベントキューは作らず、映像生成と画面更新を分離した。停止時はworkerをjoinする。各候補に独自の汎用controlライブラリは追加していない。
 
 wxTreeListCtrlはcollapseイベントを直接公開しないため、公開GetView/DataView APIでcollapseを受けて遅延処理する。スクロール位置取得もDataViewのGetViewStartを使う。ImGuiは公式backendを使用しているが、device、swapchain、画像ハンドル、ファイル選択、テーマ/DPIの接続はアプリ側の責任となる。Qt/wxも安定ID対応表と差分削除・参照画像寿命の管理は必要だった。
+
+参照画像の要求はUIが保持するimmutableな階層snapshotで検証する。worker側でDetectorが削除された直後にも、UIが読んでいる旧snapshotの寿命を保ち、次の構造同期で画像を解放する。3候補とも「動的Detectorを展開してから削除し、その画像だけが解放され、生存Detectorの展開が残る」操作を追加検証した。共通workerは20回のstart/joinも検証する。
+
+**wxWidgetsの起動後のnativeテーマ切替は未達。** [固定版3.3.1の実装](https://raw.githubusercontent.com/wxWidgets/wxWidgets/v3.3.1/src/msw/darkmode.cpp) は、既存top-level windowがある場合にSetAppearanceからCannotChangeを返す。試作では戻り値を確認して「Theme: restart required」と表示する。全候補へ同じ `--dark` を追加し、起動時の暗色Profile表示は3候補とも画面保存で確認した。wxはウィンドウ作成前の指定が必要。再起動による設定引継ぎや独自配色は追加実装していない。自動checkの `U01_theme_resize_handlers` は操作handlerの実行だけで、全候補の実行中テーマ切替合格を意味しない。
+
+15Hz取込の校正では、ImGuiの期限更新方式に遅延の累積があり、期限位相を維持して期限超過を捨てる共通PreviewCadenceへ修正した。wxTimerの67ms指定は約12.6Hzとなったため、16msのnative heartbeatから同じ共通期限でUIのpayloadを更新する形へ調整した。追加の独自timer/描画基盤は作っていない。2秒warmup + 15秒の確認ではQt約14.90Hz、wx約14.99Hz、ImGui約14.98Hz。これは校正値であり、5回の定常計測の結果とは区別する。調整前のログは保存するが、同条件の性能比較には含めない。
+
+日本語MSVC/CMakeの接頭辞の文字化けにより、古いローカルビルドでヘッダー依存が0件となり、ABI不整合の異常終了を検出した。UTF-8コードページでfresh configureとclean buildを行い、Qt adapterのヘッダー依存265件と全GUI契約の再成功を確認した。全候補の共通ビルドhelperへ対策を入れた。GUIライブラリ固有の不安定性とは扱わない。
 
 ## 同じ仕様変更による評価
 
