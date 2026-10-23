@@ -6,6 +6,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+# Keep MSVC /showIncludes output and CMake/Ninja decoding consistent on Japanese Windows.
+& chcp.com 65001 | Out-Null
 $comparisonRepo = Split-Path -Parent $PSScriptRoot
 $comparisonBuild = Join-Path $comparisonRepo "build/gui-comparison/$Candidate"
 $comparisonStage = Join-Path $comparisonRepo "dist/gui-comparison/$Candidate"
@@ -19,7 +21,7 @@ $comparisonCommit = git -C $env:VCPKG_ROOT rev-parse HEAD
 if ($comparisonCommit.Trim() -ne $comparisonBaseline) { throw 'vcpkg commit does not match the manifest baseline.' }
 if (Test-Path $comparisonStage) { throw "Install directory must be new: $comparisonStage" }
 $comparisonInstalled = if ($InstalledDirectory) { [IO.Path]::GetFullPath($InstalledDirectory) } else { Join-Path $comparisonBuild 'vcpkg_installed' }
-$comparisonArguments = @('-S', (Join-Path $comparisonRepo 'experiments/gui-comparison'), '-B', $comparisonBuild,
+$comparisonArguments = @('--fresh', '-S', (Join-Path $comparisonRepo 'experiments/gui-comparison'), '-B', $comparisonBuild,
     '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', "-DGUI_CANDIDATE=$Candidate",
     "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake", "-DCMAKE_INSTALL_PREFIX=$comparisonStage",
     "-DVCPKG_INSTALLED_DIR=$comparisonInstalled")
@@ -27,7 +29,7 @@ $comparisonPhase = [Diagnostics.Stopwatch]::StartNew()
 & cmake @comparisonArguments
 $comparisonTimings.phases_seconds.configure_including_dependencies = $comparisonPhase.Elapsed.TotalSeconds
 $comparisonPhase.Restart()
-& cmake --build $comparisonBuild
+& cmake --build $comparisonBuild --clean-first
 $comparisonTimings.phases_seconds.release_build = $comparisonPhase.Elapsed.TotalSeconds
 $comparisonPhase.Restart()
 & ctest --test-dir $comparisonBuild --output-on-failure --output-junit gui-tests.xml

@@ -45,6 +45,7 @@ struct Counters {
     std::uint64_t peak_working_set = 0;
     std::vector<double> frame_age_ms;
     double first_frame_ms = -1;
+    double first_process_frame_ms = -1;
 };
 class Driver;
 struct MemorySample { double seconds; std::uint64_t private_bytes, working_set; };

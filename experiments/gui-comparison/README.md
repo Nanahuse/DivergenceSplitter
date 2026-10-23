@@ -103,6 +103,8 @@ ctest --test-dir build/gui-comparison-common --output-on-failure
 
 Developer PowerShellで固定baselineのvcpkgを `VCPKG_ROOT` に設定し、候補ごとに次を実行する。既存の配布先・ZIP展開先は上書きせず、新規の出力先を使う。
 
+日本語MSVCではconfigure前からコードページ65001を使用する。ローカルのCMake 4.3.1-msvc1で、それ以外の設定による `/showIncludes` 接頭辞の文字化けとヘッダー依存追跡漏れを実際に検出した。helperはUTF-8、新規configure (`--fresh`)、アプリのclean buildを毎回行い、古いobjectによるABI不整合を避ける。vcpkg binary cacheは利用する。これはGUI候補共通のツールチェーン対応であり、GUIの性能・安定性の差として扱わない。
+
 ```powershell
 tools/build_gui_comparison.ps1 -Candidate qt
 tools/build_gui_comparison.ps1 -Candidate wx

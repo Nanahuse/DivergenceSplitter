@@ -76,6 +76,11 @@ void Session::observe_frame(const Frame& frame) {
     const auto now = std::chrono::steady_clock::now();
     if (counters.first_frame_ms < 0) {
         counters.first_frame_ms = std::chrono::duration<double, std::milli>(now - started_).count();
+        FILETIME created{}, exited{}, kernel{}, user{}, wall{};
+        if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) throw std::runtime_error("Process creation time unavailable");
+        GetSystemTimePreciseAsFileTime(&wall);
+        auto ticks = [](FILETIME time) { return (std::uint64_t(time.dwHighDateTime) << 32) | time.dwLowDateTime; };
+        counters.first_process_frame_ms = double(ticks(wall) - ticks(created)) / 10'000.0;
     } else counters.skipped_frames += frame.sequence - counters.last_frame - 1;
     counters.last_frame = frame.sequence;
     ++counters.presented;
@@ -91,8 +96,10 @@ void Session::sample_process() {
         warmed_ = true;
         if (options.warmup > 0) {
             const auto first_frame = counters.first_frame_ms;
+            const auto first_process_frame = counters.first_process_frame_ms;
             const auto last_frame = counters.last_frame;
             counters = {}; counters.first_frame_ms = first_frame; counters.last_frame = last_frame;
+            counters.first_process_frame_ms = first_process_frame;
             measured_ = now; cpu_baseline_ = cpu_seconds(); frame_baseline_ = engine.generated_frames();
         }
     }
@@ -153,6 +160,7 @@ void Session::write_report() const {
         << ",\n  \"peak_private_bytes\": " << counters.peak_private_bytes
         << ",\n  \"peak_working_set_bytes\": " << counters.peak_working_set
         << ",\n  \"first_frame_ms\": " << counters.first_frame_ms
+        << ",\n  \"process_creation_to_first_intake_ms\": " << counters.first_process_frame_ms
         << ",\n  \"gui_frame_intakes\": " << counters.presented
         << ",\n  \"skipped_input_frames\": " << counters.skipped_frames
         << ",\n  \"frame_age_p50_ms\": " << percentile(counters.frame_age_ms, .50)
