@@ -1,0 +1,28 @@
+{
+  "name": "divergencesplitter-gui-comparison",
+  "version-string": "0.1.0",
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
+  "dependencies": [
+    { "name": "opencv4", "features": ["contrib"] }
+  ],
+  "features": {
+    "qt": {
+      "description": "Qt Widgets implementation",
+      "dependencies": [{ "name": "qtbase", "features": ["windeployqt"] }]
+    },
+    "wx": {
+      "description": "wxWidgets implementation",
+      "dependencies": ["wxwidgets"]
+    },
+    "imgui": {
+      "description": "Dear ImGui Win32/D3D11 implementation",
+      "dependencies": [{ "name": "imgui", "features": ["win32-binding", "dx11-binding"] }]
+    }
+  },
+  "overrides": [
+    { "name": "opencv4", "version": "4.12.0", "port-version": 7 },
+    { "name": "qtbase", "version": "6.11.1", "port-version": 1 },
+    { "name": "wxwidgets", "version": "3.3.1", "port-version": 1 },
+    { "name": "imgui", "version": "1.92.8", "port-version": 1 }
+  ]
+}
