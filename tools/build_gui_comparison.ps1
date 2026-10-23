@@ -28,6 +28,7 @@ $comparisonArguments = @('--fresh', '-S', (Join-Path $comparisonRepo 'experiment
 $comparisonPhase = [Diagnostics.Stopwatch]::StartNew()
 & cmake @comparisonArguments
 $comparisonTimings.phases_seconds.configure_including_dependencies = $comparisonPhase.Elapsed.TotalSeconds
+if ($env:GITHUB_OUTPUT) { 'dependencies_configured=true' >> $env:GITHUB_OUTPUT }
 $comparisonPhase.Restart()
 & cmake --build $comparisonBuild --clean-first
 $comparisonTimings.phases_seconds.release_build = $comparisonPhase.Elapsed.TotalSeconds

@@ -57,12 +57,13 @@ jobs:
           repository: microsoft/vcpkg
           ref: ${{ steps.manifest.outputs.baseline }}
           path: build/vcpkg
-      - uses: actions/cache@v6
+      - uses: actions/cache/restore@v6
         id: binary-cache
         with:
           path: .vcpkg-binary-cache
           key: gui-comparison-windows-2025-${{ matrix.candidate }}-${{ steps.manifest.outputs.baseline }}-${{ hashFiles('experiments/gui-comparison/vcpkg.json') }}
       - name: Release build, common and GUI tests, install and extracted-ZIP tests
+        id: verify
         env:
           PROBE_BINARY_CACHE_HIT: ${{ steps.binary-cache.outputs.cache-hit == 'true' }}
         run: |
@@ -78,6 +79,12 @@ jobs:
           New-Item -ItemType Directory -Force build/gui-comparison-reports | Out-Null
           & build/vcpkg/bootstrap-vcpkg.bat -disableMetrics
           & tools/build_gui_comparison.ps1 -Candidate '${{ matrix.candidate }}' *>&1 | Tee-Object -FilePath 'build/gui-comparison-reports/${{ matrix.candidate }}-build.log'
+      - name: Preserve complete dependency cache even when a later GUI test fails
+        if: always() && steps.binary-cache.outputs.cache-hit != 'true' && steps.verify.outputs.dependencies_configured == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .vcpkg-binary-cache
+          key: ${{ steps.binary-cache.outputs.cache-primary-key }}
       - name: Publish measured distribution and timing
         run: |
           Get-Content 'build/gui-comparison-reports/${{ matrix.candidate }}/report.md' >> $env:GITHUB_STEP_SUMMARY
