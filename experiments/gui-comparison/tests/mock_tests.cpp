@@ -139,6 +139,12 @@ void latest_contract() {
         if (steady.due(Time{} + std::chrono::nanoseconds(frame * 1'000'000'000LL / 60))) ++displayed;
     }
     require(displayed == 15, "60Hz input did not produce 15 preview opportunities");
+    PreviewCadence jittered;
+    displayed = 0;
+    for (int tick = 0; tick < 60; ++tick) {
+        if (jittered.due(Time{} + std::chrono::nanoseconds(tick * 16'900'000LL))) ++displayed;
+    }
+    require(displayed == 15, "Event-loop jitter accumulated preview cadence drift");
 }
 void worker_contract() {
     MockEngine engine({{}, 64, 36});

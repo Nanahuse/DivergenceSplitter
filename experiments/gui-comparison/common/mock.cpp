@@ -277,8 +277,11 @@ double ResetHold::progress(Time now) const {
     return std::clamp(std::chrono::duration<double>(now - *pressed_at_).count() / 2.0, 0.0, 1.0);
 }
 bool PreviewCadence::due(Time now) {
-    if (last_ && now - *last_ < std::chrono::nanoseconds(66'666'666)) return false;
-    last_ = now;
+    constexpr auto period = std::chrono::nanoseconds(66'666'666);
+    if (!next_) { next_ = now + period; return true; }
+    if (now < *next_) return false;
+    // Preserve phase across event-loop jitter; skip expired deadlines without bursts.
+    *next_ += period * (1 + (now - *next_) / period);
     return true;
 }
 } // namespace comparison

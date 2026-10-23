@@ -198,10 +198,18 @@ bool ContractScript::tick(Driver& driver) {
             if (!p.expanded || p.references != 1) break;
             builds_ = session_.counters.topology_builds; requests_ = session_.engine.reference_requests();
             updates_ = session_.counters.value_updates;
+            scroll_ = p.scroll; scroll_ready_ = !session_.options.large;
             if (session_.options.large) driver.perform(Action::scroll);
             next(); break;
         case 2:
-            if (waited < .2) { scroll_ = p.scroll; break; }
+            if (!scroll_ready_) {
+                if (p.scroll > 0) { scroll_ = p.scroll; scroll_ready_ = true; since_ = now; }
+                else {
+                    require(waited < 2, "Large Diagnostics did not actually scroll");
+                    driver.perform(Action::scroll);
+                }
+                break;
+            }
             if (waited < .4) break;
             require(session_.counters.value_updates > updates_, "No value updates during preservation test");
             require(!session_.options.large || scroll_ > 0, "Large Diagnostics did not actually scroll");

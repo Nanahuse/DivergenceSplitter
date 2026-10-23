@@ -186,6 +186,6 @@ class PreviewCadence {
 public:
     bool due(Time now);
 private:
-    std::optional<Time> last_;
+    std::optional<Time> next_;
 };
 } // namespace comparison

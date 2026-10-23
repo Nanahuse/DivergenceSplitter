@@ -163,7 +163,7 @@ private:
         tree_ = new QTreeView; tree_->setModel(model_); tree_->setUniformRowHeights(true);
         tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch); tree_->setColumnWidth(1, 160);
         layout->addWidget(tree_, 1);
-        auto scroll = new QScrollArea; scroll->setMaximumHeight(145); scroll->setWidgetResizable(true);
+        auto scroll = new QScrollArea; scroll->setFixedHeight(125); scroll->setWidgetResizable(true);
         auto content = new QWidget; reference_layout_ = new QHBoxLayout(content); scroll->setWidget(content);
         layout->addWidget(scroll); tabs_->addTab(page, "Diagnostics");
         connect(tree_, &QTreeView::expanded, this, [this] { refresh_references(); });

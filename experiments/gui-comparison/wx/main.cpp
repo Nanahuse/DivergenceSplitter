@@ -118,7 +118,8 @@ public:
         case Action::start: session_.engine.set_running(true); break;
         case Action::stop: hold_.cancel(); session_.engine.set_running(false); break;
         case Action::scroll:
-            for (const auto& node : session_.engine.state()->topology->nodes) if (node.kind == NodeKind::scenario) tree_->Expand(items_.at(node.id));
+            for (const auto& node : session_.engine.state()->topology->nodes)
+                if (node.kind == NodeKind::scenario && !tree_->IsExpanded(items_.at(node.id))) tree_->Expand(items_.at(node.id));
             CallAfter([this] { tree_->GetDataView()->Scroll(0, 2); }); break;
         }
     }

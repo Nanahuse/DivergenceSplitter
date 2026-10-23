@@ -99,6 +99,7 @@ private:
     std::size_t scenarios_ = 0;
     int scroll_ = 0;
     bool active_ = false;
+    bool scroll_ready_ = false;
 };
 std::string score_text(double score);
 }

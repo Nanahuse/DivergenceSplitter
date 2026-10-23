@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,17 +22,40 @@ def run(
     repeats: int,
     soak: int,
 ) -> None:
+    distribution = distribution.resolve()
+    output = output.resolve()
+    if output.is_relative_to(distribution) or distribution.is_relative_to(output):
+        raise ValueError("Distribution and measurements must be disjoint")
+    binaries = {
+        candidate: distribution / candidate / f"bin/comparison-{candidate}.exe"
+        for candidate in ("qt", "wx", "imgui")
+    }
+    binary_hashes = {
+        candidate: hashlib.sha256(binary.read_bytes()).hexdigest()
+        for candidate, binary in binaries.items()
+    }
     if output.exists():
         raise ValueError("Use a new output directory to preserve earlier measurements")
     output.mkdir(parents=True)
+    power_output = subprocess.check_output(["powercfg", "/getactivescheme"])
+    power_guid = re.search(
+        rb"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", power_output
+    )
+    if power_guid is None:
+        raise RuntimeError("Cannot identify the active Windows power scheme GUID")
     metadata = {
+        "source_commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip(),
+        "working_tree_dirty": bool(
+            subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+        ),
+        "binary_sha256": binary_hashes,
         "started_utc": datetime.now(UTC).isoformat(),
         "platform": platform.platform(),
         "processor": platform.processor(),
         "logical_cpus": os.cpu_count(),
-        "power_plan": subprocess.check_output(
-            ["powercfg", "/getactivescheme"], text=True
-        ).strip(),
+        "power_scheme_guid": power_guid.group().decode("ascii"),
         "warmup_seconds": warmup,
         "measurement_seconds": seconds,
         "repeats": repeats,
