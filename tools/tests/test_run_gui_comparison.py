@@ -50,7 +50,11 @@ def test_resume_refuses_changed_binaries_before_launching_a_gui(tmp_path: Path) 
     (output / "environment.json").write_text(
         json.dumps({"binary_sha256": {"qt": "original"}}), encoding="utf-8"
     )
-    with patch("run_gui_comparison.subprocess.check_output") as query:
+    with (
+        patch("run_gui_comparison.subprocess.check_output") as query,
+        patch("run_gui_comparison.platform.platform", return_value="Windows-test"),
+        patch("run_gui_comparison.platform.processor", return_value="test-processor"),
+    ):
         query.side_effect = [
             b"381b4222-f694-41f0-9685-ff5bb260df2e",
             "source",
