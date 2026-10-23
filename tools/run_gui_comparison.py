@@ -13,6 +13,29 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
+def validate_report(
+    report: Path, candidate: str, large: bool, duration: int, exercise: bool
+) -> dict:
+    if not report.is_file():
+        raise RuntimeError(
+            f"{report.stem}: process exited without a report; duration was not verified. "
+            "A closed window can also exit successfully. Inspect the case log."
+        )
+    measured = json.loads(report.read_text(encoding="utf-8"))
+    if (
+        measured["error"]
+        or measured["candidate"] != candidate
+        or measured["large"] != large
+        or measured["generated_frames"] <= 0
+    ):
+        raise RuntimeError(f"Invalid measurement: {report.stem}")
+    if measured["measurement_seconds"] < duration - 1:
+        raise RuntimeError(f"Measurement ended early: {report.stem}")
+    if exercise and measured["exercise_steps"] < 160:
+        raise RuntimeError(f"Insufficient lifecycle exercise: {report.stem}")
+    return measured
+
+
 def run(
     distribution: Path,
     output: Path,
@@ -21,6 +44,7 @@ def run(
     seconds: int,
     repeats: int,
     soak: int,
+    resume: bool = False,
 ) -> None:
     distribution = distribution.resolve()
     output = output.resolve()
@@ -34,9 +58,9 @@ def run(
         candidate: hashlib.sha256(binary.read_bytes()).hexdigest()
         for candidate, binary in binaries.items()
     }
-    if output.exists():
+    if output.exists() and not resume:
         raise ValueError("Use a new output directory to preserve earlier measurements")
-    output.mkdir(parents=True)
+    output.mkdir(parents=True, exist_ok=resume)
     power_output = subprocess.check_output(["powercfg", "/getactivescheme"])
     power_guid = re.search(
         rb"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", power_output
@@ -62,6 +86,36 @@ def run(
         "soak_seconds_per_candidate_and_dataset": soak,
         "method": "Serial foreground GUI processes; shared worker included in process CPU. Intake is not scanout. Other desktop activity is uncontrolled.",
     }
+    if resume:
+        previous = json.loads((output / "environment.json").read_text(encoding="utf-8"))
+        for key in (
+            "binary_sha256",
+            "platform",
+            "processor",
+            "logical_cpus",
+            "power_scheme_guid",
+            "warmup_seconds",
+            "measurement_seconds",
+            "repeats",
+            "soak_seconds_per_candidate_and_dataset",
+        ):
+            if previous[key] != metadata[key]:
+                raise ValueError(
+                    f"Cannot resume with changed measurement condition: {key}"
+                )
+        if (output / "invalidated.json").exists() or (
+            output / "completed.json"
+        ).exists():
+            raise ValueError("Cannot resume invalidated or completed measurements")
+        previous.setdefault("resumes", []).append(
+            {
+                "utc": metadata["started_utc"],
+                "runner_source_commit": metadata["source_commit"],
+                "runner_working_tree_dirty": metadata["working_tree_dirty"],
+                "reason": "Retry cases without a report; keep and revalidate completed cases. Binary hashes unchanged.",
+            }
+        )
+        metadata = previous
     (output / "environment.json").write_text(
         json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
     )
@@ -102,6 +156,10 @@ def run(
             (str(root / "bin"), str(windows / "System32"), str(windows))
         )
         report = (output / f"{name}.json").resolve()
+        if resume and report.exists():
+            validate_report(report, candidate, large, duration, exercise)
+            print(f"KEEP {name}: validated existing report", flush=True)
+            continue
         command = [
             str(root / f"bin/comparison-{candidate}.exe"),
             "--seconds",
@@ -120,7 +178,14 @@ def run(
         if label == "diagnostics":
             command.extend(("--capture", str((output / f"{name}.png").resolve())))
         print(f"START {name}: warmup {warmup}s + measure {duration}s", flush=True)
-        with (output / f"{name}.log").open("w", encoding="utf-8") as log:
+        log_path = output / f"{name}.log"
+        if log_path.exists():
+            log_path.rename(
+                log_path.with_suffix(
+                    f".interrupted-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.log"
+                )
+            )
+        with log_path.open("w", encoding="utf-8") as log:
             result = subprocess.run(
                 command,
                 cwd=root,
@@ -132,18 +197,7 @@ def run(
             )
         if result.returncode:
             raise RuntimeError(f"{name} failed: {result.returncode}")
-        measured = json.loads(report.read_text(encoding="utf-8"))
-        if (
-            measured["error"]
-            or measured["candidate"] != candidate
-            or measured["large"] != large
-            or measured["generated_frames"] <= 0
-        ):
-            raise RuntimeError(f"Invalid measurement: {name}")
-        if measured["measurement_seconds"] < duration - 1:
-            raise RuntimeError(f"Measurement ended early: {name}")
-        if exercise and measured["exercise_steps"] < 160:
-            raise RuntimeError(f"Insufficient lifecycle exercise: {name}")
+        measured = validate_report(report, candidate, large, duration, exercise)
         print(
             f"PASS {name}: CPU {measured['cpu_seconds']:.3f}s / {measured['measurement_seconds']:.3f}s, frames {measured['generated_frames']}",
             flush=True,
@@ -167,6 +221,11 @@ def main() -> None:
     parser.add_argument("--seconds", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--soak", type=int, default=1800)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reuse validated cases only with identical binaries and conditions",
+    )
     args = parser.parse_args()
     if args.warmup < 0 or args.seconds <= 0 or args.repeats <= 0 or args.soak < 0:
         parser.error(
@@ -179,6 +238,7 @@ def main() -> None:
         seconds=args.seconds,
         repeats=args.repeats,
         soak=args.soak,
+        resume=args.resume,
     )
 
 

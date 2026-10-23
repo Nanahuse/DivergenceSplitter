@@ -92,11 +92,25 @@ def summarize(source: Path, output: Path) -> None:
             ),
             "median_producer_hz": median(item["producer_hz"] for item in values),
             "median_gui_intake_hz": median(item["gui_intake_hz"] for item in values),
-            "median_of_run_frame_age_p95_ms": median(
-                item["frame_age_p95_ms"] for item in values
+            "median_of_run_frame_age_p95_ms": (
+                median(
+                    item["frame_age_p95_ms"]
+                    for item in values
+                    if item["gui_frame_intakes"]
+                )
+                if any(item["gui_frame_intakes"] for item in values)
+                else None
             ),
-            "median_process_creation_to_first_intake_ms": median(
-                item["process_creation_to_first_intake_ms"] for item in values
+            "median_process_creation_to_first_intake_ms": (
+                median(
+                    item["process_creation_to_first_intake_ms"]
+                    for item in values
+                    if item["process_creation_to_first_intake_ms"] >= 0
+                )
+                if any(
+                    item["process_creation_to_first_intake_ms"] >= 0 for item in values
+                )
+                else None
             ),
         }
     result = {

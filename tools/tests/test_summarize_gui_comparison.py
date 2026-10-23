@@ -53,6 +53,24 @@ def test_cpu_units_rates_and_memory_buckets_are_preserved(tmp_path: Path) -> Non
     assert run["private_first_to_last_minute_median_delta"] == 40
 
 
+def test_no_frame_intake_is_unavailable_instead_of_zero_latency(tmp_path: Path) -> None:
+    source = tmp_path / "measurements"
+    measurements(source)
+    path = source / "qt-small-diagnostics.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record.update(
+        gui_frame_intakes=0, frame_age_p95_ms=0, process_creation_to_first_intake_ms=-1
+    )
+    path.write_text(json.dumps(record), encoding="utf-8")
+    output = tmp_path / "summary.json"
+    summarize(source, output)
+    group = json.loads(output.read_text(encoding="utf-8"))["aggregates"][
+        "qt/small/diagnostics"
+    ]
+    assert group["median_of_run_frame_age_p95_ms"] is None
+    assert group["median_process_creation_to_first_intake_ms"] is None
+
+
 @pytest.mark.parametrize("invalidated", [False, True])
 def test_incomplete_or_invalidated_measurements_cannot_be_reported_as_success(
     tmp_path: Path, invalidated: bool

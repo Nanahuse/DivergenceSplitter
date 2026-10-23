@@ -7,6 +7,7 @@ on:
       - 'tools/*gui*'
       - 'tools/tests/test_package_gui_comparison.py'
       - 'tools/tests/test_summarize_gui_comparison.py'
+      - 'tools/tests/test_run_gui_comparison.py'
       - 'tools/measure_distribution.py'
       - 'tools/prepare_cpp_distribution.py'
       - '.github/workflows/gui-comparison-common.yml'
@@ -46,7 +47,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install pytest==9.1.1
-          python -m pytest tools/tests/test_package_gui_comparison.py tools/tests/test_summarize_gui_comparison.py tools/tests/test_measure_distribution.py tools/tests/test_prepare_cpp_distribution.py -q --junitxml=build/gui-tool-tests.xml
+          python -m pytest tools/tests/test_package_gui_comparison.py tools/tests/test_run_gui_comparison.py tools/tests/test_summarize_gui_comparison.py tools/tests/test_measure_distribution.py tools/tests/test_prepare_cpp_distribution.py -q --junitxml=build/gui-tool-tests.xml
       - name: Read pinned vcpkg commit
         id: manifest
         run: |
