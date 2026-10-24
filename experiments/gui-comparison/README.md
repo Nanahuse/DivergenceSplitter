@@ -47,7 +47,7 @@ ImGuiの毎フレームの宣言呼び出しと、retained-modeのウィジェ�
 | --- | --- | --- |
 | 短時間の機能試験 | 開始、Monitor、Diagnostics、展開、値更新、構造変更、Profile編集、Apply、取消、Reset、停止 | 各要件のpass/fail、利用したUI部品とテスト経路 |
 | 切替・破棄試験 | 100回の画面切替、20回の開始・停止、画像展開中と長押し中の終了 | 例外、残存worker、resident画像数、イベント滞留 |
-| 短時間測定 | 起動後30秒warmup + 120秒測定を5回 | CPU時間、working set / private bytes、最新画像の取込遅延、UI応答、初回表示時間 |
+| 短時間測定 | Monitor・Diagnosticsを各30秒warmup + 180秒測定、各3回、両データ規模 | CPU時間、working set / private bytes、最新画像の取込遅延、初回取込時間。実画面presentと物理応答は未測定 |
 | 長時間測定 | 30分、両データ規模 | private bytesの推移、表示sequenceの進行、参照画像解放 |
 | 手動表示試験 | リサイズ、スクロール、明暗テーマ、DPI変更、実ファイルダイアログ | 同一操作の画面記録と問題点 |
 
@@ -114,3 +114,12 @@ tools/build_gui_comparison.ps1 -Candidate imgui
 出力は `dist/gui-comparison/<candidate>/`、ZIP・ファイル別レポート・起動ログ・時間は `build/gui-comparison-reports/<candidate>/`。ImGuiは標準portに従い静的リンクし、exe内の分を容量へ含める。各アプリは `--seconds 120 --warmup 30 --page monitor`、`--page diagnostics`、`--large`、`--dark`、`--exercise`、`--report <path>`、`--capture <png>` を受け付ける。計測はGUI取込であり、表示器へのpresentではない。wxWidgetsのnative明暗切替は起動時指定のみで、実行中の切替には再起動が必要。
 
 定常Monitor 30ケース、Diagnostics 6ケース、30分反復6ケースを完了した。[比較レポート](results/comparison.md) に生データ、集計再現手順、メモリ推移、同じ仕様変更による保守性評価、残る未検証事項をまとめる。採用・mainへのマージは未決定。
+
+追加依頼により、**Monitor・Diagnosticsを各180秒×3回**で再測定した。全候補・両データ規模の計36ケースが正常終了。[最新レポート](results/performance-180s-3.md)に中央値・最小最大、CPU・メモリ・入力/取込Hz、Diagnosticsの更新カウンター、配布ファイルのSHA256検証を記録する。上記の旧42ケースと30分反復は保持し、今回の測定とは混ぜない。
+
+同じ配布物を用意した後、既存データを上書きしない新規出力先で実行する。各回30秒warmupを含む計36ケースの所要時間は約126分。CLIの既定条件は旧測定用のままなので、今回の条件を明示する。
+
+```powershell
+.venv/Scripts/python.exe tools/run_gui_comparison.py --output build/gui-measurements-new-180s-3 --seconds 180 --repeats 3 --diagnostics-repeats 3 --soak 0
+.venv/Scripts/python.exe tools/summarize_gui_comparison.py --source experiments/gui-comparison/results/measurements-180s-3 --output build/gui-performance-180s-3-regenerated.json
+```

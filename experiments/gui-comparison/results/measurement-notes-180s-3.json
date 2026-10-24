@@ -1,0 +1,54 @@
+{
+  "scope": "Monitor and Diagnostics only; 180 seconds x 3 repetitions per candidate/dataset/mode, plus 30-second warmup per run",
+  "previous_30_minute_lifecycle_runs": "Preserved unchanged in measurements/; not repeated in this dataset",
+  "completed_utc": "2026-10-24T01:39:42.759781+00:00",
+  "validated_cases": 36,
+  "runtime_cpp_source_commit": "786350a",
+  "runner_source_commit": "9e9a5a0405d36e18e03a0162d8fb12ca52488d37",
+  "verification": {
+    "performed_utc": "2026-10-24T01:39:51.873119+00:00",
+    "staged_file_counts": {
+      "qt": 137,
+      "wx": 77,
+      "imgui": 62
+    },
+    "all_staged_file_size_and_sha256_match_local_distribution_reports": true,
+    "all_application_sha256_match_measurement_start": true,
+    "all_distribution_zip_sha256_match_local_distribution_reports": true,
+    "no_unexpected_staged_files": true,
+    "power_scheme_guid_after_measurement": "381b4222-f694-41f0-9685-ff5bb260df2e",
+    "power_scheme_guid_unchanged": true
+  },
+  "execution_requests": [
+    {
+      "started_utc": "2026-10-23T23:33:58.4765145Z",
+      "api": "SetThreadExecutionState",
+      "system_and_display_required": true,
+      "scope": "Temporary while this measurement runner is active; no power-plan or lock-policy changes",
+      "ended_utc": "2026-10-24T01:39:42.7843085Z"
+    }
+  ],
+  "limitations": [
+    "Serial visible windows; foreground focus, occlusion, desktop activity and thermal/clock behavior uncontrolled.",
+    "No native builds, dependency installs, local test suites or plotting were run during this measurement; lightweight status/data reads and document preparation continued.",
+    "CPU includes the common worker and is normalized to one logical core, not the total machine.",
+    "Private bytes and working set are sampled maxima, not instantaneous OS peaks; GPU memory is excluded.",
+    "Frame age measures producer capture to GUI intake, not actual present or physical input response.",
+    "Diagnostics has no preview intake during measurement; raw zero frame-age fields are sentinels, not measured zero latency.",
+    "Diagnostics reference_requests is cumulative and includes warmup; topology_builds/value_update_cycles are warmup-reset counters.",
+    "NDI, Scenario Runtime, physical input, IME, actual DPI transitions and score/state-to-display latency remain unverified."
+  ],
+  "interruptions_or_retries": [],
+  "observed_measurement_seconds_range": [
+    179.9693158,
+    180.0702605
+  ],
+  "maximum_memory_sample_gap_seconds": 0.5561699999999803,
+  "chart": {
+    "tool": "Matplotlib 3.10.7",
+    "data": "performance-180s-3.json",
+    "bars": "median of 3 runs",
+    "whiskers": "observed min/max, not confidence intervals",
+    "private_bytes": "per-run sampled peak, decimal MB"
+  }
+}

@@ -4,6 +4,8 @@
 
 PR #152の最小Qtアプリと今回の共通GUIは別の検証対象。[PR #153](https://github.com/Nanahuse/DivergenceSplitter/pull/153) は #152 のブランチをbaseとするdraftで、mainへはマージしていない。
 
+**最新の性能測定は[180秒×3回の再測定レポート](performance-180s-3.md)**。2026-10-24にMonitor・Diagnosticsを両データ規模・3候補の計36ケースで完了した。[集計JSON](performance-180s-3.json)と[生データ](measurements-180s-3/)を別保存し、以下の旧測定42ケースと30分試験は履歴として保持する。
+
 ## 実装と維持する責任
 
 全候補で同じ標準C++23のmock・設定検証・画像処理・操作シナリオを使う。84ノードと10,220ノード、1280×720 RGBA入力、160×90参照画像。workerはGUIを呼ばず、immutable snapshotとlatest-only画像を共有する。構造変更コマンドは最大32件。UIは所有するタイマー／ループで取り込み、終了時はworkerをjoinする。
@@ -98,7 +100,7 @@ Developer PowerShellで固定vcpkgを `VCPKG_ROOT` に指定し、`tools/build_g
 - ImGuiの期限更新で遅延が累積し、wxTimerの67ms指定も約12.6Hzになった。位相を保って遅れた期限を捨てる共通PreviewCadenceと、wxの16ms native heartbeatで15Hzへ揃えた。独自timer threadは追加していない。調整前の測定は比較から除外した。
 - 計測runnerの再開テストでLinuxのplatform照会までmockしたことによる失敗を検出した。OS照会を独立させて修正し、通常CIも成功した。測定アプリの変更はない。
 
-## 同一Windowsマシンでの性能測定
+## 旧測定：同一Windowsマシンでの性能測定
 
 全42ケースは2026-10-23 19:11:26 UTCに完了した。Monitorは30秒warmup + 120秒測定を5回、両データ規模・全候補で直列実行した。試行ごとに候補順を反転。測定source `0d2adee` のruntimeは `786350a` と同一。Windows 11 `10.0.26200`、AMD64 Family25 Model116、12 logical CPUs、Balanced電源。通常のデスクトップ活動、ウィンドウの前景・遮蔽は統制・記録していない。shared workerのCPUを含み、GUI単独の負荷ではない。
 
