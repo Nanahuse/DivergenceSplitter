@@ -126,6 +126,8 @@ tools/build_gui_comparison.ps1 -Candidate imgui
 
 ## Qtの軽量化検証（A / B / C）
 
+全5構成のWindows CIに成功した。[A/B/Cの実測レポート](results/qt-lightweight.md)に容量・動作試験・差分・保守コストを記録する。CはCIで展開後45.20MB / ZIP 17.55MB。標準Aの配布物と以前の性能測定結果を保持し、wx/ImGuiの構成は変更しない。実IMEの変換操作は未検証。
+
 標準Qt feature `qt` と既存の `dist/gui-comparison/qt/` をAとして保持する。追加のmanifest feature `qt-lean` は `default-features: false` を指定し、Widgets、スレッド、フォント（FreeType/HarfBuzz）、PNG/JPEG、Network/DNS、OpenGLなどを明示する。ICU・OpenSSL・SQLと、未使用のDBus・圧縮・concurrent/testlib等は要求しない。OpenCVの依存・feature・baseline・バージョンは変更しない。
 
 | 構成 | helper引数 | CMake | build / dist / reportの末尾 |

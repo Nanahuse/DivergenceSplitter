@@ -6,6 +6,8 @@ PR #152の最小Qtアプリと今回の共通GUIは別の検証対象。[PR #153
 
 **最新の性能測定は[180秒×3回の再測定レポート](performance-180s-3.md)**。2026-10-24にMonitor・Diagnosticsを両データ規模・3候補の計36ケースで完了した。[集計JSON](performance-180s-3.json)と[生データ](measurements-180s-3/)を別保存し、以下の旧測定42ケースと30分試験は履歴として保持する。
 
+**Qtの容量は[A/B/C軽量化検証](qt-lightweight.md)を追加した。** 標準Aを保持し、CはCIで展開後45.20MB / ZIP 17.55MB。下記の最新容量比較にCを使用する。上記の性能測定のQtはA標準構成であり、Cの性能や30分試験は再測定していない。
+
 ## 実装と維持する責任
 
 全候補で同じ標準C++23のmock・設定検証・画像処理・操作シナリオを使う。84ノードと10,220ノード、1280×720 RGBA入力、160×90参照画像。workerはGUIを呼ばず、immutable snapshotとlatest-only画像を共有する。構造変更コマンドは最大32件。UIは所有するタイマー／ループで取り込み、終了時はworkerをjoinする。
@@ -166,6 +168,20 @@ uv run python tools/summarize_gui_comparison.py --source experiments/gui-compari
 測定をやり直す場合は、再ビルド後に新しいフォルダーで `uv run python tools/run_gui_comparison.py --output build/gui-measurements-new` を使う。既定で30秒warmup、120秒×5回、両規模のDiagnostics各1回、1800秒反復各1回。中断後は同じコマンドへ `--resume` を付ける。バイナリ・電源等の条件が変わった場合は再開を拒否する。GUIを閉じてreportがなければ終了コード0でも成功にはしない。
 
 ## 配布容量（選定での重要度は低）
+
+### Qt軽量化後の追加比較
+
+[同一run 40064070079](https://github.com/Nanahuse/DivergenceSplitter/actions/runs/40064070079)、source `404aafc`。QtだけにFeature削減と公式deployオプションによるCを追加し、wx/ImGuiの構成と全候補のGUI試作・OpenCV・Release設定を維持した。全5構成でCTest 6件、ツール43件、install先とZIP展開先のGUI契約に成功した。Qtの追加試験では日本語描画・IMEイベント・画像・通信・palette切替を確認し、実IMEの変換操作は未検証として区別する。
+
+| 容量比較の構成 | CI展開後 bytes | CI配布ZIP bytes | 展開後 MB | ZIP MB |
+| --- | ---: | ---: | ---: | ---: |
+| Qt Widgets C（Feature削減＋配布最適化） | 45,201,548 | 17,553,391 | 45.20 | 17.55 |
+| wxWidgets（既存構成） | 25,694,384 | 9,213,326 | 25.69 | 9.21 |
+| Dear ImGui（既存構成） | 14,700,743 | 5,486,026 | 14.70 | 5.49 |
+
+A/B/Cの容量、除外DLL・plugin、ローカルとの差、Qt初回ビルドの32/48分、独立ビルドでのSHA256差、追加の保守コストは[軽量化レポート](qt-lightweight.md)へ記録した。標準Aは継続してCIで検証し、下記の元の44.25MB ZIP基準も保持する。Cをアプリの既定にしたり、GUI採用を決定したりはしない。
+
+### 旧CI・標準Qt構成の記録
 
 以下は全て実測。CIの内側ZIPのサイズ・SHA256・展開後合計は、取得したArtifactの中身から再照合した。全候補でPython `3.14.6`、DEFLATE level6、順序・日時正規化、zlib `1.3.1.zlib-ng`。外側Artifactはupload-artifactのcompression-level0で、配布ZIP・画面・ログ・レポートを含むため別の値となる。
 

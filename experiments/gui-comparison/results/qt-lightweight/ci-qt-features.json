@@ -1,0 +1,838 @@
+{
+  "schema": 1,
+  "label": "GUI comparison: qt",
+  "kind": "gui-comparison",
+  "measurement": "measured",
+  "classification": "vcpkg ownership + dependency graph",
+  "unpacked_bytes": 66287104,
+  "zip_bytes": 27336755,
+  "zip_sha256": "1765829ede3249bba501d81c83bea424a5674dc3f3eb294ce737d7372014453d",
+  "zip_settings": {
+    "method": "DEFLATE",
+    "level": 6,
+    "timestamp": "2020-01-01T00:00:00",
+    "ordering": "relative path, case sensitive",
+    "python": "3.14.6",
+    "zlib": "1.3.1.zlib-ng"
+  },
+  "categories": {
+    "Application (including statically linked GUI code)": 253952,
+    "GUI and dependencies/plugins": 28557824,
+    "MSVC Runtime": 1646032,
+    "Notices and metadata": 4197527,
+    "OpenCV and dependencies": 10112000,
+    "Other": 1153,
+    "Shared GUI/OpenCV dependencies": 1012224,
+    "Windows SDK graphics runtime": 20506392
+  },
+  "file_count": 114,
+  "files": [
+    {
+      "path": "DISTRIBUTION-NOTICE.txt",
+      "bytes": 608,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "f49d23e52f56970ed39ad15b2e7ca489026344c0b5efa1777204db8c7de920be"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1086,
+      "category": "Other",
+      "owner": "",
+      "sha256": "2fca6bcf1f1c43879065d58edd6b30af5155a71fca4ae0901488f56954ad6685"
+    },
+    {
+      "path": "Qt6/plugins/generic/qtuiotouchplugin.dll",
+      "bytes": 81920,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "f155240f6ac237c4fec001d70a1cfa3afd9f17fbcfab6ea7f54397620f70d317"
+    },
+    {
+      "path": "Qt6/plugins/imageformats/qgif.dll",
+      "bytes": 35328,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "6023219f85a1a3044de3f27a29c1e7d943c64f2e73410469405c908ef5203614"
+    },
+    {
+      "path": "Qt6/plugins/imageformats/qico.dll",
+      "bytes": 34816,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "b16beb80087588b982ec510f4e6931d80a2f6219df188723e7e713cd0ded3260"
+    },
+    {
+      "path": "Qt6/plugins/imageformats/qjpeg.dll",
+      "bytes": 53248,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "d69ee89986cd1cad8b1942bc5b6967cc21cfb0896040c735ebeae842dc1db285"
+    },
+    {
+      "path": "Qt6/plugins/networkinformation/qnetworklistmanager.dll",
+      "bytes": 65536,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "da45c428ed85cc3c71aa128d109a15ee785f65d3caf60c786eed281caa875d15"
+    },
+    {
+      "path": "Qt6/plugins/platforms/qwindows.dll",
+      "bytes": 945152,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "057398029a48488911c8ce667a7c7fefc65ea0d982c0eb6a9ac7fc911626cd6b"
+    },
+    {
+      "path": "Qt6/plugins/styles/qmodernwindowsstyle.dll",
+      "bytes": 225792,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "98c465da7deaecba16d030c72630978c40a81a0d5dc00c9b807b1232e2808ad4"
+    },
+    {
+      "path": "Qt6/plugins/tls/qcertonlybackend.dll",
+      "bytes": 86016,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "e0338bba046b9d5118c80d7acdfb8329427dc99456c2e711879d636f9ce2d367"
+    },
+    {
+      "path": "Qt6/plugins/tls/qschannelbackend.dll",
+      "bytes": 235520,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "ed0545b5ad37461d4f53f72dd7ad8b0c7a72b89be97d77aa276f6acbd1937ae0"
+    },
+    {
+      "path": "bin/Qt6Core.dll",
+      "bytes": 9153536,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "f7eaadb67e420f62a81f0dc0efdeefe21dfc69a2fa298fc59f94d5d66b9b85bb"
+    },
+    {
+      "path": "bin/Qt6Gui.dll",
+      "bytes": 6998016,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "1ded0fe755fbeefa12b6843d4a729bf35a0837c0c73e543fa480960ffe6f567f"
+    },
+    {
+      "path": "bin/Qt6Network.dll",
+      "bytes": 1600512,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "551bb5f06045224a8e3dd67443c1b1329af2bfde1542a798b2b5de91ae5fbb86"
+    },
+    {
+      "path": "bin/Qt6Widgets.dll",
+      "bytes": 6158336,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "3f630bdebd32ee3d5d06342947f1fea9b5fcf478f51d104b2b010c23b97763e3"
+    },
+    {
+      "path": "bin/brotlicommon.dll",
+      "bytes": 137728,
+      "category": "GUI and dependencies/plugins",
+      "owner": "brotli, qtbase",
+      "sha256": "7b7a7fa63ad3954b45cd71bc4e4f53e614ff0bf010c3c4546264837b4862cc3d"
+    },
+    {
+      "path": "bin/brotlidec.dll",
+      "bytes": 52224,
+      "category": "GUI and dependencies/plugins",
+      "owner": "brotli, qtbase",
+      "sha256": "bc086fa5d95870116c38bad39ee9d955dd5f4f1d462561800741dc31235d843f"
+    },
+    {
+      "path": "bin/bz2.dll",
+      "bytes": 75776,
+      "category": "GUI and dependencies/plugins",
+      "owner": "bzip2, qtbase",
+      "sha256": "c835cda399267ec75e8322cdaa89480effbac91430280e57e930a127156ed101"
+    },
+    {
+      "path": "bin/comparison-qt.exe",
+      "bytes": 253952,
+      "category": "Application (including statically linked GUI code)",
+      "owner": "application",
+      "sha256": "aaf74c7038c354efd8fcfd478ca00067ab9a7197473933d708dc512a8939c677"
+    },
+    {
+      "path": "bin/concrt140.dll",
+      "bytes": 374200,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e"
+    },
+    {
+      "path": "bin/d3dcompiler_47.dll",
+      "bytes": 4741544,
+      "category": "Windows SDK graphics runtime",
+      "owner": "Windows SDK redistributable",
+      "sha256": "1da540a0ddbc54de4142570c8ec4a4566ef610fce72c181efb55a9332c480790"
+    },
+    {
+      "path": "bin/double-conversion.dll",
+      "bytes": 73728,
+      "category": "GUI and dependencies/plugins",
+      "owner": "double-conversion, qtbase",
+      "sha256": "b40929e7c6feeba956ad8ca7bda246c5d02701682006fd62eb76320be2350bae"
+    },
+    {
+      "path": "bin/dxcompiler.dll",
+      "bytes": 14261192,
+      "category": "Windows SDK graphics runtime",
+      "owner": "Windows SDK redistributable",
+      "sha256": "5da37a35d53123274e2e4e7e247148350871df8ae9ecc05778bf2ac2057932be"
+    },
+    {
+      "path": "bin/dxil.dll",
+      "bytes": 1503656,
+      "category": "Windows SDK graphics runtime",
+      "owner": "Windows SDK redistributable",
+      "sha256": "ba2f78f784b39b6e1af3a90ec99ab794953b09f4f617a5db765f800bec22d360"
+    },
+    {
+      "path": "bin/freetype.dll",
+      "bytes": 707072,
+      "category": "GUI and dependencies/plugins",
+      "owner": "freetype, qtbase",
+      "sha256": "6e9b18045506f80dbccbf90377cb37beb3cc5842248cbda63937585652c3bae9"
+    },
+    {
+      "path": "bin/harfbuzz.dll",
+      "bytes": 1200640,
+      "category": "GUI and dependencies/plugins",
+      "owner": "harfbuzz, qtbase",
+      "sha256": "b8acdff1eda9ce72a3decd806695db09cd940eec2397cb659d7fabf647c6e467"
+    },
+    {
+      "path": "bin/jpeg62.dll",
+      "bytes": 722944,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libjpeg-turbo",
+      "sha256": "94414dc87e5e8051bd9f30874687b6b07033bda720f9aa6489dcf8285d0b2861"
+    },
+    {
+      "path": "bin/liblzma.dll",
+      "bytes": 189952,
+      "category": "OpenCV and dependencies",
+      "owner": "liblzma",
+      "sha256": "075d4ff1131ff1828308cf5eec3fa482450488083a532b256965995adf595db9"
+    },
+    {
+      "path": "bin/libpng16.dll",
+      "bytes": 197632,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libpng, qtbase",
+      "sha256": "3f6853f4f209ba948b98f5d5f168ee3244bfa4bd54d2cc0397721b3c469088e3"
+    },
+    {
+      "path": "bin/libsharpyuv.dll",
+      "bytes": 24576,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "278548ab8e60069f4d36c7947fea0cc115b5c4b2a983974dbc63f112ae7c4150"
+    },
+    {
+      "path": "bin/libwebp.dll",
+      "bytes": 381440,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "ecfe437d4f301d92d0abb6a80819ec3d93ec4fd0f438e82bef21e1fadcb32301"
+    },
+    {
+      "path": "bin/libwebpdecoder.dll",
+      "bytes": 162816,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "06ec0896ef5ccb2f830ef7756b048adada4ebf776652d2424724ca27a301918d"
+    },
+    {
+      "path": "bin/libwebpdemux.dll",
+      "bytes": 19968,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "875cd3d1b6319443c395a08d2d51a81cbda6ca362cd43785a2919c6146cae059"
+    },
+    {
+      "path": "bin/libwebpmux.dll",
+      "bytes": 41472,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "fa3087cb5212ae9aa2fd3c6b4b9f80a2ac3de20e665562354118a18629d09131"
+    },
+    {
+      "path": "bin/md4c.dll",
+      "bytes": 64512,
+      "category": "GUI and dependencies/plugins",
+      "owner": "md4c, qtbase",
+      "sha256": "0b1c352664452b3b0692768c7b883ef8e21cff4b69d086ebf47b42b877b5fcd3"
+    },
+    {
+      "path": "bin/msvcp140.dll",
+      "bytes": 643512,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+    },
+    {
+      "path": "bin/msvcp140_1.dll",
+      "bytes": 35768,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"
+    },
+    {
+      "path": "bin/msvcp140_2.dll",
+      "bytes": 274872,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838"
+    },
+    {
+      "path": "bin/msvcp140_atomic_wait.dll",
+      "bytes": 57792,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+    },
+    {
+      "path": "bin/msvcp140_codecvt_ids.dll",
+      "bytes": 31160,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78"
+    },
+    {
+      "path": "bin/opencv_core4.dll",
+      "bytes": 3057152,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "71979f0dda96d252b9c32fd6b88e35b6b094283add1f1bf94a3a68873753d0a1"
+    },
+    {
+      "path": "bin/opencv_img_hash4.dll",
+      "bytes": 131072,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "42ee66fff2ad999ffe386596a78a9d2bc8870ae5e641b65d6d00a68743bab7d0"
+    },
+    {
+      "path": "bin/opencv_imgcodecs4.dll",
+      "bytes": 487936,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "dbc0bc0e45d34d403504661d3dcec1ea347b3674eafaaaef2ccd46b273f647df"
+    },
+    {
+      "path": "bin/opencv_imgproc4.dll",
+      "bytes": 4512256,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "56933393091dd076c8deb51dee80d65a8ec1275815021fef98f5fcb35c11b81c"
+    },
+    {
+      "path": "bin/opencv_videoio4.dll",
+      "bytes": 608256,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "38b2c93700ab918bd5cf1c292f453284c80cf618cbe6894e18de19bc06e10d21"
+    },
+    {
+      "path": "bin/pcre2-16.dll",
+      "bytes": 572416,
+      "category": "GUI and dependencies/plugins",
+      "owner": "pcre2, qtbase",
+      "sha256": "e4648c780e1df7a53d211701b74d7d7c6c00bd27f3340ef4cbfd27ec2186cf98"
+    },
+    {
+      "path": "bin/qt.conf",
+      "bytes": 67,
+      "category": "Other",
+      "owner": "",
+      "sha256": "eee26b4f66023bf5a1ff89c25b56d81f42625bb8c29eac7a4ddfb04c20afb9f7"
+    },
+    {
+      "path": "bin/tiff.dll",
+      "bytes": 495104,
+      "category": "OpenCV and dependencies",
+      "owner": "tiff",
+      "sha256": "9fce9f3812cf7d1da0ded8afe0d0d9e93cf2f067d9143682fe82778d2976f889"
+    },
+    {
+      "path": "bin/vcruntime140.dll",
+      "bytes": 178616,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "bin/vcruntime140_1.dll",
+      "bytes": 50112,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    {
+      "path": "bin/z.dll",
+      "bytes": 91648,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "qtbase, zlib",
+      "sha256": "f5e5ec036d0c235d9c0250602475d865b143d8a682c17306cb12d38e1d70e098"
+    },
+    {
+      "path": "build-metadata/abseil-vcpkg.spdx.json",
+      "bytes": 461678,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8607518d512d17ef4e1fccc37fe4d2654e57b37ec30e68e0adf6637f841023d8"
+    },
+    {
+      "path": "build-metadata/brotli-vcpkg.spdx.json",
+      "bytes": 25578,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "72dbe1f18c2ed426b99220427c28c25c7b45125468b72d7d4c9869664790bb68"
+    },
+    {
+      "path": "build-metadata/bzip2-vcpkg.spdx.json",
+      "bytes": 13518,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "012f2582eb108fb00e512aadcda6146870a105a7b20d403cf1f6595aaf00d188"
+    },
+    {
+      "path": "build-metadata/double-conversion-vcpkg.spdx.json",
+      "bytes": 18401,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "2d543a1dc5099b7a5c341358ecc031559b5f87d4d9fa43c1a2a7073ade407759"
+    },
+    {
+      "path": "build-metadata/egl-registry-vcpkg.spdx.json",
+      "bytes": 8395,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "da942b49e1cbcf00eccbda7b9d8e9cb5ac41ef2e012e43f772a91d1161217768"
+    },
+    {
+      "path": "build-metadata/flatbuffers-vcpkg.spdx.json",
+      "bytes": 28572,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1dc2c3ec8b75f04bb90be65aaf50db113de4a779600d5576558506fda2e54497"
+    },
+    {
+      "path": "build-metadata/freetype-vcpkg.spdx.json",
+      "bytes": 44230,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4a350a59f766638a6197b2bf703914b9c2db7f954983b6765a2c9e7fc70748ed"
+    },
+    {
+      "path": "build-metadata/harfbuzz-vcpkg.spdx.json",
+      "bytes": 46854,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "10a725edfda119b0b5d9bc65f1e90ff57ecad18640381d4983258f12275ded7a"
+    },
+    {
+      "path": "build-metadata/libjpeg-turbo-vcpkg.spdx.json",
+      "bytes": 21643,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "723a80d98428db3bb2b4635fa2c8ed5cc0d85ddc2c093a90f4aba03d0b065120"
+    },
+    {
+      "path": "build-metadata/liblzma-vcpkg.spdx.json",
+      "bytes": 31023,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e5de01da6fec5c8a08f4d2e363a8b16bad6af8cacbc00a8f802cbb5084eac022"
+    },
+    {
+      "path": "build-metadata/libpng-vcpkg.spdx.json",
+      "bytes": 20930,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "593bf922ec30245370e427183c78d6ff4a11befa2392a76b35445283f0f5c239"
+    },
+    {
+      "path": "build-metadata/libwebp-vcpkg.spdx.json",
+      "bytes": 34999,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "82ff361a87107721c3e0406412f5819fac9e8e0ff000302abb22f8ec84846172"
+    },
+    {
+      "path": "build-metadata/md4c-vcpkg.spdx.json",
+      "bytes": 15232,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a9cd94b30b8275f0e738c91a4c41f1154ba80d834c39da6123f89d75eab0fafe"
+    },
+    {
+      "path": "build-metadata/opencv4-vcpkg.spdx.json",
+      "bytes": 416679,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "998bb9cea5edd60523a71511356bab82424b38ea422b3983ea36677c21189219"
+    },
+    {
+      "path": "build-metadata/opengl-registry-vcpkg.spdx.json",
+      "bytes": 20477,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "d0def2da30983f9382d01442eddff6b7ecde5b1c731905fd090fa90909b3d813"
+    },
+    {
+      "path": "build-metadata/opengl-vcpkg.spdx.json",
+      "bytes": 11306,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4789a0e34a9f193a8533682837a033980c965bab4086953dfe9e4da2bf55f257"
+    },
+    {
+      "path": "build-metadata/pcre2-vcpkg.spdx.json",
+      "bytes": 80302,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "419964694eef859418432819af0d8212d670cf4aaa09b2475d07a0a811fb9e96"
+    },
+    {
+      "path": "build-metadata/protobuf-vcpkg.spdx.json",
+      "bytes": 115573,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cffcbc55989ddf50212c4d4141e4050229c23275c1b1f7bd6f6fa74cf643f7d1"
+    },
+    {
+      "path": "build-metadata/qtbase-vcpkg.spdx.json",
+      "bytes": 2023733,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ff3fbab2fe9ba54549cedb84a4141877f18069aa1f415edd3d5259a3f228a74a"
+    },
+    {
+      "path": "build-metadata/quirc-vcpkg.spdx.json",
+      "bytes": 8822,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "64a823e40d0cba5266e5580125ef44f48ec396b6527e0c41a8752c7b5db5f039"
+    },
+    {
+      "path": "build-metadata/tiff-vcpkg.spdx.json",
+      "bytes": 14704,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "5e3649d72b6fabf6947123fe5e021365f62981cc4297ae8d23966559547a2092"
+    },
+    {
+      "path": "build-metadata/toolchain.json",
+      "bytes": 387,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "5fdeacd843ecaa0dc74dfbdc1070ab8618bba8869469ba5e9c9cb5df6e715601"
+    },
+    {
+      "path": "build-metadata/utf8-range-vcpkg.spdx.json",
+      "bytes": 11960,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "394e4d25b298be45258804e0dfc989505585be1e7539353ad706101843edd2bb"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-config-vcpkg.spdx.json",
+      "bytes": 6763,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "142aa7da11f46948f72eda04843ace9349551e6300fa5ca62c7755dfbf884584"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-get-vars-vcpkg.spdx.json",
+      "bytes": 8345,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8cb0c372783d571cce5cd0aef7c9d1eb493f365d8e2d6a839bce2b4b93424aea"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-vcpkg.spdx.json",
+      "bytes": 8249,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "3964bcac796e9b140837cb6483fcf0611a19197d8ddb0cd6d695cd67cc3a1c7b"
+    },
+    {
+      "path": "build-metadata/vcpkg-get-python-packages-vcpkg.spdx.json",
+      "bytes": 6825,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "05ed00891b927379921b3803313173992e67b1634220c29db5f4b18e62a8d7fa"
+    },
+    {
+      "path": "build-metadata/vcpkg-status.txt",
+      "bytes": 17076,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "502d8542ec651c7175e56b33e4ce824aacb92a05653103c2f0de9c57ee61b6f2"
+    },
+    {
+      "path": "build-metadata/vcpkg-tool-meson-vcpkg.spdx.json",
+      "bytes": 15079,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4c4a64837478c3a960714ad3f4c6b00937e44380a4eb20e453b99380977d3683"
+    },
+    {
+      "path": "build-metadata/vcpkg.json",
+      "bytes": 1443,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "633dbd823f418d41e46db9e6dcb0dfaac56540c8e1a4440bdd687cfa4c52f74a"
+    },
+    {
+      "path": "build-metadata/windows-sdk-graphics.json",
+      "bytes": 600,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1c2b8c71a1f0fdfc8116a6435f6094603af964a6b3a985f9676a4ca440fd2f23"
+    },
+    {
+      "path": "build-metadata/zlib-vcpkg.spdx.json",
+      "bytes": 19306,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "baf42d7bfed13372221655ff80fe96f20cced19f2c18beb7ffbba446ed087e97"
+    },
+    {
+      "path": "licenses/msvc/MSVC-NOTICE.txt",
+      "bytes": 655,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c64a1f59fbe0e58437d7cefac98e54a87d4fe3e93c339967ed3c358134e3b3e3"
+    },
+    {
+      "path": "licenses/vcpkg/abseil/copyright",
+      "bytes": 11361,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747"
+    },
+    {
+      "path": "licenses/vcpkg/brotli/copyright",
+      "bytes": 1084,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94"
+    },
+    {
+      "path": "licenses/vcpkg/bzip2/copyright",
+      "bytes": 1896,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3"
+    },
+    {
+      "path": "licenses/vcpkg/double-conversion/copyright",
+      "bytes": 1527,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4af93c12062c58058378de2397dc1c92bbff9ddfb1d583a01c84127557ce97ca"
+    },
+    {
+      "path": "licenses/vcpkg/egl-registry/copyright",
+      "bytes": 1236,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "5d77554ffc974ce346430a01a30be8176ca5c46fb1b53a7233291195ded592d3"
+    },
+    {
+      "path": "licenses/vcpkg/flatbuffers/copyright",
+      "bytes": 11358,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/vcpkg/freetype/copyright",
+      "bytes": 27496,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cf82ed29473c1fd8e137fd34250f89eebf2bee9e126fa004286dd25495d5c654"
+    },
+    {
+      "path": "licenses/vcpkg/harfbuzz/copyright",
+      "bytes": 3207,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "dcdaea4ee055d39e2037762f1ad47df9a6b13ee03e5b7135ccf21ed778118333"
+    },
+    {
+      "path": "licenses/vcpkg/libjpeg-turbo/copyright",
+      "bytes": 6077,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ba6bceebcba0fdd35488477c2cca8c4632ce82c74dbfbc87d886ce6fc4433579"
+    },
+    {
+      "path": "licenses/vcpkg/liblzma/copyright",
+      "bytes": 3119,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8"
+    },
+    {
+      "path": "licenses/vcpkg/libpng/copyright",
+      "bytes": 5345,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526"
+    },
+    {
+      "path": "licenses/vcpkg/libwebp/copyright",
+      "bytes": 3017,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "050b5ba2c8eb0bd3b996e12ef79312a1c62237f2de1b3c609843f00bb74744f3"
+    },
+    {
+      "path": "licenses/vcpkg/md4c/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "d30937367d5413e7eaa218b1640b8946ff76fd34d97152f6979fd96169d5d0fc"
+    },
+    {
+      "path": "licenses/vcpkg/opencv4/copyright",
+      "bytes": 14996,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e5313db48cd388bb81b5f748aa9ba8b979e592e49ca7cc612ad8c4b01168f6f2"
+    },
+    {
+      "path": "licenses/vcpkg/opengl-registry/copyright",
+      "bytes": 147,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c56ffb0cc40bd972c1b2d4759828b89f7860471f5ba52eedde7a4ddb4664cef5"
+    },
+    {
+      "path": "licenses/vcpkg/opengl/copyright",
+      "bytes": 100,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "222b59aa68905b150c26ece05550b48390ef40791ac9e13abbc194cdd60b5c54"
+    },
+    {
+      "path": "licenses/vcpkg/pcre2/copyright",
+      "bytes": 97,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "99272c55f3dcfa07a8a7e15a5c1a33096e4727de74241d65fa049fccfdd59507"
+    },
+    {
+      "path": "licenses/vcpkg/protobuf/copyright",
+      "bytes": 1732,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d"
+    },
+    {
+      "path": "licenses/vcpkg/qtbase/copyright",
+      "bytes": 261104,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "859e6297aeb2c5d4c6a989e5c0f3d6159a4bb86ce60c3a61c74aa3c420e4c17a"
+    },
+    {
+      "path": "licenses/vcpkg/quirc/copyright",
+      "bytes": 815,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a70ef3ea032998eead2e2c7573a170a809eae08e3ca134611f707eda5932c8a9"
+    },
+    {
+      "path": "licenses/vcpkg/tiff/copyright",
+      "bytes": 2416,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0e27c2382d7b8147972bbb746e04059a1152c8d0fda9d03ef1399d1a433c4ade"
+    },
+    {
+      "path": "licenses/vcpkg/utf8-range/copyright",
+      "bytes": 1091,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "02de69b64fc36d9e938f418e52723e42f0b2b226d58a9cb3c8dcbdf7059f5074"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake-config/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "04b60f99a43bfd7fefdc8364b24aac704a2160cef969b75ba6a38b62dc4c4b70"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake-get-vars/copyright",
+      "bytes": 1073,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake/copyright",
+      "bytes": 1073,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-get-python-packages/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "04b60f99a43bfd7fefdc8364b24aac704a2160cef969b75ba6a38b62dc4c4b70"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-tool-meson/copyright",
+      "bytes": 1073,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/vcpkg/zlib/copyright",
+      "bytes": 1002,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+    },
+    {
+      "path": "licenses/windows-sdk/sdk_license.rtf",
+      "bytes": 248573,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0f4a26ac9dc50066f8a1bfeaaf3f092d1b9e4791df5487b9f3c31e7c3dc4d7f5"
+    },
+    {
+      "path": "licenses/windows-sdk/sdk_third_party_notices.rtf",
+      "bytes": 22279,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ebb6640a8246b39b70322c5cec9aad7a71e86ea7b86c9c604d3a7f3ff1b30e89"
+    }
+  ],
+  "ndi_status": "EXCLUDED from all candidates; not tested",
+  "candidate": "qt",
+  "archive": "qt-features.zip",
+  "qt_configuration": "features",
+  "verification": {
+    "installed_small_gui_contract": "passed with developer PATH removed",
+    "extracted_zip_large_gui_contract": "passed with developer PATH removed",
+    "qt_installed_and_extracted_runtime": "passed; synthetic IME events only, native IME conversion not tested"
+  }
+}

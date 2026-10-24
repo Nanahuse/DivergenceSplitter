@@ -1,0 +1,576 @@
+{
+  "schema": 1,
+  "label": "GUI comparison: wx",
+  "kind": "gui-comparison",
+  "measurement": "measured",
+  "classification": "vcpkg ownership + dependency graph",
+  "unpacked_bytes": 25694384,
+  "zip_bytes": 9213326,
+  "zip_sha256": "fec1dc96c9a0476e795ec9d2456158fd110636fcb0e9fc8a72d91c1cd28db06a",
+  "zip_settings": {
+    "method": "DEFLATE",
+    "level": 6,
+    "timestamp": "2020-01-01T00:00:00",
+    "ordering": "relative path, case sensitive",
+    "python": "3.14.6",
+    "zlib": "1.3.1.zlib-ng"
+  },
+  "categories": {
+    "Application (including statically linked GUI code)": 324608,
+    "GUI and dependencies/plugins": 10689024,
+    "MSVC Runtime": 1646032,
+    "Notices and metadata": 1909410,
+    "OpenCV and dependencies": 8796672,
+    "Other": 1086,
+    "Shared GUI/OpenCV dependencies": 2327552
+  },
+  "file_count": 77,
+  "files": [
+    {
+      "path": "DISTRIBUTION-NOTICE.txt",
+      "bytes": 608,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "f49d23e52f56970ed39ad15b2e7ca489026344c0b5efa1777204db8c7de920be"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1086,
+      "category": "Other",
+      "owner": "",
+      "sha256": "2fca6bcf1f1c43879065d58edd6b30af5155a71fca4ae0901488f56954ad6685"
+    },
+    {
+      "path": "bin/comparison-wx.exe",
+      "bytes": 324608,
+      "category": "Application (including statically linked GUI code)",
+      "owner": "application",
+      "sha256": "84e526d35dbbcfaae10d17696e80ad68c34242395a6ab250bbfa1bdc01159036"
+    },
+    {
+      "path": "bin/concrt140.dll",
+      "bytes": 374200,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e"
+    },
+    {
+      "path": "bin/jpeg62.dll",
+      "bytes": 722944,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libjpeg-turbo",
+      "sha256": "5eeb545173ac39a7d55cbc90443763cf2c91d2d0469d4b611de315bc01f90081"
+    },
+    {
+      "path": "bin/liblzma.dll",
+      "bytes": 189952,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "liblzma",
+      "sha256": "acb75c9bc7fc55b575157569f744a0fee50cf68a6a0daaf4cd724e06fca10bab"
+    },
+    {
+      "path": "bin/libpng16.dll",
+      "bytes": 197632,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libpng",
+      "sha256": "275bc3aa0b94f5b750160463c175ee1adf53e1853540d2c4ed3a9336c03db1c2"
+    },
+    {
+      "path": "bin/libsharpyuv.dll",
+      "bytes": 24576,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libwebp",
+      "sha256": "39709af0e9443b9a5e80c696223b79d820bf1372bf0c2df658cc6aa354fc7c83"
+    },
+    {
+      "path": "bin/libwebp.dll",
+      "bytes": 381440,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libwebp",
+      "sha256": "59643d1479d4160857a2efb11f9b8865fb71d77edb2ae58b2876c19f717d08b9"
+    },
+    {
+      "path": "bin/libwebpdecoder.dll",
+      "bytes": 162816,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libwebp",
+      "sha256": "0b82342fe6c81b129a531beba8a3d67937cc245b23d6f208ad2857c7709488f1"
+    },
+    {
+      "path": "bin/libwebpdemux.dll",
+      "bytes": 19968,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libwebp",
+      "sha256": "f7e4eddc44f5acd02b1f146d39eb435cabf073cc670fee96b951fa3c88e4fa22"
+    },
+    {
+      "path": "bin/libwebpmux.dll",
+      "bytes": 41472,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libwebp",
+      "sha256": "2b58828d575fa03a95c464bc6303d9ebf0b05f760400cf6b6a19873730b4a3c3"
+    },
+    {
+      "path": "bin/msvcp140.dll",
+      "bytes": 643512,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+    },
+    {
+      "path": "bin/msvcp140_1.dll",
+      "bytes": 35768,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"
+    },
+    {
+      "path": "bin/msvcp140_2.dll",
+      "bytes": 274872,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838"
+    },
+    {
+      "path": "bin/msvcp140_atomic_wait.dll",
+      "bytes": 57792,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+    },
+    {
+      "path": "bin/msvcp140_codecvt_ids.dll",
+      "bytes": 31160,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78"
+    },
+    {
+      "path": "bin/opencv_core4.dll",
+      "bytes": 3057152,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "2e0b1ff1c04c98cd982667901f7adc000674ed7bbb762caae3ca7dc6f17850a9"
+    },
+    {
+      "path": "bin/opencv_img_hash4.dll",
+      "bytes": 131072,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "caa6b79766cad4ee03f1acd6f12d70a2425f44a835506f016343d158242e9062"
+    },
+    {
+      "path": "bin/opencv_imgcodecs4.dll",
+      "bytes": 487936,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "85f8c0ada4816714b107b06643c2252d06206ce278675342d07bea93d3369e32"
+    },
+    {
+      "path": "bin/opencv_imgproc4.dll",
+      "bytes": 4512256,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "bca9a89e5ba3b25ea30e103b5b0a4af912bf402488d9670cdc4b2f615aea9a67"
+    },
+    {
+      "path": "bin/opencv_videoio4.dll",
+      "bytes": 608256,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "efc014eb98672a6d74589ce0a3ada4c22bb879b2daa2b12008e69c2b1d931440"
+    },
+    {
+      "path": "bin/pcre2-16.dll",
+      "bytes": 572416,
+      "category": "GUI and dependencies/plugins",
+      "owner": "pcre2, wxwidgets",
+      "sha256": "aaf5cab2b8fe4c7b5fe64a9a8741381bb0d55aaa247d0ab08becb5488c297ae2"
+    },
+    {
+      "path": "bin/tiff.dll",
+      "bytes": 495104,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "tiff",
+      "sha256": "125ba9c7b30904559b7fdd25096b10d696f7bd0d6bb961dc291afb68087b1935"
+    },
+    {
+      "path": "bin/vcruntime140.dll",
+      "bytes": 178616,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "bin/vcruntime140_1.dll",
+      "bytes": 50112,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    {
+      "path": "bin/wxbase331u_vc_x64_custom.dll",
+      "bytes": 2569216,
+      "category": "GUI and dependencies/plugins",
+      "owner": "wxwidgets",
+      "sha256": "ef31198f65f928ff754f882b64ab02a455c0cd222b88dfad6b187f713a453431"
+    },
+    {
+      "path": "bin/wxmsw331u_core_vc_x64_custom.dll",
+      "bytes": 7547392,
+      "category": "GUI and dependencies/plugins",
+      "owner": "wxwidgets",
+      "sha256": "47f5b68397c0e725631c0e7d8502f118326139406e325255641760654a9d799a"
+    },
+    {
+      "path": "bin/z.dll",
+      "bytes": 91648,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "wxwidgets, zlib",
+      "sha256": "511c9c1af96fd34651c506819b67e108b6fca3697312e3bb59425f2548741282"
+    },
+    {
+      "path": "build-metadata/abseil-vcpkg.spdx.json",
+      "bytes": 461678,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "86e6e6647af198ed840c003237f8f731cef8e1100a522d6c393d8cb6268fd745"
+    },
+    {
+      "path": "build-metadata/egl-registry-vcpkg.spdx.json",
+      "bytes": 8395,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c79a46a02328df60d67ae7477e0e3f96103e5f8aa534b67ef9d2ac6c5b523c36"
+    },
+    {
+      "path": "build-metadata/expat-vcpkg.spdx.json",
+      "bytes": 14325,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c37949d26d17ac530e294a339ed603112a0c17aa41cb56a988b7bdbacc985f24"
+    },
+    {
+      "path": "build-metadata/flatbuffers-vcpkg.spdx.json",
+      "bytes": 28572,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "2e8423002a0095b8585d8732edd8bf13b72b140f7b0d4c7f47d72ec5c7dac8ee"
+    },
+    {
+      "path": "build-metadata/libjpeg-turbo-vcpkg.spdx.json",
+      "bytes": 21643,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "007b075c5d750611a62363fa872dcd43a12c91d930fba48d6b80a9e086883a38"
+    },
+    {
+      "path": "build-metadata/liblzma-vcpkg.spdx.json",
+      "bytes": 31023,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "44bc537d00b83fefad978a960fb5cd1465ffc0d934e74d2c2fe396e409eb7322"
+    },
+    {
+      "path": "build-metadata/libpng-vcpkg.spdx.json",
+      "bytes": 20930,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "fbfca22eccdc73b138683350d8946909acda01fc6b58b46e046caf71b3fc3711"
+    },
+    {
+      "path": "build-metadata/libwebp-vcpkg.spdx.json",
+      "bytes": 34999,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e9cc8d15d9dac716e47eae6746ae6e5e16c8bf2889f988f5bd02cbb3d90cb9e8"
+    },
+    {
+      "path": "build-metadata/nanosvg-vcpkg.spdx.json",
+      "bytes": 11484,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8c7338d6927fe3e4b1d798825359a994e1ac8bc02064043726f956a2c2ad4483"
+    },
+    {
+      "path": "build-metadata/opencv4-vcpkg.spdx.json",
+      "bytes": 416679,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "d1d3d76b2527a52f16a51b08e1509b3549205d5362614267a5c89551eb427412"
+    },
+    {
+      "path": "build-metadata/opengl-registry-vcpkg.spdx.json",
+      "bytes": 20477,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ecd9b7eaf2ec7876f6a84f27d0c7cf6e08d74eaf165bb35105e686b0e15dbd7d"
+    },
+    {
+      "path": "build-metadata/opengl-vcpkg.spdx.json",
+      "bytes": 11306,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "04b375ce216fded506c7907bf0a573783329714bcfdb054add5268e4c70a98b1"
+    },
+    {
+      "path": "build-metadata/pcre2-vcpkg.spdx.json",
+      "bytes": 80302,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0832c4b4d6196dbc0b58937c215d169d3a7a245fd8389a7e09844245eb318e97"
+    },
+    {
+      "path": "build-metadata/protobuf-vcpkg.spdx.json",
+      "bytes": 115573,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "6732f80386f47487a0d29ab1255a82519018bd6604cabc4650b1a178af916877"
+    },
+    {
+      "path": "build-metadata/quirc-vcpkg.spdx.json",
+      "bytes": 8822,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "77f0e490ebce5ce4d34ff29f7fb75be7db047449ff9fda61e556daaefa96b39d"
+    },
+    {
+      "path": "build-metadata/tiff-vcpkg.spdx.json",
+      "bytes": 14704,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "37d543701d81fc31a70d143b931623802fbeb5b569e79070832f1d95264bcee0"
+    },
+    {
+      "path": "build-metadata/toolchain.json",
+      "bytes": 387,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "88ede5353dbfda988e90a9727e7fe1593753fd87b3a702646fc6bc3cfca834df"
+    },
+    {
+      "path": "build-metadata/utf8-range-vcpkg.spdx.json",
+      "bytes": 11960,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "2239ac4c4502565b74200caa7bc4240d04d7504fd2cc9bffcf2ab19f6f8e736a"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-config-vcpkg.spdx.json",
+      "bytes": 6763,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0b7fbf7110ee166d46703bf96062c89a37ba48e2184aa8e0273744fe7589ecb7"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-vcpkg.spdx.json",
+      "bytes": 8249,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a3e0d896c1d3fe322226285e585346b8ca01b3cb06deadad82c1499f5f9cbacb"
+    },
+    {
+      "path": "build-metadata/vcpkg-get-python-packages-vcpkg.spdx.json",
+      "bytes": 6825,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8fd159f4a8d3c3aa5c020b9e8bd79ea951f93531fb88b60902ee3322d9c1e945"
+    },
+    {
+      "path": "build-metadata/vcpkg-status.txt",
+      "bytes": 12395,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "673798de5cc5c1f796a3962315e48d8e4a76b41aa790250efd50af763fac1b73"
+    },
+    {
+      "path": "build-metadata/vcpkg.json",
+      "bytes": 1443,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "633dbd823f418d41e46db9e6dcb0dfaac56540c8e1a4440bdd687cfa4c52f74a"
+    },
+    {
+      "path": "build-metadata/wxwidgets-vcpkg.spdx.json",
+      "bytes": 468212,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "6633dedea34e7148c4d1063333fea068b704cf699847413e26639430faff4153"
+    },
+    {
+      "path": "build-metadata/zlib-vcpkg.spdx.json",
+      "bytes": 19306,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e0aa3618262e8b43752e1fe6a4d0943955e2a2a1d0b40894b5c4a1c5e7ec2074"
+    },
+    {
+      "path": "licenses/msvc/MSVC-NOTICE.txt",
+      "bytes": 655,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c64a1f59fbe0e58437d7cefac98e54a87d4fe3e93c339967ed3c358134e3b3e3"
+    },
+    {
+      "path": "licenses/vcpkg/abseil/copyright",
+      "bytes": 11361,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747"
+    },
+    {
+      "path": "licenses/vcpkg/egl-registry/copyright",
+      "bytes": 1236,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "5d77554ffc974ce346430a01a30be8176ca5c46fb1b53a7233291195ded592d3"
+    },
+    {
+      "path": "licenses/vcpkg/expat/copyright",
+      "bytes": 1144,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87"
+    },
+    {
+      "path": "licenses/vcpkg/flatbuffers/copyright",
+      "bytes": 11358,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/vcpkg/libjpeg-turbo/copyright",
+      "bytes": 6077,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ba6bceebcba0fdd35488477c2cca8c4632ce82c74dbfbc87d886ce6fc4433579"
+    },
+    {
+      "path": "licenses/vcpkg/liblzma/copyright",
+      "bytes": 3119,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8"
+    },
+    {
+      "path": "licenses/vcpkg/libpng/copyright",
+      "bytes": 5345,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526"
+    },
+    {
+      "path": "licenses/vcpkg/libwebp/copyright",
+      "bytes": 3017,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "050b5ba2c8eb0bd3b996e12ef79312a1c62237f2de1b3c609843f00bb74744f3"
+    },
+    {
+      "path": "licenses/vcpkg/nanosvg/copyright",
+      "bytes": 880,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e82bc3dd03400aecabe12201219ba14750dbc4b36faab58663a7a6068548d372"
+    },
+    {
+      "path": "licenses/vcpkg/opencv4/copyright",
+      "bytes": 14996,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e5313db48cd388bb81b5f748aa9ba8b979e592e49ca7cc612ad8c4b01168f6f2"
+    },
+    {
+      "path": "licenses/vcpkg/opengl-registry/copyright",
+      "bytes": 147,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c56ffb0cc40bd972c1b2d4759828b89f7860471f5ba52eedde7a4ddb4664cef5"
+    },
+    {
+      "path": "licenses/vcpkg/opengl/copyright",
+      "bytes": 100,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "222b59aa68905b150c26ece05550b48390ef40791ac9e13abbc194cdd60b5c54"
+    },
+    {
+      "path": "licenses/vcpkg/pcre2/copyright",
+      "bytes": 97,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "99272c55f3dcfa07a8a7e15a5c1a33096e4727de74241d65fa049fccfdd59507"
+    },
+    {
+      "path": "licenses/vcpkg/protobuf/copyright",
+      "bytes": 1732,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d"
+    },
+    {
+      "path": "licenses/vcpkg/quirc/copyright",
+      "bytes": 815,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a70ef3ea032998eead2e2c7573a170a809eae08e3ca134611f707eda5932c8a9"
+    },
+    {
+      "path": "licenses/vcpkg/tiff/copyright",
+      "bytes": 2416,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0e27c2382d7b8147972bbb746e04059a1152c8d0fda9d03ef1399d1a433c4ade"
+    },
+    {
+      "path": "licenses/vcpkg/utf8-range/copyright",
+      "bytes": 1091,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "02de69b64fc36d9e938f418e52723e42f0b2b226d58a9cb3c8dcbdf7059f5074"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake-config/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "04b60f99a43bfd7fefdc8364b24aac704a2160cef969b75ba6a38b62dc4c4b70"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake/copyright",
+      "bytes": 1073,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-get-python-packages/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "04b60f99a43bfd7fefdc8364b24aac704a2160cef969b75ba6a38b62dc4c4b70"
+    },
+    {
+      "path": "licenses/vcpkg/wxwidgets/copyright",
+      "bytes": 2497,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e8453be21aea2b7cc9a39d5b0475190bbfa0a60605b4178377590b94d9c43eae"
+    },
+    {
+      "path": "licenses/vcpkg/zlib/copyright",
+      "bytes": 1002,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+    }
+  ],
+  "ndi_status": "EXCLUDED from all candidates; not tested",
+  "candidate": "wx",
+  "archive": "wx.zip",
+  "verification": {
+    "installed_small_gui_contract": "passed with developer PATH removed",
+    "extracted_zip_large_gui_contract": "passed with developer PATH removed"
+  }
+}
