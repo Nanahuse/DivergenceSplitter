@@ -1,0 +1,7 @@
+{
+  "started_utc": "2026-10-24T07:37:56.2543921Z",
+  "api": "SetThreadExecutionState",
+  "system_and_display_required": true,
+  "scope": "Temporary while Qt Quick measurement runner is active; no power-plan or lock-policy changes",
+  "ended_utc": "2026-10-24T08:19:45.8784058Z"
+}

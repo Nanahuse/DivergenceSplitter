@@ -1,6 +1,51 @@
 # GUI比較の実測記録
 
-Qt Quickを4番目の実装として追加する。[Qt Quick追加記録](qtquick.md) を参照。以下の3候補の実測は保持し、今回の追加では再テストしない。
+## Qt Quick追加後の4実装比較
+
+比較対象は**Qt Widgets、Qt Quick、wxWidgets、Dear ImGui**。Qt Quickに同じ共通モックとMonitor・Diagnostics・Profileを実装し、Windows CIとローカル性能測定を追加した。[Qt Quick追加記録](qtquick.md)に実装・出所・生データ・未検証事項をまとめた。既存3候補の構成・結果を保持し、今回再テストしていない。採用決定、本体移植、NDI、完全移植版の容量推定は行わない。
+
+| 維持する責任 | Qt Widgets | Qt Quick | wxWidgets | Dear ImGui |
+| --- | --- | --- | --- | --- |
+| 画面構成 | Widgets / Model-View | QML Controls / TreeView + C++モデル | native control / DataView | immediate宣言 / Win32 / DX11 |
+| Diagnostics | ID/item差分、可視値更新 | 同じ差分に加えrole・delegate binding | ID/item差分、DataView接続 | 親子対応、展開ID、毎フレーム宣言 |
+| Profile | form同期・signal抑制 | draftは共通層、typed role/setter/NOTIFY | grid同期・event抑制 | draft直接編集、入力buffer |
+| 画像・破棄 | QPixmapとQObject所有 | QImage provider、engine/controller寿命 | wxBitmapとwindow所有 | D3D texture/SRVとComPtr |
+| 固有の追加負担 | 最適化B/Cの依存・配布設定 | QML import配布、delegate再利用、短い依存build path | collapseイベント接続、実行中テーマ未達 | OS loop、DPI/resize、COM、入力注入、日本語font |
+
+Qt QuickはレイアウトをQMLへ分離できた。一方、C++モデルのrole/通知とQML bindingの境界、再利用delegateの空値処理、image providerの所有を追加で管理した。Diagnosticsの差分更新と画像解放の責任はWidgetsと同様に残る。今回の結果はQt Quickを比較できる状態にするもので、保守性の優位を確定するものではない。旧3候補のScenario.enabled変更実験は保持するが、Quickは初版からenabledを含むため同じ独立変更実験の結果はまだない。
+
+### CI配布容量
+
+全て実測、MB=1,000,000 bytes、同じOpenCV構成・Release/MSVC・DEFLATE level 6。Quickはsource `f7c4965` / [run 40074825462](https://github.com/Nanahuse/DivergenceSplitter/actions/runs/40074825462)、旧候補は`404aafc` / [run 40064070079](https://github.com/Nanahuse/DivergenceSplitter/actions/runs/40064070079)。外側Artifactと内側配布ZIPは区別する。
+
+| 構成 | 展開後 MB | 配布ZIP MB | 外側Artifact bytes |
+| --- | ---: | ---: | ---: |
+| Qt Widgets A 標準（保持） | 107.45 | 44.26 | 44,642,451 |
+| Qt Widgets C 軽量化（容量比較用） | 45.20 | 17.55 | 17,913,437 |
+| Qt Quick 標準QtBase | **144.48** | **55.85** | **56,515,341** |
+| wxWidgets（既存） | 25.69 | 9.21 | 9,459,127 |
+| Dear ImGui（既存） | 14.70 | 5.49 | 5,906,560 |
+
+QuickへWidgets Cの依存削減・D3D/DXC除外は適用していない。容量最適化の度合いが異なるので、GUI方式だけの容量差とはしない。Quickのジョブは83分57秒、37/41依存cache復元後に残り4 packageを構築。全依存の完全cold時間は未測定。QuickのCTest 7件、ツール48件、installed/ZIP各15チェックは成功した。
+
+### 同一マシンの性能記録
+
+各候補・画面・規模で30秒warmup後180秒×3回。旧3候補の[36件](performance-180s-3.md)は2026-10-23 23:33〜10-24 01:39 UTC、Quickの[12件](qtquick/performance-180s-3.json)は10-24 07:37–08:19 UTCで、同時比較ではない。CPUは共通worker込み、1 logical core=100%の3回中央値。privateは3回中の最大観測peak（MB）で、旧詳細レポートの「peakの中央値」とは集計が異なる。CPUのQt Widgetsは**標準A**で、Cの性能へ置き換えない。
+
+| 画面・規模 | Qt Widgets A CPU / private | Qt Quick CPU / private | wxWidgets CPU / private | Dear ImGui CPU / private |
+| --- | ---: | ---: | ---: | ---: |
+| Monitor 84 | 18.60% / 31.11 | 18.86% / 130.19 | 36.26% / 17.50 | 20.95% / 68.86 |
+| Monitor 10,220 | 21.71% / 32.80 | 21.50% / 136.70 | 40.65% / 19.21 | 23.80% / 66.11 |
+| Diagnostics 84 | 11.42% / 20.95 | 14.78% / 113.94 | 26.82% / 16.14 | 18.51% / 62.85 |
+| Diagnostics 10,220 | 14.51% / 34.34 | 14.02% / 136.57 | 43.03% / 21.87 | 18.84% / 61.67 |
+
+今回の実装ではQuickのCPU値はWidgets Aに近い範囲だったが、privateは大きい。QuickのMonitor取込は14.924Hz、各回p95中央値は18.27/18.32ms。これらは画面present・物理操作応答やGPUメモリを測った値ではない。前景・遮蔽、他のデスクトップ活動、温度・クロックは統制しておらず、普遍的な性能順位を付けない。
+
+Quickの30分切替・開始停止試験、独立した仕様変更実験、実IME、実モニター間DPI、ファイル選択の確定、実presentは未検証。旧3候補の長時間記録をQuickへ転用しない。全候補の残る制約を含めて選定を保留する。
+
+## 既存3候補の記録（保持）
+
+以下の3候補の実測は保持し、今回の追加では再テストしない。
 
 対象は **Qt Widgets、wxWidgets、Dear ImGui**。3候補とも共通GUIを実装し、クリーンWindows CIでReleaseビルド、CTest、配布ZIP展開後の起動に成功した。採用候補は未決定。保守性・機能充足を優先し、容量は補助情報とする。NDIと実Scenario Runtimeは全候補から除外し、完全移植版の容量は推定しない。
 

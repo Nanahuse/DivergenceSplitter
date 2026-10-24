@@ -4,6 +4,8 @@
 
 Qt Quickの追加検証は [追加記録](results/qtquick.md) に分ける。既存3候補の結果・構成・配布物を保持し、今回の追加で再テストしない。通常のGUI比較CIはQt Quickのみを実行する。全候補の再実行はworkflow_dispatchの`all_candidates`を明示した場合だけ行う。以下の既存3候補の記録はその測定時点の証拠であり、Qt Quickへ転用しない。
 
+Qt QuickはWindows CI、CTest 7件、検証ツール48件、ZIP展開後のGUI契約に成功し、CI配布は展開後144.48MB / ZIP 55.85MB。Monitor・Diagnosticsの各180秒×3回（両規模、計12件）も完了した。[4実装の比較表](results/comparison.md#qt-quick追加後の4実装比較)と生データへのリンクを残している。Qt Quickの30分試験と独立した仕様変更実験は未実施。
+
 このディレクトリーは比較用の実験であり、Scenario Runtimeや製品GUIの移植ではない。NDIは全候補から除外する。
 
 ## 共通仕様と合格条件
