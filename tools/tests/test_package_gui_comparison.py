@@ -5,8 +5,11 @@ from pathlib import Path
 import pytest
 from package_gui_comparison import (
     EXPECTED_CHECKS,
+    QT_RUNTIME_CHECKS,
     classify,
     package,
+    verify_qt_configuration,
+    verify_qt_runtime_report,
     verify_smoke_report,
 )
 
@@ -58,3 +61,83 @@ def test_reports_inside_distribution_are_rejected_before_modifying_files(
             tmp_path / "manifest",
         )
     assert list(stage.iterdir()) == []
+
+
+def test_qt_runtime_exit_success_without_focused_checks_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Qt runtime report"):
+        verify_qt_runtime_report({"error": ""})
+    verify_qt_runtime_report({"error": "", "checks": sorted(QT_RUNTIME_CHECKS)})
+    with pytest.raises(ValueError, match="Qt runtime report"):
+        verify_qt_runtime_report(
+            {"error": "missing font", "checks": sorted(QT_RUNTIME_CHECKS)}
+        )
+
+
+@pytest.mark.parametrize(
+    "dll", ["icudt78.dll", "libcrypto-3-x64.dll", "Qt6Sql.dll", "dxcompiler.dll"]
+)
+def test_removed_qt_runtime_cannot_be_silently_recollected(
+    tmp_path: Path, dll: str
+) -> None:
+    installed = tmp_path / "installed"
+    (installed / "vcpkg").mkdir(parents=True)
+    features = (
+        "widgets",
+        "gui",
+        "network",
+        "dnslookup",
+        "freetype",
+        "harfbuzz",
+        "jpeg",
+        "png",
+        "windeployqt",
+    )
+    status = "\n\n".join(
+        f"Package: qtbase\nArchitecture: x64-windows\nFeature: {feature}"
+        for feature in features
+    )
+    (installed / "vcpkg/status").write_text(status)
+    root = tmp_path / "dist"
+    (root / "bin").mkdir(parents=True)
+    verify_qt_configuration(root, installed, "optimized")
+    (root / "bin" / dll).write_bytes(b"recollected")
+    with pytest.raises(ValueError, match="collected"):
+        verify_qt_configuration(root, installed, "optimized")
+
+
+def test_default_qt_feature_cannot_leak_into_lean_profile(tmp_path: Path) -> None:
+    (tmp_path / "vcpkg").mkdir()
+    (tmp_path / "vcpkg/status").write_text(
+        "Package: qtbase\nArchitecture: x64-windows\nFeature: icu\n"
+    )
+    with pytest.raises(ValueError, match="feature selection"):
+        verify_qt_configuration(tmp_path, tmp_path, "features")
+
+
+@pytest.mark.parametrize("kind", ["generic", "styles"])
+def test_removed_qt_plugin_type_cannot_be_recollected(
+    tmp_path: Path, kind: str
+) -> None:
+    installed = tmp_path / "installed"
+    (installed / "vcpkg").mkdir(parents=True)
+    features = (
+        "widgets",
+        "gui",
+        "network",
+        "dnslookup",
+        "freetype",
+        "harfbuzz",
+        "jpeg",
+        "png",
+        "windeployqt",
+    )
+    (installed / "vcpkg/status").write_text(
+        "\n\n".join(
+            f"Package: qtbase\nArchitecture: x64-windows\nFeature: {feature}"
+            for feature in features
+        )
+    )
+    root = tmp_path / "distribution"
+    (root / "Qt6/plugins" / kind).mkdir(parents=True)
+    with pytest.raises(ValueError, match="plugin type was re-collected"):
+        verify_qt_configuration(root, installed, "optimized")

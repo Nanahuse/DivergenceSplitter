@@ -10,6 +10,18 @@
       "description": "Qt Widgets implementation",
       "dependencies": [{ "name": "qtbase", "features": ["windeployqt"] }]
     },
+    "qt-lean": {
+      "description": "Qt Widgets with explicit desktop/font/image/network features, without ICU/OpenSSL/SQL",
+      "dependencies": [{
+        "name": "qtbase",
+        "default-features": false,
+        "features": [
+          "dnslookup", "doubleconversion", "freetype", "gui", "harfbuzz",
+          "jpeg", "network", "opengl", "pcre2", "png", "sessionmanager",
+          "thread", "widgets", "windeployqt"
+        ]
+      }]
+    },
     "wx": {
       "description": "wxWidgets implementation",
       "dependencies": ["wxwidgets"]

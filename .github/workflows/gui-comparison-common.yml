@@ -24,13 +24,19 @@ permissions:
 
 jobs:
   windows-gui:
-    name: Windows x64 / ${{ matrix.candidate }}
+    name: Windows x64 / ${{ matrix.candidate }} / ${{ matrix.qt_configuration }}
     runs-on: windows-2025
     timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
         candidate: [qt, wx, imgui]
+        qt_configuration: [standard]
+        include:
+          - candidate: qt
+            qt_configuration: features
+          - candidate: qt
+            qt_configuration: optimized
     defaults:
       run:
         shell: pwsh
@@ -53,6 +59,8 @@ jobs:
         run: |
           $manifest = Get-Content experiments/gui-comparison/vcpkg.json -Raw | ConvertFrom-Json
           "baseline=$($manifest.'builtin-baseline')" >> $env:GITHUB_OUTPUT
+          $variant = if ('${{ matrix.qt_configuration }}' -eq 'standard') { '${{ matrix.candidate }}' } else { 'qt-${{ matrix.qt_configuration }}' }
+          "variant=$variant" >> $env:GITHUB_OUTPUT
       - uses: actions/checkout@v5
         with:
           repository: microsoft/vcpkg
@@ -62,7 +70,10 @@ jobs:
         id: binary-cache
         with:
           path: .vcpkg-binary-cache
-          key: gui-comparison-windows-2025-${{ matrix.candidate }}-${{ steps.manifest.outputs.baseline }}-${{ hashFiles('experiments/gui-comparison/vcpkg.json') }}
+          key: gui-comparison-windows-2025-${{ steps.manifest.outputs.variant }}-${{ steps.manifest.outputs.baseline }}-${{ hashFiles('experiments/gui-comparison/vcpkg.json') }}
+          restore-keys: |
+            gui-comparison-windows-2025-${{ steps.manifest.outputs.variant }}-${{ steps.manifest.outputs.baseline }}-
+            gui-comparison-windows-2025-${{ matrix.candidate }}-${{ steps.manifest.outputs.baseline }}-
       - name: Release build, common and GUI tests, install and extracted-ZIP tests
         id: verify
         env:
@@ -79,7 +90,7 @@ jobs:
           $env:VCPKG_ROOT = (Resolve-Path build/vcpkg).Path
           New-Item -ItemType Directory -Force build/gui-comparison-reports | Out-Null
           & build/vcpkg/bootstrap-vcpkg.bat -disableMetrics
-          & tools/build_gui_comparison.ps1 -Candidate '${{ matrix.candidate }}' *>&1 | Tee-Object -FilePath 'build/gui-comparison-reports/${{ matrix.candidate }}-build.log'
+          & tools/build_gui_comparison.ps1 -Candidate '${{ matrix.candidate }}' -QtConfiguration '${{ matrix.qt_configuration }}' *>&1 | Tee-Object -FilePath 'build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}-build.log'
       - name: Preserve complete dependency cache even when a later GUI test fails
         if: always() && steps.binary-cache.outputs.cache-hit != 'true' && steps.verify.outputs.dependencies_configured == 'true'
         uses: actions/cache/save@v6
@@ -88,28 +99,29 @@ jobs:
           key: ${{ steps.binary-cache.outputs.cache-primary-key }}
       - name: Publish measured distribution and timing
         run: |
-          Get-Content 'build/gui-comparison-reports/${{ matrix.candidate }}/report.md' >> $env:GITHUB_STEP_SUMMARY
+          Get-Content 'build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/report.md' >> $env:GITHUB_STEP_SUMMARY
           '## Timings (seconds)' >> $env:GITHUB_STEP_SUMMARY
           '```json' >> $env:GITHUB_STEP_SUMMARY
-          Get-Content 'build/gui-comparison-reports/${{ matrix.candidate }}/timings.json' >> $env:GITHUB_STEP_SUMMARY
+          Get-Content 'build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/timings.json' >> $env:GITHUB_STEP_SUMMARY
           '```' >> $env:GITHUB_STEP_SUMMARY
           'Functional CI only. CPU/memory on different hosted runners are not a performance ranking. Physical input, IME, DPI transitions and positive file selection remain unverified. NDI excluded.' >> $env:GITHUB_STEP_SUMMARY
       - name: Save distribution ZIP, reports and GUI captures
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: gui-comparison-${{ matrix.candidate }}-windows-x64
+          name: gui-comparison-${{ steps.manifest.outputs.variant }}-windows-x64
           path: |
-            build/gui-comparison-reports/${{ matrix.candidate }}/*.json
-            build/gui-comparison-reports/${{ matrix.candidate }}/*.md
-            build/gui-comparison-reports/${{ matrix.candidate }}/*.csv
-            build/gui-comparison-reports/${{ matrix.candidate }}/*.log
-            build/gui-comparison-reports/${{ matrix.candidate }}/*.zip
-            build/gui-comparison-reports/${{ matrix.candidate }}-build.log
-            build/gui-comparison/${{ matrix.candidate }}/*-gui.*
-            build/gui-comparison/${{ matrix.candidate }}/*-view.*
-            build/gui-comparison/${{ matrix.candidate }}/exit-hold.json
-            build/gui-comparison/${{ matrix.candidate }}/gui-tests.xml
+            build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/*.json
+            build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/*.md
+            build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/*.csv
+            build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/*.log
+            build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/*.png
+            build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}/*.zip
+            build/gui-comparison-reports/${{ steps.manifest.outputs.variant }}-build.log
+            build/gui-comparison/${{ steps.manifest.outputs.variant }}/*-gui.*
+            build/gui-comparison/${{ steps.manifest.outputs.variant }}/*-view.*
+            build/gui-comparison/${{ steps.manifest.outputs.variant }}/exit-hold.json
+            build/gui-comparison/${{ steps.manifest.outputs.variant }}/gui-tests.xml
             build/gui-tool-tests.xml
           compression-level: 0
           if-no-files-found: warn
@@ -117,10 +129,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: gui-comparison-${{ matrix.candidate }}-diagnostics
+          name: gui-comparison-${{ steps.manifest.outputs.variant }}-diagnostics
           path: |
-            build/gui-comparison/${{ matrix.candidate }}/Testing/Temporary
-            build/gui-comparison/${{ matrix.candidate }}/CMakeFiles/CMakeConfigureLog.yaml
-            build/gui-comparison/${{ matrix.candidate }}/vcpkg-manifest-install.log
+            build/gui-comparison/${{ steps.manifest.outputs.variant }}/Testing/Temporary
+            build/gui-comparison/${{ steps.manifest.outputs.variant }}/CMakeFiles/CMakeConfigureLog.yaml
+            build/gui-comparison/${{ steps.manifest.outputs.variant }}/vcpkg-manifest-install.log
             build/vcpkg/buildtrees/*/*.log
           if-no-files-found: ignore

@@ -2,16 +2,19 @@
 param(
     [Parameter(Mandatory)][ValidateSet('qt', 'wx', 'imgui')][string]$Candidate,
     [string]$Python = 'python',
-    [string]$InstalledDirectory = ''
+    [string]$InstalledDirectory = '',
+    [ValidateSet('standard', 'features', 'optimized')][string]$QtConfiguration = 'standard'
 )
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 # Keep MSVC /showIncludes output and CMake/Ninja decoding consistent on Japanese Windows.
 & chcp.com 65001 | Out-Null
 $comparisonRepo = Split-Path -Parent $PSScriptRoot
-$comparisonBuild = Join-Path $comparisonRepo "build/gui-comparison/$Candidate"
-$comparisonStage = Join-Path $comparisonRepo "dist/gui-comparison/$Candidate"
-$comparisonReport = Join-Path $comparisonRepo "build/gui-comparison-reports/$Candidate"
+if ($Candidate -ne 'qt' -and $QtConfiguration -ne 'standard') { throw 'QtConfiguration requires Candidate qt.' }
+$comparisonVariant = if ($QtConfiguration -eq 'standard') { $Candidate } else { "qt-$QtConfiguration" }
+$comparisonBuild = Join-Path $comparisonRepo "build/gui-comparison/$comparisonVariant"
+$comparisonStage = Join-Path $comparisonRepo "dist/gui-comparison/$comparisonVariant"
+$comparisonReport = Join-Path $comparisonRepo "build/gui-comparison-reports/$comparisonVariant"
 $comparisonManifest = Join-Path $comparisonRepo 'experiments/gui-comparison/vcpkg.json'
 $comparisonTimings = [ordered]@{ binary_cache_hit = $env:PROBE_BINARY_CACHE_HIT; phases_seconds = [ordered]@{} }
 $comparisonTotal = [Diagnostics.Stopwatch]::StartNew()
@@ -25,6 +28,11 @@ $comparisonArguments = @('--fresh', '-S', (Join-Path $comparisonRepo 'experiment
     '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', "-DGUI_CANDIDATE=$Candidate",
     "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake", "-DCMAKE_INSTALL_PREFIX=$comparisonStage",
     "-DVCPKG_INSTALLED_DIR=$comparisonInstalled")
+if ($Candidate -eq 'qt') {
+    $comparisonFeatures = if ($QtConfiguration -eq 'standard') { 'standard' } else { 'lean' }
+    $comparisonOptimize = if ($QtConfiguration -eq 'optimized') { 'ON' } else { 'OFF' }
+    $comparisonArguments += @("-DGUI_QT_FEATURES=$comparisonFeatures", "-DGUI_QT_OPTIMIZE_DEPLOY=$comparisonOptimize")
+}
 $comparisonPhase = [Diagnostics.Stopwatch]::StartNew()
 & cmake @comparisonArguments
 $comparisonTimings.phases_seconds.configure_including_dependencies = $comparisonPhase.Elapsed.TotalSeconds
@@ -39,7 +47,12 @@ $comparisonPhase.Restart()
 & cmake --install $comparisonBuild
 $comparisonTimings.phases_seconds.install_deploy = $comparisonPhase.Elapsed.TotalSeconds
 $comparisonPhase.Restart()
-& $Python (Join-Path $PSScriptRoot 'package_gui_comparison.py') --candidate $Candidate --root $comparisonStage --installed $comparisonInstalled --output $comparisonReport --manifest $comparisonManifest
+$comparisonPackageArguments = @((Join-Path $PSScriptRoot 'package_gui_comparison.py'), '--candidate', $Candidate,
+    '--root', $comparisonStage, '--installed', $comparisonInstalled, '--output', $comparisonReport, '--manifest', $comparisonManifest)
+if ($Candidate -eq 'qt') {
+    $comparisonPackageArguments += @('--qt-configuration', $QtConfiguration, '--qt-runtime-probe', (Join-Path $comparisonBuild 'qt-runtime-check.exe'))
+}
+& $Python @comparisonPackageArguments
 $comparisonTimings.phases_seconds.package_and_zip_launch = $comparisonPhase.Elapsed.TotalSeconds
 $comparisonTimings.total_seconds = $comparisonTotal.Elapsed.TotalSeconds
 $comparisonTimings | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $comparisonReport 'timings.json')

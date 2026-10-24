@@ -16,6 +16,24 @@ from measure_distribution import closure, extract_archive, installed_inventory, 
 from prepare_cpp_distribution import SDK_GRAPHICS_DLLS, collect_sdk_notices
 
 GUI_PORTS = {"qt": "qtbase", "wx": "wxwidgets", "imgui": "imgui"}
+QT_CONFIGURATIONS = ("standard", "features", "optimized")
+QT_RUNTIME_CHECKS = {
+    "windows_platform_plugin",
+    "module_loaded_from_distribution",
+    "japanese_font_fallback_has_glyphs",
+    "input_method_enabled",
+    "synthetic_ime_preedit_not_committed",
+    "synthetic_ime_commit_roundtrip",
+    "unicode_json_roundtrip",
+    "image_encode",
+    "image_decode",
+    "tcp_unicode_roundtrip",
+    "localhost_lookup",
+    "schannel_tls_backend_available",
+    "fusion_dark_palette",
+    "fusion_palette_restored",
+    "japanese_widget_capture",
+}
 EXPECTED_CHECKS = {
     "M01_monitor_and_latest_preview",
     "D02_value_updates_preserve_tree_expansion_scroll",
@@ -43,7 +61,7 @@ def verify_smoke_report(report: dict[str, Any], candidate: str) -> None:
         raise ValueError(f"Incomplete/failed GUI contract report: {candidate}")
 
 
-def smoke(root: Path, candidate: str, report: Path, *, large: bool = False) -> None:
+def distribution_environment(root: Path) -> dict[str, str]:
     windows = Path(os.environ["SystemRoot"])
     environment = {
         key: value
@@ -53,6 +71,11 @@ def smoke(root: Path, candidate: str, report: Path, *, large: bool = False) -> N
     environment["PATH"] = os.pathsep.join(
         (str(root.resolve() / "bin"), str(windows / "System32"), str(windows))
     )
+    return environment
+
+
+def smoke(root: Path, candidate: str, report: Path, *, large: bool = False) -> None:
+    environment = distribution_environment(root)
     command = [
         str(root.resolve() / f"bin/comparison-{candidate}.exe"),
         "--self-test",
@@ -74,6 +97,98 @@ def smoke(root: Path, candidate: str, report: Path, *, large: bool = False) -> N
         completed.stdout + completed.stderr, encoding="utf-8"
     )
     verify_smoke_report(json.loads(report.read_text(encoding="utf-8")), candidate)
+
+
+def verify_qt_configuration(root: Path, installed: Path, configuration: str) -> None:
+    if configuration not in QT_CONFIGURATIONS:
+        raise ValueError("Unknown Qt configuration")
+    if configuration == "standard":
+        return
+    status = (installed / "vcpkg/status").read_text(encoding="utf-8")
+    features = set()
+    for block in status.split("\n\n"):
+        fields = dict(
+            line.split(": ", 1) for line in block.splitlines() if ": " in line
+        )
+        if (
+            fields.get("Package") == "qtbase"
+            and fields.get("Architecture") == "x64-windows"
+        ):
+            features.add(fields.get("Feature", "core"))
+    required = {
+        "widgets",
+        "gui",
+        "network",
+        "dnslookup",
+        "freetype",
+        "harfbuzz",
+        "jpeg",
+        "png",
+        "windeployqt",
+    }
+    if not required.issubset(features) or features & {
+        "icu",
+        "openssl",
+        "sql",
+        "sql-psql",
+        "sql-sqlite",
+    }:
+        raise ValueError(f"Unexpected lean Qt feature selection: {sorted(features)}")
+    dlls = {path.name.casefold() for path in root.rglob("*.dll")}
+    if any(name.startswith(("icu", "libcrypto", "libssl", "qt6sql")) for name in dlls):
+        raise ValueError("Removed Qt feature DLL was collected into lean distribution")
+    if configuration == "optimized":
+        if dlls & SDK_GRAPHICS_DLLS:
+            raise ValueError("Excluded SDK graphics DLL was re-collected")
+        if any(
+            (root / "Qt6/plugins" / kind).exists() for kind in ("generic", "styles")
+        ):
+            raise ValueError("Excluded Qt plugin type was re-collected")
+    elif not SDK_GRAPHICS_DLLS.issubset(dlls):
+        raise ValueError(
+            "Feature-only configuration must keep standard SDK graphics deployment"
+        )
+
+
+def verify_qt_runtime_report(report: dict[str, Any]) -> None:
+    if report.get("error") or not QT_RUNTIME_CHECKS.issubset(report.get("checks", [])):
+        raise ValueError("Incomplete/failed Qt runtime report")
+
+
+def qt_runtime_check(root: Path, probe: Path, output: Path, label: str) -> None:
+    # Copy only the test executable: the build directory contains app-local development DLLs.
+    # Loader PATH and Qt's explicit library paths must resolve to the measured distribution.
+    isolated = output / f"{label}-runtime-probe"
+    isolated.mkdir()
+    executable = isolated / "qt-runtime-check.exe"
+    shutil.copy2(probe, executable)
+    report = output / f"{label}-qt-runtime.json"
+    environment = distribution_environment(root)
+    environment["QT_DEBUG_PLUGINS"] = "1"
+    completed = subprocess.run(
+        [
+            str(executable),
+            str(root.resolve()),
+            str(report),
+            str(output / f"{label}-japanese.png"),
+        ],
+        cwd=isolated,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=45,
+        check=False,
+    )
+    (output / f"{label}-qt-runtime.log").write_text(
+        completed.stdout + completed.stderr, encoding="utf-8"
+    )
+    if completed.returncode:
+        raise ValueError(
+            f"Qt runtime probe failed ({completed.returncode}); see {label}-qt-runtime.log/json"
+        )
+    verify_qt_runtime_report(json.loads(report.read_text(encoding="utf-8")))
 
 
 def prepare(root: Path, installed: Path, candidate: str, manifest: Path) -> None:
@@ -171,13 +286,28 @@ def classify(
     return "Other", ", ".join(sorted(packages))
 
 
-def package(root: Path, installed: Path, candidate: str, output: Path, manifest: Path):
+def package(
+    root: Path,
+    installed: Path,
+    candidate: str,
+    output: Path,
+    manifest: Path,
+    *,
+    qt_configuration: str = "standard",
+    qt_runtime_probe: Path | None = None,
+):
     root, output = root.resolve(), output.resolve()
     if output.is_relative_to(root) or root.is_relative_to(output):
         raise ValueError("Distribution and reports must be disjoint")
+    if candidate != "qt" and qt_configuration != "standard":
+        raise ValueError("Qt configuration requires Qt candidate")
+    if candidate == "qt":
+        verify_qt_configuration(root, installed, qt_configuration)
     prepare(root, installed, candidate, manifest)
     output.mkdir(parents=True, exist_ok=True)
     smoke(root, candidate, output / "installed-smoke.json")
+    if candidate == "qt" and qt_runtime_probe:
+        qt_runtime_check(root, qt_runtime_probe.resolve(), output, "installed")
     # Reuse the existing exact ZIP conditions; replace Qt-specific categories below.
     report = measure(root, output, f"GUI comparison: {candidate}", "cpp", installed)
     owners, graph = installed_inventory(installed)
@@ -186,22 +316,35 @@ def package(root: Path, installed: Path, candidate: str, output: Path, manifest:
     for item in report["files"]:
         item["category"], item["owner"] = classify(item["path"], owners, gui, cv)
         totals[item["category"]] += item["bytes"]
+    variant = candidate if qt_configuration == "standard" else f"qt-{qt_configuration}"
     report.update(
         kind="gui-comparison",
         candidate=candidate,
         ndi_status="EXCLUDED from all candidates; not tested",
         categories=dict(sorted(totals.items())),
-        archive=f"{candidate}.zip",
+        archive=f"{variant}.zip",
     )
-    archive = output / f"{candidate}.zip"
+    if candidate == "qt":
+        report["qt_configuration"] = qt_configuration
+    archive = output / f"{variant}.zip"
     (output / "cpp.zip").rename(archive)
     extracted = output / "zip-extracted"
     extract_archive(archive, extracted)
     smoke(extracted / "distribution", candidate, output / "zip-smoke.json", large=True)
+    if candidate == "qt":
+        verify_qt_configuration(extracted / "distribution", installed, qt_configuration)
+        if qt_runtime_probe:
+            qt_runtime_check(
+                extracted / "distribution", qt_runtime_probe.resolve(), output, "zip"
+            )
     report["verification"] = {
         "installed_small_gui_contract": "passed with developer PATH removed",
         "extracted_zip_large_gui_contract": "passed with developer PATH removed",
     }
+    if candidate == "qt" and qt_runtime_probe:
+        report["verification"]["qt_installed_and_extracted_runtime"] = (
+            "passed; synthetic IME events only, native IME conversion not tested"
+        )
     (output / "report.json").write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
     )
@@ -210,7 +353,7 @@ def package(root: Path, installed: Path, candidate: str, output: Path, manifest:
         writer.writeheader()
         writer.writerows(report["files"])
     lines = [
-        f"# {candidate}: measured GUI distribution",
+        f"# {variant}: measured GUI distribution",
         "",
         f"Unpacked: {report['unpacked_bytes']:,} bytes; ZIP: {report['zip_bytes']:,} bytes.",
         "NDI excluded. Outer Actions Artifact size is a separate transport archive.",
@@ -237,10 +380,22 @@ def main() -> None:
     parser.add_argument("--installed", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
+        "--qt-configuration", choices=QT_CONFIGURATIONS, default="standard"
+    )
+    parser.add_argument("--qt-runtime-probe", type=Path)
+    parser.add_argument(
         "--manifest", type=Path, default=Path("experiments/gui-comparison/vcpkg.json")
     )
     args = parser.parse_args()
-    package(args.root, args.installed, args.candidate, args.output, args.manifest)
+    package(
+        args.root,
+        args.installed,
+        args.candidate,
+        args.output,
+        args.manifest,
+        qt_configuration=args.qt_configuration,
+        qt_runtime_probe=args.qt_runtime_probe,
+    )
 
 
 if __name__ == "__main__":

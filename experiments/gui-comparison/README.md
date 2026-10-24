@@ -123,3 +123,26 @@ tools/build_gui_comparison.ps1 -Candidate imgui
 .venv/Scripts/python.exe tools/run_gui_comparison.py --output build/gui-measurements-new-180s-3 --seconds 180 --repeats 3 --diagnostics-repeats 3 --soak 0
 .venv/Scripts/python.exe tools/summarize_gui_comparison.py --source experiments/gui-comparison/results/measurements-180s-3 --output build/gui-performance-180s-3-regenerated.json
 ```
+
+## Qtの軽量化検証（A / B / C）
+
+標準Qt feature `qt` と既存の `dist/gui-comparison/qt/` をAとして保持する。追加のmanifest feature `qt-lean` は `default-features: false` を指定し、Widgets、スレッド、フォント（FreeType/HarfBuzz）、PNG/JPEG、Network/DNS、OpenGLなどを明示する。ICU・OpenSSL・SQLと、未使用のDBus・圧縮・concurrent/testlib等は要求しない。OpenCVの依存・feature・baseline・バージョンは変更しない。
+
+| 構成 | helper引数 | CMake | build / dist / reportの末尾 |
+| --- | --- | --- | --- |
+| A 標準 | `-Candidate qt` | `GUI_QT_FEATURES=standard`、最適化OFF | `qt`（既存） |
+| B Feature削減 | `-Candidate qt -QtConfiguration features` | `GUI_QT_FEATURES=lean`、最適化OFF | `qt-features` |
+| C Feature削減＋配布最適化 | `-Candidate qt -QtConfiguration optimized` | `GUI_QT_FEATURES=lean`、`GUI_QT_OPTIMIZE_DEPLOY=ON` | `qt-optimized` |
+
+各構成のbuild・vcpkg install・配布・レポートは別ディレクトリ。既存の配布先がある場合、helperは上書きを拒否する。wx / ImGuiのfeatureとGUI実装は変更しない。
+
+```powershell
+tools/build_gui_comparison.ps1 -Candidate qt -QtConfiguration features
+tools/build_gui_comparison.ps1 -Candidate qt -QtConfiguration optimized
+```
+
+Cは公式 `windeployqt` の `--no-system-d3d-compiler --no-system-dxc-compiler` と `--skip-plugin-types generic,styles` を使用する。この試作はFusion/raster Widgetsを明示しており、TUIOタッチ入力と外部native style pluginを使わない。Networkを明示的に配布し、platforms・imageformats・networkinformation・tlsは維持する。依存DLL収集処理はそのまま実行し、削減したDLLやpluginが再収集された場合は検証を失敗させる。配布後にDLLを削除する処理は追加しない。
+
+全Qt構成で同一の既存GUI契約6件と、install先・ZIP展開先のGUI契約を実行する。独立した `qt-runtime-check` は測定ZIPに含めず、開発用DLLがない隔離ディレクトリから配布DLLをロードする。日本語glyph/fallback、PNG/JPEG、Schannel backend、loopback TCP、DNS、Unicode JSON、Fusionのpalette切替と復元を確認し、日本語画面とpluginログを保存する。IMEは `QInputMethodEvent` のpreedit/commit経路の自動試験であり、実IMEの変換候補・確定操作は別の未検証項目とする。TLS backendの存在確認を実TLS handshakeの成功とは扱わない。
+
+[vcpkg feature](https://learn.microsoft.com/en-us/vcpkg/concepts/features) / [Qt公式配布オプション](https://doc.qt.io/qt-6/windows-deployment.html) / [CMake deployへのオプション受渡し](https://doc.qt.io/qt-6/qt-generate-deploy-app-script.html)。公開Web文書の現行版だけで判断せず、固定6.11.1のport定義、CMake APIと `windeployqt --help` でも利用可能なオプションを確認した。
