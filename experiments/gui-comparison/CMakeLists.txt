@@ -55,18 +55,34 @@ if(NOT GUI_CANDIDATE STREQUAL "none")
     target_compile_definitions(comparison-support PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
     target_compile_options(comparison-support PRIVATE /W4 /utf-8)
     set(gui_target comparison-${GUI_CANDIDATE})
-    add_executable(${gui_target} ${GUI_CANDIDATE}/main.cpp)
+    if(GUI_CANDIDATE STREQUAL "qtquick")
+        find_package(Qt6 6.11 REQUIRED COMPONENTS Quick QuickControls2 QmlTools)
+        # Qt's target finalizer records QML imports for the deployment script.
+        qt_add_executable(${gui_target} qtquick/main.cpp)
+    else()
+        add_executable(${gui_target} ${GUI_CANDIDATE}/main.cpp)
+    endif()
     target_link_libraries(${gui_target} PRIVATE comparison-support)
     target_compile_options(${gui_target} PRIVATE /W4 /permissive- /utf-8)
-    target_link_options(${gui_target} PRIVATE "/MANIFEST:EMBED" "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/support/app.manifest")
     if(GUI_CANDIDATE STREQUAL "qtquick")
-        find_package(Qt6 6.11 REQUIRED COMPONENTS Quick QuickControls2)
+        # Let Qt recognize the existing DPI/long-path manifest instead of creating another identity.
+        target_sources(${gui_target} PRIVATE support/app.manifest)
+    else()
+        target_link_options(${gui_target} PRIVATE "/MANIFEST:EMBED" "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/support/app.manifest")
+    endif()
+    if(GUI_CANDIDATE STREQUAL "qtquick")
         set_target_properties(${gui_target} PROPERTIES AUTOMOC ON)
         target_link_libraries(${gui_target} PRIVATE Qt6::Quick Qt6::QuickControls2)
         qt_policy(SET QTP0001 NEW)
         set_source_files_properties(qtquick/Main.qml PROPERTIES QT_RESOURCE_ALIAS Main.qml)
         qt_add_qml_module(${gui_target} URI Comparison VERSION 1.0
             QML_FILES qtquick/Main.qml)
+        if(BUILD_TESTING)
+            add_test(NAME qtquick-qml-static-contract COMMAND Qt6::qmllint --bare --max-warnings 0
+                -I "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/qml"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qtquick/Main.qml")
+            set_tests_properties(qtquick-qml-static-contract PROPERTIES TIMEOUT 30)
+        endif()
     elseif(GUI_CANDIDATE STREQUAL "qt")
         find_package(Qt6 6.11 REQUIRED COMPONENTS Widgets)
         target_link_libraries(${gui_target} PRIVATE Qt6::Widgets)
@@ -118,6 +134,13 @@ if(NOT GUI_CANDIDATE STREQUAL "none")
     if(GUI_CANDIDATE MATCHES "^(qt|qtquick)$")
         set_tests_properties(${GUI_CANDIDATE}-exit-during-hold PROPERTIES
             ENVIRONMENT "QT_PLUGIN_PATH=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/plugins")
+    endif()
+    if(GUI_CANDIDATE STREQUAL "qtquick")
+        set_tests_properties(qtquick-qml-static-contract qtquick-small-gui-contract
+            qtquick-large-gui-contract qtquick-diagnostics-capture qtquick-profile-capture
+            qtquick-exit-during-hold PROPERTIES
+            ENVIRONMENT "QT_PLUGIN_PATH=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/plugins;QML_IMPORT_PATH=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/qml"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
     endif()
     install(TARGETS ${gui_target} RUNTIME DESTINATION bin)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION bin)

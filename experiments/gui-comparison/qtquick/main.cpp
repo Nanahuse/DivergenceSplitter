@@ -1,8 +1,10 @@
 #include "app.hpp"
+#include "runtime_check.hpp"
 #include <QGuiApplication>
 #include <QJSValue>
 #include <QMouseEvent>
 #include <QQmlApplicationEngine>
+#include <QQmlError>
 #include <QQuickImageProvider>
 #include <QQuickItem>
 #include <QQuickStyle>
@@ -99,6 +101,7 @@ public:
     explicit Controller(Session& session, Images& images)
         : session_(session), script_(session), images_(images), profiles_(session.profile) {
         cards_.setItemRoleNames({{Qt::DisplayRole, "display"}, {Qt::UserRole + 1, "summary"}});
+        tree_.setColumnCount(2);
         timer_.setTimerType(Qt::PreciseTimer); timer_.setInterval(67);
         connect(&timer_, &QTimer::timeout, this, [this] { tick(); });
     }
@@ -167,6 +170,8 @@ public:
         p.references = images_.references.size(); p.draft_count = session_.profile.draft.scenarios.size();
         p.expanded = expanded_.contains(first_detector());
         auto values = call("viewProbe").toMap();
+        if (values.value("referenceCount").toULongLong() != p.references || !values.value("referencesReady").toBool())
+            throw std::runtime_error("Qt Quick reference delegates do not match image ownership");
         p.scroll = qRound(values.value("scroll").toDouble()); p.busy = values.value("busy").toBool();
         p.file_cancels = file_cancels_; p.discard_cancels = discard_cancels_;
         return p;
@@ -191,7 +196,18 @@ public:
             if (auto item = window_->findChild<QQuickItem*>("reset")) item->ungrabMouse();
             break;
         }
-        default: call("testAction", int(action)); break;
+        default: {
+            static constexpr std::pair<Action, const char*> names[] = {
+                {Action::mutate, "mutate"}, {Action::invalid_draft, "invalid_draft"},
+                {Action::valid_draft, "valid_draft"}, {Action::apply, "apply"},
+                {Action::add_scenario, "add_scenario"}, {Action::remove_scenario, "remove_scenario"},
+                {Action::unsaved_cancel, "unsaved_cancel"}, {Action::file_cancel, "file_cancel"},
+                {Action::discard, "discard"}, {Action::theme, "theme"}, {Action::resize, "resize"},
+                {Action::start, "start"}, {Action::stop, "stop"}, {Action::scroll, "scroll"}};
+            const auto found = std::find_if(std::begin(names), std::end(names), [&](const auto& pair) { return pair.first == action; });
+            if (found == std::end(names)) throw std::runtime_error("Unhandled Qt Quick driver action");
+            call("testAction", QString::fromLatin1(found->second)); break;
+        }
         }
     }
 signals:
@@ -257,10 +273,13 @@ private:
         for (const auto& node : state->topology->nodes) {
             if (items_.contains(node.id)) { items_.at(node.id)->setText(text(node.label)); continue; }
             auto label = new QStandardItem(text(node.label)); label->setEditable(false);
+            // TreeView flattens the hierarchy into one table with a uniform column count.
+            // Set child columns before attaching the item, avoiding live column insertion.
+            label->setColumnCount(2);
             label->setData(QVariant::fromValue<qulonglong>(node.id), Qt::UserRole);
+            if (node.kind == NodeKind::detector) label->appendRow({new QStandardItem("Reference shown below"), new QStandardItem(QStringLiteral(""))});
             auto parent = node.parent ? items_.at(node.parent) : tree_.invisibleRootItem();
-            parent->appendRow({label, new QStandardItem}); items_[node.id] = label;
-            if (node.kind == NodeKind::detector) label->appendRow({new QStandardItem("Reference shown below"), new QStandardItem});
+            parent->appendRow({label, new QStandardItem(QStringLiteral(""))}); items_[node.id] = label;
         }
         shown_ = state->topology;
         // TreeView keeps surviving model indexes; expansion is sampled after its layout.
@@ -282,7 +301,10 @@ private:
         int row = 0;
         for (const auto& node : state.topology->nodes) {
             if (node.kind != NodeKind::scenario) continue;
-            if (row == cards_.rowCount()) cards_.appendRow(new QStandardItem);
+            if (row == cards_.rowCount()) {
+                auto card = new QStandardItem(text(node.label));
+                card->setData(QStringLiteral(""), Qt::UserRole + 1); cards_.appendRow(card);
+            }
             auto item = cards_.item(row++); item->setText(text(node.label));
             const auto metric = std::find_if(state.metrics.begin(), state.metrics.end(), [&](const auto& m) { return m.id == node.id; });
             if (metric != state.metrics.end()) item->setData(text(score_text(metric->score) + (!metric->enabled ? " disabled" : metric->active ? " active" : " waiting") +
@@ -293,9 +315,23 @@ private:
     void finish() {
         if (finishing_) return;
         finishing_ = true; emit finishingChanged();
+        try {
+            if (session_.options.self_test && session_.error.empty()) {
+                if (!call("viewProbe").toMap().value("previewReady").toBool())
+                    throw std::runtime_error("Qt Quick preview did not load through the image provider");
+                session_.checks.push_back("Q02_qml_preview_and_reference_delegates");
+            }
+            auto engine = qmlEngine(window_);
+            if (!engine) throw std::runtime_error("Qt Quick engine missing");
+            if (verify_quick_distribution(*engine)) session_.checks.push_back("Q01_packaged_qml_imports_and_runtime");
+        } catch (const std::exception& error) { session_.error = error.what(); }
         if (!session_.options.capture.empty() && !window_->grabWindow().save(QString::fromStdWString(session_.options.capture.wstring())))
             session_.error = "Could not capture Qt Quick window";
-        session_.renderer = "Qt Quick / QML TreeView / RHI API " + std::to_string(int(window_->rendererInterface()->graphicsApi()));
+        const auto api = window_->rendererInterface()->graphicsApi();
+        const auto renderer = api == QSGRendererInterface::Direct3D11 ? "Direct3D11" :
+            api == QSGRendererInterface::Direct3D12 ? "Direct3D12" :
+            api == QSGRendererInterface::Software ? "software" : "API " + std::to_string(int(api));
+        session_.renderer = "Qt Quick / QML TreeView / " + std::string(renderer);
         closeAccepted(); session_.write_report(); window_->close(); QCoreApplication::quit();
     }
     void tick() {
@@ -340,12 +376,16 @@ private:
 int main(int argc, char** argv) {
     try {
         const auto options = Options::parse(argc, argv);
+        qputenv("QT_FORCE_STDERR_LOGGING", "1");
         QGuiApplication app(argc, argv);
         QQuickStyle::setStyle("Fusion");
         Session session(options, "qtquick");
         auto images = new Images;
         Controller controller(session, *images);
         QQmlApplicationEngine engine;
+        QObject::connect(&engine, &QQmlEngine::warnings, &controller, [&session](const QList<QQmlError>& errors) {
+            if (!errors.empty() && session.error.empty()) session.error = errors.first().toString().toStdString();
+        });
         engine.addImageProvider("frames", images);
         engine.setInitialProperties({{"backend", QVariant::fromValue(&controller)}});
         engine.loadFromModule("Comparison", "Main");

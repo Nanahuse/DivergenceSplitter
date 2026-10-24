@@ -18,11 +18,16 @@ def summarize(source: Path, output: Path) -> None:
     if (source / "invalidated.json").exists():
         raise ValueError("Invalidated measurements cannot be summarized as completed")
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    candidates = environment.get("candidates", ("qt", "wx", "imgui"))
     records = []
     for path in sorted(source.glob("*.json")):
         if path.name in ("environment.json", "completed.json"):
             continue
         record = json.loads(path.read_text(encoding="utf-8"))
+        if record.get("candidate") not in candidates:
+            raise ValueError(
+                f"Unexpected candidate in selected measurements: {path.name}"
+            )
         if record.get("error") or record.get("self_test"):
             raise ValueError(f"Failed or non-steady measurement: {path.name}")
         duration = record["measurement_seconds"]
@@ -66,7 +71,7 @@ def summarize(source: Path, output: Path) -> None:
         records.append(record)
     if len(records) != completed["cases"]:
         raise ValueError("Completed case count disagrees with available reports")
-    for candidate in environment.get("candidates", ("qt", "wx", "imgui")):
+    for candidate in candidates:
         for dataset in ("small", "large"):
             if len(groups[f"{candidate}/{dataset}/monitor"]) != environment["repeats"]:
                 raise ValueError("Missing Monitor repetition")

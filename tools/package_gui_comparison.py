@@ -62,6 +62,11 @@ def verify_smoke_report(report: dict[str, Any], candidate: str) -> None:
         or report.get("error")
         or not report.get("self_test")
         or not EXPECTED_CHECKS.issubset(report.get("checks", []))
+        or candidate == "qtquick"
+        and not {
+            "Q01_packaged_qml_imports_and_runtime",
+            "Q02_qml_preview_and_reference_delegates",
+        }.issubset(report.get("checks", []))
     ):
         raise ValueError(f"Incomplete/failed GUI contract report: {candidate}")
 
@@ -81,6 +86,8 @@ def distribution_environment(root: Path) -> dict[str, str]:
 
 def smoke(root: Path, candidate: str, report: Path, *, large: bool = False) -> None:
     environment = distribution_environment(root)
+    if candidate == "qtquick":
+        environment["GUI_DISTRIBUTION_ROOT"] = str(root.resolve())
     command = [
         str(root.resolve() / f"bin/comparison-{candidate}.exe"),
         "--self-test",
@@ -299,6 +306,20 @@ def classify(
     return "Other", ", ".join(sorted(packages))
 
 
+def qml_file_owners(installed: Path) -> dict[str, set[str]]:
+    """Keep QML source/metadata bytes with their actual installed package owner."""
+    owners: dict[str, set[str]] = {}
+    prefix = "x64-windows/Qt6/qml/"
+    for listing in (installed / "vcpkg/info").glob("*_x64-windows.list"):
+        package_name = listing.name.split("_", 1)[0]
+        for path in listing.read_text(encoding="utf-8").splitlines():
+            if path.startswith(prefix) and not path.endswith("/"):
+                owners.setdefault(path[len(prefix) :].casefold(), set()).add(
+                    package_name
+                )
+    return owners
+
+
 def package(
     root: Path,
     installed: Path,
@@ -325,9 +346,26 @@ def package(
     report = measure(root, output, f"GUI comparison: {candidate}", "cpp", installed)
     owners, graph = installed_inventory(installed)
     gui, cv = closure(graph, {GUI_PORTS[candidate]}), closure(graph, {"opencv4"})
+    qml_owners = qml_file_owners(installed) if candidate == "qtquick" else {}
     totals: Counter[str] = Counter()
     for item in report["files"]:
         item["category"], item["owner"] = classify(item["path"], owners, gui, cv)
+        qml_prefix = next(
+            (
+                prefix
+                for prefix in ("Qt6/qml/", "qml/")
+                if item["path"].startswith(prefix)
+            ),
+            None,
+        )
+        if candidate == "qtquick" and qml_prefix:
+            packages = qml_owners.get(item["path"][len(qml_prefix) :].casefold(), set())
+            if not packages:
+                raise ValueError(
+                    f"QML runtime file has no installed owner: {item['path']}"
+                )
+            item["category"] = "GUI and dependencies/plugins"
+            item["owner"] = ", ".join(sorted(packages))
         totals[item["category"]] += item["bytes"]
     variant = candidate if qt_configuration == "standard" else f"qt-{qt_configuration}"
     report.update(

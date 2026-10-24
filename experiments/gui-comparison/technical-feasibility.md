@@ -1,5 +1,7 @@
 # Phase 1：技術条件の調査（2026-10-23）
 
+2026-10-24にQt Quickを追加した。既存3候補の以下の記録は保持し、追加検証では再テストしない。Qt Quickは固定qtdeclarative 6.11.1＋qtbase 6.11.1#1をvcpkg/CMakeで取得し、QMLをリソースへ含め、公式QML deploy scriptでimport moduleとDLLを配布する。Qt Quick Controls/Fusion、TreeView、Dialogsの通知は固定パッケージのcopyright/SPDXを収集する。[追加記録](results/qtquick.md) に実測を別記する。
+
 比較対象はQt Widgets、wxWidgets、Dear ImGuiの3候補。公式資料と固定vcpkg checkoutの調査に加え、ローカルの共通GUI・配布起動を検証した。3候補ともクリーンWindows CIとキャッシュ利用CIでReleaseビルド・CTest・ZIP展開後起動に成功した。測定値は [CI記録](results/ci-distribution.json) を参照。資料確認だけで合格・不合格・採用にはしない。
 
 ## 候補ごとの経路

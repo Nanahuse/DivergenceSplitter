@@ -59,7 +59,7 @@ ImGuiの毎フレームの宣言呼び出しと、retained-modeのウィジェ�
 
 ## ビルド・配布
 
-共通条件はWindows x64、MSVC、C++23、Release、固定バージョン、ZIP配布、別フォルダーへの展開後起動。3候補ともCMake/Ninjaとvcpkg Manifestを第一候補にする。候補固有のbackend、配布手順、追加ツールが必要な場合は、その管理負担を記録する。
+共通条件はWindows x64、MSVC、C++23、Release、固定バージョン、ZIP配布、別フォルダーへの展開後起動。4実装ともCMake/Ninjaとvcpkg Manifestを使う。候補固有のbackend、配布手順、追加ツールが必要な場合は、その管理負担を記録する。
 
 OpenCVはPR #152の `4.12.0#7[contrib]` と同じdefault-features・`x64-windows` を全候補で使う。依存の設定、実際に配布されたDLL、圧縮条件を保存する。候補によって必要なプラグインやレンダラーが違うため、DLL名の一致だけで配布の正しさを判断しない。共通OpenCV以外の画像ライブラリの推移依存も隠さず計上する。
 
@@ -70,7 +70,7 @@ ZIPは既存の `tools/measure_distribution.py` と同じ圧縮条件。外側Ar
 ## 評価の手順
 
 1. Phase 1：全候補のC++23ビルド、固定情報、ライセンス、ZIP配布経路を確認する。資料確認と実測を分離する。
-2. Phase 2：3候補すべてで上記の同じGUI仕様を作る。
+2. Phase 2：4実装すべてで上記の同じGUI仕様を作る。
 3. Phase 3：共通の操作シナリオ、データ規模、負荷で正しさと性能を測る。
 4. Phase 4：クリーンCIのReleaseビルド・テスト・ZIP展開後起動を行う。
 5. Phase 5：下記の同じ仕様変更を行い、保守性を評価して技術選定する。
@@ -97,7 +97,7 @@ ctest --test-dir build/gui-comparison-common --output-on-failure
 
 画像・状態はlatest-only、構造変更コマンドは最大32件を保持し、満杯の場合は呼出元へbusyを返す。workerは制御ロックを短時間だけ保持して要求を取り出し、階層構築と画像生成はロックの外で行う。ProfileEditorはUI所有スレッド専用。3候補のMonitor、Diagnostics、Profile、ダイアログ、長押しResetを実装し、Applyをworker側の設定・階層へ反映する。共通のOpenCV層でPNG、動画入力、GaussianBlur、PHashを実際に実行する。
 
-`.github/workflows/gui-comparison-common.yml` は3候補のWindows Releaseビルド、共通契約、小規模・大量ノードの実GUI契約、配布DLL・通知検証、ZIP生成と展開後GUI契約を検証する。3候補ともクリーンWindows CIとキャッシュ利用CIに成功した。実測値・初回とキャッシュの区別は [比較レポート](results/comparison.md) と [CI記録](results/ci-distribution.json) を参照。
+Qt Quick追加前の`.github/workflows/gui-comparison-common.yml` は3候補のWindows Releaseビルド、共通契約、小規模・大量ノードの実GUI契約、配布DLL・通知検証、ZIP生成と展開後GUI契約を検証した。3候補ともクリーンWindows CIとキャッシュ利用CIに成功した。実測値・初回とキャッシュの区別は [比較レポート](results/comparison.md) と [CI記録](results/ci-distribution.json) を参照。
 
 初期試作のローカル配布検証では、3候補とも開発用PATHを除いた配布フォルダーと新規ZIP展開先からのGUI契約に成功した。展開後 / DEFLATE level 6の内側ZIPは、Qt 107,504,644 / 44,268,303 bytes、wxWidgets 25,695,884 / 9,209,868 bytes、Dear ImGui 14,693,027 / 5,480,694 bytes（NDIなし）。変更前の作業ツリーでの実測であり、後続の変更やCIの値は別記録とする。
 
@@ -117,7 +117,7 @@ tools/build_gui_comparison.ps1 -Candidate imgui
 
 定常Monitor 30ケース、Diagnostics 6ケース、30分反復6ケースを完了した。[比較レポート](results/comparison.md) に生データ、集計再現手順、メモリ推移、同じ仕様変更による保守性評価、残る未検証事項をまとめる。採用・mainへのマージは未決定。
 
-追加依頼により、**Monitor・Diagnosticsを各180秒×3回**で再測定した。全候補・両データ規模の計36ケースが正常終了。[最新レポート](results/performance-180s-3.md)に中央値・最小最大、CPU・メモリ・入力/取込Hz、Diagnosticsの更新カウンター、配布ファイルのSHA256検証を記録する。上記の旧42ケースと30分反復は保持し、今回の測定とは混ぜない。
+Qt Quick追加前の再測定では、**Monitor・Diagnosticsを各180秒×3回**とした。既存3候補・両データ規模の計36ケースが正常終了。[既存3候補のレポート](results/performance-180s-3.md)に中央値・最小最大、CPU・メモリ・入力/取込Hz、Diagnosticsの更新カウンター、配布ファイルのSHA256検証を記録する。上記の旧42ケースと30分反復は保持する。Qt Quickは[追加記録](results/qtquick.md)の`--candidates qtquick`で個別測定し、既存候補を再実行しない。
 
 同じ配布物を用意した後、既存データを上書きしない新規出力先で実行する。各回30秒warmupを含む計36ケースの所要時間は約126分。CLIの既定条件は旧測定用のままなので、今回の条件を明示する。
 

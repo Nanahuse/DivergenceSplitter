@@ -1,0 +1,20 @@
+{
+  "built_from": "local working tree after 39a9441; source fingerprints identify the validated implementation",
+  "source_files_sha256": {
+    "experiments/gui-comparison/qtquick/main.cpp": "ffccf6d045985812a2be77bc922d11c358397d74ac8f6947079350f804a94b20",
+    "experiments/gui-comparison/qtquick/Main.qml": "1a93f064b9d3c8683313cc09ecd16498085fc83de4aad4ba8e00367d32679020",
+    "experiments/gui-comparison/qtquick/runtime_check.hpp": "30cabf0fad5d7ade1f1d39ace931bfc9da969c4887f79d53ee509feae962af8b",
+    "experiments/gui-comparison/CMakeLists.txt": "c90ca8ce7d4aa0d9f9ab707b8d201bf09befbed14aaa22f24f573846e33d6f77",
+    "experiments/gui-comparison/vcpkg.json": "dce4edb4b51a33828cd438b0da99c3910744a35a54758fdcc41e8f7635895eda",
+    "experiments/gui-comparison/common/images.cpp": "6483dd389721a0a89029863c6609505c5587de9e8031dd124378eba05576b9d6",
+    "experiments/gui-comparison/common/images.hpp": "b7338f0a306142cbf9cb5b33626bd6907e80e345f55affdb65d17c49a75eabce",
+    "experiments/gui-comparison/common/mock.cpp": "1121841cd17ea6b37ce106ee39e1a9daffd36fb0b46867db10dc934c3ca0d657",
+    "experiments/gui-comparison/common/mock.hpp": "62f83df1d08447197989fd20be32f95807d5ba86b87fb38e12cb8d22ea630dc7",
+    "experiments/gui-comparison/support/app.cpp": "62aa989582b4f08c51d937dde7cfdde1e9fefefd7c4247284f637d63aa0a95c9",
+    "experiments/gui-comparison/support/app.hpp": "5dab0e38ca77212bbf49a36d817cc956d6e1755617967029c63c100f7dac6f7f",
+    "experiments/gui-comparison/support/app.manifest": "ae0666c53aa33de055efea56c9ec5a7905c8f7418f4e38cd92a17e8b5fbda984",
+    "experiments/gui-comparison/support/dialog_test.hpp": "8c6f724abf9811a9bb27ad3e40c6291598c395801cbdef955ee0f893918b7232"
+  },
+  "exe_sha256": "fe4a5c688aeb1bd20e8074ab9daeb0891f24cff0d60955c2f74612d22b9fabdd",
+  "zip_sha256": "b8dd9e3d8d96b9ae00d68b3ed471132997ae15d196ab2f1ebcb98832d697358a"
+}

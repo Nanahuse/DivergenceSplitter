@@ -8,10 +8,32 @@ from package_gui_comparison import (
     QT_RUNTIME_CHECKS,
     classify,
     package,
+    prepare,
+    qml_file_owners,
     verify_qt_configuration,
     verify_qt_runtime_report,
     verify_smoke_report,
 )
+
+
+def test_qtquick_distribution_needs_qml_controls_not_only_dlls(tmp_path: Path) -> None:
+    (tmp_path / "qwindows.dll").write_bytes(b"platform")
+    with pytest.raises(ValueError, match="Fusion Controls QML"):
+        prepare(tmp_path, tmp_path / "installed", "qtquick", tmp_path / "manifest")
+
+
+def test_qml_metadata_ownership_uses_installed_paths(tmp_path: Path) -> None:
+    info = tmp_path / "vcpkg/info"
+    info.mkdir(parents=True)
+    (info / "qtdeclarative_6.11.1_x64-windows.list").write_text(
+        "x64-windows/Qt6/qml/QtQuick/Controls/Fusion/qmldir\n"
+        "x64-windows/Qt6/qml/QtQuick/Controls/Fusion/\n"
+        "x64-windows/debug/Qt6/qml/QtQuick/Controls/Fusion/qmldir\n",
+        encoding="utf-8",
+    )
+    assert qml_file_owners(tmp_path) == {
+        "qtquick/controls/fusion/qmldir": {"qtdeclarative"}
+    }
 
 
 @pytest.mark.parametrize("candidate", ["qt", "qtquick", "wx", "imgui"])
@@ -24,6 +46,15 @@ def test_exit_success_without_gui_checks_is_not_accepted(candidate: str) -> None
         "error": "",
         "checks": sorted(EXPECTED_CHECKS),
     }
+    if candidate == "qtquick":
+        with pytest.raises(ValueError, match="Incomplete/failed"):
+            verify_smoke_report(report, candidate)
+        report["checks"].extend(
+            (
+                "Q01_packaged_qml_imports_and_runtime",
+                "Q02_qml_preview_and_reference_delegates",
+            )
+        )
     verify_smoke_report(report, candidate)
     report["error"] = "Failed after earlier checks"
     with pytest.raises(ValueError, match="Incomplete/failed"):

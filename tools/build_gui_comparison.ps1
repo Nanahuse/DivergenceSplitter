@@ -33,6 +33,11 @@ if ($Candidate -eq 'qt') {
     $comparisonOptimize = if ($QtConfiguration -eq 'optimized') { 'ON' } else { 'OFF' }
     $comparisonArguments += @("-DGUI_QT_FEATURES=$comparisonFeatures", "-DGUI_QT_OPTIMIZE_DEPLOY=$comparisonOptimize")
 }
+if ($Candidate -eq 'qtquick' -and $env:GUI_VCPKG_SCRATCH) {
+    # qtdeclarative's generated files exceed MSVC path limits in deep checkouts.
+    $comparisonScratch = [IO.Path]::GetFullPath($env:GUI_VCPKG_SCRATCH).Replace('\', '/')
+    $comparisonArguments += "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$comparisonScratch/buildtrees;--x-packages-root=$comparisonScratch/packages"
+}
 $comparisonPhase = [Diagnostics.Stopwatch]::StartNew()
 & cmake @comparisonArguments
 $comparisonTimings.phases_seconds.configure_including_dependencies = $comparisonPhase.Elapsed.TotalSeconds

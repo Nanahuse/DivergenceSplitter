@@ -7,16 +7,21 @@ import pytest
 from summarize_gui_comparison import summarize
 
 
-def measurements(root: Path) -> None:
+def measurements(
+    root: Path, candidates: tuple[str, ...] = ("qt", "wx", "imgui")
+) -> None:
     root.mkdir()
     environment = {
         "repeats": 1,
         "logical_cpus": 12,
         "soak_seconds_per_candidate_and_dataset": 0,
+        "candidates": list(candidates),
     }
     (root / "environment.json").write_text(json.dumps(environment), encoding="utf-8")
-    (root / "completed.json").write_text('{"cases": 12}', encoding="utf-8")
-    for candidate in ("qt", "wx", "imgui"):
+    (root / "completed.json").write_text(
+        json.dumps({"cases": 4 * len(candidates)}), encoding="utf-8"
+    )
+    for candidate in candidates:
         for large in (False, True):
             for mode in ("monitor-1", "diagnostics"):
                 data = {
@@ -36,6 +41,26 @@ def measurements(root: Path) -> None:
                 }
                 name = f"{candidate}-{'large' if large else 'small'}-{mode}.json"
                 (root / name).write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_qtquick_only_summary_does_not_require_old_candidate_retests(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "measurements"
+    measurements(source, ("qtquick",))
+    output = tmp_path / "summary.json"
+    summarize(source, output)
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert len(result["aggregates"]) == 4
+    assert all(key.startswith("qtquick/") for key in result["aggregates"])
+    extra = source / "qt-small-monitor-1.json"
+    record = json.loads(
+        (source / "qtquick-small-monitor-1.json").read_text(encoding="utf-8")
+    )
+    record["candidate"] = "qt"
+    extra.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="Unexpected candidate"):
+        summarize(source, output)
 
 
 def test_cpu_units_rates_and_memory_buckets_are_preserved(tmp_path: Path) -> None:

@@ -79,6 +79,7 @@ jobs:
         id: verify
         env:
           PROBE_BINARY_CACHE_HIT: ${{ steps.binary-cache.outputs.cache-hit == 'true' }}
+          GUI_VCPKG_SCRATCH: '${{ runner.temp }}/gui-qtquick'
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
@@ -136,4 +137,5 @@ jobs:
             build/gui-comparison/${{ steps.manifest.outputs.variant }}/CMakeFiles/CMakeConfigureLog.yaml
             build/gui-comparison/${{ steps.manifest.outputs.variant }}/vcpkg-manifest-install.log
             build/vcpkg/buildtrees/*/*.log
+            ${{ runner.temp }}/gui-qtquick/buildtrees/*/*.log
           if-no-files-found: ignore
