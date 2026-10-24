@@ -1,0 +1,70 @@
+{
+    "active_tls_backend": "schannel",
+    "checks": [
+        "windows_platform_plugin",
+        "loaded_module_path_available",
+        "module_loaded_from_distribution",
+        "loaded_module_path_available",
+        "module_loaded_from_distribution",
+        "loaded_module_path_available",
+        "module_loaded_from_distribution",
+        "loaded_module_path_available",
+        "module_loaded_from_distribution",
+        "loaded_module_path_available",
+        "module_loaded_from_distribution",
+        "japanese_font_fallback_has_glyphs",
+        "input_method_enabled",
+        "synthetic_ime_preedit_not_committed",
+        "synthetic_ime_commit_roundtrip",
+        "unicode_json_roundtrip",
+        "image_encode",
+        "image_decode",
+        "image_encode",
+        "image_decode",
+        "tcp_loopback_listen",
+        "tcp_loopback_connect",
+        "tcp_loopback_write",
+        "tcp_unicode_roundtrip",
+        "localhost_lookup",
+        "schannel_tls_backend_available",
+        "fusion_dark_palette",
+        "fusion_palette_restored",
+        "japanese_widget_capture"
+    ],
+    "error": "",
+    "image_formats": [
+        "bmp",
+        "cur",
+        "gif",
+        "ico",
+        "jfif",
+        "jpeg",
+        "jpg",
+        "pbm",
+        "pgm",
+        "png",
+        "ppm",
+        "xbm",
+        "xpm"
+    ],
+    "japanese_font_families": [
+        "MS UI Gothic"
+    ],
+    "japanese_glyph_count": 8,
+    "loaded_modules": {
+        "Qt6Core.dll": "D:/a/DivergenceSplitter/DivergenceSplitter/dist/gui-comparison/qt-features/bin/Qt6Core.dll",
+        "Qt6Gui.dll": "D:/a/DivergenceSplitter/DivergenceSplitter/dist/gui-comparison/qt-features/bin/Qt6Gui.dll",
+        "Qt6Network.dll": "D:/a/DivergenceSplitter/DivergenceSplitter/dist/gui-comparison/qt-features/bin/Qt6Network.dll",
+        "Qt6Widgets.dll": "D:/a/DivergenceSplitter/DivergenceSplitter/dist/gui-comparison/qt-features/bin/Qt6Widgets.dll",
+        "qwindows.dll": "D:/a/DivergenceSplitter/DivergenceSplitter/dist/gui-comparison/qt-features/Qt6/plugins/platforms/qwindows.dll"
+    },
+    "native_ime_conversion": "not tested; synthetic QInputMethodEvent only",
+    "plugin_paths": [
+        "D:/a/DivergenceSplitter/DivergenceSplitter/dist/gui-comparison/qt-features/Qt6/plugins",
+        "D:/a/DivergenceSplitter/DivergenceSplitter/build/gui-comparison-reports/qt-features/installed-runtime-probe"
+    ],
+    "tls_backends": [
+        "cert-only",
+        "schannel"
+    ]
+}

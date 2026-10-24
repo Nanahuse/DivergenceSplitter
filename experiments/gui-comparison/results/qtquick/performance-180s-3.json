@@ -1,0 +1,814 @@
+{
+  "environment": {
+    "source_commit": "f7c49659e9a9baaa4e14708b5865a20984a5b95f",
+    "working_tree_dirty": false,
+    "binary_sha256": {
+      "qtquick": "fe4a5c688aeb1bd20e8074ab9daeb0891f24cff0d60955c2f74612d22b9fabdd"
+    },
+    "candidates": [
+      "qtquick"
+    ],
+    "started_utc": "2026-10-24T07:37:43.520648+00:00",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "AMD64 Family 25 Model 116 Stepping 1, AuthenticAMD",
+    "logical_cpus": 12,
+    "power_scheme_guid": "381b4222-f694-41f0-9685-ff5bb260df2e",
+    "warmup_seconds": 30,
+    "measurement_seconds": 180,
+    "repeats": 3,
+    "diagnostics_repeats": 3,
+    "soak_repeats": 1,
+    "soak_seconds_per_candidate_and_dataset": 0,
+    "method": "Serial visible GUI processes; foreground focus/occlusion not enforced. Shared worker included in process CPU. Intake is not scanout. Other desktop activity is uncontrolled."
+  },
+  "completed": {
+    "completed_utc": "2026-10-24T08:19:45.863642+00:00",
+    "cases": 12
+  },
+  "limitations": [
+    "Shared worker CPU included; not GUI-only CPU",
+    "CPU percentage is one logical core equivalent, not total-machine utilization",
+    "Frame intake is not display scanout or physical input response",
+    "Private commit is not GPU memory",
+    "Foreground focus/occlusion was not captured; visible windows were requested",
+    "Score/state update latency and OS/GPU handle counts were not measured",
+    "Desktop activity and power behavior uncontrolled; no universal performance ranking",
+    "No NDI or Scenario Runtime"
+  ],
+  "aggregates": {
+    "qtquick/large/diagnostics": {
+      "runs": 3,
+      "median_cpu_one_core_percent": 14.018258322916651,
+      "maximum_peak_private_bytes": 136572928,
+      "maximum_peak_working_set_bytes": 135122944,
+      "median_producer_hz": 59.99090441450323,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "qtquick/large/monitor": {
+      "runs": 3,
+      "median_cpu_one_core_percent": 21.496155088250166,
+      "maximum_peak_private_bytes": 136699904,
+      "maximum_peak_working_set_bytes": 131063808,
+      "median_producer_hz": 59.99536879297048,
+      "median_gui_intake_hz": 14.923903101397675,
+      "median_of_run_frame_age_p95_ms": 18.3207,
+      "median_process_creation_to_first_intake_ms": 369.485
+    },
+    "qtquick/small/diagnostics": {
+      "runs": 3,
+      "median_cpu_one_core_percent": 14.781306461986816,
+      "maximum_peak_private_bytes": 113938432,
+      "maximum_peak_working_set_bytes": 114667520,
+      "median_producer_hz": 59.99579036203825,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "qtquick/small/monitor": {
+      "runs": 3,
+      "median_cpu_one_core_percent": 18.858043334739822,
+      "maximum_peak_private_bytes": 130187264,
+      "maximum_peak_working_set_bytes": 126631936,
+      "median_producer_hz": 59.99566726603846,
+      "median_gui_intake_hz": 14.923908341968819,
+      "median_of_run_frame_age_p95_ms": 18.2671,
+      "median_process_creation_to_first_intake_ms": 350.1364
+    }
+  },
+  "runs": [
+    {
+      "candidate": "qtquick",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.053331,
+      "cpu_seconds": 25.234375,
+      "measurement_seconds": 180.0107718,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 10800,
+      "peak_private_bytes": 131923968,
+      "peak_working_set_bytes": 134348800,
+      "first_frame_ms": 360.7155,
+      "process_creation_to_first_intake_ms": 408.3233,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 2686,
+      "reference_requests": 1,
+      "generated_state_sequence": 12601,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-large-diagnostics-1",
+      "producer_hz": 59.99640961486062,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 14.018258322916651,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 127684608,
+          "median": 128083968.0,
+          "max": 131842048
+        },
+        "1": {
+          "min": 127684608,
+          "median": 128141312.0,
+          "max": 131923968
+        },
+        "2": {
+          "min": 127864832,
+          "median": 128163840.0,
+          "max": 131923968
+        }
+      },
+      "private_first_to_last_minute_median_delta": 79872.0,
+      "maximum_memory_sample_gap_seconds": 0.5372262999999862,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qtquick",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0766427,
+      "cpu_seconds": 25.21875,
+      "measurement_seconds": 180.0276527,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 10800,
+      "peak_private_bytes": 136572928,
+      "peak_working_set_bytes": 135036928,
+      "first_frame_ms": 300.6245,
+      "process_creation_to_first_intake_ms": 349.8181,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 2686,
+      "reference_requests": 1,
+      "generated_state_sequence": 12602,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-large-diagnostics-2",
+      "producer_hz": 59.99078384917474,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 14.008264631447922,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 131973120,
+          "median": 132354048.0,
+          "max": 136572928
+        },
+        "1": {
+          "min": 131915776,
+          "median": 132315136.0,
+          "max": 136314880
+        },
+        "2": {
+          "min": 132079616,
+          "median": 132440064.0,
+          "max": 136327168
+        }
+      },
+      "private_first_to_last_minute_median_delta": 86016.0,
+      "maximum_memory_sample_gap_seconds": 0.5379219999999947,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qtquick",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.071728,
+      "cpu_seconds": 25.25,
+      "measurement_seconds": 180.0106217,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 10799,
+      "peak_private_bytes": 132669440,
+      "peak_working_set_bytes": 135122944,
+      "first_frame_ms": 312.6701,
+      "process_creation_to_first_intake_ms": 360.316,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 2686,
+      "reference_requests": 1,
+      "generated_state_sequence": 12604,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-large-diagnostics-3",
+      "producer_hz": 59.99090441450323,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 14.026950055247767,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 128176128,
+          "median": 128569344.0,
+          "max": 132612096
+        },
+        "1": {
+          "min": 128176128,
+          "median": 128618496.0,
+          "max": 132669440
+        },
+        "2": {
+          "min": 128385024,
+          "median": 128688128.0,
+          "max": 132382720
+        }
+      },
+      "private_first_to_last_minute_median_delta": 118784.0,
+      "maximum_memory_sample_gap_seconds": 0.5376316999999915,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qtquick",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0279123,
+      "cpu_seconds": 38.34375,
+      "measurement_seconds": 179.9718395,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 10798,
+      "peak_private_bytes": 136699904,
+      "peak_working_set_bytes": 130736128,
+      "first_frame_ms": 307.3545,
+      "process_creation_to_first_intake_ms": 361.3798,
+      "gui_frame_intakes": 2686,
+      "skipped_input_frames": 8112,
+      "frame_age_p50_ms": 10.4583,
+      "frame_age_p95_ms": 18.3207,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 12602,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-large-monitor-1",
+      "producer_hz": 59.998275452421545,
+      "gui_intake_hz": 14.924557127727754,
+      "cpu_one_core_percent": 21.30541650656407,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 132808704,
+          "median": 133001216.0,
+          "max": 136699904
+        },
+        "1": {
+          "min": 132747264,
+          "median": 132816896.0,
+          "max": 136515584
+        },
+        "2": {
+          "min": 132677632,
+          "median": 132759552.0,
+          "max": 136458240
+        }
+      },
+      "private_first_to_last_minute_median_delta": -241664.0,
+      "maximum_memory_sample_gap_seconds": 0.538790800000001,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qtquick",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0488524,
+      "cpu_seconds": 38.703125,
+      "measurement_seconds": 180.0467332,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 10801,
+      "peak_private_bytes": 133066752,
+      "peak_working_set_bytes": 131063808,
+      "first_frame_ms": 320.2656,
+      "process_creation_to_first_intake_ms": 378.6708,
+      "gui_frame_intakes": 2687,
+      "skipped_input_frames": 8115,
+      "frame_age_p50_ms": 10.5048,
+      "frame_age_p95_ms": 18.2639,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 12601,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-large-monitor-2",
+      "producer_hz": 59.98998042359371,
+      "gui_intake_hz": 14.923903101397675,
+      "cpu_one_core_percent": 21.496155088250166,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 129101824,
+          "median": 129294336.0,
+          "max": 133062656
+        },
+        "1": {
+          "min": 129294336,
+          "median": 129363968.0,
+          "max": 133066752
+        },
+        "2": {
+          "min": 129277952,
+          "median": 129314816.0,
+          "max": 133017600
+        }
+      },
+      "private_first_to_last_minute_median_delta": 20480.0,
+      "maximum_memory_sample_gap_seconds": 0.5385452000000015,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qtquick",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0488071,
+      "cpu_seconds": 43.640625,
+      "measurement_seconds": 180.0472306,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 10802,
+      "peak_private_bytes": 133619712,
+      "peak_working_set_bytes": 130863104,
+      "first_frame_ms": 318.9904,
+      "process_creation_to_first_intake_ms": 369.485,
+      "gui_frame_intakes": 2687,
+      "skipped_input_frames": 8115,
+      "frame_age_p50_ms": 10.9613,
+      "frame_age_p95_ms": 18.7045,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 12601,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-large-monitor-3",
+      "producer_hz": 59.99536879297048,
+      "gui_intake_hz": 14.923861872496916,
+      "cpu_one_core_percent": 24.238431690712158,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 129675264,
+          "median": 129773568.0,
+          "max": 133619712
+        },
+        "1": {
+          "min": 129683456,
+          "median": 129716224.0,
+          "max": 133414912
+        },
+        "2": {
+          "min": 129658880,
+          "median": 129699840.0,
+          "max": 133398528
+        }
+      },
+      "private_first_to_last_minute_median_delta": -73728.0,
+      "maximum_memory_sample_gap_seconds": 0.5386250000000103,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qtquick",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0732265,
+      "cpu_seconds": 26.609375,
+      "measurement_seconds": 180.020454,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 10800,
+      "peak_private_bytes": 112717824,
+      "peak_working_set_bytes": 114552832,
+      "first_frame_ms": 304.1429,
+      "process_creation_to_first_intake_ms": 350.1382,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 2686,
+      "reference_requests": 1,
+      "generated_state_sequence": 12604,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-small-diagnostics-1",
+      "producer_hz": 59.99318277466404,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 14.781306461986816,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 108589056,
+          "median": 108806144.0,
+          "max": 112631808
+        },
+        "1": {
+          "min": 108589056,
+          "median": 108726272.0,
+          "max": 112689152
+        },
+        "2": {
+          "min": 108687360,
+          "median": 108822528.0,
+          "max": 112717824
+        }
+      },
+      "private_first_to_last_minute_median_delta": 16384.0,
+      "maximum_memory_sample_gap_seconds": 0.5378927000000004,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qtquick",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0728457,
+      "cpu_seconds": 28.359375,
+      "measurement_seconds": 180.0126298,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 10800,
+      "peak_private_bytes": 113938432,
+      "peak_working_set_bytes": 114458624,
+      "first_frame_ms": 313.3406,
+      "process_creation_to_first_intake_ms": 367.3939,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 2686,
+      "reference_requests": 1,
+      "generated_state_sequence": 12603,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-small-diagnostics-2",
+      "producer_hz": 59.99579036203825,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 15.75410293794841,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 109666304,
+          "median": 109897728.0,
+          "max": 113938432
+        },
+        "1": {
+          "min": 109633536,
+          "median": 109752320.0,
+          "max": 113766400
+        },
+        "2": {
+          "min": 109662208,
+          "median": 109838336.0,
+          "max": 113799168
+        }
+      },
+      "private_first_to_last_minute_median_delta": -59392.0,
+      "maximum_memory_sample_gap_seconds": 0.5375994000000048,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qtquick",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0643411,
+      "cpu_seconds": 23.109375,
+      "measurement_seconds": 180.01,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 10800,
+      "peak_private_bytes": 113881088,
+      "peak_working_set_bytes": 114667520,
+      "first_frame_ms": 305.6617,
+      "process_creation_to_first_intake_ms": 358.5113,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 2686,
+      "reference_requests": 1,
+      "generated_state_sequence": 12603,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-small-diagnostics-3",
+      "producer_hz": 59.99666685184157,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 12.837828453974781,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 109744128,
+          "median": 110006272.0,
+          "max": 113881088
+        },
+        "1": {
+          "min": 109752320,
+          "median": 109889536.0,
+          "max": 113786880
+        },
+        "2": {
+          "min": 109858816,
+          "median": 109981696.0,
+          "max": 113762304
+        }
+      },
+      "private_first_to_last_minute_median_delta": -24576.0,
+      "maximum_memory_sample_gap_seconds": 0.5378273999999976,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qtquick",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0404995,
+      "cpu_seconds": 33.171875,
+      "measurement_seconds": 179.9804023,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 10797,
+      "peak_private_bytes": 130187264,
+      "peak_working_set_bytes": 113905664,
+      "first_frame_ms": 243.9973,
+      "process_creation_to_first_intake_ms": 298.9576,
+      "gui_frame_intakes": 2686,
+      "skipped_input_frames": 8112,
+      "frame_age_p50_ms": 10.5171,
+      "frame_age_p95_ms": 18.1025,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 12602,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-small-monitor-1",
+      "producer_hz": 59.989864796518454,
+      "gui_intake_hz": 14.92384707265431,
+      "cpu_one_core_percent": 18.430826121117075,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 126267392,
+          "median": 126492672.0,
+          "max": 130187264
+        },
+        "1": {
+          "min": 126251008,
+          "median": 126279680.0,
+          "max": 129974272
+        },
+        "2": {
+          "min": 126222336,
+          "median": 126263296.0,
+          "max": 129957888
+        }
+      },
+      "private_first_to_last_minute_median_delta": -229376.0,
+      "maximum_memory_sample_gap_seconds": 0.538127099999997,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qtquick",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0749297,
+      "cpu_seconds": 33.953125,
+      "measurement_seconds": 180.0458531,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 10802,
+      "peak_private_bytes": 129372160,
+      "peak_working_set_bytes": 126631936,
+      "first_frame_ms": 280.4246,
+      "process_creation_to_first_intake_ms": 434.7672,
+      "gui_frame_intakes": 2687,
+      "skipped_input_frames": 8115,
+      "frame_age_p50_ms": 10.4804,
+      "frame_age_p95_ms": 18.3237,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 12602,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-small-monitor-2",
+      "producer_hz": 59.99582780726651,
+      "gui_intake_hz": 14.923976052409285,
+      "cpu_one_core_percent": 18.858043334739822,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 125489152,
+          "median": 125673472.0,
+          "max": 129372160
+        },
+        "1": {
+          "min": 125394944,
+          "median": 125489152.0,
+          "max": 129187840
+        },
+        "2": {
+          "min": 125407232,
+          "median": 125407232.0,
+          "max": 129110016
+        }
+      },
+      "private_first_to_last_minute_median_delta": -266240.0,
+      "maximum_memory_sample_gap_seconds": 0.5379324000000167,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qtquick",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Quick / QML TreeView / Direct3D11",
+      "elapsed_seconds": 210.0324594,
+      "cpu_seconds": 35.28125,
+      "measurement_seconds": 179.9796634,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 10798,
+      "peak_private_bytes": 129032192,
+      "peak_working_set_bytes": 126128128,
+      "first_frame_ms": 303.4038,
+      "process_creation_to_first_intake_ms": 350.1364,
+      "gui_frame_intakes": 2686,
+      "skipped_input_frames": 8112,
+      "frame_age_p50_ms": 10.3737,
+      "frame_age_p95_ms": 18.2671,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 12600,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qtquick-small-monitor-3",
+      "producer_hz": 59.99566726603846,
+      "gui_intake_hz": 14.923908341968819,
+      "cpu_one_core_percent": 19.602909202907203,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 125153280,
+          "median": 125296640.0,
+          "max": 129032192
+        },
+        "1": {
+          "min": 125153280,
+          "median": 125259776.0,
+          "max": 128983040
+        },
+        "2": {
+          "min": 125276160,
+          "median": 125284352.0,
+          "max": 129015808
+        }
+      },
+      "private_first_to_last_minute_median_delta": -12288.0,
+      "maximum_memory_sample_gap_seconds": 0.5380174000000011,
+      "mode": "monitor"
+    }
+  ]
+}

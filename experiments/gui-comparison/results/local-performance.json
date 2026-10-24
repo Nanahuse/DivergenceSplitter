@@ -1,0 +1,3433 @@
+{
+  "environment": {
+    "source_commit": "0d2adee5c69ab82feaaec935143d7ca9bf4c566b",
+    "working_tree_dirty": false,
+    "binary_sha256": {
+      "qt": "d1e264d1c229b36e844f3016db688f5f98eba88bf1a50ec29c1ef7e858b336d3",
+      "wx": "c3c0e3585924971264535679d87b1d8e2e11a5fc5da0d98dfff9aee9c56f330c",
+      "imgui": "0859b1973fbce322dadcfae4799ff8705f0aa1e514ae0ea5fd5957447442991f"
+    },
+    "started_utc": "2026-10-23T12:55:55.864397+00:00",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "AMD64 Family 25 Model 116 Stepping 1, AuthenticAMD",
+    "logical_cpus": 12,
+    "power_scheme_guid": "381b4222-f694-41f0-9685-ff5bb260df2e",
+    "warmup_seconds": 30,
+    "measurement_seconds": 120,
+    "repeats": 5,
+    "soak_seconds_per_candidate_and_dataset": 1800,
+    "method": "Serial foreground GUI processes; shared worker included in process CPU. Intake is not scanout. Other desktop activity is uncontrolled.",
+    "resumes": [
+      {
+        "utc": "2026-10-23T15:55:53.742410+00:00",
+        "runner_source_commit": "3ba38b2899c40a2628f6a1bcd80cdcf3776cc0a7",
+        "runner_working_tree_dirty": true,
+        "reason": "Retry cases without a report; keep and revalidate completed cases. Binary hashes unchanged."
+      }
+    ]
+  },
+  "completed": {
+    "completed_utc": "2026-10-23T19:11:26.314808+00:00",
+    "cases": 42
+  },
+  "limitations": [
+    "Shared worker CPU included; not GUI-only CPU",
+    "CPU percentage is one logical core equivalent, not total-machine utilization",
+    "Frame intake is not display scanout or physical input response",
+    "Private commit is not GPU memory",
+    "Foreground focus/occlusion was not captured; visible windows were requested",
+    "Score/state update latency and OS/GPU handle counts were not measured",
+    "Desktop activity and power behavior uncontrolled; no universal performance ranking",
+    "No NDI or Scenario Runtime"
+  ],
+  "aggregates": {
+    "imgui/large/diagnostics": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 17.7183563684221,
+      "maximum_peak_private_bytes": 62054400,
+      "maximum_peak_working_set_bytes": 61845504,
+      "median_producer_hz": 59.423279409651215,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "imgui/large/monitor": {
+      "runs": 5,
+      "median_cpu_one_core_percent": 21.24436850738878,
+      "maximum_peak_private_bytes": 66523136,
+      "maximum_peak_working_set_bytes": 64716800,
+      "median_producer_hz": 59.28705644983587,
+      "median_gui_intake_hz": 14.996725914798281,
+      "median_of_run_frame_age_p95_ms": 26.636,
+      "median_process_creation_to_first_intake_ms": 122.8305
+    },
+    "imgui/large/soak": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 16.773107032517885,
+      "maximum_peak_private_bytes": 74571776,
+      "maximum_peak_working_set_bytes": 68472832,
+      "median_producer_hz": 44.563566443155366,
+      "median_gui_intake_hz": 1.9494060368135058,
+      "median_of_run_frame_age_p95_ms": 28.2468,
+      "median_process_creation_to_first_intake_ms": 114.1373
+    },
+    "imgui/small/diagnostics": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 17.718526422738545,
+      "maximum_peak_private_bytes": 62861312,
+      "maximum_peak_working_set_bytes": 61079552,
+      "median_producer_hz": 58.96558953415227,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "imgui/small/monitor": {
+      "runs": 5,
+      "median_cpu_one_core_percent": 20.75001821773494,
+      "maximum_peak_private_bytes": 69083136,
+      "maximum_peak_working_set_bytes": 63258624,
+      "median_producer_hz": 59.27665317474499,
+      "median_gui_intake_hz": 14.996201787005058,
+      "median_of_run_frame_age_p95_ms": 26.9468,
+      "median_process_creation_to_first_intake_ms": 125.7458
+    },
+    "imgui/small/soak": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 13.78878784726322,
+      "maximum_peak_private_bytes": 69734400,
+      "maximum_peak_working_set_bytes": 63807488,
+      "median_producer_hz": 44.261896144740426,
+      "median_gui_intake_hz": 1.8771848314118698,
+      "median_of_run_frame_age_p95_ms": 29.0762,
+      "median_process_creation_to_first_intake_ms": 108.9817
+    },
+    "qt/large/diagnostics": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 15.063578265657618,
+      "maximum_peak_private_bytes": 34201600,
+      "maximum_peak_working_set_bytes": 69656576,
+      "median_producer_hz": 59.98374101778965,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "qt/large/monitor": {
+      "runs": 5,
+      "median_cpu_one_core_percent": 22.53507013063798,
+      "maximum_peak_private_bytes": 32522240,
+      "maximum_peak_working_set_bytes": 67735552,
+      "median_producer_hz": 59.99167496551503,
+      "median_gui_intake_hz": 14.924569426172056,
+      "median_of_run_frame_age_p95_ms": 19.6196,
+      "median_process_creation_to_first_intake_ms": 142.8289
+    },
+    "qt/large/soak": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 16.062157278180784,
+      "maximum_peak_private_bytes": 50544640,
+      "maximum_peak_working_set_bytes": 85549056,
+      "median_producer_hz": 45.06570508970257,
+      "median_gui_intake_hz": 1.864404663227833,
+      "median_of_run_frame_age_p95_ms": 19.8348,
+      "median_process_creation_to_first_intake_ms": 142.4125
+    },
+    "qt/small/diagnostics": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 11.90701249681578,
+      "maximum_peak_private_bytes": 20684800,
+      "maximum_peak_working_set_bytes": 54403072,
+      "median_producer_hz": 59.98115252603611,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "qt/small/monitor": {
+      "runs": 5,
+      "median_cpu_one_core_percent": 19.724450997520716,
+      "maximum_peak_private_bytes": 31264768,
+      "maximum_peak_working_set_bytes": 66535424,
+      "median_producer_hz": 59.993577687508555,
+      "median_gui_intake_hz": 14.923402449767753,
+      "median_of_run_frame_age_p95_ms": 19.6785,
+      "median_process_creation_to_first_intake_ms": 145.3547
+    },
+    "qt/small/soak": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 10.881759813021153,
+      "maximum_peak_private_bytes": 32796672,
+      "maximum_peak_working_set_bytes": 68489216,
+      "median_producer_hz": 45.05479110841177,
+      "median_gui_intake_hz": 1.8644128108487041,
+      "median_of_run_frame_age_p95_ms": 19.8384,
+      "median_process_creation_to_first_intake_ms": 525.2468
+    },
+    "wx/large/diagnostics": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 41.37185539739544,
+      "maximum_peak_private_bytes": 21364736,
+      "maximum_peak_working_set_bytes": 48107520,
+      "median_producer_hz": 59.61087015119907,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "wx/large/monitor": {
+      "runs": 5,
+      "median_cpu_one_core_percent": 42.23356276298829,
+      "maximum_peak_private_bytes": 19263488,
+      "maximum_peak_working_set_bytes": 43606016,
+      "median_producer_hz": 59.29442237494654,
+      "median_gui_intake_hz": 14.997222089547723,
+      "median_of_run_frame_age_p95_ms": 37.2455,
+      "median_process_creation_to_first_intake_ms": 140.2278
+    },
+    "wx/large/soak": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 35.614530540727564,
+      "maximum_peak_private_bytes": 24788992,
+      "maximum_peak_working_set_bytes": 51671040,
+      "median_producer_hz": 44.47493407332272,
+      "median_gui_intake_hz": 1.879441658485426,
+      "median_of_run_frame_age_p95_ms": 30.1204,
+      "median_process_creation_to_first_intake_ms": 155.4506
+    },
+    "wx/small/diagnostics": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 31.87051597899064,
+      "maximum_peak_private_bytes": 16064512,
+      "maximum_peak_working_set_bytes": 42987520,
+      "median_producer_hz": 58.45955780325953,
+      "median_gui_intake_hz": 0.0,
+      "median_of_run_frame_age_p95_ms": null,
+      "median_process_creation_to_first_intake_ms": null
+    },
+    "wx/small/monitor": {
+      "runs": 5,
+      "median_cpu_one_core_percent": 35.41106389862741,
+      "maximum_peak_private_bytes": 17518592,
+      "maximum_peak_working_set_bytes": 42115072,
+      "median_producer_hz": 59.48823027947105,
+      "median_gui_intake_hz": 14.997627062948078,
+      "median_of_run_frame_age_p95_ms": 36.0473,
+      "median_process_creation_to_first_intake_ms": 124.6278
+    },
+    "wx/small/soak": {
+      "runs": 1,
+      "median_cpu_one_core_percent": 25.871464570915226,
+      "maximum_peak_private_bytes": 18735104,
+      "maximum_peak_working_set_bytes": 45879296,
+      "median_producer_hz": 43.95711483010657,
+      "median_gui_intake_hz": 1.8672176604020092,
+      "median_of_run_frame_age_p95_ms": 37.2855,
+      "median_process_creation_to_first_intake_ms": 107.8156
+    }
+  },
+  "runs": [
+    {
+      "candidate": "imgui",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0309356,
+      "cpu_seconds": 21.265625,
+      "measurement_seconds": 120.020303,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 7132,
+      "peak_private_bytes": 62054400,
+      "peak_working_set_bytes": 61845504,
+      "first_frame_ms": 89.9043,
+      "process_creation_to_first_intake_ms": 122.9684,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 1800,
+      "reference_requests": 1,
+      "generated_state_sequence": 8907,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-large-diagnostics",
+      "producer_hz": 59.423279409651215,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 17.7183563684221,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 58081280,
+          "median": 61792256.0,
+          "max": 62054400
+        },
+        "1": {
+          "min": 58081280,
+          "median": 61794304.0,
+          "max": 61952000
+        }
+      },
+      "private_first_to_last_minute_median_delta": 2048.0,
+      "maximum_memory_sample_gap_seconds": 0.5333126999999998,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "imgui",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.039489,
+      "cpu_seconds": 25.921875,
+      "measurement_seconds": 120.0346107,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7156,
+      "peak_private_bytes": 64667648,
+      "peak_working_set_bytes": 64581632,
+      "first_frame_ms": 85.8625,
+      "process_creation_to_first_intake_ms": 111.4154,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5355,
+      "frame_age_p50_ms": 18.7724,
+      "frame_age_p95_ms": 21.3328,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8951,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-large-monitor-1",
+      "producer_hz": 59.61613869756983,
+      "gui_intake_hz": 14.995674909953284,
+      "cpu_one_core_percent": 21.595333919802513,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 60821504,
+          "median": 64530432.0,
+          "max": 64667648
+        },
+        "1": {
+          "min": 60764160,
+          "median": 64528384.0,
+          "max": 64655360
+        }
+      },
+      "private_first_to_last_minute_median_delta": -2048.0,
+      "maximum_memory_sample_gap_seconds": 0.5216694000000004,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0333337,
+      "cpu_seconds": 25.09375,
+      "measurement_seconds": 120.0261984,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7116,
+      "peak_private_bytes": 66146304,
+      "peak_working_set_bytes": 64716800,
+      "first_frame_ms": 89.0104,
+      "process_creation_to_first_intake_ms": 110.5759,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5314,
+      "frame_age_p50_ms": 18.2684,
+      "frame_age_p95_ms": 27.1053,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8890,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-large-monitor-2",
+      "producer_hz": 59.28705644983587,
+      "gui_intake_hz": 14.996725914798281,
+      "cpu_one_core_percent": 20.9068939402483,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 62210048,
+          "median": 65990656.0,
+          "max": 66146304
+        },
+        "1": {
+          "min": 61689856,
+          "median": 65925120.0,
+          "max": 66142208
+        }
+      },
+      "private_first_to_last_minute_median_delta": -65536.0,
+      "maximum_memory_sample_gap_seconds": 0.5243348999999995,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0227433,
+      "cpu_seconds": 21.921875,
+      "measurement_seconds": 120.0215787,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7100,
+      "peak_private_bytes": 64954368,
+      "peak_working_set_bytes": 64671744,
+      "first_frame_ms": 93.067,
+      "process_creation_to_first_intake_ms": 126.6816,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5300,
+      "frame_age_p50_ms": 17.4663,
+      "frame_age_p95_ms": 26.1971,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8880,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-large-monitor-3",
+      "producer_hz": 59.15602908162713,
+      "gui_intake_hz": 14.997303147454765,
+      "cpu_one_core_percent": 18.264944718644998,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 61001728,
+          "median": 64712704.0,
+          "max": 64815104
+        },
+        "1": {
+          "min": 60530688,
+          "median": 64716800.0,
+          "max": 64954368
+        }
+      },
+      "private_first_to_last_minute_median_delta": 4096.0,
+      "maximum_memory_sample_gap_seconds": 0.5264876000000029,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0326963,
+      "cpu_seconds": 25.5,
+      "measurement_seconds": 120.0318098,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7121,
+      "peak_private_bytes": 66523136,
+      "peak_working_set_bytes": 64704512,
+      "first_frame_ms": 95.3783,
+      "process_creation_to_first_intake_ms": 122.8305,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5320,
+      "frame_age_p50_ms": 16.9917,
+      "frame_age_p95_ms": 26.636,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8875,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-large-monitor-4",
+      "producer_hz": 59.32594044749627,
+      "gui_intake_hz": 14.996024828745021,
+      "cpu_one_core_percent": 21.24436850738878,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 62197760,
+          "median": 66390016.0,
+          "max": 66519040
+        },
+        "1": {
+          "min": 62210048,
+          "median": 66387968.0,
+          "max": 66523136
+        }
+      },
+      "private_first_to_last_minute_median_delta": -2048.0,
+      "maximum_memory_sample_gap_seconds": 0.5257974000000001,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0318865,
+      "cpu_seconds": 25.90625,
+      "measurement_seconds": 120.0217761,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 6644,
+      "peak_private_bytes": 66162688,
+      "peak_working_set_bytes": 63148032,
+      "first_frame_ms": 71.7469,
+      "process_creation_to_first_intake_ms": 198.9885,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 4844,
+      "frame_age_p50_ms": 18.3925,
+      "frame_age_p95_ms": 32.9731,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8291,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-large-monitor-5",
+      "producer_hz": 55.35662123900198,
+      "gui_intake_hz": 14.997278481367182,
+      "cpu_one_core_percent": 21.584624758773256,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 61849600,
+          "median": 66035712.0,
+          "max": 66162688
+        },
+        "1": {
+          "min": 61861888,
+          "median": 66043904.0,
+          "max": 66101248
+        }
+      },
+      "private_first_to_last_minute_median_delta": 8192.0,
+      "maximum_memory_sample_gap_seconds": 0.530831899999999,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 1830.0489902,
+      "cpu_seconds": 301.921875,
+      "measurement_seconds": 1800.035464,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 7053,
+      "generated_frames": 80216,
+      "peak_private_bytes": 74571776,
+      "peak_working_set_bytes": 68472832,
+      "first_frame_ms": 91.102,
+      "process_creation_to_first_intake_ms": 114.1373,
+      "gui_frame_intakes": 3509,
+      "skipped_input_frames": 76681,
+      "frame_age_p50_ms": 17.449,
+      "frame_age_p95_ms": 28.2468,
+      "topology_builds": 1734,
+      "value_update_cycles": 13492,
+      "reference_requests": 882,
+      "generated_state_sequence": 109121,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-large-soak",
+      "producer_hz": 44.563566443155366,
+      "gui_intake_hz": 1.9494060368135058,
+      "cpu_one_core_percent": 16.773107032517885,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 63209472,
+          "median": 71442432.0,
+          "max": 73568256
+        },
+        "1": {
+          "min": 63381504,
+          "median": 71258112.0,
+          "max": 73854976
+        },
+        "2": {
+          "min": 63610880,
+          "median": 71483392.0,
+          "max": 73793536
+        },
+        "3": {
+          "min": 63492096,
+          "median": 72013824.0,
+          "max": 73818112
+        },
+        "4": {
+          "min": 63533056,
+          "median": 72159232.0,
+          "max": 73895936
+        },
+        "5": {
+          "min": 63696896,
+          "median": 71829504.0,
+          "max": 73916416
+        },
+        "6": {
+          "min": 63062016,
+          "median": 72073216.0,
+          "max": 73863168
+        },
+        "7": {
+          "min": 63549440,
+          "median": 71876608,
+          "max": 73801728
+        },
+        "8": {
+          "min": 63082496,
+          "median": 71485440.0,
+          "max": 74571776
+        },
+        "9": {
+          "min": 63586304,
+          "median": 72075264.0,
+          "max": 74170368
+        },
+        "10": {
+          "min": 63549440,
+          "median": 71598080.0,
+          "max": 74170368
+        },
+        "11": {
+          "min": 63340544,
+          "median": 72130560,
+          "max": 74174464
+        },
+        "12": {
+          "min": 63315968,
+          "median": 72003584.0,
+          "max": 74153984
+        },
+        "13": {
+          "min": 63545344,
+          "median": 71823360.0,
+          "max": 74186752
+        },
+        "14": {
+          "min": 63582208,
+          "median": 72116224.0,
+          "max": 74178560
+        },
+        "15": {
+          "min": 63602688,
+          "median": 72028160.0,
+          "max": 74182656
+        },
+        "16": {
+          "min": 63586304,
+          "median": 72044544,
+          "max": 74178560
+        },
+        "17": {
+          "min": 63578112,
+          "median": 72114176.0,
+          "max": 74141696
+        },
+        "18": {
+          "min": 63328256,
+          "median": 71733248.0,
+          "max": 74141696
+        },
+        "19": {
+          "min": 63574016,
+          "median": 72026112.0,
+          "max": 74137600
+        },
+        "20": {
+          "min": 63463424,
+          "median": 72206336.0,
+          "max": 74149888
+        },
+        "21": {
+          "min": 63754240,
+          "median": 72204288.0,
+          "max": 74145792
+        },
+        "22": {
+          "min": 63754240,
+          "median": 71548928.0,
+          "max": 74158080
+        },
+        "23": {
+          "min": 63754240,
+          "median": 72202240.0,
+          "max": 74145792
+        },
+        "24": {
+          "min": 63737856,
+          "median": 72318976,
+          "max": 74149888
+        },
+        "25": {
+          "min": 63205376,
+          "median": 72249344.0,
+          "max": 74166272
+        },
+        "26": {
+          "min": 63856640,
+          "median": 71919616.0,
+          "max": 74158080
+        },
+        "27": {
+          "min": 63856640,
+          "median": 72321024.0,
+          "max": 74149888
+        },
+        "28": {
+          "min": 63856640,
+          "median": 72290304,
+          "max": 74149888
+        },
+        "29": {
+          "min": 63447040,
+          "median": 72183808.0,
+          "max": 74199040
+        }
+      },
+      "private_first_to_last_minute_median_delta": 741376.0,
+      "maximum_memory_sample_gap_seconds": 0.534448399999988,
+      "mode": "soak"
+    },
+    {
+      "candidate": "imgui",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0272657,
+      "cpu_seconds": 21.265625,
+      "measurement_seconds": 120.0191511,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 7077,
+      "peak_private_bytes": 62861312,
+      "peak_working_set_bytes": 61079552,
+      "first_frame_ms": 104.9512,
+      "process_creation_to_first_intake_ms": 232.3341,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 1800,
+      "reference_requests": 1,
+      "generated_state_sequence": 8842,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-small-diagnostics",
+      "producer_hz": 58.96558953415227,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 17.718526422738545,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 59052032,
+          "median": 62750720.0,
+          "max": 62861312
+        },
+        "1": {
+          "min": 58982400,
+          "median": 62750720.0,
+          "max": 62754816
+        }
+      },
+      "private_first_to_last_minute_median_delta": 0.0,
+      "maximum_memory_sample_gap_seconds": 0.5325189999999935,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "imgui",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.045271,
+      "cpu_seconds": 25.71875,
+      "measurement_seconds": 120.0361153,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7163,
+      "peak_private_bytes": 68288512,
+      "peak_working_set_bytes": 62976000,
+      "first_frame_ms": 85.0074,
+      "process_creation_to_first_intake_ms": 109.6503,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5362,
+      "frame_age_p50_ms": 17.4441,
+      "frame_age_p95_ms": 19.8958,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8962,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-small-monitor-1",
+      "producer_hz": 59.67370721801424,
+      "gui_intake_hz": 14.995486945752566,
+      "cpu_one_core_percent": 21.425843327004102,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 64438272,
+          "median": 68153344.0,
+          "max": 68288512
+        },
+        "1": {
+          "min": 64421888,
+          "median": 68161536.0,
+          "max": 68173824
+        }
+      },
+      "private_first_to_last_minute_median_delta": 8192.0,
+      "maximum_memory_sample_gap_seconds": 0.5200367999999997,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0491981,
+      "cpu_seconds": 24.34375,
+      "measurement_seconds": 120.0366376,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7182,
+      "peak_private_bytes": 67289088,
+      "peak_working_set_bytes": 63258624,
+      "first_frame_ms": 82.8341,
+      "process_creation_to_first_intake_ms": 105.361,
+      "gui_frame_intakes": 1801,
+      "skipped_input_frames": 5383,
+      "frame_age_p50_ms": 18.6795,
+      "frame_age_p95_ms": 20.6832,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8984,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-small-monitor-2",
+      "producer_hz": 59.83173257428863,
+      "gui_intake_hz": 15.00375248764882,
+      "cpu_one_core_percent": 20.28026649756807,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 63479808,
+          "median": 67182592.0,
+          "max": 67289088
+        },
+        "1": {
+          "min": 63442944,
+          "median": 67194880.0,
+          "max": 67239936
+        }
+      },
+      "private_first_to_last_minute_median_delta": 12288.0,
+      "maximum_memory_sample_gap_seconds": 0.5213426999999982,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0495471,
+      "cpu_seconds": 24.90625,
+      "measurement_seconds": 120.0300151,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7084,
+      "peak_private_bytes": 66891776,
+      "peak_working_set_bytes": 62988288,
+      "first_frame_ms": 96.3559,
+      "process_creation_to_first_intake_ms": 125.7458,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5283,
+      "frame_age_p50_ms": 17.0494,
+      "frame_age_p95_ms": 27.1614,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8848,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-small-monitor-3",
+      "producer_hz": 59.01857126401378,
+      "gui_intake_hz": 14.996249050709316,
+      "cpu_one_core_percent": 20.75001821773494,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 63053824,
+          "median": 66764800.0,
+          "max": 66891776
+        },
+        "1": {
+          "min": 63029248,
+          "median": 66768896.0,
+          "max": 66785280
+        }
+      },
+      "private_first_to_last_minute_median_delta": 4096.0,
+      "maximum_memory_sample_gap_seconds": 0.5292199999999951,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0436366,
+      "cpu_seconds": 23.296875,
+      "measurement_seconds": 120.0303934,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7115,
+      "peak_private_bytes": 69083136,
+      "peak_working_set_bytes": 63111168,
+      "first_frame_ms": 107.06,
+      "process_creation_to_first_intake_ms": 232.5642,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5314,
+      "frame_age_p50_ms": 17.0507,
+      "frame_age_p95_ms": 26.9468,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8901,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-small-monitor-4",
+      "producer_hz": 59.27665317474499,
+      "gui_intake_hz": 14.996201787005058,
+      "cpu_one_core_percent": 19.409146583701858,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 65269760,
+          "median": 68976640.0,
+          "max": 69083136
+        },
+        "1": {
+          "min": 65286144,
+          "median": 68984832.0,
+          "max": 69062656
+        }
+      },
+      "private_first_to_last_minute_median_delta": 8192.0,
+      "maximum_memory_sample_gap_seconds": 0.5419175000000003,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 150.0700054,
+      "cpu_seconds": 27.4375,
+      "measurement_seconds": 120.0637233,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 6626,
+      "peak_private_bytes": 68415488,
+      "peak_working_set_bytes": 61722624,
+      "first_frame_ms": 73.3813,
+      "process_creation_to_first_intake_ms": 202.2876,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 4825,
+      "frame_age_p50_ms": 18.1067,
+      "frame_age_p95_ms": 32.2991,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8377,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-small-monitor-5",
+      "producer_hz": 55.187360660503515,
+      "gui_intake_hz": 14.99203881510811,
+      "cpu_one_core_percent": 22.85244805497382,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 64614400,
+          "median": 68313088.0,
+          "max": 68415488
+        },
+        "1": {
+          "min": 64614400,
+          "median": 68333568.0,
+          "max": 68386816
+        }
+      },
+      "private_first_to_last_minute_median_delta": 20480.0,
+      "maximum_memory_sample_gap_seconds": 0.5341512999999996,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "imgui",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Dear ImGui / Win32 / D3D11 hardware",
+      "elapsed_seconds": 1830.0419325,
+      "cpu_seconds": 248.203125,
+      "measurement_seconds": 1800.0358534,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 7036,
+      "generated_frames": 79673,
+      "peak_private_bytes": 69734400,
+      "peak_working_set_bytes": 63807488,
+      "first_frame_ms": 86.7889,
+      "process_creation_to_first_intake_ms": 108.9817,
+      "gui_frame_intakes": 3379,
+      "skipped_input_frames": 76281,
+      "frame_age_p50_ms": 16.9126,
+      "frame_age_p95_ms": 29.0762,
+      "topology_builds": 1731,
+      "value_update_cycles": 13541,
+      "reference_requests": 880,
+      "generated_state_sequence": 108447,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "imgui-small-soak",
+      "producer_hz": 44.261896144740426,
+      "gui_intake_hz": 1.8771848314118698,
+      "cpu_one_core_percent": 13.78878784726322,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 62029824,
+          "median": 69423104.0,
+          "max": 69529600
+        },
+        "1": {
+          "min": 62021632,
+          "median": 69423104.0,
+          "max": 69500928
+        },
+        "2": {
+          "min": 62021632,
+          "median": 69414912.0,
+          "max": 69476352
+        },
+        "3": {
+          "min": 62029824,
+          "median": 69419008.0,
+          "max": 69431296
+        },
+        "4": {
+          "min": 62017536,
+          "median": 69419008.0,
+          "max": 69500928
+        },
+        "5": {
+          "min": 62095360,
+          "median": 69484544.0,
+          "max": 69496832
+        },
+        "6": {
+          "min": 62001152,
+          "median": 69427200,
+          "max": 69505024
+        },
+        "7": {
+          "min": 62038016,
+          "median": 69427200.0,
+          "max": 69439488
+        },
+        "8": {
+          "min": 62038016,
+          "median": 69427200.0,
+          "max": 69439488
+        },
+        "9": {
+          "min": 61800448,
+          "median": 69398528.0,
+          "max": 69550080
+        },
+        "10": {
+          "min": 61767680,
+          "median": 69484544.0,
+          "max": 69533696
+        },
+        "11": {
+          "min": 61767680,
+          "median": 69451776,
+          "max": 69500928
+        },
+        "12": {
+          "min": 61767680,
+          "median": 69455872.0,
+          "max": 69607424
+        },
+        "13": {
+          "min": 61767680,
+          "median": 69488640.0,
+          "max": 69611520
+        },
+        "14": {
+          "min": 61759488,
+          "median": 69500928.0,
+          "max": 69685248
+        },
+        "15": {
+          "min": 61825024,
+          "median": 69672960.0,
+          "max": 69734400
+        },
+        "16": {
+          "min": 62238720,
+          "median": 69675008.0,
+          "max": 69685248
+        },
+        "17": {
+          "min": 62287872,
+          "median": 69677056.0,
+          "max": 69697536
+        },
+        "18": {
+          "min": 62300160,
+          "median": 69689344.0,
+          "max": 69697536
+        },
+        "19": {
+          "min": 61837312,
+          "median": 69689344.0,
+          "max": 69697536
+        },
+        "20": {
+          "min": 61870080,
+          "median": 69685248,
+          "max": 69713920
+        },
+        "21": {
+          "min": 61870080,
+          "median": 69591040.0,
+          "max": 69693440
+        },
+        "22": {
+          "min": 62197760,
+          "median": 69685248.0,
+          "max": 69693440
+        },
+        "23": {
+          "min": 61870080,
+          "median": 69591040.0,
+          "max": 69693440
+        },
+        "24": {
+          "min": 62164992,
+          "median": 69588992.0,
+          "max": 69697536
+        },
+        "25": {
+          "min": 62197760,
+          "median": 69599232,
+          "max": 69730304
+        },
+        "26": {
+          "min": 61870080,
+          "median": 69593088.0,
+          "max": 69693440
+        },
+        "27": {
+          "min": 61870080,
+          "median": 69591040,
+          "max": 69693440
+        },
+        "28": {
+          "min": 61870080,
+          "median": 69591040,
+          "max": 69693440
+        },
+        "29": {
+          "min": 61870080,
+          "median": 69685248.0,
+          "max": 69693440
+        }
+      },
+      "private_first_to_last_minute_median_delta": 262144.0,
+      "maximum_memory_sample_gap_seconds": 0.5304276000000527,
+      "mode": "soak"
+    },
+    {
+      "candidate": "qt",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.1646289,
+      "cpu_seconds": 18.09375,
+      "measurement_seconds": 120.1158827,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 7205,
+      "peak_private_bytes": 34201600,
+      "peak_working_set_bytes": 69656576,
+      "first_frame_ms": 102.4959,
+      "process_creation_to_first_intake_ms": 183.6026,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 1791,
+      "reference_requests": 1,
+      "generated_state_sequence": 9008,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-large-diagnostics",
+      "producer_hz": 59.98374101778965,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 15.063578265657618,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 30294016,
+          "median": 30498816.0,
+          "max": 34201600
+        },
+        "1": {
+          "min": 30265344,
+          "median": 30343168.0,
+          "max": 34041856
+        }
+      },
+      "private_first_to_last_minute_median_delta": -155648.0,
+      "maximum_memory_sample_gap_seconds": 0.5378296999999996,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qt",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0430752,
+      "cpu_seconds": 26.375,
+      "measurement_seconds": 119.9999834,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7199,
+      "peak_private_bytes": 32346112,
+      "peak_working_set_bytes": 67735552,
+      "first_frame_ms": 97.8014,
+      "process_creation_to_first_intake_ms": 142.8289,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.8373,
+      "frame_age_p95_ms": 19.6386,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9003,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-large-monitor-1",
+      "producer_hz": 59.99167496551503,
+      "gui_intake_hz": 14.925002064625286,
+      "cpu_one_core_percent": 21.979169707118476,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 28368896,
+          "median": 28635136.0,
+          "max": 32346112
+        },
+        "1": {
+          "min": 28368896,
+          "median": 28524544.0,
+          "max": 32227328
+        }
+      },
+      "private_first_to_last_minute_median_delta": -110592.0,
+      "maximum_memory_sample_gap_seconds": 0.5371650000000017,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0451423,
+      "cpu_seconds": 29.578125,
+      "measurement_seconds": 120.0020849,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7199,
+      "peak_private_bytes": 32239616,
+      "peak_working_set_bytes": 67702784,
+      "first_frame_ms": 105.088,
+      "process_creation_to_first_intake_ms": 271.565,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.6439,
+      "frame_age_p95_ms": 19.6823,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9003,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-large-monitor-2",
+      "producer_hz": 59.99062437956026,
+      "gui_intake_hz": 14.924740695067706,
+      "cpu_one_core_percent": 24.64800926137909,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 28299264,
+          "median": 28479488.0,
+          "max": 32239616
+        },
+        "1": {
+          "min": 28254208,
+          "median": 28327936.0,
+          "max": 32047104
+        }
+      },
+      "private_first_to_last_minute_median_delta": -151552.0,
+      "maximum_memory_sample_gap_seconds": 0.5381843000000046,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0691894,
+      "cpu_seconds": 27.046875,
+      "measurement_seconds": 120.0212595,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 32301056,
+      "peak_working_set_bytes": 67702784,
+      "first_frame_ms": 104.8712,
+      "process_creation_to_first_intake_ms": 159.8955,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.6616,
+      "frame_age_p95_ms": 19.6196,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9004,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-large-monitor-3",
+      "producer_hz": 59.989372132859515,
+      "gui_intake_hz": 14.922356318048804,
+      "cpu_one_core_percent": 22.53507013063798,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 28430336,
+          "median": 28569600.0,
+          "max": 32301056
+        },
+        "1": {
+          "min": 28291072,
+          "median": 28444672.0,
+          "max": 32153600
+        }
+      },
+      "private_first_to_last_minute_median_delta": -124928.0,
+      "maximum_memory_sample_gap_seconds": 0.5377571000000074,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0429055,
+      "cpu_seconds": 26.375,
+      "measurement_seconds": 120.003462,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 32370688,
+      "peak_working_set_bytes": 67710976,
+      "first_frame_ms": 90.3504,
+      "process_creation_to_first_intake_ms": 133.8736,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.853,
+      "frame_age_p95_ms": 19.5099,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9003,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-large-monitor-4",
+      "producer_hz": 59.99826904993791,
+      "gui_intake_hz": 14.924569426172056,
+      "cpu_one_core_percent": 21.978532586001563,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 28381184,
+          "median": 28540928.0,
+          "max": 32370688
+        },
+        "1": {
+          "min": 27697152,
+          "median": 28475392.0,
+          "max": 32194560
+        }
+      },
+      "private_first_to_last_minute_median_delta": -65536.0,
+      "maximum_memory_sample_gap_seconds": 0.5380805000000066,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0549725,
+      "cpu_seconds": 30.046875,
+      "measurement_seconds": 120.0153805,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 32522240,
+      "peak_working_set_bytes": 65753088,
+      "first_frame_ms": 92.8512,
+      "process_creation_to_first_intake_ms": 139.9329,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.9764,
+      "frame_age_p95_ms": 19.6143,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9003,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-large-monitor-5",
+      "producer_hz": 59.992310735539434,
+      "gui_intake_hz": 14.923087295465434,
+      "cpu_one_core_percent": 25.035853633776544,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 28336128,
+          "median": 28803072.0,
+          "max": 32522240
+        },
+        "1": {
+          "min": 27553792,
+          "median": 28663808.0,
+          "max": 32370688
+        }
+      },
+      "private_first_to_last_minute_median_delta": -139264.0,
+      "maximum_memory_sample_gap_seconds": 0.539746799999989,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 1830.0749745,
+      "cpu_seconds": 289.125,
+      "measurement_seconds": 1800.038407,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 6828,
+      "generated_frames": 81120,
+      "peak_private_bytes": 50544640,
+      "peak_working_set_bytes": 85549056,
+      "first_frame_ms": 90.5898,
+      "process_creation_to_first_intake_ms": 142.4125,
+      "gui_frame_intakes": 3356,
+      "skipped_input_frames": 77695,
+      "frame_age_p50_ms": 11.757,
+      "frame_age_p95_ms": 19.8348,
+      "topology_builds": 1680,
+      "value_update_cycles": 13437,
+      "reference_requests": 854,
+      "generated_state_sequence": 109805,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-large-soak",
+      "producer_hz": 45.06570508970257,
+      "gui_intake_hz": 1.864404663227833,
+      "cpu_one_core_percent": 16.062157278180784,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 29003776,
+          "median": 40163328.0,
+          "max": 48390144
+        },
+        "1": {
+          "min": 29241344,
+          "median": 42057728.0,
+          "max": 47910912
+        },
+        "2": {
+          "min": 29679616,
+          "median": 43620352.0,
+          "max": 47697920
+        },
+        "3": {
+          "min": 29794304,
+          "median": 43835392.0,
+          "max": 48660480
+        },
+        "4": {
+          "min": 30687232,
+          "median": 43868160.0,
+          "max": 49340416
+        },
+        "5": {
+          "min": 30302208,
+          "median": 44103680.0,
+          "max": 49696768
+        },
+        "6": {
+          "min": 30863360,
+          "median": 44171264.0,
+          "max": 49168384
+        },
+        "7": {
+          "min": 30650368,
+          "median": 44398592.0,
+          "max": 49418240
+        },
+        "8": {
+          "min": 32018432,
+          "median": 44625920.0,
+          "max": 49328128
+        },
+        "9": {
+          "min": 31088640,
+          "median": 44871680.0,
+          "max": 48910336
+        },
+        "10": {
+          "min": 31354880,
+          "median": 44261376.0,
+          "max": 49311744
+        },
+        "11": {
+          "min": 29159424,
+          "median": 44363776.0,
+          "max": 49512448
+        },
+        "12": {
+          "min": 29687808,
+          "median": 44771328.0,
+          "max": 48500736
+        },
+        "13": {
+          "min": 31911936,
+          "median": 44562432.0,
+          "max": 49467392
+        },
+        "14": {
+          "min": 29523968,
+          "median": 44068864.0,
+          "max": 49872896
+        },
+        "15": {
+          "min": 30928896,
+          "median": 44890112.0,
+          "max": 50065408
+        },
+        "16": {
+          "min": 29454336,
+          "median": 45076480,
+          "max": 49827840
+        },
+        "17": {
+          "min": 30683136,
+          "median": 46129152.0,
+          "max": 49844224
+        },
+        "18": {
+          "min": 31272960,
+          "median": 46112768.0,
+          "max": 49844224
+        },
+        "19": {
+          "min": 31543296,
+          "median": 45035520.0,
+          "max": 49786880
+        },
+        "20": {
+          "min": 29753344,
+          "median": 44888064.0,
+          "max": 49557504
+        },
+        "21": {
+          "min": 29503488,
+          "median": 44953600.0,
+          "max": 49651712
+        },
+        "22": {
+          "min": 29589504,
+          "median": 44855296.0,
+          "max": 49655808
+        },
+        "23": {
+          "min": 29560832,
+          "median": 44769280.0,
+          "max": 49274880
+        },
+        "24": {
+          "min": 29876224,
+          "median": 45426688.0,
+          "max": 50241536
+        },
+        "25": {
+          "min": 29904896,
+          "median": 44670976.0,
+          "max": 49803264
+        },
+        "26": {
+          "min": 29925376,
+          "median": 44691456.0,
+          "max": 49373184
+        },
+        "27": {
+          "min": 29708288,
+          "median": 45035520.0,
+          "max": 49025024
+        },
+        "28": {
+          "min": 31420416,
+          "median": 44369920.0,
+          "max": 49078272
+        },
+        "29": {
+          "min": 30560256,
+          "median": 45031424.0,
+          "max": 50544640
+        }
+      },
+      "private_first_to_last_minute_median_delta": 4868096.0,
+      "maximum_memory_sample_gap_seconds": 0.540961500000094,
+      "mode": "soak"
+    },
+    {
+      "candidate": "qt",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.106041,
+      "cpu_seconds": 14.296875,
+      "measurement_seconds": 120.0710506,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 7202,
+      "peak_private_bytes": 20684800,
+      "peak_working_set_bytes": 54403072,
+      "first_frame_ms": 87.5346,
+      "process_creation_to_first_intake_ms": 135.6025,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 1791,
+      "reference_requests": 1,
+      "generated_state_sequence": 9005,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-small-diagnostics",
+      "producer_hz": 59.98115252603611,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 11.90701249681578,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 16748544,
+          "median": 16891904.0,
+          "max": 20590592
+        },
+        "1": {
+          "min": 16719872,
+          "median": 16764928.0,
+          "max": 20684800
+        }
+      },
+      "private_first_to_last_minute_median_delta": -126976.0,
+      "maximum_memory_sample_gap_seconds": 0.5380721999999878,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "qt",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.067494,
+      "cpu_seconds": 21.296875,
+      "measurement_seconds": 120.0365051,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 31051776,
+      "peak_working_set_bytes": 66535424,
+      "first_frame_ms": 81.557,
+      "process_creation_to_first_intake_ms": 122.7154,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.6265,
+      "frame_age_p95_ms": 19.5302,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9003,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-small-monitor-1",
+      "producer_hz": 59.98175300090439,
+      "gui_intake_hz": 14.920461058974967,
+      "cpu_one_core_percent": 17.741998554737997,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 27144192,
+          "median": 27295744.0,
+          "max": 31002624
+        },
+        "1": {
+          "min": 27082752,
+          "median": 27209728.0,
+          "max": 31051776
+        }
+      },
+      "private_first_to_last_minute_median_delta": -86016.0,
+      "maximum_memory_sample_gap_seconds": 0.5374453999999957,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0536034,
+      "cpu_seconds": 23.671875,
+      "measurement_seconds": 120.012846,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 31113216,
+      "peak_working_set_bytes": 66334720,
+      "first_frame_ms": 98.1044,
+      "process_creation_to_first_intake_ms": 145.3547,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 12.0005,
+      "frame_age_p95_ms": 19.6785,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9003,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-small-monitor-2",
+      "producer_hz": 59.993577687508555,
+      "gui_intake_hz": 14.923402449767753,
+      "cpu_one_core_percent": 19.724450997520716,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 27230208,
+          "median": 27406336.0,
+          "max": 31113216
+        },
+        "1": {
+          "min": 27115520,
+          "median": 27242496.0,
+          "max": 30961664
+        }
+      },
+      "private_first_to_last_minute_median_delta": -163840.0,
+      "maximum_memory_sample_gap_seconds": 0.5378343000000001,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0426575,
+      "cpu_seconds": 24,
+      "measurement_seconds": 120.0053923,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 31145984,
+      "peak_working_set_bytes": 66342912,
+      "first_frame_ms": 87.9358,
+      "process_creation_to_first_intake_ms": 127.6766,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.7262,
+      "frame_age_p95_ms": 19.6983,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9002,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-small-monitor-3",
+      "producer_hz": 59.997303971148305,
+      "gui_intake_hz": 14.92432936282314,
+      "cpu_one_core_percent": 19.9991013237161,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 27230208,
+          "median": 27385856.0,
+          "max": 31145984
+        },
+        "1": {
+          "min": 26324992,
+          "median": 27295744.0,
+          "max": 30994432
+        }
+      },
+      "private_first_to_last_minute_median_delta": -90112.0,
+      "maximum_memory_sample_gap_seconds": 0.5379950999999892,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0677992,
+      "cpu_seconds": 22.21875,
+      "measurement_seconds": 120.0072688,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 31121408,
+      "peak_working_set_bytes": 66379776,
+      "first_frame_ms": 147.7748,
+      "process_creation_to_first_intake_ms": 365.2725,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5409,
+      "frame_age_p50_ms": 11.8579,
+      "frame_age_p95_ms": 19.6414,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9004,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-small-monitor-4",
+      "producer_hz": 59.996365820134386,
+      "gui_intake_hz": 14.924095997758428,
+      "cpu_one_core_percent": 18.514503514807096,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 27262976,
+          "median": 27369472.0,
+          "max": 31121408
+        },
+        "1": {
+          "min": 27062272,
+          "median": 27275264.0,
+          "max": 30978048
+        }
+      },
+      "private_first_to_last_minute_median_delta": -94208.0,
+      "maximum_memory_sample_gap_seconds": 0.5375812999999994,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 150.0641368,
+      "cpu_seconds": 26.140625,
+      "measurement_seconds": 120.0171605,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7200,
+      "peak_private_bytes": 31264768,
+      "peak_working_set_bytes": 66363392,
+      "first_frame_ms": 99.1666,
+      "process_creation_to_first_intake_ms": 149.8726,
+      "gui_frame_intakes": 1791,
+      "skipped_input_frames": 5408,
+      "frame_age_p50_ms": 12.1077,
+      "frame_age_p95_ms": 19.9917,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 9004,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-small-monitor-5",
+      "producer_hz": 59.991420976836054,
+      "gui_intake_hz": 14.922865967987969,
+      "cpu_one_core_percent": 21.78073943017507,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 27361280,
+          "median": 27566080.0,
+          "max": 31264768
+        },
+        "1": {
+          "min": 27254784,
+          "median": 27348992.0,
+          "max": 31059968
+        }
+      },
+      "private_first_to_last_minute_median_delta": -217088.0,
+      "maximum_memory_sample_gap_seconds": 0.5386852999999974,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "qt",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "Qt Widgets / raster / QStandardItemModel",
+      "elapsed_seconds": 1830.0316111,
+      "cpu_seconds": 195.875,
+      "measurement_seconds": 1800.0305407,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 6828,
+      "generated_frames": 81100,
+      "peak_private_bytes": 32796672,
+      "peak_working_set_bytes": 68489216,
+      "first_frame_ms": 121.8336,
+      "process_creation_to_first_intake_ms": 525.2468,
+      "gui_frame_intakes": 3356,
+      "skipped_input_frames": 77681,
+      "frame_age_p50_ms": 11.9752,
+      "frame_age_p95_ms": 19.8384,
+      "topology_builds": 1680,
+      "value_update_cycles": 13436,
+      "reference_requests": 854,
+      "generated_state_sequence": 109791,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI"
+      ],
+      "name": "qt-small-soak",
+      "producer_hz": 45.05479110841177,
+      "gui_intake_hz": 1.8644128108487041,
+      "cpu_one_core_percent": 10.881759813021153,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 23146496,
+          "median": 27924480.0,
+          "max": 31817728
+        },
+        "1": {
+          "min": 23212032,
+          "median": 27975680.0,
+          "max": 31731712
+        },
+        "2": {
+          "min": 23289856,
+          "median": 27971584.0,
+          "max": 31682560
+        },
+        "3": {
+          "min": 22667264,
+          "median": 27983872.0,
+          "max": 32305152
+        },
+        "4": {
+          "min": 22806528,
+          "median": 28561408.0,
+          "max": 32317440
+        },
+        "5": {
+          "min": 22822912,
+          "median": 28585984.0,
+          "max": 32362496
+        },
+        "6": {
+          "min": 22765568,
+          "median": 28401664.0,
+          "max": 32530432
+        },
+        "7": {
+          "min": 22822912,
+          "median": 28606464.0,
+          "max": 32423936
+        },
+        "8": {
+          "min": 22827008,
+          "median": 28069888.0,
+          "max": 31846400
+        },
+        "9": {
+          "min": 22994944,
+          "median": 28147712.0,
+          "max": 31911936
+        },
+        "10": {
+          "min": 23142400,
+          "median": 28086272.0,
+          "max": 31924224
+        },
+        "11": {
+          "min": 23007232,
+          "median": 28078080.0,
+          "max": 32468992
+        },
+        "12": {
+          "min": 23085056,
+          "median": 28426240.0,
+          "max": 32129024
+        },
+        "13": {
+          "min": 23093248,
+          "median": 28356608.0,
+          "max": 32096256
+        },
+        "14": {
+          "min": 23113728,
+          "median": 28397568.0,
+          "max": 32096256
+        },
+        "15": {
+          "min": 23146496,
+          "median": 28381184.0,
+          "max": 32100352
+        },
+        "16": {
+          "min": 23203840,
+          "median": 28327936,
+          "max": 32055296
+        },
+        "17": {
+          "min": 23126016,
+          "median": 28336128.0,
+          "max": 32133120
+        },
+        "18": {
+          "min": 23281664,
+          "median": 28401664.0,
+          "max": 32120832
+        },
+        "19": {
+          "min": 23351296,
+          "median": 28385280.0,
+          "max": 32120832
+        },
+        "20": {
+          "min": 23175168,
+          "median": 28352512.0,
+          "max": 32083968
+        },
+        "21": {
+          "min": 23248896,
+          "median": 28299264.0,
+          "max": 32047104
+        },
+        "22": {
+          "min": 23289856,
+          "median": 28362752.0,
+          "max": 32071680
+        },
+        "23": {
+          "min": 23175168,
+          "median": 28958720.0,
+          "max": 32759808
+        },
+        "24": {
+          "min": 23310336,
+          "median": 29063168.0,
+          "max": 32796672
+        },
+        "25": {
+          "min": 23322624,
+          "median": 29024256.0,
+          "max": 32731136
+        },
+        "26": {
+          "min": 23269376,
+          "median": 28758016.0,
+          "max": 32698368
+        },
+        "27": {
+          "min": 23273472,
+          "median": 28729344.0,
+          "max": 32444416
+        },
+        "28": {
+          "min": 23154688,
+          "median": 28659712.0,
+          "max": 32423936
+        },
+        "29": {
+          "min": 23207936,
+          "median": 28651520.0,
+          "max": 32468992
+        }
+      },
+      "private_first_to_last_minute_median_delta": 727040.0,
+      "maximum_memory_sample_gap_seconds": 0.5408950000000914,
+      "mode": "soak"
+    },
+    {
+      "candidate": "wx",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0962237,
+      "cpu_seconds": 49.671875,
+      "measurement_seconds": 120.0619951,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 7157,
+      "peak_private_bytes": 21364736,
+      "peak_working_set_bytes": 48107520,
+      "first_frame_ms": 86.1976,
+      "process_creation_to_first_intake_ms": 125.7106,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 1800,
+      "reference_requests": 1,
+      "generated_state_sequence": 8934,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-large-diagnostics",
+      "producer_hz": 59.61087015119907,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 41.37185539739544,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 17514496,
+          "median": 17661952.0,
+          "max": 21364736
+        },
+        "1": {
+          "min": 16928768,
+          "median": 17514496.0,
+          "max": 21217280
+        }
+      },
+      "private_first_to_last_minute_median_delta": -147456.0,
+      "maximum_memory_sample_gap_seconds": 0.5404041999999976,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "wx",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0240217,
+      "cpu_seconds": 50.6875,
+      "measurement_seconds": 120.0171065,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7192,
+      "peak_private_bytes": 17477632,
+      "peak_working_set_bytes": 41963520,
+      "first_frame_ms": 96.9528,
+      "process_creation_to_first_intake_ms": 123.7093,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5392,
+      "frame_age_p50_ms": 28.1865,
+      "frame_age_p95_ms": 29.8687,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8993,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-large-monitor-1",
+      "producer_hz": 59.924790804717496,
+      "gui_intake_hz": 14.997861992281909,
+      "cpu_one_core_percent": 42.23356276298829,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 12730368,
+          "median": 16674816.0,
+          "max": 17477632
+        },
+        "1": {
+          "min": 12718080,
+          "median": 16660480.0,
+          "max": 17457152
+        }
+      },
+      "private_first_to_last_minute_median_delta": -14336.0,
+      "maximum_memory_sample_gap_seconds": 0.5482630999999998,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0396293,
+      "cpu_seconds": 49.890625,
+      "measurement_seconds": 119.994423,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7115,
+      "peak_private_bytes": 18997248,
+      "peak_working_set_bytes": 43606016,
+      "first_frame_ms": 106.1484,
+      "process_creation_to_first_intake_ms": 140.2278,
+      "gui_frame_intakes": 1799,
+      "skipped_input_frames": 5313,
+      "frame_age_p50_ms": 26.6491,
+      "frame_age_p95_ms": 37.2455,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8895,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-large-monitor-2",
+      "producer_hz": 59.29442237494654,
+      "gui_intake_hz": 14.99236343675739,
+      "cpu_one_core_percent": 41.57745314546827,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 12681216,
+          "median": 15298560.0,
+          "max": 18997248
+        },
+        "1": {
+          "min": 12632064,
+          "median": 15247360.0,
+          "max": 18956288
+        }
+      },
+      "private_first_to_last_minute_median_delta": -51200.0,
+      "maximum_memory_sample_gap_seconds": 0.5542066000000005,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0176547,
+      "cpu_seconds": 53.5,
+      "measurement_seconds": 120.0096037,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7149,
+      "peak_private_bytes": 19263488,
+      "peak_working_set_bytes": 43503616,
+      "first_frame_ms": 121.1876,
+      "process_creation_to_first_intake_ms": 249.343,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5350,
+      "frame_age_p50_ms": 22.4701,
+      "frame_age_p95_ms": 36.316,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8927,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-large-monitor-3",
+      "producer_hz": 59.57023254464759,
+      "gui_intake_hz": 14.998799633566327,
+      "cpu_one_core_percent": 44.57976557754436,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 12673024,
+          "median": 13737984.0,
+          "max": 19243008
+        },
+        "1": {
+          "min": 12689408,
+          "median": 15560704.0,
+          "max": 19263488
+        }
+      },
+      "private_first_to_last_minute_median_delta": 1822720.0,
+      "maximum_memory_sample_gap_seconds": 0.5506050999999985,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0431328,
+      "cpu_seconds": 57.03125,
+      "measurement_seconds": 120.0339735,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7088,
+      "peak_private_bytes": 19025920,
+      "peak_working_set_bytes": 43540480,
+      "first_frame_ms": 103.8568,
+      "process_creation_to_first_intake_ms": 133.3049,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5286,
+      "frame_age_p50_ms": 26.9684,
+      "frame_age_p95_ms": 37.4001,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8873,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-large-monitor-4",
+      "producer_hz": 59.04994888801211,
+      "gui_intake_hz": 14.995754514450027,
+      "cpu_one_core_percent": 47.51259025845712,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 12689408,
+          "median": 12935168,
+          "max": 19001344
+        },
+        "1": {
+          "min": 12701696,
+          "median": 15290368,
+          "max": 19025920
+        }
+      },
+      "private_first_to_last_minute_median_delta": 2355200,
+      "maximum_memory_sample_gap_seconds": 0.5564502999999945,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0492903,
+      "cpu_seconds": 50.53125,
+      "measurement_seconds": 120.0222274,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 6690,
+      "peak_private_bytes": 19021824,
+      "peak_working_set_bytes": 43532288,
+      "first_frame_ms": 84.4178,
+      "process_creation_to_first_intake_ms": 210.105,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 4891,
+      "frame_age_p50_ms": 26.7659,
+      "frame_age_p95_ms": 40.0025,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8360,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-large-monitor-5",
+      "producer_hz": 55.739675432819034,
+      "gui_intake_hz": 14.997222089547723,
+      "cpu_one_core_percent": 42.10157659513658,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 12652544,
+          "median": 15220736.0,
+          "max": 19021824
+        },
+        "1": {
+          "min": 12652544,
+          "median": 15224832,
+          "max": 18956288
+        }
+      },
+      "private_first_to_last_minute_median_delta": 4096.0,
+      "maximum_memory_sample_gap_seconds": 0.5548427999999994,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": true,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 1830.0245801,
+      "cpu_seconds": 641.0625,
+      "measurement_seconds": 1800.0026682,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 6880,
+      "generated_frames": 80055,
+      "peak_private_bytes": 24788992,
+      "peak_working_set_bytes": 51671040,
+      "first_frame_ms": 127.2877,
+      "process_creation_to_first_intake_ms": 155.4506,
+      "gui_frame_intakes": 3383,
+      "skipped_input_frames": 76660,
+      "frame_age_p50_ms": 27.0873,
+      "frame_age_p95_ms": 30.1204,
+      "topology_builds": 1692,
+      "value_update_cycles": 13516,
+      "reference_requests": 860,
+      "generated_state_sequence": 109068,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-large-soak",
+      "producer_hz": 44.47493407332272,
+      "gui_intake_hz": 1.879441658485426,
+      "cpu_one_core_percent": 35.614530540727564,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 10874880,
+          "median": 18612224.0,
+          "max": 24305664
+        },
+        "1": {
+          "min": 11407360,
+          "median": 19525632,
+          "max": 24240128
+        },
+        "2": {
+          "min": 11075584,
+          "median": 19963904,
+          "max": 23851008
+        },
+        "3": {
+          "min": 13250560,
+          "median": 19976192.0,
+          "max": 23855104
+        },
+        "4": {
+          "min": 13127680,
+          "median": 20041728.0,
+          "max": 23924736
+        },
+        "5": {
+          "min": 11124736,
+          "median": 20045824.0,
+          "max": 23924736
+        },
+        "6": {
+          "min": 13123584,
+          "median": 20027392.0,
+          "max": 23916544
+        },
+        "7": {
+          "min": 12857344,
+          "median": 19963904.0,
+          "max": 23846912
+        },
+        "8": {
+          "min": 12972032,
+          "median": 19881984.0,
+          "max": 24039424
+        },
+        "9": {
+          "min": 13008896,
+          "median": 19804160,
+          "max": 24473600
+        },
+        "10": {
+          "min": 10952704,
+          "median": 19746816.0,
+          "max": 24481792
+        },
+        "11": {
+          "min": 10870784,
+          "median": 20471808.0,
+          "max": 24350720
+        },
+        "12": {
+          "min": 13160448,
+          "median": 20471808,
+          "max": 24350720
+        },
+        "13": {
+          "min": 13074432,
+          "median": 20471808.0,
+          "max": 24358912
+        },
+        "14": {
+          "min": 13029376,
+          "median": 20471808.0,
+          "max": 24358912
+        },
+        "15": {
+          "min": 13066240,
+          "median": 20471808.0,
+          "max": 24350720
+        },
+        "16": {
+          "min": 13152256,
+          "median": 20471808.0,
+          "max": 24358912
+        },
+        "17": {
+          "min": 13090816,
+          "median": 20471808.0,
+          "max": 24358912
+        },
+        "18": {
+          "min": 11005952,
+          "median": 20471808.0,
+          "max": 24358912
+        },
+        "19": {
+          "min": 13180928,
+          "median": 20471808.0,
+          "max": 24358912
+        },
+        "20": {
+          "min": 13103104,
+          "median": 20471808,
+          "max": 24358912
+        },
+        "21": {
+          "min": 13000704,
+          "median": 20471808.0,
+          "max": 24358912
+        },
+        "22": {
+          "min": 13185024,
+          "median": 20508672,
+          "max": 24395776
+        },
+        "23": {
+          "min": 11190272,
+          "median": 20508672.0,
+          "max": 24530944
+        },
+        "24": {
+          "min": 13266944,
+          "median": 20606976.0,
+          "max": 24494080
+        },
+        "25": {
+          "min": 13299712,
+          "median": 20606976.0,
+          "max": 24788992
+        },
+        "26": {
+          "min": 13295616,
+          "median": 20221952,
+          "max": 24772608
+        },
+        "27": {
+          "min": 13316096,
+          "median": 20709376.0,
+          "max": 24588288
+        },
+        "28": {
+          "min": 11145216,
+          "median": 19914752.0,
+          "max": 24596480
+        },
+        "29": {
+          "min": 13377536,
+          "median": 20709376,
+          "max": 24588288
+        }
+      },
+      "private_first_to_last_minute_median_delta": 2097152.0,
+      "maximum_memory_sample_gap_seconds": 0.6106533999998192,
+      "mode": "soak"
+    },
+    {
+      "candidate": "wx",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0807865,
+      "cpu_seconds": 38.265625,
+      "measurement_seconds": 120.0659099,
+      "warmup_seconds": 30,
+      "requested_page": 1,
+      "exercise_steps": 1,
+      "generated_frames": 7019,
+      "peak_private_bytes": 16064512,
+      "peak_working_set_bytes": 42987520,
+      "first_frame_ms": 99.9618,
+      "process_creation_to_first_intake_ms": 379.9551,
+      "gui_frame_intakes": 0,
+      "skipped_input_frames": 0,
+      "frame_age_p50_ms": 0,
+      "frame_age_p95_ms": 0,
+      "topology_builds": 0,
+      "value_update_cycles": 1801,
+      "reference_requests": 2,
+      "generated_state_sequence": 8780,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-small-diagnostics",
+      "producer_hz": 58.45955780325953,
+      "gui_intake_hz": 0.0,
+      "cpu_one_core_percent": 31.87051597899064,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 12193792,
+          "median": 15925248,
+          "max": 16035840
+        },
+        "1": {
+          "min": 12279808,
+          "median": 12365824.0,
+          "max": 16064512
+        }
+      },
+      "private_first_to_last_minute_median_delta": -3559424.0,
+      "maximum_memory_sample_gap_seconds": 0.5413254999999992,
+      "mode": "diagnostics"
+    },
+    {
+      "candidate": "wx",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.035519,
+      "cpu_seconds": 41.4375,
+      "measurement_seconds": 120.0069319,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7139,
+      "peak_private_bytes": 15634432,
+      "peak_working_set_bytes": 40189952,
+      "first_frame_ms": 90.9516,
+      "process_creation_to_first_intake_ms": 124.6278,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5339,
+      "frame_age_p50_ms": 28.3445,
+      "frame_age_p95_ms": 30.3942,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8934,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-small-monitor-1",
+      "producer_hz": 59.48823027947105,
+      "gui_intake_hz": 14.999133562550481,
+      "cpu_one_core_percent": 34.52925538878809,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 11665408,
+          "median": 11935744.0,
+          "max": 15634432
+        },
+        "1": {
+          "min": 11784192,
+          "median": 11866112.0,
+          "max": 15564800
+        }
+      },
+      "private_first_to_last_minute_median_delta": -69632.0,
+      "maximum_memory_sample_gap_seconds": 0.5451523999999999,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0285748,
+      "cpu_seconds": 45.421875,
+      "measurement_seconds": 120.0188158,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7186,
+      "peak_private_bytes": 15708160,
+      "peak_working_set_bytes": 40300544,
+      "first_frame_ms": 92.1982,
+      "process_creation_to_first_intake_ms": 118.4818,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5386,
+      "frame_age_p50_ms": 28.696,
+      "frame_age_p95_ms": 30.3573,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8974,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-small-monitor-2",
+      "producer_hz": 59.87394519851612,
+      "gui_intake_hz": 14.997648393727944,
+      "cpu_one_core_percent": 37.84562836854786,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 11923456,
+          "median": 12001280.0,
+          "max": 15708160
+        },
+        "1": {
+          "min": 11845632,
+          "median": 11923456.0,
+          "max": 15630336
+        }
+      },
+      "private_first_to_last_minute_median_delta": -77824.0,
+      "maximum_memory_sample_gap_seconds": 0.5457869999999971,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0268432,
+      "cpu_seconds": 42.5,
+      "measurement_seconds": 120.0189865,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7101,
+      "peak_private_bytes": 17469440,
+      "peak_working_set_bytes": 42115072,
+      "first_frame_ms": 106.4844,
+      "process_creation_to_first_intake_ms": 133.5881,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5301,
+      "frame_age_p50_ms": 21.3545,
+      "frame_age_p95_ms": 36.0473,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8891,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-small-monitor-3",
+      "producer_hz": 59.16563876333017,
+      "gui_intake_hz": 14.997627062948078,
+      "cpu_one_core_percent": 35.41106389862741,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 11702272,
+          "median": 13635584,
+          "max": 17371136
+        },
+        "1": {
+          "min": 11665408,
+          "median": 13737984.0,
+          "max": 17469440
+        }
+      },
+      "private_first_to_last_minute_median_delta": 102400.0,
+      "maximum_memory_sample_gap_seconds": 0.545078199999999,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0351721,
+      "cpu_seconds": 38.40625,
+      "measurement_seconds": 119.998655,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7156,
+      "peak_private_bytes": 17518592,
+      "peak_working_set_bytes": 42061824,
+      "first_frame_ms": 105.4191,
+      "process_creation_to_first_intake_ms": 138.304,
+      "gui_frame_intakes": 1797,
+      "skipped_input_frames": 5357,
+      "frame_age_p50_ms": 23.0284,
+      "frame_age_p95_ms": 36.525,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8937,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-small-monitor-4",
+      "producer_hz": 59.634001731102735,
+      "gui_intake_hz": 14.975167846672948,
+      "cpu_one_core_percent": 32.00556706239749,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 11743232,
+          "median": 13754368.0,
+          "max": 17518592
+        },
+        "1": {
+          "min": 12238848,
+          "median": 13742080.0,
+          "max": 17448960
+        }
+      },
+      "private_first_to_last_minute_median_delta": -12288.0,
+      "maximum_memory_sample_gap_seconds": 0.5446340999999997,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 150.0584339,
+      "cpu_seconds": 50.28125,
+      "measurement_seconds": 120.0289412,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 0,
+      "generated_frames": 7112,
+      "peak_private_bytes": 17510400,
+      "peak_working_set_bytes": 42106880,
+      "first_frame_ms": 80.9997,
+      "process_creation_to_first_intake_ms": 104.3919,
+      "gui_frame_intakes": 1800,
+      "skipped_input_frames": 5312,
+      "frame_age_p50_ms": 28.0029,
+      "frame_age_p95_ms": 38.1559,
+      "topology_builds": 0,
+      "value_update_cycles": 0,
+      "reference_requests": 0,
+      "generated_state_sequence": 8903,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-small-monitor-5",
+      "producer_hz": 59.25237637604021,
+      "gui_intake_hz": 14.996383222282393,
+      "cpu_one_core_percent": 41.8909385497437,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 11694080,
+          "median": 13750272.0,
+          "max": 17510400
+        },
+        "1": {
+          "min": 11722752,
+          "median": 13750272.0,
+          "max": 17444864
+        }
+      },
+      "private_first_to_last_minute_median_delta": 0.0,
+      "maximum_memory_sample_gap_seconds": 0.5518327999999997,
+      "mode": "monitor"
+    },
+    {
+      "candidate": "wx",
+      "large": false,
+      "self_test": false,
+      "startup_dark_requested": false,
+      "exit_during_hold_test": false,
+      "reset_requests_count": 0,
+      "error": "",
+      "renderer": "wxWidgets MSW / wxTreeListCtrl",
+      "elapsed_seconds": 1830.0150846,
+      "cpu_seconds": 465.6875,
+      "measurement_seconds": 1800.0043976,
+      "warmup_seconds": 30,
+      "requested_page": 0,
+      "exercise_steps": 6913,
+      "generated_frames": 79123,
+      "peak_private_bytes": 18735104,
+      "peak_working_set_bytes": 45879296,
+      "first_frame_ms": 84.1498,
+      "process_creation_to_first_intake_ms": 107.8156,
+      "gui_frame_intakes": 3361,
+      "skipped_input_frames": 75767,
+      "frame_age_p50_ms": 26.1523,
+      "frame_age_p95_ms": 37.2855,
+      "topology_builds": 1700,
+      "value_update_cycles": 13490,
+      "reference_requests": 864,
+      "generated_state_sequence": 108003,
+      "checks": [],
+      "not_verified": [
+        "physical mouse/keyboard and IME",
+        "real display present latency",
+        "per-monitor DPI transition",
+        "positive file selection",
+        "NDI",
+        "native runtime theme switching requires process restart"
+      ],
+      "name": "wx-small-soak",
+      "producer_hz": 43.95711483010657,
+      "gui_intake_hz": 1.8672176604020092,
+      "cpu_one_core_percent": 25.871464570915226,
+      "private_bytes_per_minute": {
+        "0": {
+          "min": 9580544,
+          "median": 13303808,
+          "max": 17076224
+        },
+        "1": {
+          "min": 9547776,
+          "median": 12933120.0,
+          "max": 17043456
+        },
+        "2": {
+          "min": 9502720,
+          "median": 13242368,
+          "max": 17645568
+        },
+        "3": {
+          "min": 7995392,
+          "median": 13217792,
+          "max": 17666048
+        },
+        "4": {
+          "min": 9756672,
+          "median": 13844480.0,
+          "max": 18264064
+        },
+        "5": {
+          "min": 8806400,
+          "median": 14237696,
+          "max": 18173952
+        },
+        "6": {
+          "min": 8699904,
+          "median": 13385728.0,
+          "max": 17248256
+        },
+        "7": {
+          "min": 9478144,
+          "median": 13225984,
+          "max": 17108992
+        },
+        "8": {
+          "min": 8712192,
+          "median": 13410304.0,
+          "max": 17108992
+        },
+        "9": {
+          "min": 8777728,
+          "median": 13447168,
+          "max": 17178624
+        },
+        "10": {
+          "min": 8699904,
+          "median": 13410304,
+          "max": 17178624
+        },
+        "11": {
+          "min": 8695808,
+          "median": 13225984.0,
+          "max": 17108992
+        },
+        "12": {
+          "min": 9478144,
+          "median": 13410304,
+          "max": 17108992
+        },
+        "13": {
+          "min": 8699904,
+          "median": 13225984.0,
+          "max": 17252352
+        },
+        "14": {
+          "min": 9383936,
+          "median": 13344768,
+          "max": 17252352
+        },
+        "15": {
+          "min": 8646656,
+          "median": 13369344,
+          "max": 17252352
+        },
+        "16": {
+          "min": 8650752,
+          "median": 14798848.0,
+          "max": 17252352
+        },
+        "17": {
+          "min": 8650752,
+          "median": 13553664,
+          "max": 17862656
+        },
+        "18": {
+          "min": 10686464,
+          "median": 14667776,
+          "max": 18550784
+        },
+        "19": {
+          "min": 10690560,
+          "median": 14667776,
+          "max": 18550784
+        },
+        "20": {
+          "min": 10690560,
+          "median": 14667776.0,
+          "max": 18550784
+        },
+        "21": {
+          "min": 9842688,
+          "median": 14667776.0,
+          "max": 18550784
+        },
+        "22": {
+          "min": 10551296,
+          "median": 14667776,
+          "max": 18550784
+        },
+        "23": {
+          "min": 10678272,
+          "median": 14782464,
+          "max": 18665472
+        },
+        "24": {
+          "min": 10788864,
+          "median": 14909440.0,
+          "max": 18735104
+        },
+        "25": {
+          "min": 10866688,
+          "median": 14852096,
+          "max": 18735104
+        },
+        "26": {
+          "min": 10817536,
+          "median": 14966784.0,
+          "max": 18735104
+        },
+        "27": {
+          "min": 10788864,
+          "median": 14782464.0,
+          "max": 18665472
+        },
+        "28": {
+          "min": 10788864,
+          "median": 14782464,
+          "max": 18665472
+        },
+        "29": {
+          "min": 10788864,
+          "median": 14911488.0,
+          "max": 18702336
+        }
+      },
+      "private_first_to_last_minute_median_delta": 1607680.0,
+      "maximum_memory_sample_gap_seconds": 0.5685275000000161,
+      "mode": "soak"
+    }
+  ]
+}

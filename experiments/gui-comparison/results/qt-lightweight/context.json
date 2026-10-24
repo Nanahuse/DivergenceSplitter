@@ -1,0 +1,250 @@
+{
+  "recorded_utc": "2026-10-24T05:49:30.907994+00:00",
+  "source_head": "404aafc63832e5fca8b2652214446c7a08cb833f",
+  "gui_runtime_source_unchanged_from": "786350a",
+  "run_id": 40064070079,
+  "run_url": "https://github.com/Nanahuse/DivergenceSplitter/actions/runs/40064070079",
+  "local_common_opencv_dll_sha256_identical_across_A_B_C": true,
+  "local_B_C_all_shared_dll_sha256_identical": true,
+  "native_ime_conversion": "NOT VERIFIED; only synthetic preedit/commit events were tested",
+  "performance_and_30_minute_tests_repeated": false,
+  "local_qt_build": {
+    "restored_packages": 27,
+    "built_package": "qtbase",
+    "vcpkg_reported_total": "16 min"
+  },
+  "local_qt_features": {
+    "icu": false,
+    "winsdkicu": true,
+    "openssl": false,
+    "sql": false,
+    "schannel": true
+  },
+  "candidates": {
+    "qt": {
+      "job_id": 120783496723,
+      "started_utc": "2026-10-24T04:52:45Z",
+      "completed_utc": "2026-10-24T04:56:30Z",
+      "job_seconds": 225.0,
+      "conclusion": "success",
+      "artifact_id": 12549250098,
+      "outer_artifact_bytes": 44642451,
+      "unpacked_bytes": 107449360,
+      "zip_bytes": 44255105,
+      "zip_sha256": "75ec353e882aa7bbd72e615f7ad7f6f9832ce37dab142e133ec06f2885015257",
+      "toolchain": {
+        "candidate": "qt",
+        "image": "20261021.278.1",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "b3ba4c79ff0df160247ec2308326737fd2cb0157",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "ctest_passed": 6,
+      "tool_tests_passed": 43,
+      "installed_small_and_zip_large_gui_checks_each": 13,
+      "restored_packages": 37,
+      "qt_build_time_log": "restored from cache; no Qt build (package handling 356 ms)",
+      "focused_runtime_checks_each": 19
+    },
+    "qt-features": {
+      "job_id": 120783496546,
+      "started_utc": "2026-10-24T04:52:45Z",
+      "completed_utc": "2026-10-24T05:28:39Z",
+      "job_seconds": 2154.0,
+      "conclusion": "success",
+      "artifact_id": 12549880365,
+      "outer_artifact_bytes": 27712411,
+      "unpacked_bytes": 66287104,
+      "zip_bytes": 27336755,
+      "zip_sha256": "1765829ede3249bba501d81c83bea424a5674dc3f3eb294ce737d7372014453d",
+      "toolchain": {
+        "candidate": "qt",
+        "image": "20261021.278.1",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "b3ba4c79ff0df160247ec2308326737fd2cb0157",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "ctest_passed": 6,
+      "tool_tests_passed": 43,
+      "installed_small_and_zip_large_gui_checks_each": 13,
+      "restored_packages": 27,
+      "qt_build_time_log": "32 min",
+      "focused_runtime_checks_each": 19
+    },
+    "qt-optimized": {
+      "job_id": 120783496741,
+      "started_utc": "2026-10-24T04:52:45Z",
+      "completed_utc": "2026-10-24T05:45:45Z",
+      "job_seconds": 3180.0,
+      "conclusion": "success",
+      "artifact_id": 12549567534,
+      "outer_artifact_bytes": 17913437,
+      "unpacked_bytes": 45201548,
+      "zip_bytes": 17553391,
+      "zip_sha256": "6f8ea9a9fc593f569b7bd29d24779a4c468fe7053b8aa7287d9f8b178cc50fd5",
+      "toolchain": {
+        "candidate": "qt",
+        "image": "20261021.278.1",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "b3ba4c79ff0df160247ec2308326737fd2cb0157",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "ctest_passed": 6,
+      "tool_tests_passed": 43,
+      "installed_small_and_zip_large_gui_checks_each": 13,
+      "restored_packages": 27,
+      "qt_build_time_log": "48 min",
+      "focused_runtime_checks_each": 19
+    },
+    "wx": {
+      "job_id": 120783496681,
+      "started_utc": "2026-10-24T04:52:45Z",
+      "completed_utc": "2026-10-24T04:56:02Z",
+      "job_seconds": 197.0,
+      "conclusion": "success",
+      "artifact_id": 12548357648,
+      "outer_artifact_bytes": 9459127,
+      "unpacked_bytes": 25694384,
+      "zip_bytes": 9213326,
+      "zip_sha256": "fec1dc96c9a0476e795ec9d2456158fd110636fcb0e9fc8a72d91c1cd28db06a",
+      "toolchain": {
+        "candidate": "wx",
+        "image": "20261021.278.1",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "b3ba4c79ff0df160247ec2308326737fd2cb0157",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "ctest_passed": 6,
+      "tool_tests_passed": 43,
+      "installed_small_and_zip_large_gui_checks_each": 13
+    },
+    "imgui": {
+      "job_id": 120783496811,
+      "started_utc": "2026-10-24T04:52:45Z",
+      "completed_utc": "2026-10-24T04:55:31Z",
+      "job_seconds": 166.0,
+      "conclusion": "success",
+      "artifact_id": 12548711796,
+      "outer_artifact_bytes": 5906560,
+      "unpacked_bytes": 14700743,
+      "zip_bytes": 5486026,
+      "zip_sha256": "f61aa0ae496d9dc9d61295de80c0734d394b5663a1c8db4f1db1d2926858d61f",
+      "toolchain": {
+        "candidate": "imgui",
+        "image": "20261021.278.1",
+        "msvc_tools": "14.51.36231",
+        "windows_sdk": "10.0.26100.0\\",
+        "source_commit": "b3ba4c79ff0df160247ec2308326737fd2cb0157",
+        "triplet": "x64-windows",
+        "ndi": "excluded; not tested",
+        "cmake": "cmake version 4.3.1-msvc1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+        "ninja": "1.13.2"
+      },
+      "ctest_passed": 6,
+      "tool_tests_passed": 43,
+      "installed_small_and_zip_large_gui_checks_each": 13
+    }
+  },
+  "ci_common_opencv_dll_sha256_identical_across_A_B_C": true,
+  "ci_B_C_shared_dll_hash_differences": [
+    "Qt6/plugins/imageformats/qgif.dll",
+    "Qt6/plugins/imageformats/qico.dll",
+    "Qt6/plugins/imageformats/qjpeg.dll",
+    "Qt6/plugins/networkinformation/qnetworklistmanager.dll",
+    "Qt6/plugins/platforms/qwindows.dll",
+    "Qt6/plugins/tls/qcertonlybackend.dll",
+    "Qt6/plugins/tls/qschannelbackend.dll",
+    "bin/Qt6Core.dll",
+    "bin/Qt6Gui.dll",
+    "bin/Qt6Network.dll",
+    "bin/Qt6Widgets.dll"
+  ],
+  "ci_B_C_shared_file_sizes_identical": true,
+  "ci_B_C_note": "Same features/version/Release settings on independent runners; hashes differ, shared file sizes match. Byte-identical binary isolation is verified locally using the same cache. PE/link metadata causes not fully analyzed.",
+  "local_minus_ci_bytes": {
+    "qt": {
+      "ci_minus_local_unpacked": -63988,
+      "ci_minus_local_zip": -18096,
+      "file_size_changes_ci_minus_local": {
+        "DISTRIBUTION-NOTICE.txt": 10,
+        "Qt6/plugins/platforms/qwindows.dll": 512,
+        "bin/Qt6Core.dll": 512,
+        "bin/d3dcompiler_47.dll": -24,
+        "bin/dxcompiler.dll": -55808,
+        "bin/dxil.dll": -6144,
+        "bin/harfbuzz.dll": -512,
+        "bin/opencv_core4.dll": -1536,
+        "bin/opencv_imgproc4.dll": -1536,
+        "build-metadata/toolchain.json": 31,
+        "build-metadata/vcpkg.json": 493,
+        "licenses/msvc/MSVC-NOTICE.txt": 14
+      }
+    },
+    "qt-features": {
+      "ci_minus_local_unpacked": -64953,
+      "ci_minus_local_zip": -24817,
+      "file_size_changes_ci_minus_local": {
+        "DISTRIBUTION-NOTICE.txt": 10,
+        "Qt6/plugins/platforms/qwindows.dll": 512,
+        "bin/d3dcompiler_47.dll": -24,
+        "bin/dxcompiler.dll": -55808,
+        "bin/dxil.dll": -6144,
+        "bin/harfbuzz.dll": -512,
+        "bin/opencv_core4.dll": -1536,
+        "bin/opencv_imgproc4.dll": -1536,
+        "build-metadata/toolchain.json": 31,
+        "build-metadata/vcpkg.json": 40,
+        "licenses/msvc/MSVC-NOTICE.txt": 14
+      }
+    },
+    "qt-optimized": {
+      "ci_minus_local_unpacked": -2977,
+      "ci_minus_local_zip": -7326,
+      "file_size_changes_ci_minus_local": {
+        "DISTRIBUTION-NOTICE.txt": 10,
+        "Qt6/plugins/platforms/qwindows.dll": 512,
+        "bin/harfbuzz.dll": -512,
+        "bin/opencv_core4.dll": -1536,
+        "bin/opencv_imgproc4.dll": -1536,
+        "build-metadata/toolchain.json": 31,
+        "build-metadata/vcpkg.json": 40,
+        "licenses/msvc/MSVC-NOTICE.txt": 14
+      }
+    }
+  },
+  "preservation_verified_utc": "2026-10-24T05:51:05.394676+00:00",
+  "preserved_original_distributions": {
+    "qt": {
+      "files": 137,
+      "all_file_sizes_and_sha256_match_prior_report": true,
+      "zip_sha256_matches_prior_report": true
+    },
+    "wx": {
+      "files": 77,
+      "all_file_sizes_and_sha256_match_prior_report": true,
+      "zip_sha256_matches_prior_report": true
+    },
+    "imgui": {
+      "files": 62,
+      "all_file_sizes_and_sha256_match_prior_report": true,
+      "zip_sha256_matches_prior_report": true
+    }
+  },
+  "ci_A_B_C_zip_settings_identical": true
+}

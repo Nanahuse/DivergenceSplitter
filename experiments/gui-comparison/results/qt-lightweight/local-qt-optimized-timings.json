@@ -1,0 +1,11 @@
+{
+  "binary_cache_hit": null,
+  "phases_seconds": {
+    "configure_including_dependencies": 28.7862249,
+    "release_build": 5.8871463,
+    "ctest": 19.3818358,
+    "install_deploy": 3.5578242,
+    "package_and_zip_launch": 15.4832579
+  },
+  "total_seconds": 73.1510067
+}

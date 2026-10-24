@@ -1,0 +1,6 @@
+2026-10-24T07:37:58.2409102Z Cache restored from key: gui-comparison-windows-2025-qt-9e593bb18ea69cc5095e012465dcd675a822ed0d-ac9ad840c4fa912313145d1d0f4ab518e9199e3d4488d625b91d7ceb2784e923
+2026-10-24T07:38:32.4123209Z Restored 37 package(s) from D:\a\DivergenceSplitter\DivergenceSplitter/.vcpkg-binary-cache in 19 s. Use --debug to see more details.
+2026-10-24T08:56:37.7229818Z Elapsed time to handle qtdeclarative:x64-windows: 1.2 h
+2026-10-24T08:58:44.2384458Z All requested installations completed successfully in: 1.3 h
+2026-10-24T08:59:29.2856060Z 100% tests passed, 0 tests failed out of 7
+2026-10-24T09:00:20.8659301Z Cache saved with key: gui-comparison-windows-2025-qtquick-9e593bb18ea69cc5095e012465dcd675a822ed0d-90bec4593d54f7fd50748fdead154c60e54ccb20d9df56fdac09063723b2aa6d

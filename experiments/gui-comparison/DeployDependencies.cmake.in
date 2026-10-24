@@ -1,0 +1,26 @@
+set(gui_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+set(gui_bin "${gui_root}/bin")
+file(GLOB_RECURSE gui_libraries "${gui_root}/*.dll")
+file(GET_RUNTIME_DEPENDENCIES
+    EXECUTABLES "${gui_bin}/@GUI_EXE@"
+    LIBRARIES ${gui_libraries}
+    DIRECTORIES "${gui_bin}" "@VCPKG_INSTALLED_DIR@/@VCPKG_TARGET_TRIPLET@/bin"
+    RESOLVED_DEPENDENCIES_VAR resolved
+    UNRESOLVED_DEPENDENCIES_VAR unresolved
+    PRE_EXCLUDE_REGEXES "[Aa][Pp][Ii]-[Mm][Ss]-.*" "[Ee][Xx][Tt]-[Mm][Ss]-.*"
+    POST_EXCLUDE_REGEXES [[.*[/\\][Ss][Yy][Ss][Tt][Ee][Mm]32[/\\].*]])
+if(unresolved)
+    message(FATAL_ERROR "Unresolved distribution dependencies: ${unresolved}")
+endif()
+foreach(dependency IN LISTS resolved)
+    get_filename_component(name "${dependency}" NAME)
+    if(EXISTS "${gui_bin}/${name}")
+        file(SHA256 "${dependency}" original_hash)
+        file(SHA256 "${gui_bin}/${name}" installed_hash)
+        if(NOT original_hash STREQUAL installed_hash)
+            message(FATAL_ERROR "Conflicting DLL: ${name}")
+        endif()
+    else()
+        file(INSTALL "${dependency}" DESTINATION "${gui_bin}")
+    endif()
+endforeach()

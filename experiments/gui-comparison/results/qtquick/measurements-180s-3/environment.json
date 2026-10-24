@@ -1,0 +1,22 @@
+{
+  "source_commit": "f7c49659e9a9baaa4e14708b5865a20984a5b95f",
+  "working_tree_dirty": false,
+  "binary_sha256": {
+    "qtquick": "fe4a5c688aeb1bd20e8074ab9daeb0891f24cff0d60955c2f74612d22b9fabdd"
+  },
+  "candidates": [
+    "qtquick"
+  ],
+  "started_utc": "2026-10-24T07:37:43.520648+00:00",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "AMD64 Family 25 Model 116 Stepping 1, AuthenticAMD",
+  "logical_cpus": 12,
+  "power_scheme_guid": "381b4222-f694-41f0-9685-ff5bb260df2e",
+  "warmup_seconds": 30,
+  "measurement_seconds": 180,
+  "repeats": 3,
+  "diagnostics_repeats": 3,
+  "soak_repeats": 1,
+  "soak_seconds_per_candidate_and_dataset": 0,
+  "method": "Serial visible GUI processes; foreground focus/occlusion not enforced. Shared worker included in process CPU. Intake is not scanout. Other desktop activity is uncontrolled."
+}

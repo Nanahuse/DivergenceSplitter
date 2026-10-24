@@ -1,0 +1,48 @@
+{
+  "name": "divergencesplitter-gui-comparison",
+  "version-string": "0.1.0",
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
+  "dependencies": [
+    { "name": "opencv4", "features": ["contrib"] }
+  ],
+  "features": {
+    "qtquick": {
+      "description": "Qt Quick / QML / Quick Controls implementation with the standard Qt base",
+      "dependencies": [
+        { "name": "qtbase", "features": ["windeployqt"] },
+        "qtdeclarative"
+      ]
+    },
+    "qt": {
+      "description": "Qt Widgets implementation",
+      "dependencies": [{ "name": "qtbase", "features": ["windeployqt"] }]
+    },
+    "qt-lean": {
+      "description": "Qt Widgets with explicit desktop/font/image/network features, without ICU/OpenSSL/SQL",
+      "dependencies": [{
+        "name": "qtbase",
+        "default-features": false,
+        "features": [
+          "dnslookup", "doubleconversion", "freetype", "gui", "harfbuzz",
+          "jpeg", "network", "opengl", "pcre2", "png", "sessionmanager",
+          "thread", "widgets", "windeployqt"
+        ]
+      }]
+    },
+    "wx": {
+      "description": "wxWidgets implementation",
+      "dependencies": ["wxwidgets"]
+    },
+    "imgui": {
+      "description": "Dear ImGui Win32/D3D11 implementation",
+      "dependencies": [{ "name": "imgui", "features": ["win32-binding", "dx11-binding"] }]
+    }
+  },
+  "overrides": [
+    { "name": "opencv4", "version": "4.12.0", "port-version": 7 },
+    { "name": "qtbase", "version": "6.11.1", "port-version": 1 },
+    { "name": "qtdeclarative", "version": "6.11.1" },
+    { "name": "wxwidgets", "version": "3.3.1", "port-version": 1 },
+    { "name": "imgui", "version": "1.92.8", "port-version": 1 }
+  ]
+}

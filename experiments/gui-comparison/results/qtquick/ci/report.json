@@ -1,0 +1,1746 @@
+{
+  "schema": 1,
+  "label": "GUI comparison: qtquick",
+  "kind": "gui-comparison",
+  "measurement": "measured",
+  "classification": "vcpkg ownership + dependency graph",
+  "unpacked_bytes": 144484013,
+  "zip_bytes": 55850373,
+  "zip_sha256": "6d200bd8fa32773e177fee51cb96abe7f860d1d518201abf8ce4f1b716d115cc",
+  "zip_settings": {
+    "method": "DEFLATE",
+    "level": 6,
+    "timestamp": "2020-01-01T00:00:00",
+    "ordering": "relative path, case sensitive",
+    "python": "3.14.6",
+    "zlib": "1.3.1.zlib-ng"
+  },
+  "categories": {
+    "Application (including statically linked GUI code)": 320000,
+    "GUI and dependencies/plugins": 100784221,
+    "MSVC Runtime": 1646032,
+    "Notices and metadata": 10101991,
+    "OpenCV and dependencies": 10112000,
+    "Other": 1153,
+    "Shared GUI/OpenCV dependencies": 1012224,
+    "Windows SDK graphics runtime": 20506392
+  },
+  "file_count": 244,
+  "files": [
+    {
+      "path": "DISTRIBUTION-NOTICE.txt",
+      "bytes": 608,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "f49d23e52f56970ed39ad15b2e7ca489026344c0b5efa1777204db8c7de920be"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1086,
+      "category": "Other",
+      "owner": "",
+      "sha256": "2fca6bcf1f1c43879065d58edd6b30af5155a71fca4ae0901488f56954ad6685"
+    },
+    {
+      "path": "Qt6/plugins/generic/qtuiotouchplugin.dll",
+      "bytes": 81920,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "f6f484c1c58f8eb916a7e8c8da533695224f78286025aca486721175542a9328"
+    },
+    {
+      "path": "Qt6/plugins/iconengines/qsvgicon.dll",
+      "bytes": 56320,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtsvg",
+      "sha256": "2210151421ceaf8461a98ab8414fba634b21caacc07becb7be355766002cb8ef"
+    },
+    {
+      "path": "Qt6/plugins/imageformats/qgif.dll",
+      "bytes": 35328,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "9c856cfce66ce59eeffe18c228aa99cebde2d63fe9c01b1311a2309a2a4113a0"
+    },
+    {
+      "path": "Qt6/plugins/imageformats/qico.dll",
+      "bytes": 34816,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "da51854568732b08f46e07d7b4c1ad7db6f735cffe01220f33b27da1fa9aa32f"
+    },
+    {
+      "path": "Qt6/plugins/imageformats/qjpeg.dll",
+      "bytes": 53248,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "3058fa654721efc717b005422b63db761fe2dcd99173149ece8da9c7f593376c"
+    },
+    {
+      "path": "Qt6/plugins/imageformats/qsvg.dll",
+      "bytes": 27136,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtsvg",
+      "sha256": "ec9ec5a80e08bda7e21ab2b09a32c34108802b3b0f01ab3a5fd46e69b9469110"
+    },
+    {
+      "path": "Qt6/plugins/networkinformation/qnetworklistmanager.dll",
+      "bytes": 65536,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "d9de77d16da98f9093add334dd9e2d88471d136aa07da3325b65df472949c5b1"
+    },
+    {
+      "path": "Qt6/plugins/platforms/qwindows.dll",
+      "bytes": 945152,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "6b3536cfe6fa9144c5dfae324d9fa5ec0556b8e538be60fc35b18b9ce837ddc7"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_debugger.dll",
+      "bytes": 188928,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "d67b84938e3e4a747eaea3e90607712f7563d9b52db4ec1ad59497b3e25a97ef"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_inspector.dll",
+      "bytes": 88576,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "eb9ff670c6f5c2f6942b917062d615fec6606a65945ba19e9c4ffd6748162803"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_local.dll",
+      "bytes": 26624,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "b23f4f68c3d76e25fc36134f16ab662fcb70304ec64ce6453b548c3952de505b"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_messages.dll",
+      "bytes": 23040,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "cba20f7d18b0629232db48b234d08cfc1bc1c204e086a8d61f9539ec7f0c8f4c"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_native.dll",
+      "bytes": 36864,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "f86ec7195384b379bec976a5251b0579920189e43aeff48aa81c3d2d3b3268a6"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_nativedebugger.dll",
+      "bytes": 57856,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "8aa1a63b31629070ade7b5a546fb1c14277735a609213c0c890079a530fecdfe"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_preview.dll",
+      "bytes": 176640,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "2c25a581b6412ce2d238b366f4054a399ead2fbfb9bb6ea88ce2012e37bdc330"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_profiler.dll",
+      "bytes": 99840,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "4c55512e632d9c09a97ecbd06e81edf8251b5a59750f4c6aa0158263b4c5350a"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_quickeventreplay.dll",
+      "bytes": 31744,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "c4de364b48b942543a4d6eadc9895af279ded91ad62f157ac5736b51d3faab49"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_quickprofiler.dll",
+      "bytes": 31744,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "237322a37e3a4830cfb816da1ee1f725de503691291d9fdb44a16399ae6a356f"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_server.dll",
+      "bytes": 87040,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "2ce53cf02b129539015ac94b984876d1bfa6cba3f67a6b8307d340ce07cf5ec1"
+    },
+    {
+      "path": "Qt6/plugins/qmltooling/qmldbg_tcp.dll",
+      "bytes": 24064,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "b7e5019ae99287c80568597660172b39df552eaccbc53fc7eaadab7f920c4338"
+    },
+    {
+      "path": "Qt6/plugins/tls/qcertonlybackend.dll",
+      "bytes": 86016,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "2e4a2eeefd4fa5c938c4a47ab3dac77a4a3fed6dd98eae353aec02b9d52184f0"
+    },
+    {
+      "path": "Qt6/plugins/tls/qschannelbackend.dll",
+      "bytes": 235520,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "2c81cb88bca1aa0a8dc9cffaa892d0fba1f5d2a49d655bba871423538ff3dd94"
+    },
+    {
+      "path": "Qt6/qml/Qt/labs/folderlistmodel/qmldir",
+      "bytes": 266,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "a021e22347bac8943e441bca5a4018328b252278dba053501854a92604098bd0"
+    },
+    {
+      "path": "Qt6/qml/Qt/labs/folderlistmodel/qmlfolderlistmodelplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "1e047a621fd13099ee0e01273b57c19f63ccf80bf2ff9415c6742b785fe7f90e"
+    },
+    {
+      "path": "Qt6/qml/QtQml/Models/modelsplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "9e6a64dee06bdd9d999a0580c27ec1d31f9e3c0c108cf554d9b2e39dc2627639"
+    },
+    {
+      "path": "Qt6/qml/QtQml/Models/qmldir",
+      "bytes": 222,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "313cec98e20382271b7627998f3afba3cbb1c69bc05204728406517000db0247"
+    },
+    {
+      "path": "Qt6/qml/QtQml/WorkerScript/qmldir",
+      "bytes": 252,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "7e930397861106a9a5931f5448f76b3e981c0bc0c150a1e7bc6fbe6a049f9ed8"
+    },
+    {
+      "path": "Qt6/qml/QtQml/WorkerScript/workerscriptplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "573d86094bbacd2923b43e9b57978c94e3b903fbe07c6d32c6a602d52fc86862"
+    },
+    {
+      "path": "Qt6/qml/QtQml/qmldir",
+      "bytes": 253,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "4487f30737a083fa69c5b9d408fc29856908cb50956a0652db50c47b9683a289"
+    },
+    {
+      "path": "Qt6/qml/QtQml/qmlplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "e2aa7899d08927786451b08c6db9001465d61b52061c63821e05be2c7dc9f5c0"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Basic/impl/qmldir",
+      "bytes": 361,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "3673cca17ed3522692c942f148bb8a9d37ae2d40ea1bb2e5df05439d56968ac7"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "8678ed20039bc366113b2e1b2a037eadb6c2854e5ece77ebb374baf0c8947fe4"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Basic/qmldir",
+      "bytes": 4294,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "f855404786210fd15a4464b4ccb2dc68f0fde137b952015d17536247a8ed535f"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll",
+      "bytes": 19456,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "30f02b55cecc0b2d610e7ecfae6ac0841b5e949e0c6cfc96778d3486f1415aec"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/FluentWinUI3/impl/qmldir",
+      "bytes": 1082,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "fbbbc524dbebc7dc92154479f4af9e96ecabb56c3b00a814a50b6bf7f7004b4d"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll",
+      "bytes": 18944,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "ff4d60e4b3703f52960cd428baed85b17e04c9e74cbb0ed35eb6835b76a73560"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/FluentWinUI3/qmldir",
+      "bytes": 2837,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "3b28dbac2ee7f92daaace11e0953e9643f08b49e957f26624f9b5af665642dce"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll",
+      "bytes": 3319296,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "71ae5b684d4144020db62add4c6f4807f085063f0e4b831ae8649ebbd96407df"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Fusion/impl/qmldir",
+      "bytes": 1097,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "932d5b4fefa2b0cb5b9bfd027d6faaa7bda03d991dc15ff09fd6fc873c82eb3e"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "74bf3f521c3404d3537f0612e4688303f0df2e10f27d3e88e7874be5e2bd41af"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Fusion/qmldir",
+      "bytes": 3644,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "7e03e2239797b1b2b1b200f955329a93d3974b640f0db84eb44df1e327c5ebde"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll",
+      "bytes": 19456,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "a0b1fddc87331b9835aece805cc72bac8ee098a861146e352a0f9195a0fbbb49"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Imagine/impl/qmldir",
+      "bytes": 457,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "be51f4a3ce6ecbfeca6b408f02705d47a007017dd95efe19baa6da56d59b9fe8"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "1c89f2766d856dde23e4ff203bea4480739bfa319e6656851591059504c42f35"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Imagine/qmldir",
+      "bytes": 3558,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "59968c1ad4a864a6b115c6ef8e6c56bb12f38bb2314b3d2efb3a51cd60509853"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll",
+      "bytes": 19456,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "73c6d170e1d18a472bda7145fb5c02bcb63b7ddc85c7bdc2ccc5b4d194d73bfb"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Material/impl/qmldir",
+      "bytes": 1130,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "e79db41994851c10755c47910924a896b10e45d7d792942544f89a2322351e6b"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "d8f86fca34b33502f9cba4534c3f355347fb3e47339170e97efa2fc5f51134f6"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Material/qmldir",
+      "bytes": 3770,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "ff546bfbd47c2c4eebc5d02c6e4afe56c0e22d620428064da6ae0c95a0b113da"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll",
+      "bytes": 19456,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "c4d662e7c99fb427fa366d670ca5f0f1d7867bfd255c377406c63cf20879748d"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Universal/impl/qmldir",
+      "bytes": 857,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "621a60eef141f4481bda345ed5daa7d7cbe91efff59c0c43a392ef6fef9c0767"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "a93660728070cd22740389100be9aeb897ee94007bea89342b61556e5208ac5a"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Universal/qmldir",
+      "bytes": 3631,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "f67d6dfba762d35dc62338b1f7c254b300c36f03ab2402407f8d5faf48c9ac78"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll",
+      "bytes": 19456,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "61ef36f923c95f9e229f2fc8734795024e03c39de13769aa613f436a2a7b360d"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Windows/impl/qmldir",
+      "bytes": 792,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "87d935eda03f289b9bceed4309725a029ea903bc0e416c3f5ca16655bcca0c04"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "e982682e5402d44be161581827d8b04ab62e43a35e8514592a1372b2eafe0105"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Windows/qmldir",
+      "bytes": 2156,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "31610a55bfa12e65487fc3fdd43063982a9d6a230508d3d3b4edca20d9f0249c"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll",
+      "bytes": 686592,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "d25dfd60d0e5257ee177a4bb5b34bfceaa383f7cd4e60659f996305617696405"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/impl/qmldir",
+      "bytes": 533,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "218fbf40bc80d5577807dcd865520248d49b64c81e4ea87d2dce8c93fd043b24"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "e52096053e23e07303c1a2c8a338eefe6a9351c0b82723bfb1ee2b03aa7d9302"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/qmldir",
+      "bytes": 579,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "d95dc8cf5069d8385507b4c1e4c460d895b4249c24f35a20fd843825c77c6162"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Controls/qtquickcontrols2plugin.dll",
+      "bytes": 28672,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "ab387d28049ce1b5d862cc6d94e067c7e37cc2d5e93205bdd929feb389a7d002"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Dialogs/qmldir",
+      "bytes": 273,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "6b547b8e506fd70e034967fa4678368a515dc8e7cdbbdd0fd2b1f263b28fe46c"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Dialogs/qtquickdialogsplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "2ed53cf0de534c4bb401406998bd1d5264eaff497b6b4e9991befc2506596f95"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Dialogs/quickimpl/qmldir",
+      "bytes": 3152,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "a75375e60f51029915f99b3f6ed97b68b5dd3350056fa1f3ec444a18c4f96cf8"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Dialogs/quickimpl/qtquickdialogs2quickimplplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "ce54307ae32be232a47df39b3c6722feb0e981a26f14f2653ebaa6492ecc2e9f"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Effects/effectsplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "0ee15d6489c4c50aad7a6d2670791e63e78e57db1e98b71fd5bacae4e3fdde52"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Effects/qmldir",
+      "bytes": 219,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "ac0c9015d65b328279eb9f39ffd189ce79cf4991b4d3be44ce4e9db0a975676c"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Layouts/qmldir",
+      "bytes": 250,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "be7bc0d0defd3037fd4493987ade323210f191bad527255eb32d1df15b1b8edf"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Layouts/qquicklayoutsplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "ec8b6dbb211ec5e64cd5bd6b7fb7b0c9d9bd9eac5e31caf242a0b832f6f2bbb0"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/NativeStyle/qmldir",
+      "bytes": 2468,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "86b6aebe40e19eb1002a658c5c364a2abb2e8c98b562146b4250bffe913b88bc"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll",
+      "bytes": 947712,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "1c5bbbcfff283ca4dca9d9aba97620c55276284c2d2b80225bcbd0d9d18fec82"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Shapes/qmldir",
+      "bytes": 207,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "de2dab12c07574207db93315ebf5bd6ec6656d1aa506df756328f73342b2a7f9"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Shapes/qmlshapesplugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "58cb7ddf279d35db471708e9c0976210416d480ac1fd0407be7f55bcedf0e2b9"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Templates/qmldir",
+      "bytes": 237,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "60e185a2a878267d15f2b54f6088e1bcb3c7e66b67ac016b121b9e79b305a9ac"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Templates/qtquicktemplates2plugin.dll",
+      "bytes": 18944,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "2e6ca26132a5c86154fb46b79e832897d414b7c57750a7d7dcfb51472f211b1f"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Window/qmldir",
+      "bytes": 213,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "cf518c3574e25f91acaec7ad8831e28c18fccfe15411672ea56809b2eb94077c"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/Window/quickwindowplugin.dll",
+      "bytes": 19456,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "e1950a0db12998959437ef1b710e5ff9826b45c7a10f785bbee32e5a1d467f0a"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/qmldir",
+      "bytes": 215,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "137c386f9b2ba49fb3a3417b55096f6f1bd15a794a98613a862b490a6fe4fa79"
+    },
+    {
+      "path": "Qt6/qml/QtQuick/qtquick2plugin.dll",
+      "bytes": 18432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "0b8be31e0bd20f6afce24c43468a3d90acd65a676ed7a7705de2bad3fa9ed100"
+    },
+    {
+      "path": "bin/Qt6Core.dll",
+      "bytes": 5313536,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "54c5423bedeb82de7945fbb6d921b8e819ac99e071cbf00222808d832ff7bc62"
+    },
+    {
+      "path": "bin/Qt6Gui.dll",
+      "bytes": 6998016,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "0e5507cd324327e0ca9b248198b0180f63fd249caaf9db89025edab7a3788328"
+    },
+    {
+      "path": "bin/Qt6LabsFolderListModel.dll",
+      "bytes": 103936,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "658c630a8ff59bcdc6918ab29173b8982e0e1d3f1953958eab055eeafc6dba19"
+    },
+    {
+      "path": "bin/Qt6Network.dll",
+      "bytes": 1628160,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "7829be38fb92c46d3b04481b5201dbb4ff77e789f738b87e4d6c90d99c257715"
+    },
+    {
+      "path": "bin/Qt6OpenGL.dll",
+      "bytes": 1931776,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase",
+      "sha256": "2dc4d312c85731fe5946d1c87b24c7b5974c855fa2065cd2d4d8cf837d79c198"
+    },
+    {
+      "path": "bin/Qt6Qml.dll",
+      "bytes": 5024256,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "542fd9d3999c8391e024a9e204d96f4e57885052636fb83709036caa12a0626f"
+    },
+    {
+      "path": "bin/Qt6QmlMeta.dll",
+      "bytes": 141824,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "607e34ea007d554838367599600569572dae31e990ba4b9ad915634e11d016ae"
+    },
+    {
+      "path": "bin/Qt6QmlModels.dll",
+      "bytes": 940544,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "8680b0b15c486526d31ed23092935e46fa233942c5221677d5f04305c4b93837"
+    },
+    {
+      "path": "bin/Qt6QmlWorkerScript.dll",
+      "bytes": 64000,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "05f1fa24b41675bd7e3adfb1c5d881a0d604f223e49d6309b1dc85f2ba719dc0"
+    },
+    {
+      "path": "bin/Qt6Quick.dll",
+      "bytes": 6291456,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "28dda85bdf3d9e1dcf521c0aa9ada2c4e0b14347a615f25f5080afb302e2424c"
+    },
+    {
+      "path": "bin/Qt6QuickControls2.dll",
+      "bytes": 84992,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "6b0807791876e4449c2e37d11299564b0422828c2a2b4f9938cf9759234a8209"
+    },
+    {
+      "path": "bin/Qt6QuickControls2Basic.dll",
+      "bytes": 1812480,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "cdf3ffedf22f4736d86c22d615aee161c488ae520f3944d3124630a8d5ac965b"
+    },
+    {
+      "path": "bin/Qt6QuickControls2BasicStyleImpl.dll",
+      "bytes": 79360,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "ed875b297c0221ce2532f143f4f4010e9763c91351cdc67d5886c5c85c24fc05"
+    },
+    {
+      "path": "bin/Qt6QuickControls2FluentWinUI3StyleImpl.dll",
+      "bytes": 214528,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "5e197d1a0b696a89c6d3c1632cfc346842e1cc2127fabc4219ae14085e1bced8"
+    },
+    {
+      "path": "bin/Qt6QuickControls2Fusion.dll",
+      "bytes": 1480704,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "225d5c93f7a2b5c0cc1de48b43204932812751caefc74a2a0860c685cdfb74bd"
+    },
+    {
+      "path": "bin/Qt6QuickControls2FusionStyleImpl.dll",
+      "bytes": 174080,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "9f941920c3a4576317dd0321c91de2af111af73a26a30ae170432187ae3b6686"
+    },
+    {
+      "path": "bin/Qt6QuickControls2Imagine.dll",
+      "bytes": 2997760,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "006248132172f9274cb20cecebfa465add6bd780518ccdfb6dd5bc0476f447e5"
+    },
+    {
+      "path": "bin/Qt6QuickControls2ImagineStyleImpl.dll",
+      "bytes": 57856,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "0269b85c6b7d3d1ba0b5be2a50be1ee97448867b1ea98d78a1c6d3328be9a102"
+    },
+    {
+      "path": "bin/Qt6QuickControls2Impl.dll",
+      "bytes": 307200,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "a32235923df86ef09f90485e8fdc2de49c437f97d0a7df5bf58c5b80711c1d52"
+    },
+    {
+      "path": "bin/Qt6QuickControls2Material.dll",
+      "bytes": 1885696,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "f4dfba34319af3436e719247890bae5b6c9e0ff5f21bf4799413dda2e2e4094a"
+    },
+    {
+      "path": "bin/Qt6QuickControls2MaterialStyleImpl.dll",
+      "bytes": 296960,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "79e351f376f46182bd8147d45d7b0189f7229cfb1f886c38c4568f8c5480a793"
+    },
+    {
+      "path": "bin/Qt6QuickControls2Universal.dll",
+      "bytes": 1555968,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "3d6203e1dde9da5f5d9799103954106b7749a96d6419806a44395454eb3b1abc"
+    },
+    {
+      "path": "bin/Qt6QuickControls2UniversalStyleImpl.dll",
+      "bytes": 129536,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "8a56b8becb0b2ab257f61d97f5a159957f6627877a291bd49bed168c240846fe"
+    },
+    {
+      "path": "bin/Qt6QuickControls2WindowsStyleImpl.dll",
+      "bytes": 83968,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "4be6a68b01635f4ab299509c38b5ef06c84d86767e2d6d30424e40322aa55a2a"
+    },
+    {
+      "path": "bin/Qt6QuickDialogs2.dll",
+      "bytes": 141312,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "73918584d39814b1fde28444e3393c759cd878bb982bbae515745f8e37019505"
+    },
+    {
+      "path": "bin/Qt6QuickDialogs2QuickImpl.dll",
+      "bytes": 2781184,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "1bd10e441f077d1e6ca9d77da5071d0e29d2381848fb46de42c2be4777a06ae6"
+    },
+    {
+      "path": "bin/Qt6QuickDialogs2Utils.dll",
+      "bytes": 33280,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "3182eca3e5910500e1202be5bfb3864e38072e8cfdb9a77e2fe1614de89b2202"
+    },
+    {
+      "path": "bin/Qt6QuickEffects.dll",
+      "bytes": 433152,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "de042de6773a1cd1977ef9befa5a1523b4ee1a5e8a5c09a3e596c71a64e90663"
+    },
+    {
+      "path": "bin/Qt6QuickLayouts.dll",
+      "bytes": 286720,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "a5f76f4bd310ee09cb0be61c5c6ab700ed3d33c97861a92185ff7a42b8e74937"
+    },
+    {
+      "path": "bin/Qt6QuickShapes.dll",
+      "bytes": 331776,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "449e036a8136db905dff56b42ed5018bfaf7eb6cd10418314f704e4744bf623c"
+    },
+    {
+      "path": "bin/Qt6QuickTemplates2.dll",
+      "bytes": 1937408,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtdeclarative",
+      "sha256": "631b02e254898cad41524c99a5ac0155fdce8a4e47bee2dec970e68e0d14d502"
+    },
+    {
+      "path": "bin/Qt6Svg.dll",
+      "bytes": 594432,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtsvg",
+      "sha256": "ebbe5a2677ab8d58952cf0e48e4c9784572eb56fa6dd1041bb67345af6b30246"
+    },
+    {
+      "path": "bin/brotlicommon.dll",
+      "bytes": 137728,
+      "category": "GUI and dependencies/plugins",
+      "owner": "brotli, qtbase",
+      "sha256": "7b7a7fa63ad3954b45cd71bc4e4f53e614ff0bf010c3c4546264837b4862cc3d"
+    },
+    {
+      "path": "bin/brotlidec.dll",
+      "bytes": 52224,
+      "category": "GUI and dependencies/plugins",
+      "owner": "brotli, qtbase",
+      "sha256": "bc086fa5d95870116c38bad39ee9d955dd5f4f1d462561800741dc31235d843f"
+    },
+    {
+      "path": "bin/bz2.dll",
+      "bytes": 75776,
+      "category": "GUI and dependencies/plugins",
+      "owner": "bzip2, qtbase",
+      "sha256": "c835cda399267ec75e8322cdaa89480effbac91430280e57e930a127156ed101"
+    },
+    {
+      "path": "bin/comparison-qtquick.exe",
+      "bytes": 320000,
+      "category": "Application (including statically linked GUI code)",
+      "owner": "application",
+      "sha256": "62f53845ffeb34730dc09359381470525a67fe83775370f77222bad56c96c7b8"
+    },
+    {
+      "path": "bin/concrt140.dll",
+      "bytes": 374200,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e"
+    },
+    {
+      "path": "bin/d3dcompiler_47.dll",
+      "bytes": 4741544,
+      "category": "Windows SDK graphics runtime",
+      "owner": "Windows SDK redistributable",
+      "sha256": "1da540a0ddbc54de4142570c8ec4a4566ef610fce72c181efb55a9332c480790"
+    },
+    {
+      "path": "bin/double-conversion.dll",
+      "bytes": 73728,
+      "category": "GUI and dependencies/plugins",
+      "owner": "double-conversion, qtbase",
+      "sha256": "b40929e7c6feeba956ad8ca7bda246c5d02701682006fd62eb76320be2350bae"
+    },
+    {
+      "path": "bin/dxcompiler.dll",
+      "bytes": 14261192,
+      "category": "Windows SDK graphics runtime",
+      "owner": "Windows SDK redistributable",
+      "sha256": "5da37a35d53123274e2e4e7e247148350871df8ae9ecc05778bf2ac2057932be"
+    },
+    {
+      "path": "bin/dxil.dll",
+      "bytes": 1503656,
+      "category": "Windows SDK graphics runtime",
+      "owner": "Windows SDK redistributable",
+      "sha256": "ba2f78f784b39b6e1af3a90ec99ab794953b09f4f617a5db765f800bec22d360"
+    },
+    {
+      "path": "bin/freetype.dll",
+      "bytes": 707072,
+      "category": "GUI and dependencies/plugins",
+      "owner": "freetype, qtbase",
+      "sha256": "6e9b18045506f80dbccbf90377cb37beb3cc5842248cbda63937585652c3bae9"
+    },
+    {
+      "path": "bin/harfbuzz.dll",
+      "bytes": 1200640,
+      "category": "GUI and dependencies/plugins",
+      "owner": "harfbuzz, qtbase",
+      "sha256": "b8acdff1eda9ce72a3decd806695db09cd940eec2397cb659d7fabf647c6e467"
+    },
+    {
+      "path": "bin/icudt78.dll",
+      "bytes": 33110528,
+      "category": "GUI and dependencies/plugins",
+      "owner": "icu, qtbase",
+      "sha256": "ddf12d11b236aef77f65910fe91e35717bae6c1b63350f6a74c508a61bb75d1f"
+    },
+    {
+      "path": "bin/icuin78.dll",
+      "bytes": 2807296,
+      "category": "GUI and dependencies/plugins",
+      "owner": "icu, qtbase",
+      "sha256": "25c6d52a1c80923481c8c2cbb3585c3d7755947e35b36d78dae26fec1114a70d"
+    },
+    {
+      "path": "bin/icuuc78.dll",
+      "bytes": 1845248,
+      "category": "GUI and dependencies/plugins",
+      "owner": "icu, qtbase",
+      "sha256": "bd65234c2431d7081c2d048fadccee0c2b0e04b89f2e3284370e3fabb04df1ce"
+    },
+    {
+      "path": "bin/jpeg62.dll",
+      "bytes": 722944,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libjpeg-turbo",
+      "sha256": "94414dc87e5e8051bd9f30874687b6b07033bda720f9aa6489dcf8285d0b2861"
+    },
+    {
+      "path": "bin/libcrypto-3-x64.dll",
+      "bytes": 5358080,
+      "category": "GUI and dependencies/plugins",
+      "owner": "openssl, qtbase",
+      "sha256": "6e2e4950abcc586c62f08523741af52ad086e07940db5ee1dfc627574ce518bf"
+    },
+    {
+      "path": "bin/liblzma.dll",
+      "bytes": 189952,
+      "category": "OpenCV and dependencies",
+      "owner": "liblzma",
+      "sha256": "075d4ff1131ff1828308cf5eec3fa482450488083a532b256965995adf595db9"
+    },
+    {
+      "path": "bin/libpng16.dll",
+      "bytes": 197632,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "libpng, qtbase",
+      "sha256": "3f6853f4f209ba948b98f5d5f168ee3244bfa4bd54d2cc0397721b3c469088e3"
+    },
+    {
+      "path": "bin/libsharpyuv.dll",
+      "bytes": 24576,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "278548ab8e60069f4d36c7947fea0cc115b5c4b2a983974dbc63f112ae7c4150"
+    },
+    {
+      "path": "bin/libwebp.dll",
+      "bytes": 381440,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "ecfe437d4f301d92d0abb6a80819ec3d93ec4fd0f438e82bef21e1fadcb32301"
+    },
+    {
+      "path": "bin/libwebpdecoder.dll",
+      "bytes": 162816,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "06ec0896ef5ccb2f830ef7756b048adada4ebf776652d2424724ca27a301918d"
+    },
+    {
+      "path": "bin/libwebpdemux.dll",
+      "bytes": 19968,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "875cd3d1b6319443c395a08d2d51a81cbda6ca362cd43785a2919c6146cae059"
+    },
+    {
+      "path": "bin/libwebpmux.dll",
+      "bytes": 41472,
+      "category": "OpenCV and dependencies",
+      "owner": "libwebp",
+      "sha256": "fa3087cb5212ae9aa2fd3c6b4b9f80a2ac3de20e665562354118a18629d09131"
+    },
+    {
+      "path": "bin/md4c.dll",
+      "bytes": 64512,
+      "category": "GUI and dependencies/plugins",
+      "owner": "md4c, qtbase",
+      "sha256": "0b1c352664452b3b0692768c7b883ef8e21cff4b69d086ebf47b42b877b5fcd3"
+    },
+    {
+      "path": "bin/msvcp140.dll",
+      "bytes": 643512,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+    },
+    {
+      "path": "bin/msvcp140_1.dll",
+      "bytes": 35768,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"
+    },
+    {
+      "path": "bin/msvcp140_2.dll",
+      "bytes": 274872,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838"
+    },
+    {
+      "path": "bin/msvcp140_atomic_wait.dll",
+      "bytes": 57792,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+    },
+    {
+      "path": "bin/msvcp140_codecvt_ids.dll",
+      "bytes": 31160,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78"
+    },
+    {
+      "path": "bin/opencv_core4.dll",
+      "bytes": 3057152,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "71979f0dda96d252b9c32fd6b88e35b6b094283add1f1bf94a3a68873753d0a1"
+    },
+    {
+      "path": "bin/opencv_img_hash4.dll",
+      "bytes": 131072,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "42ee66fff2ad999ffe386596a78a9d2bc8870ae5e641b65d6d00a68743bab7d0"
+    },
+    {
+      "path": "bin/opencv_imgcodecs4.dll",
+      "bytes": 487936,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "dbc0bc0e45d34d403504661d3dcec1ea347b3674eafaaaef2ccd46b273f647df"
+    },
+    {
+      "path": "bin/opencv_imgproc4.dll",
+      "bytes": 4512256,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "56933393091dd076c8deb51dee80d65a8ec1275815021fef98f5fcb35c11b81c"
+    },
+    {
+      "path": "bin/opencv_videoio4.dll",
+      "bytes": 608256,
+      "category": "OpenCV and dependencies",
+      "owner": "opencv4",
+      "sha256": "38b2c93700ab918bd5cf1c292f453284c80cf618cbe6894e18de19bc06e10d21"
+    },
+    {
+      "path": "bin/pcre2-16.dll",
+      "bytes": 572416,
+      "category": "GUI and dependencies/plugins",
+      "owner": "pcre2, qtbase",
+      "sha256": "e4648c780e1df7a53d211701b74d7d7c6c00bd27f3340ef4cbfd27ec2186cf98"
+    },
+    {
+      "path": "bin/qt.conf",
+      "bytes": 67,
+      "category": "Other",
+      "owner": "",
+      "sha256": "eee26b4f66023bf5a1ff89c25b56d81f42625bb8c29eac7a4ddfb04c20afb9f7"
+    },
+    {
+      "path": "bin/tiff.dll",
+      "bytes": 495104,
+      "category": "OpenCV and dependencies",
+      "owner": "tiff",
+      "sha256": "9fce9f3812cf7d1da0ded8afe0d0d9e93cf2f067d9143682fe82778d2976f889"
+    },
+    {
+      "path": "bin/vcruntime140.dll",
+      "bytes": 178616,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "bin/vcruntime140_1.dll",
+      "bytes": 50112,
+      "category": "MSVC Runtime",
+      "owner": "MSVC redistributable",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    {
+      "path": "bin/z.dll",
+      "bytes": 91648,
+      "category": "Shared GUI/OpenCV dependencies",
+      "owner": "qtbase, zlib",
+      "sha256": "f5e5ec036d0c235d9c0250602475d865b143d8a682c17306cb12d38e1d70e098"
+    },
+    {
+      "path": "bin/zstd.dll",
+      "bytes": 657920,
+      "category": "GUI and dependencies/plugins",
+      "owner": "qtbase, zstd",
+      "sha256": "dc5666b7413c04ea0bd585181a8dda57540c34922d236074a31b0e540e300716"
+    },
+    {
+      "path": "build-metadata/abseil-vcpkg.spdx.json",
+      "bytes": 461678,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8607518d512d17ef4e1fccc37fe4d2654e57b37ec30e68e0adf6637f841023d8"
+    },
+    {
+      "path": "build-metadata/brotli-vcpkg.spdx.json",
+      "bytes": 25578,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "72dbe1f18c2ed426b99220427c28c25c7b45125468b72d7d4c9869664790bb68"
+    },
+    {
+      "path": "build-metadata/bzip2-vcpkg.spdx.json",
+      "bytes": 13518,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "012f2582eb108fb00e512aadcda6146870a105a7b20d403cf1f6595aaf00d188"
+    },
+    {
+      "path": "build-metadata/dbus-vcpkg.spdx.json",
+      "bytes": 35875,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ccf0e5f17d2aa3650d4cbcf057c8f2e6b572be3d63d3c1042f74daf02da40afd"
+    },
+    {
+      "path": "build-metadata/double-conversion-vcpkg.spdx.json",
+      "bytes": 18401,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "2d543a1dc5099b7a5c341358ecc031559b5f87d4d9fa43c1a2a7073ade407759"
+    },
+    {
+      "path": "build-metadata/egl-registry-vcpkg.spdx.json",
+      "bytes": 8395,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "da942b49e1cbcf00eccbda7b9d8e9cb5ac41ef2e012e43f772a91d1161217768"
+    },
+    {
+      "path": "build-metadata/expat-vcpkg.spdx.json",
+      "bytes": 14325,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "984b159b6b57af7901f2287661b1041208e29bf95d9a27ee510034a6f2302194"
+    },
+    {
+      "path": "build-metadata/flatbuffers-vcpkg.spdx.json",
+      "bytes": 28572,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1dc2c3ec8b75f04bb90be65aaf50db113de4a779600d5576558506fda2e54497"
+    },
+    {
+      "path": "build-metadata/freetype-vcpkg.spdx.json",
+      "bytes": 44230,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4a350a59f766638a6197b2bf703914b9c2db7f954983b6765a2c9e7fc70748ed"
+    },
+    {
+      "path": "build-metadata/harfbuzz-vcpkg.spdx.json",
+      "bytes": 46854,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "10a725edfda119b0b5d9bc65f1e90ff57ecad18640381d4983258f12275ded7a"
+    },
+    {
+      "path": "build-metadata/icu-vcpkg.spdx.json",
+      "bytes": 144411,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a674f203780b7d6e5696f585377856aaea4d4255b824eec628095560907a8087"
+    },
+    {
+      "path": "build-metadata/libjpeg-turbo-vcpkg.spdx.json",
+      "bytes": 21643,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "723a80d98428db3bb2b4635fa2c8ed5cc0d85ddc2c093a90f4aba03d0b065120"
+    },
+    {
+      "path": "build-metadata/liblzma-vcpkg.spdx.json",
+      "bytes": 31023,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e5de01da6fec5c8a08f4d2e363a8b16bad6af8cacbc00a8f802cbb5084eac022"
+    },
+    {
+      "path": "build-metadata/libpng-vcpkg.spdx.json",
+      "bytes": 20930,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "593bf922ec30245370e427183c78d6ff4a11befa2392a76b35445283f0f5c239"
+    },
+    {
+      "path": "build-metadata/libpq-vcpkg.spdx.json",
+      "bytes": 510971,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "63165bb30123a240cbbde84fee911380e42b219cc729219d47db560fa3ff3b4d"
+    },
+    {
+      "path": "build-metadata/libwebp-vcpkg.spdx.json",
+      "bytes": 34999,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "82ff361a87107721c3e0406412f5819fac9e8e0ff000302abb22f8ec84846172"
+    },
+    {
+      "path": "build-metadata/lz4-vcpkg.spdx.json",
+      "bytes": 15751,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "bc25e29bcc77e3710ac716f791191852fbe2233a53d9dd10c69d74e245f00f2b"
+    },
+    {
+      "path": "build-metadata/md4c-vcpkg.spdx.json",
+      "bytes": 15232,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a9cd94b30b8275f0e738c91a4c41f1154ba80d834c39da6123f89d75eab0fafe"
+    },
+    {
+      "path": "build-metadata/opencv4-vcpkg.spdx.json",
+      "bytes": 416679,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "998bb9cea5edd60523a71511356bab82424b38ea422b3983ea36677c21189219"
+    },
+    {
+      "path": "build-metadata/opengl-registry-vcpkg.spdx.json",
+      "bytes": 20477,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "d0def2da30983f9382d01442eddff6b7ecde5b1c731905fd090fa90909b3d813"
+    },
+    {
+      "path": "build-metadata/opengl-vcpkg.spdx.json",
+      "bytes": 11306,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4789a0e34a9f193a8533682837a033980c965bab4086953dfe9e4da2bf55f257"
+    },
+    {
+      "path": "build-metadata/openssl-vcpkg.spdx.json",
+      "bytes": 102693,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "bd5c03e668ec66fd7877dad718e9195385a2f35b7d3e6e3beb12d1225ae165b6"
+    },
+    {
+      "path": "build-metadata/pcre2-vcpkg.spdx.json",
+      "bytes": 80302,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "419964694eef859418432819af0d8212d670cf4aaa09b2475d07a0a811fb9e96"
+    },
+    {
+      "path": "build-metadata/protobuf-vcpkg.spdx.json",
+      "bytes": 115573,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cffcbc55989ddf50212c4d4141e4050229c23275c1b1f7bd6f6fa74cf643f7d1"
+    },
+    {
+      "path": "build-metadata/qtbase-vcpkg.spdx.json",
+      "bytes": 2257913,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "2a51d084893e77a598d556ec42d5eeeb54808c98eab880e5c91b05e4e52bf1a4"
+    },
+    {
+      "path": "build-metadata/qtdeclarative-vcpkg.spdx.json",
+      "bytes": 4086946,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "64fd916583b572717624bb748d3ed85320db9ab73dd3916a735e806693d89e51"
+    },
+    {
+      "path": "build-metadata/qtlanguageserver-vcpkg.spdx.json",
+      "bytes": 42075,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "570016ada023d5240cf1ca3883e8fd5c1e2253ca55bbeecd9150acefac4dbf27"
+    },
+    {
+      "path": "build-metadata/qtshadertools-vcpkg.spdx.json",
+      "bytes": 39549,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "49f520391ef43284e340eba2518a46d1b3c1414094bf8ea3ff129b9324a8d96d"
+    },
+    {
+      "path": "build-metadata/qtsvg-vcpkg.spdx.json",
+      "bytes": 73784,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "f84058a703e0e8c7e0960e218a9a78ac7d8bf1c3e65eb2473edf26942a39a8e2"
+    },
+    {
+      "path": "build-metadata/quirc-vcpkg.spdx.json",
+      "bytes": 8822,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "64a823e40d0cba5266e5580125ef44f48ec396b6527e0c41a8752c7b5db5f039"
+    },
+    {
+      "path": "build-metadata/sqlite3-vcpkg.spdx.json",
+      "bytes": 17524,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8dc9ca890f58ab5aec1889ecdbdebe68c8176fce94cf7fb288d922b58da7d3d0"
+    },
+    {
+      "path": "build-metadata/tiff-vcpkg.spdx.json",
+      "bytes": 14704,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "5e3649d72b6fabf6947123fe5e021365f62981cc4297ae8d23966559547a2092"
+    },
+    {
+      "path": "build-metadata/toolchain.json",
+      "bytes": 392,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "bbca058c4675a373d2bdfc470a505115c7457722e111e5752c1b5f783e381d05"
+    },
+    {
+      "path": "build-metadata/utf8-range-vcpkg.spdx.json",
+      "bytes": 11960,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "394e4d25b298be45258804e0dfc989505585be1e7539353ad706101843edd2bb"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-config-vcpkg.spdx.json",
+      "bytes": 6763,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "142aa7da11f46948f72eda04843ace9349551e6300fa5ca62c7755dfbf884584"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-get-vars-vcpkg.spdx.json",
+      "bytes": 8345,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8cb0c372783d571cce5cd0aef7c9d1eb493f365d8e2d6a839bce2b4b93424aea"
+    },
+    {
+      "path": "build-metadata/vcpkg-cmake-vcpkg.spdx.json",
+      "bytes": 8249,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "3964bcac796e9b140837cb6483fcf0611a19197d8ddb0cd6d695cd67cc3a1c7b"
+    },
+    {
+      "path": "build-metadata/vcpkg-get-python-packages-vcpkg.spdx.json",
+      "bytes": 6825,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "05ed00891b927379921b3803313173992e67b1634220c29db5f4b18e62a8d7fa"
+    },
+    {
+      "path": "build-metadata/vcpkg-make-vcpkg.spdx.json",
+      "bytes": 15925,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "b022db8e253d8f107483e97920023f915c85dbfcb5b3d15c7616e89029ed61c2"
+    },
+    {
+      "path": "build-metadata/vcpkg-status.txt",
+      "bytes": 23828,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "94bdc0cb784c240d3b3ca36787b10f0320e4b8ec070cf9dd482c30bb97b755af"
+    },
+    {
+      "path": "build-metadata/vcpkg-tool-meson-vcpkg.spdx.json",
+      "bytes": 15079,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4c4a64837478c3a960714ad3f4c6b00937e44380a4eb20e453b99380977d3683"
+    },
+    {
+      "path": "build-metadata/vcpkg.json",
+      "bytes": 1741,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cfdb91a7fda4f7a222fdf7807ebf6f04407e2f75a22b1b0021cda08737622671"
+    },
+    {
+      "path": "build-metadata/windows-sdk-graphics.json",
+      "bytes": 600,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1c2b8c71a1f0fdfc8116a6435f6094603af964a6b3a985f9676a4ca440fd2f23"
+    },
+    {
+      "path": "build-metadata/zlib-vcpkg.spdx.json",
+      "bytes": 19306,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "baf42d7bfed13372221655ff80fe96f20cced19f2c18beb7ffbba446ed087e97"
+    },
+    {
+      "path": "build-metadata/zstd-vcpkg.spdx.json",
+      "bytes": 15805,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0d9a6e45f89bac1793f43deb66c15080fe40b2b6c7b622096ad86d20c8c248b2"
+    },
+    {
+      "path": "licenses/msvc/MSVC-NOTICE.txt",
+      "bytes": 655,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c64a1f59fbe0e58437d7cefac98e54a87d4fe3e93c339967ed3c358134e3b3e3"
+    },
+    {
+      "path": "licenses/vcpkg/abseil/copyright",
+      "bytes": 11361,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747"
+    },
+    {
+      "path": "licenses/vcpkg/brotli/copyright",
+      "bytes": 1084,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94"
+    },
+    {
+      "path": "licenses/vcpkg/bzip2/copyright",
+      "bytes": 1896,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3"
+    },
+    {
+      "path": "licenses/vcpkg/dbus/copyright",
+      "bytes": 1134,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "150e5d08e1cb5e62b65967d7931acad2c42d98ec1bbb584bebb01921cbc853c2"
+    },
+    {
+      "path": "licenses/vcpkg/double-conversion/copyright",
+      "bytes": 1527,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "4af93c12062c58058378de2397dc1c92bbff9ddfb1d583a01c84127557ce97ca"
+    },
+    {
+      "path": "licenses/vcpkg/egl-registry/copyright",
+      "bytes": 1236,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "5d77554ffc974ce346430a01a30be8176ca5c46fb1b53a7233291195ded592d3"
+    },
+    {
+      "path": "licenses/vcpkg/expat/copyright",
+      "bytes": 1144,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87"
+    },
+    {
+      "path": "licenses/vcpkg/flatbuffers/copyright",
+      "bytes": 11358,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/vcpkg/freetype/copyright",
+      "bytes": 27496,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "cf82ed29473c1fd8e137fd34250f89eebf2bee9e126fa004286dd25495d5c654"
+    },
+    {
+      "path": "licenses/vcpkg/harfbuzz/copyright",
+      "bytes": 3207,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "dcdaea4ee055d39e2037762f1ad47df9a6b13ee03e5b7135ccf21ed778118333"
+    },
+    {
+      "path": "licenses/vcpkg/icu/copyright",
+      "bytes": 27718,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e55522d81edc687a341a4411e0776e54ca654e90147f354a90458aaced4116af"
+    },
+    {
+      "path": "licenses/vcpkg/libjpeg-turbo/copyright",
+      "bytes": 6077,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ba6bceebcba0fdd35488477c2cca8c4632ce82c74dbfbc87d886ce6fc4433579"
+    },
+    {
+      "path": "licenses/vcpkg/liblzma/copyright",
+      "bytes": 3119,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8"
+    },
+    {
+      "path": "licenses/vcpkg/libpng/copyright",
+      "bytes": 5345,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526"
+    },
+    {
+      "path": "licenses/vcpkg/libpq/copyright",
+      "bytes": 1198,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "3d6af92ff8a4c2cdf69afb1cf44edea727922f5cd0cf8b5f72b11cdecac8fdfd"
+    },
+    {
+      "path": "licenses/vcpkg/libwebp/copyright",
+      "bytes": 3017,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "050b5ba2c8eb0bd3b996e12ef79312a1c62237f2de1b3c609843f00bb74744f3"
+    },
+    {
+      "path": "licenses/vcpkg/lz4/copyright",
+      "bytes": 1311,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "8b58c446121a109ccf32edc094bba3010a3d85e4ee3702950db55e4d3e87736c"
+    },
+    {
+      "path": "licenses/vcpkg/md4c/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "d30937367d5413e7eaa218b1640b8946ff76fd34d97152f6979fd96169d5d0fc"
+    },
+    {
+      "path": "licenses/vcpkg/opencv4/copyright",
+      "bytes": 14996,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e5313db48cd388bb81b5f748aa9ba8b979e592e49ca7cc612ad8c4b01168f6f2"
+    },
+    {
+      "path": "licenses/vcpkg/opengl-registry/copyright",
+      "bytes": 147,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c56ffb0cc40bd972c1b2d4759828b89f7860471f5ba52eedde7a4ddb4664cef5"
+    },
+    {
+      "path": "licenses/vcpkg/opengl/copyright",
+      "bytes": 100,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "222b59aa68905b150c26ece05550b48390ef40791ac9e13abbc194cdd60b5c54"
+    },
+    {
+      "path": "licenses/vcpkg/openssl/copyright",
+      "bytes": 10175,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+    },
+    {
+      "path": "licenses/vcpkg/pcre2/copyright",
+      "bytes": 97,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "99272c55f3dcfa07a8a7e15a5c1a33096e4727de74241d65fa049fccfdd59507"
+    },
+    {
+      "path": "licenses/vcpkg/protobuf/copyright",
+      "bytes": 1732,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d"
+    },
+    {
+      "path": "licenses/vcpkg/qtbase/copyright",
+      "bytes": 261104,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "859e6297aeb2c5d4c6a989e5c0f3d6159a4bb86ce60c3a61c74aa3c420e4c17a"
+    },
+    {
+      "path": "licenses/vcpkg/qtdeclarative/copyright",
+      "bytes": 134441,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "f759d29114686236c9dbe2d63fb141c8c6e352ff3b526308967d030001408f87"
+    },
+    {
+      "path": "licenses/vcpkg/qtlanguageserver/copyright",
+      "bytes": 104801,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "810f69a42608421e66325a6295f38a5c8e7b044b4b7cb468eaa2138afb6deb50"
+    },
+    {
+      "path": "licenses/vcpkg/qtshadertools/copyright",
+      "bytes": 137022,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "c64206c5ace948a68f94201b6ac40f0881b6aece3c617850f363dada917f64a1"
+    },
+    {
+      "path": "licenses/vcpkg/qtsvg/copyright",
+      "bytes": 88837,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a8c26e72fecea779919875f5836a5eb68f46e67fd65392840976c466ff0627fc"
+    },
+    {
+      "path": "licenses/vcpkg/quirc/copyright",
+      "bytes": 815,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a70ef3ea032998eead2e2c7573a170a809eae08e3ca134611f707eda5932c8a9"
+    },
+    {
+      "path": "licenses/vcpkg/sqlite3/copyright",
+      "bytes": 71,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "3cafdd9b568b924b234b91f4a24649d509f02643ae727eac6a4e33818288c9c4"
+    },
+    {
+      "path": "licenses/vcpkg/tiff/copyright",
+      "bytes": 2416,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0e27c2382d7b8147972bbb746e04059a1152c8d0fda9d03ef1399d1a433c4ade"
+    },
+    {
+      "path": "licenses/vcpkg/utf8-range/copyright",
+      "bytes": 1091,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "02de69b64fc36d9e938f418e52723e42f0b2b226d58a9cb3c8dcbdf7059f5074"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake-config/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "04b60f99a43bfd7fefdc8364b24aac704a2160cef969b75ba6a38b62dc4c4b70"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake-get-vars/copyright",
+      "bytes": 1073,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-cmake/copyright",
+      "bytes": 1073,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-get-python-packages/copyright",
+      "bytes": 1096,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "04b60f99a43bfd7fefdc8364b24aac704a2160cef969b75ba6a38b62dc4c4b70"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-make/copyright",
+      "bytes": 19657,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "a016cb0f66f4aca928d93608f34ba342ecaff292c652793113c8b007bb7b1ad9"
+    },
+    {
+      "path": "licenses/vcpkg/vcpkg-tool-meson/copyright",
+      "bytes": 1073,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/vcpkg/zlib/copyright",
+      "bytes": 1002,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+    },
+    {
+      "path": "licenses/vcpkg/zstd/copyright",
+      "bytes": 20086,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "434dca949c6da7c500413aef694539fe37f867dd1a94d83d4ed1d260194e2660"
+    },
+    {
+      "path": "licenses/windows-sdk/sdk_license.rtf",
+      "bytes": 248573,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "0f4a26ac9dc50066f8a1bfeaaf3f092d1b9e4791df5487b9f3c31e7c3dc4d7f5"
+    },
+    {
+      "path": "licenses/windows-sdk/sdk_third_party_notices.rtf",
+      "bytes": 22279,
+      "category": "Notices and metadata",
+      "owner": "",
+      "sha256": "ebb6640a8246b39b70322c5cec9aad7a71e86ea7b86c9c604d3a7f3ff1b30e89"
+    }
+  ],
+  "ndi_status": "EXCLUDED from all candidates; not tested",
+  "candidate": "qtquick",
+  "archive": "qtquick.zip",
+  "verification": {
+    "installed_small_gui_contract": "passed with developer PATH removed",
+    "extracted_zip_large_gui_contract": "passed with developer PATH removed"
+  }
+}

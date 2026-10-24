@@ -1,0 +1,10 @@
+DivergenceSplitter GUI comparison experiment
+
+This is a mock GUI comparison, not a port of DivergenceSplitter's Scenario Runtime.
+NDI is not included and has not been tested.
+
+Each package contains the application license and dependency notices under licenses/.
+The candidate, pinned manifest and installed dependency status are in build-metadata/.
+Qt packages use dynamic linking. See the Qt and third-party notices and source
+references in licenses/vcpkg/ and build-metadata/ when redistributing this experiment.
+ImGui and wxWidgets packages carry their respective notices in the same locations.

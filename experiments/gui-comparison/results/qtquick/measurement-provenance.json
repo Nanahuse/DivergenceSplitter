@@ -1,0 +1,8 @@
+{
+  "source_commit": "f7c49659e9a9baaa4e14708b5865a20984a5b95f",
+  "source_fingerprints": "local/provenance.json",
+  "source_fingerprints_unchanged": true,
+  "distribution_manifest": "local/report.json",
+  "distribution_files_unchanged": 244,
+  "method": "SHA256 comparison after all 12 measurements; no application or benchmark was re-executed"
+}
