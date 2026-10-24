@@ -1,6 +1,6 @@
 #requires -Version 7.3
 param(
-    [Parameter(Mandatory)][ValidateSet('qt', 'wx', 'imgui')][string]$Candidate,
+    [Parameter(Mandatory)][ValidateSet('qt', 'qtquick', 'wx', 'imgui')][string]$Candidate,
     [string]$Python = 'python',
     [string]$InstalledDirectory = '',
     [ValidateSet('standard', 'features', 'optimized')][string]$QtConfiguration = 'standard'

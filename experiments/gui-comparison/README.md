@@ -1,6 +1,8 @@
 # GUIライブラリ比較
 
-採用ライブラリは未決定。比較対象は **Qt Widgets、wxWidgets、Dear ImGuiの3候補** とし、同じ仕様・合格条件で比較する。PR #152はQt Widgetsの依存・配布経路の証拠として再利用するが、共通GUI仕様の合格証拠や選定結果にはしない。
+採用ライブラリは未決定。比較対象は **Qt Widgets、Qt Quick、wxWidgets、Dear ImGuiの4実装** とし、同じ仕様・合格条件で比較する。PR #152はQt Widgetsの依存・配布経路の証拠として再利用するが、共通GUI仕様の合格証拠や選定結果にはしない。
+
+Qt Quickの追加検証は [追加記録](results/qtquick.md) に分ける。既存3候補の結果・構成・配布物を保持し、今回の追加で再テストしない。通常のGUI比較CIはQt Quickのみを実行する。全候補の再実行はworkflow_dispatchの`all_candidates`を明示した場合だけ行う。以下の既存3候補の記録はその測定時点の証拠であり、Qt Quickへ転用しない。
 
 このディレクトリーは比較用の実験であり、Scenario Runtimeや製品GUIの移植ではない。NDIは全候補から除外する。
 

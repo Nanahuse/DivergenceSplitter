@@ -18,6 +18,11 @@ on:
       - 'tools/*gui*'
       - '.github/workflows/gui-comparison-common.yml'
   workflow_dispatch:
+    inputs:
+      all_candidates:
+        description: 'Explicitly retest all candidates; otherwise test only the new Qt Quick candidate'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,13 +35,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        candidate: [qt, wx, imgui]
-        qt_configuration: [standard]
-        include:
-          - candidate: qt
-            qt_configuration: features
-          - candidate: qt
-            qt_configuration: optimized
+        # Existing implementations keep their recorded results. This addition tests Qt Quick only.
+        include: ${{ fromJSON(inputs.all_candidates && '[{"candidate":"qtquick","qt_configuration":"standard"},{"candidate":"qt","qt_configuration":"standard"},{"candidate":"qt","qt_configuration":"features"},{"candidate":"qt","qt_configuration":"optimized"},{"candidate":"wx","qt_configuration":"standard"},{"candidate":"imgui","qt_configuration":"standard"}]' || '[{"candidate":"qtquick","qt_configuration":"standard"}]') }}
     defaults:
       run:
         shell: pwsh
@@ -74,6 +74,7 @@ jobs:
           restore-keys: |
             gui-comparison-windows-2025-${{ steps.manifest.outputs.variant }}-${{ steps.manifest.outputs.baseline }}-
             gui-comparison-windows-2025-${{ matrix.candidate }}-${{ steps.manifest.outputs.baseline }}-
+            gui-comparison-windows-2025-qt-${{ steps.manifest.outputs.baseline }}-
       - name: Release build, common and GUI tests, install and extracted-ZIP tests
         id: verify
         env:

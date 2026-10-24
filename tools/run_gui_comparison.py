@@ -14,11 +14,16 @@ from pathlib import Path
 
 
 def plan_cases(
-    seconds: int, repeats: int, soak: int, diagnostics_repeats: int, soak_repeats: int
+    seconds: int,
+    repeats: int,
+    soak: int,
+    diagnostics_repeats: int,
+    soak_repeats: int,
+    selected: tuple[str, ...] = ("qt", "wx", "imgui"),
 ) -> list[tuple[str, bool, str, int, bool, str]]:
     cases = []
     for repeat in range(repeats):
-        candidates = ("qt", "wx", "imgui") if repeat % 2 == 0 else ("imgui", "wx", "qt")
+        candidates = selected if repeat % 2 == 0 else selected[::-1]
         for large in (False, True):
             for candidate in candidates:
                 cases.append(
@@ -34,9 +39,7 @@ def plan_cases(
     # Keep each mode separate; alternate candidate order between repetitions.
     for large in (False, True):
         for repeat in range(max(diagnostics_repeats, soak_repeats if soak else 0)):
-            candidates = (
-                ("qt", "wx", "imgui") if repeat % 2 == 0 else ("imgui", "wx", "qt")
-            )
+            candidates = selected if repeat % 2 == 0 else selected[::-1]
             for candidate in candidates:
                 if repeat < diagnostics_repeats:
                     label = (
@@ -87,14 +90,21 @@ def run(
     diagnostics_repeats: int = 1,
     soak_repeats: int = 1,
     resume: bool = False,
+    candidates: tuple[str, ...] = ("qt", "wx", "imgui"),
 ) -> None:
+    if (
+        not candidates
+        or len(set(candidates)) != len(candidates)
+        or set(candidates) - {"qt", "qtquick", "wx", "imgui"}
+    ):
+        raise ValueError("Select distinct known GUI candidates")
     distribution = distribution.resolve()
     output = output.resolve()
     if output.is_relative_to(distribution) or distribution.is_relative_to(output):
         raise ValueError("Distribution and measurements must be disjoint")
     binaries = {
         candidate: distribution / candidate / f"bin/comparison-{candidate}.exe"
-        for candidate in ("qt", "wx", "imgui")
+        for candidate in candidates
     }
     binary_hashes = {
         candidate: hashlib.sha256(binary.read_bytes()).hexdigest()
@@ -117,6 +127,7 @@ def run(
             subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
         ),
         "binary_sha256": binary_hashes,
+        "candidates": list(candidates),
         "started_utc": datetime.now(UTC).isoformat(),
         "platform": platform.platform(),
         "processor": platform.processor(),
@@ -134,6 +145,7 @@ def run(
         previous = json.loads((output / "environment.json").read_text(encoding="utf-8"))
         for key in (
             "binary_sha256",
+            "candidates",
             "platform",
             "processor",
             "logical_cpus",
@@ -146,9 +158,13 @@ def run(
             "soak_seconds_per_candidate_and_dataset",
         ):
             previous_value = (
-                previous.get(key, 1)
-                if key in ("diagnostics_repeats", "soak_repeats")
-                else previous[key]
+                previous.get("candidates", ["qt", "wx", "imgui"])
+                if key == "candidates"
+                else (
+                    previous.get(key, 1)
+                    if key in ("diagnostics_repeats", "soak_repeats")
+                    else previous[key]
+                )
             )
             if previous_value != metadata[key]:
                 raise ValueError(
@@ -170,7 +186,9 @@ def run(
     (output / "environment.json").write_text(
         json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
     )
-    cases = plan_cases(seconds, repeats, soak, diagnostics_repeats, soak_repeats)
+    cases = plan_cases(
+        seconds, repeats, soak, diagnostics_repeats, soak_repeats, candidates
+    )
     for candidate, large, label, duration, exercise, page in cases:
         name = f"{candidate}-{'large' if large else 'small'}-{label}"
         root = (distribution / candidate).resolve()
@@ -252,6 +270,13 @@ def main() -> None:
     parser.add_argument("--soak-repeats", type=int, default=1)
     parser.add_argument("--soak", type=int, default=1800)
     parser.add_argument(
+        "--candidates",
+        nargs="+",
+        choices=("qt", "qtquick", "wx", "imgui"),
+        default=("qt", "wx", "imgui"),
+        help="Select only the candidates that need measurement",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Reuse validated cases only with identical binaries and conditions",
@@ -278,6 +303,7 @@ def main() -> None:
         soak_repeats=args.soak_repeats,
         soak=args.soak,
         resume=args.resume,
+        candidates=tuple(args.candidates),
     )
 
 

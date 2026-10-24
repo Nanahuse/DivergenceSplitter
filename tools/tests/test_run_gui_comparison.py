@@ -8,6 +8,17 @@ import pytest
 from run_gui_comparison import plan_cases, run, validate_report
 
 
+def test_qtquick_only_schedule_never_launches_existing_candidates() -> None:
+    cases = plan_cases(180, 3, 0, 3, 1, ("qtquick",))
+    assert len(cases) == 12
+    assert {case[0] for case in cases} == {"qtquick"}
+    for large in (False, True):
+        for page in ("monitor", "diagnostics"):
+            selected = [case for case in cases if case[1] == large and case[5] == page]
+            assert len(selected) == 3
+            assert all(case[3] == 180 and not case[4] for case in selected)
+
+
 def test_three_minutes_three_repeats_include_each_mode_and_dataset() -> None:
     cases = plan_cases(180, 3, 180, 3, 3)
     assert len(cases) == 54

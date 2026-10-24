@@ -14,7 +14,7 @@ from package_gui_comparison import (
 )
 
 
-@pytest.mark.parametrize("candidate", ["qt", "wx", "imgui"])
+@pytest.mark.parametrize("candidate", ["qt", "qtquick", "wx", "imgui"])
 def test_exit_success_without_gui_checks_is_not_accepted(candidate: str) -> None:
     with pytest.raises(ValueError, match="Incomplete/failed"):
         verify_smoke_report({"candidate": candidate, "self_test": True}, candidate)

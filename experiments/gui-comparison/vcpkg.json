@@ -6,6 +6,13 @@
     { "name": "opencv4", "features": ["contrib"] }
   ],
   "features": {
+    "qtquick": {
+      "description": "Qt Quick / QML / Quick Controls implementation with the standard Qt base",
+      "dependencies": [
+        { "name": "qtbase", "features": ["windeployqt"] },
+        "qtdeclarative"
+      ]
+    },
     "qt": {
       "description": "Qt Widgets implementation",
       "dependencies": [{ "name": "qtbase", "features": ["windeployqt"] }]
@@ -34,6 +41,7 @@
   "overrides": [
     { "name": "opencv4", "version": "4.12.0", "port-version": 7 },
     { "name": "qtbase", "version": "6.11.1", "port-version": 1 },
+    { "name": "qtdeclarative", "version": "6.11.1" },
     { "name": "wxwidgets", "version": "3.3.1", "port-version": 1 },
     { "name": "imgui", "version": "1.92.8", "port-version": 1 }
   ]

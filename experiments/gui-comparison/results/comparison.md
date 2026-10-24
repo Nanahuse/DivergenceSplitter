@@ -1,5 +1,7 @@
 # GUI比較の実測記録
 
+Qt Quickを4番目の実装として追加する。[Qt Quick追加記録](qtquick.md) を参照。以下の3候補の実測は保持し、今回の追加では再テストしない。
+
 対象は **Qt Widgets、wxWidgets、Dear ImGui**。3候補とも共通GUIを実装し、クリーンWindows CIでReleaseビルド、CTest、配布ZIP展開後の起動に成功した。採用候補は未決定。保守性・機能充足を優先し、容量は補助情報とする。NDIと実Scenario Runtimeは全候補から除外し、完全移植版の容量は推定しない。
 
 PR #152の最小Qtアプリと今回の共通GUIは別の検証対象。[PR #153](https://github.com/Nanahuse/DivergenceSplitter/pull/153) は #152 のブランチをbaseとするdraftで、mainへはマージしていない。

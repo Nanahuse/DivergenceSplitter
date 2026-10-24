@@ -66,7 +66,7 @@ def summarize(source: Path, output: Path) -> None:
         records.append(record)
     if len(records) != completed["cases"]:
         raise ValueError("Completed case count disagrees with available reports")
-    for candidate in ("qt", "wx", "imgui"):
+    for candidate in environment.get("candidates", ("qt", "wx", "imgui")):
         for dataset in ("small", "large"):
             if len(groups[f"{candidate}/{dataset}/monitor"]) != environment["repeats"]:
                 raise ValueError("Missing Monitor repetition")

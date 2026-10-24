@@ -15,7 +15,12 @@ from typing import Any
 from measure_distribution import closure, extract_archive, installed_inventory, measure
 from prepare_cpp_distribution import SDK_GRAPHICS_DLLS, collect_sdk_notices
 
-GUI_PORTS = {"qt": "qtbase", "wx": "wxwidgets", "imgui": "imgui"}
+GUI_PORTS = {
+    "qt": "qtbase",
+    "qtquick": "qtdeclarative",
+    "wx": "wxwidgets",
+    "imgui": "imgui",
+}
 QT_CONFIGURATIONS = ("standard", "features", "optimized")
 QT_RUNTIME_CHECKS = {
     "windows_platform_plugin",
@@ -200,12 +205,20 @@ def prepare(root: Path, installed: Path, candidate: str, manifest: Path) -> None
         "DISTRIBUTION-NOTICE.txt",
         "licenses/msvc/MSVC-NOTICE.txt",
     ]
-    if candidate == "qt":
-        required += [
-            f"bin/Qt6{component}.dll" for component in ("Core", "Gui", "Widgets")
-        ]
+    if candidate in ("qt", "qtquick"):
+        components = (
+            ("Core", "Gui", "Widgets")
+            if candidate == "qt"
+            else ("Core", "Gui", "Qml", "Quick", "QuickControls2")
+        )
+        required += [f"bin/Qt6{component}.dll" for component in components]
         if not list(root.rglob("qwindows.dll")):
             raise ValueError("Missing Qt Windows platform plugin")
+        if candidate == "qtquick" and not any(
+            path.parent.as_posix().endswith("QtQuick/Controls/Fusion")
+            for path in root.rglob("qmldir")
+        ):
+            raise ValueError("Missing deployed Qt Quick Fusion Controls QML module")
     for relative in required:
         if not (root / relative).is_file() or not (root / relative).stat().st_size:
             raise ValueError(f"Missing required distribution file: {relative}")
