@@ -88,7 +88,10 @@ migrated by discarding the old ZeroMQ endpoints and assigning ports from 54000.
 
 Source types:
 
-- `camera` with device index/backend/mode and optional 60 fps request
+- `camera` with backend/device name, index for duplicate names, and an exact
+  enumerated mode (width, height, fps, subtype GUID). The UI can enumerate
+  devices with DirectShow and Media Foundation and keeps the configured
+  identifiers when saving.
 - `video` with an absolute local file path
 - `ndi` with the advertised source name
 
@@ -121,13 +124,15 @@ See `examples/minimal-scenario.yaml`. Unknown fields, unsupported types, and
 
 ## Tests
 
-`ctest --preset full` runs detector, condition, scenario runtime, YAML loader,
-profile, frame cache, capture normalizer, instance runtime, and Qt widget tests.
-The instance runtime tests use a fake bridge and verify:
+`ctest --preset full` runs detector, condition, camera resolution, scenario
+runtime, YAML loader, profile, frame cache, capture normalizer, instance
+runtime, and Qt widget tests. The instance runtime tests use a fake bridge and
+verify:
 
 - Start/Split/Reset dispatch
 - manual Reset on the instance thread
 - no automatic resend after an unknown control result
+- timer Events update the snapshot without a full Query synchronization
 - reconnect/resynchronize
 
 An optional real TestHost smoke test can be built with:
@@ -157,6 +162,6 @@ plugins, `LICENSE.txt`, `DISTRIBUTION-NOTICE.txt`, and third-party notices under
 
 NDI remains an input option in the Profile schema and UI, but the SDK adapter is
 not included in this migration. The NDI SDK is not shipped in this repository
-or distribution. Selecting NDI reports a clear configuration error; it never
+or distribution. Selecting NDI and pressing Apply reports a clear configuration error; it never
 silently falls back to camera or video. The SDK/runtime licensing review and the
 adapter are tracked as the remaining NDI phase.

@@ -48,7 +48,7 @@ public:
         ++sync_count_;
         return current_;
     }
-    [[nodiscard]] std::optional<BridgeEventKind> next_event(std::chrono::milliseconds) override {
+    [[nodiscard]] std::optional<BridgeEvent> next_event(std::chrono::milliseconds) override {
         std::scoped_lock lock{mutex_};
         if (events_.empty()) {
             return std::nullopt;
@@ -88,9 +88,13 @@ public:
         std::scoped_lock lock{mutex_};
         return actions_;
     }
-    void push_event(BridgeEventKind event) {
+    void push_event(BridgeEvent event) {
         std::scoped_lock lock{mutex_};
-        events_.push_back(event);
+        events_.push_back(std::move(event));
+    }
+    [[nodiscard]] std::uint64_t sync_count() const {
+        std::scoped_lock lock{mutex_};
+        return sync_count_;
     }
     void set_dropped(std::uint64_t value) {
         std::scoped_lock lock{mutex_};
@@ -109,7 +113,7 @@ private:
     bool ready_{true};
     std::uint64_t sync_count_{};
     std::uint64_t dropped_{};
-    std::deque<BridgeEventKind> events_;
+    std::deque<BridgeEvent> events_;
     std::vector<ActionOperation> actions_;
 };
 

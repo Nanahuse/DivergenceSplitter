@@ -12,6 +12,7 @@
 namespace divergencesplitter {
 
 struct ConditionDiagnosticsNode {
+    std::string path;
     std::string type;
     std::string status;
     std::string description;
@@ -23,6 +24,7 @@ struct ConditionDiagnosticsNode {
 };
 
 struct RuleDiagnosticsNode {
+    std::string path;
     std::size_t index{};
     std::string type;
     std::optional<ActionOperation> action;
@@ -37,6 +39,7 @@ struct RuleGroupDiagnostics {
 };
 
 struct SplitDiagnosticsNode {
+    std::string path;
     std::size_t index{};
     bool configured{};
     std::vector<RuleDiagnosticsNode> rules;

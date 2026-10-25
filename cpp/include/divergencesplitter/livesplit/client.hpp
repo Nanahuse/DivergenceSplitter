@@ -30,7 +30,7 @@ public:
     [[nodiscard]] bool is_ready() const override;
     [[nodiscard]] std::uint32_t session_id() const override;
     [[nodiscard]] BridgeSnapshot synchronize() override;
-    [[nodiscard]] std::optional<BridgeEventKind> next_event(
+    [[nodiscard]] std::optional<BridgeEvent> next_event(
         std::chrono::milliseconds timeout
     ) override;
     [[nodiscard]] std::uint64_t dropped_event_count() const override;

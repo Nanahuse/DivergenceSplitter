@@ -64,6 +64,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "DIVERGENCESPLITTER_BUILD_UI": "ON",
+        "DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS": "ON",
         "VCPKG_MANIFEST_FEATURES": "tests"
       }
     }

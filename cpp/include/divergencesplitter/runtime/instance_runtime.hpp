@@ -86,7 +86,7 @@ private:
     bool stop_requested_{false};
     bool running_{false};
     std::uint64_t last_dropped_count_{};
-    std::optional<BridgeEventKind> pending_event_;
+    std::optional<BridgeEvent> pending_event_;
     struct UnknownControlGuard {
         ActionOperation operation;
         LiveSplitSnapshot snapshot;

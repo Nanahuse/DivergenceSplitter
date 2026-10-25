@@ -11,8 +11,12 @@ namespace {
 
 constexpr auto kSplitTransitionTimeout = std::chrono::seconds{1};
 
-ConditionDiagnosticsNode make_condition_node(const Condition* condition) {
+ConditionDiagnosticsNode make_condition_node(
+    const Condition* condition,
+    const std::string& path
+) {
     ConditionDiagnosticsNode node;
+    node.path = path;
     if (condition == nullptr) {
         node.type = "none";
         node.status = "not_evaluated";
@@ -27,14 +31,22 @@ ConditionDiagnosticsNode make_condition_node(const Condition* condition) {
     }
     node.latest_score = condition->latest_score();
     node.max_score = condition->max_score();
-    for (const auto* child : condition->children()) {
-        node.children.push_back(make_condition_node(child));
+    const auto& children = condition->children();
+    for (std::size_t index = 0; index < children.size(); ++index) {
+        node.children.push_back(
+            make_condition_node(children[index], path + ".c" + std::to_string(index))
+        );
     }
     return node;
 }
 
-RuleDiagnosticsNode make_rule_node(const std::shared_ptr<ScenarioRule>& rule, std::size_t index) {
+RuleDiagnosticsNode make_rule_node(
+    const std::shared_ptr<ScenarioRule>& rule,
+    std::size_t index,
+    const std::string& path
+) {
     RuleDiagnosticsNode node;
+    node.path = path;
     node.index = index;
     if (const auto* sequence = dynamic_cast<const RuleSequence*>(rule.get())) {
         node.type = std::string{sequence->type_name()};
@@ -42,7 +54,8 @@ RuleDiagnosticsNode make_rule_node(const std::shared_ptr<ScenarioRule>& rule, st
         for (std::size_t rule_index = 0; rule_index < sequence->rules().size(); ++rule_index) {
             node.sequence_rules.push_back(make_rule_node(
                 std::static_pointer_cast<ScenarioRule>(sequence->rules()[rule_index]),
-                rule_index
+                rule_index,
+                path + ".s" + std::to_string(rule_index)
             ));
         }
         return node;
@@ -50,21 +63,26 @@ RuleDiagnosticsNode make_rule_node(const std::shared_ptr<ScenarioRule>& rule, st
     if (const auto* single = dynamic_cast<const Rule*>(rule.get())) {
         node.type = std::string{single->type_name()};
         node.action = single->action().operation;
-        node.condition = make_condition_node(single->condition().get());
+        node.condition = make_condition_node(single->condition().get(), path + ".cond");
         return node;
     }
     node.type = std::string{rule->type_name()};
-    node.condition = make_condition_node(rule->active_condition());
+    node.condition = make_condition_node(rule->active_condition(), path + ".cond");
     return node;
 }
 
 std::vector<RuleDiagnosticsNode> make_rule_nodes(
-    const std::vector<ScenarioRulePtr>& rules
+    const std::vector<ScenarioRulePtr>& rules,
+    const std::string& base_path
 ) {
     std::vector<RuleDiagnosticsNode> nodes;
     nodes.reserve(rules.size());
     for (std::size_t index = 0; index < rules.size(); ++index) {
-        nodes.push_back(make_rule_node(rules[index], index));
+        nodes.push_back(make_rule_node(
+            rules[index],
+            index,
+            base_path + ".r" + std::to_string(index)
+        ));
     }
     return nodes;
 }
@@ -244,17 +262,18 @@ ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics() const {
     if (pending_action_.has_value()) {
         result.pending_action = pending_action_->operation;
     }
-    result.start.push_back(RuleGroupDiagnostics{"start", make_rule_nodes(start_rules_)});
-    result.reset.push_back(RuleGroupDiagnostics{"reset", make_rule_nodes(reset_rules_)});
+    result.start.push_back(RuleGroupDiagnostics{"start", make_rule_nodes(start_rules_, "start")});
+    result.reset.push_back(RuleGroupDiagnostics{"reset", make_rule_nodes(reset_rules_, "reset")});
     result.incomplete.push_back(
-        RuleGroupDiagnostics{"incomplete", make_rule_nodes(incomplete_rules_)}
+        RuleGroupDiagnostics{"incomplete", make_rule_nodes(incomplete_rules_, "incomplete")}
     );
     for (std::size_t index = 0; index < scenario_.splits.size(); ++index) {
         SplitDiagnosticsNode split;
+        split.path = "split." + std::to_string(index);
         split.index = index;
         split.configured = scenario_.splits[index].has_value();
         if (split.configured) {
-            split.rules = make_rule_nodes(*scenario_.splits[index]);
+            split.rules = make_rule_nodes(*scenario_.splits[index], split.path);
         }
         result.splits.push_back(std::move(split));
     }

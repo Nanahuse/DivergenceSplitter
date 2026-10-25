@@ -65,7 +65,12 @@ TEST(TestHost, ControlPauseResume) {
     options.ready_timeout = 10s;
     LiveSplitBridgeClient client{options};
     client.wait_until_ready(10s);
-    const auto before = client.synchronize();
+    auto before = client.synchronize();
+    if (before.phase == TimerPhase::not_running) {
+        const auto start = client.execute(ActionOperation::start);
+        ASSERT_EQ(start.status, BridgeControlStatus::ok) << start.message;
+        before = client.synchronize();
+    }
     if (before.phase != TimerPhase::running && before.phase != TimerPhase::paused) {
         GTEST_SKIP() << "timer must be running or paused to verify pause/resume";
     }
@@ -78,4 +83,6 @@ TEST(TestHost, ControlPauseResume) {
     const auto result = client.execute(ActionOperation::resume);
     ASSERT_EQ(result.status, BridgeControlStatus::ok) << result.message;
     EXPECT_EQ(client.synchronize().phase, TimerPhase::running);
+
+    (void)client.execute(ActionOperation::reset);
 }

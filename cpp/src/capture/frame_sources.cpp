@@ -2,16 +2,46 @@
 
 #include <opencv2/videoio.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 namespace divergencesplitter {
 
 namespace {
 constexpr double kDefaultVideoFps = 30.0;
+
+std::optional<int> fourcc_from_guid(std::string_view guid) {
+    const auto first = guid.find('-');
+    if (first == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto rest = guid.substr(first + 1);
+    if (rest != "0000-0010-8000-00AA00389B71") {
+        return std::nullopt;
+    }
+    unsigned long data1 = 0;
+    try {
+        data1 = std::stoul(std::string{guid.substr(0, first)}, nullptr, 16);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+    char fourcc[4]{};
+    for (int shift = 0; shift < 32; shift += 8) {
+        const auto character = static_cast<char>((data1 >> shift) & 0xff);
+        if (character < 0x20 || character > 0x7e) {
+            return std::nullopt;
+        }
+        fourcc[shift / 8] = character;
+    }
+    return cv::VideoWriter::fourcc(fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
+}
 }
 
 struct CameraFrameSource::Impl {
@@ -49,8 +79,33 @@ void CameraFrameSource::open() {
     configure(cv::CAP_PROP_FRAME_WIDTH, options_.width, "width");
     configure(cv::CAP_PROP_FRAME_HEIGHT, options_.height, "height");
     configure(cv::CAP_PROP_FPS, options_.fps, "fps");
+    if (backend == cv::CAP_DSHOW && !options_.subtype_guid.empty()) {
+        if (const auto fourcc = fourcc_from_guid(options_.subtype_guid);
+            fourcc.has_value()) {
+            impl_->capture.set(cv::CAP_PROP_FOURCC, *fourcc);
+        }
+    }
     if (options_.request_60_fps) {
         impl_->capture.set(cv::CAP_PROP_FPS, 60.0);
+    }
+    if (options_.enforce_mode) {
+        const int width = static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_WIDTH));
+        const int height = static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_HEIGHT));
+        const double fps = impl_->capture.get(cv::CAP_PROP_FPS);
+        const bool size_mismatch = width != options_.width || height != options_.height;
+        const bool fps_mismatch = !options_.request_60_fps && fps > 0.0 &&
+            std::abs(fps - options_.fps) > std::max(1e-3, options_.fps * 1e-6);
+        if (size_mismatch || fps_mismatch) {
+            impl_->capture.release();
+            impl_->opened = false;
+            throw FrameSourceError(
+                "camera rejected the configured capture mode: expected " +
+                    std::to_string(options_.width) + "x" + std::to_string(options_.height) +
+                    "@" + std::to_string(options_.fps) + ", got " + std::to_string(width) +
+                    "x" + std::to_string(height) + "@" + std::to_string(fps),
+                false
+            );
+        }
     }
     impl_->opened = true;
 }

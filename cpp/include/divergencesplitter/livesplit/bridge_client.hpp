@@ -56,6 +56,13 @@ enum class BridgeEventKind {
     other,
 };
 
+struct BridgeEvent {
+    BridgeEventKind kind{BridgeEventKind::other};
+    std::uint32_t session_id{};
+    std::optional<TimerPhase> phase;
+    std::optional<std::int32_t> split_index;
+};
+
 enum class BridgeControlStatus {
     ok,
     unknown,
@@ -78,7 +85,7 @@ public:
     [[nodiscard]] virtual bool is_ready() const = 0;
     [[nodiscard]] virtual std::uint32_t session_id() const = 0;
     [[nodiscard]] virtual BridgeSnapshot synchronize() = 0;
-    [[nodiscard]] virtual std::optional<BridgeEventKind> next_event(
+    [[nodiscard]] virtual std::optional<BridgeEvent> next_event(
         std::chrono::milliseconds timeout
     ) = 0;
     [[nodiscard]] virtual std::uint64_t dropped_event_count() const = 0;

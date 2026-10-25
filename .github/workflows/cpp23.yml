@@ -50,6 +50,28 @@ jobs:
           restore-keys: |
             cpp23-vcpkg-${{ runner.os }}-
 
+      - name: Check out LiveSplit.Bridge TestHost
+        uses: actions/checkout@v5
+        with:
+          repository: Nanahuse/LiveSplit.Bridge
+          ref: 4c14c0161eacd50b05411c0d20f5eff523e9c155
+          submodules: recursive
+          path: .testhost/LiveSplit.Bridge
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Python for TestHost runner
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build TestHost
+        working-directory: ${{ github.workspace }}
+        run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
+
       - name: Configure
         run: cmake --preset ci
 
@@ -59,8 +81,51 @@ jobs:
       - name: Test
         run: ctest --preset ci --output-on-failure
 
+      - name: TestHost integration
+        working-directory: ${{ github.workspace }}
+        run: >-
+          python cpp/tools/run_testhost.py
+          --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin/Release/net4.8.1/LiveSplit.Bridge.TestHost.exe
+          --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe
+          --port 54000
+
       - name: Package ZIP
         run: cmake --build --preset ci --target package
+
+      - name: Verify extracted ZIP
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem build/ci/*.zip | Select-Object -First 1
+          if (-not $zip) { throw 'No ZIP package was produced' }
+          $destination = Join-Path $env:RUNNER_TEMP 'divergencesplitter-zip'
+          Remove-Item $destination -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip.FullName -DestinationPath $destination
+          foreach ($file in @('platforms\qwindows.dll', 'Qt6Core.dll', 'opencv_core4.dll', 'vc_redist.x64.exe', 'LICENSE.txt', 'licenses\qtbase.txt')) {
+            if (-not (Test-Path (Join-Path $destination $file))) {
+              throw "Extracted ZIP is missing $file"
+            }
+          }
+          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+          $env:PATH = "$destination;$env:SystemRoot\System32;$env:SystemRoot"
+          & "$destination\divergencesplitter-cli.exe" --help
+          if ($LASTEXITCODE -ne 0) { throw "CLI failed from extracted ZIP: $LASTEXITCODE" }
+          $gui = Start-Process -FilePath "$destination\DivergenceSplitter.exe" -WorkingDirectory $destination -PassThru
+          try {
+            $windowReady = $false
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $gui.Refresh()
+              if ($gui.HasExited) { throw "GUI exited from extracted ZIP: $($gui.ExitCode)" }
+              if ($gui.MainWindowTitle -eq 'DivergenceSplitter') {
+                $windowReady = $true
+                break
+              }
+            }
+            if (-not $windowReady) { throw 'GUI did not create its main window from the extracted ZIP' }
+          } finally {
+            if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force }
+          }
 
       - name: Upload distribution
         uses: actions/upload-artifact@v7

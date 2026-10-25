@@ -38,6 +38,8 @@ struct CameraSourceOptions {
     int width{};
     int height{};
     double fps{};
+    std::string subtype_guid;
+    bool enforce_mode{false};
     bool request_60_fps{false};
 };
 

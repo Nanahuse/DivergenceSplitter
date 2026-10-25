@@ -7,6 +7,7 @@
 #include <utility>
 #include <variant>
 
+#include "divergencesplitter/capture/camera_devices.hpp"
 #include "divergencesplitter/livesplit/client.hpp"
 #include "divergencesplitter/scenario/scenario.hpp"
 
@@ -170,14 +171,26 @@ std::unique_ptr<FrameSource> Session::create_source(
         [](const auto& value) -> std::unique_ptr<FrameSource> {
             using Value = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<Value, CameraSourceConfiguration>) {
+                const auto devices = list_camera_devices();
+                const auto device = resolve_camera_device(value.device, devices);
+                if (!device.has_value()) {
+                    throw ConfigurationError(
+                        "camera device is not connected: backend=" +
+                        std::string{to_string(value.device.backend)} + ", name=" +
+                        value.device.name + ", index=" + std::to_string(value.device.index)
+                    );
+                }
+                const auto mode = resolve_camera_mode(value.mode, device->modes);
                 CameraSourceOptions options;
-                options.device_index = value.device.index;
-                options.backend = value.device.backend == CameraBackend::direct_show
+                options.device_index = device->index;
+                options.backend = device->backend == CameraBackend::direct_show
                     ? cv::CAP_DSHOW
                     : cv::CAP_MSMF;
-                options.width = value.mode.width;
-                options.height = value.mode.height;
-                options.fps = value.mode.fps;
+                options.width = mode.width;
+                options.height = mode.height;
+                options.fps = mode.fps;
+                options.subtype_guid = mode.subtype_guid;
+                options.enforce_mode = true;
                 options.request_60_fps = value.request_60_fps;
                 return std::make_unique<CameraFrameSource>(options);
             } else if constexpr (std::is_same_v<Value, VideoSourceConfiguration>) {

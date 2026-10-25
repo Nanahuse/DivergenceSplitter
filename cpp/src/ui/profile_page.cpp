@@ -13,11 +13,14 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 #include <filesystem>
 #include <variant>
@@ -72,6 +75,14 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
 
     auto* camera_page = new QWidget(source_stack_);
     auto* camera_form = new QFormLayout(camera_page);
+    camera_device_combo_ = new QComboBox(camera_page);
+    camera_device_combo_->setMinimumWidth(260);
+    camera_mode_combo_ = new QComboBox(camera_page);
+    camera_detect_button_ = new QPushButton(tr("Detect cameras"), camera_page);
+    camera_name_ = new QLineEdit(camera_page);
+    camera_subtype_ = new QLineEdit(camera_page);
+    camera_note_ = new QLabel(camera_page);
+    camera_note_->setWordWrap(true);
     camera_index_ = new QSpinBox(camera_page);
     camera_index_->setRange(0, 64);
     camera_backend_ = new QComboBox(camera_page);
@@ -87,12 +98,20 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
     camera_fps_->setRange(0.1, 240.0);
     camera_fps_->setValue(60.0);
     camera_request_60_ = new QCheckBox(tr("Request 60 fps"), camera_page);
-    camera_form->addRow(tr("Device index"), camera_index_);
+    auto* device_row = new QHBoxLayout;
+    device_row->addWidget(camera_device_combo_, 1);
+    device_row->addWidget(camera_detect_button_);
+    camera_form->addRow(tr("Device"), device_row);
+    camera_form->addRow(tr("Device name"), camera_name_);
+    camera_form->addRow(tr("Mode"), camera_mode_combo_);
     camera_form->addRow(tr("Backend"), camera_backend_);
+    camera_form->addRow(tr("Device index"), camera_index_);
     camera_form->addRow(tr("Width"), camera_width_);
     camera_form->addRow(tr("Height"), camera_height_);
     camera_form->addRow(tr("FPS"), camera_fps_);
+    camera_form->addRow(tr("Subtype GUID"), camera_subtype_);
     camera_form->addRow(camera_request_60_);
+    camera_form->addRow(camera_note_);
     source_stack_->addWidget(camera_page);
 
     auto* video_page = new QWidget(source_stack_);
@@ -202,6 +221,11 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
     layout->addLayout(actions);
 
     connect(source_type_, &QComboBox::currentIndexChanged, this, &ProfilePage::source_type_changed);
+    connect(camera_detect_button_, &QPushButton::clicked, this, [this]() {
+        refresh_camera_devices();
+    });
+    connect(camera_device_combo_, &QComboBox::currentIndexChanged, this, &ProfilePage::camera_device_changed);
+    connect(camera_mode_combo_, &QComboBox::currentIndexChanged, this, &ProfilePage::camera_mode_changed);
     connect(video_browse, &QPushButton::clicked, this, &ProfilePage::browse_video);
     connect(add_button, &QPushButton::clicked, this, &ProfilePage::add_instance);
     connect(remove_button, &QPushButton::clicked, this, &ProfilePage::remove_instance);
@@ -229,10 +253,13 @@ void ProfilePage::load_profile(const Profile& profile) {
                     QString::fromStdString(std::string{to_string(source.device.backend)})
                 );
                 camera_backend_->setCurrentIndex(std::max(0, backend_index));
+                camera_name_->setText(QString::fromStdString(source.device.name));
+                camera_subtype_->setText(QString::fromStdString(source.mode.subtype_guid));
                 camera_width_->setValue(source.mode.width);
                 camera_height_->setValue(source.mode.height);
                 camera_fps_->setValue(source.mode.fps);
                 camera_request_60_->setChecked(source.request_60_fps);
+                populate_camera_devices(source.device, source.mode);
             } else if constexpr (std::is_same_v<Source, VideoSourceConfiguration>) {
                 source_type_->setCurrentIndex(1);
                 video_path_->setText(path_text(source.path));
@@ -300,11 +327,11 @@ Profile ProfilePage::draft_profile() const {
                 to_std(camera_backend_->currentData().toString())
             ).value_or(CameraBackend::media_foundation);
             source.device.index = camera_index_->value();
-            source.device.name = "Camera " + std::to_string(source.device.index);
+            source.device.name = to_std(camera_name_->text());
             source.mode.width = camera_width_->value();
             source.mode.height = camera_height_->value();
             source.mode.fps = camera_fps_->value();
-            source.mode.subtype_guid = "default";
+            source.mode.subtype_guid = to_std(camera_subtype_->text());
             source.request_60_fps = camera_request_60_->isChecked();
             source.transform = transform;
             result.source = source;
@@ -343,6 +370,25 @@ void ProfilePage::apply() {
         QMessageBox::critical(this, tr("Profile"), message);
     };
 
+    if (std::holds_alternative<CameraSourceConfiguration>(profile.source)) {
+        const auto& camera = std::get<CameraSourceConfiguration>(profile.source);
+        if (camera.device.name.empty()) {
+            fail(tr("A camera device name is required. Use Detect cameras to select one."));
+            return;
+        }
+        if (camera.mode.width <= 0 || camera.mode.height <= 0 || camera.mode.fps <= 0.0) {
+            fail(tr("A camera capture mode is required. Use Detect cameras to select one."));
+            return;
+        }
+        if (camera.mode.subtype_guid.empty()) {
+            fail(tr("A camera subtype GUID is required. Use Detect cameras to select a mode."));
+            return;
+        }
+    }
+    if (std::holds_alternative<NdiSourceConfiguration>(profile.source)) {
+        fail(tr("NDI input is not available in this build. Use camera or video input."));
+        return;
+    }
     if (std::holds_alternative<VideoSourceConfiguration>(profile.source)) {
         const auto& video = std::get<VideoSourceConfiguration>(profile.source);
         if (video.path.empty()) {
@@ -354,13 +400,7 @@ void ProfilePage::apply() {
             return;
         }
     }
-    if (std::holds_alternative<NdiSourceConfiguration>(profile.source)) {
-        const auto& ndi = std::get<NdiSourceConfiguration>(profile.source);
-        if (ndi.name.empty()) {
-            fail(tr("An NDI source name is required."));
-            return;
-        }
-    }
+
     if (profile.instances.empty()) {
         fail(tr("Add at least one LiveSplit instance."));
         return;
@@ -449,6 +489,153 @@ void ProfilePage::source_type_changed(int) {
 
 void ProfilePage::update_source_stack() {
     source_stack_->setCurrentIndex(source_type_->currentIndex());
+}
+
+void ProfilePage::refresh_camera_devices() {
+    std::optional<CameraDeviceConfiguration> configured;
+    if (!camera_name_->text().isEmpty()) {
+        CameraDeviceConfiguration device;
+        device.backend = parse_camera_backend(
+            to_std(camera_backend_->currentData().toString())
+        ).value_or(CameraBackend::media_foundation);
+        device.name = to_std(camera_name_->text());
+        device.index = camera_index_->value();
+        configured = device;
+    }
+    std::optional<CameraModeConfiguration> mode;
+    if (camera_width_->value() > 0 && camera_height_->value() > 0 && camera_fps_->value() > 0) {
+        mode = CameraModeConfiguration{
+            camera_width_->value(),
+            camera_height_->value(),
+            camera_fps_->value(),
+            to_std(camera_subtype_->text()),
+        };
+    }
+    populate_camera_devices(configured, mode);
+}
+
+void ProfilePage::populate_camera_devices(
+    const std::optional<CameraDeviceConfiguration>& device,
+    const std::optional<CameraModeConfiguration>& mode
+) {
+    try {
+        camera_devices_ = list_camera_devices();
+    } catch (const std::exception& error) {
+        camera_devices_.clear();
+        camera_note_->setText(
+            tr("Could not enumerate cameras: %1").arg(QString::fromUtf8(error.what()))
+        );
+    }
+    QSignalBlocker devices_block{camera_device_combo_};
+    QSignalBlocker modes_block{camera_mode_combo_};
+    camera_device_combo_->clear();
+    camera_mode_combo_->clear();
+    if (camera_devices_.empty()) {
+        camera_note_->setText(tr("No camera devices were found."));
+        return;
+    }
+    for (std::size_t index = 0; index < camera_devices_.size(); ++index) {
+        const auto& entry = camera_devices_[index];
+        camera_device_combo_->addItem(
+            QStringLiteral("%1 [%2]")
+                .arg(QString::fromStdString(entry.name))
+                .arg(QString::fromStdString(std::string{to_string(entry.backend)})),
+            static_cast<int>(index)
+        );
+    }
+
+    int selected = -1;
+    if (device.has_value()) {
+        const auto resolved = resolve_camera_device(*device, camera_devices_);
+        if (resolved.has_value()) {
+            for (std::size_t index = 0; index < camera_devices_.size(); ++index) {
+                if (camera_devices_[index].backend == resolved->backend &&
+                    camera_devices_[index].index == resolved->index) {
+                    selected = static_cast<int>(index);
+                    break;
+                }
+            }
+        } else {
+            camera_note_->setText(tr("The configured camera is not connected."));
+        }
+    }
+    camera_device_combo_->setCurrentIndex(selected);
+    if (selected < 0) {
+        return;
+    }
+    populate_camera_modes(camera_devices_[static_cast<std::size_t>(selected)].modes, mode);
+}
+
+void ProfilePage::populate_camera_modes(
+    const std::vector<CameraModeInfo>& modes,
+    const std::optional<CameraModeConfiguration>& configured
+) {
+    QSignalBlocker block{camera_mode_combo_};
+    camera_modes_ = modes;
+    camera_mode_combo_->clear();
+    for (std::size_t index = 0; index < modes.size(); ++index) {
+        const auto& mode = modes[index];
+        camera_mode_combo_->addItem(
+            QStringLiteral("%1x%2 @ %3 %4")
+                .arg(mode.width)
+                .arg(mode.height)
+                .arg(mode.fps, 0, 'f', 3)
+                .arg(QString::fromStdString(mode.format)),
+            static_cast<int>(index)
+        );
+    }
+    int selected = -1;
+    if (configured.has_value()) {
+        const auto resolved = try_resolve_camera_mode(*configured, modes);
+        if (resolved.has_value()) {
+            for (std::size_t index = 0; index < modes.size(); ++index) {
+                if (modes[index] == *resolved) {
+                    selected = static_cast<int>(index);
+                    break;
+                }
+            }
+        } else {
+            camera_note_->setText(tr("The configured capture mode is unavailable."));
+        }
+    }
+    camera_mode_combo_->setCurrentIndex(selected);
+}
+
+void ProfilePage::camera_device_changed(int index) {
+    if (index < 0 || index >= static_cast<int>(camera_devices_.size())) {
+        return;
+    }
+    const auto& device = camera_devices_[static_cast<std::size_t>(index)];
+    camera_name_->setText(QString::fromStdString(device.name));
+    camera_index_->setValue(device.index);
+    const int backend_index = camera_backend_->findData(
+        QString::fromStdString(std::string{to_string(device.backend)})
+    );
+    camera_backend_->setCurrentIndex(std::max(0, backend_index));
+    CameraModeConfiguration configured{
+        camera_width_->value(),
+        camera_height_->value(),
+        camera_fps_->value(),
+        to_std(camera_subtype_->text()),
+    };
+    populate_camera_modes(device.modes, configured);
+    if (camera_mode_combo_->currentIndex() < 0 && !device.modes.empty()) {
+        camera_mode_combo_->setCurrentIndex(0);
+        camera_mode_changed(0);
+    }
+    camera_note_->clear();
+}
+
+void ProfilePage::camera_mode_changed(int index) {
+    if (index < 0 || index >= static_cast<int>(camera_modes_.size())) {
+        return;
+    }
+    const auto& mode = camera_modes_[static_cast<std::size_t>(index)];
+    camera_width_->setValue(mode.width);
+    camera_height_->setValue(mode.height);
+    camera_fps_->setValue(mode.fps);
+    camera_subtype_->setText(QString::fromStdString(mode.subtype_guid));
+    camera_note_->clear();
 }
 
 }  // namespace divergencesplitter::ui

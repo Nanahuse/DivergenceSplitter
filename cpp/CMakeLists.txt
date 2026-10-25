@@ -92,6 +92,7 @@ add_library(divergencesplitter_runtime STATIC
     src/runtime/configuration.cpp
     src/runtime/logging.cpp
     src/capture/frame_sources.cpp
+    src/capture/camera_devices.cpp
     src/capture/capture_pipeline.cpp
 )
 
@@ -107,7 +108,10 @@ target_link_libraries(divergencesplitter_runtime
 
 if(WIN32)
     target_compile_definitions(divergencesplitter_runtime PRIVATE _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(divergencesplitter_runtime PRIVATE ws2_32 mswsock)
+    target_link_libraries(divergencesplitter_runtime PRIVATE
+        ws2_32 mswsock
+        ole32 oleaut32 strmiids mf mfplat mfuuid mfreadwrite
+    )
 endif()
 
 
@@ -207,6 +211,7 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
     include(GoogleTest)
 
     add_executable(divergencesplitter_tests
+        tests/camera_tests.cpp
         tests/condition_tests.cpp
         tests/detector_tests.cpp
         tests/frame_cache_tests.cpp

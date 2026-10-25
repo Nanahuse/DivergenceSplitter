@@ -6,23 +6,30 @@
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
-#include <algorithm>
+#include <optional>
+#include <string>
+#include <vector>
 
 #include "divergencesplitter/ui/app_controller.hpp"
 
 namespace divergencesplitter::ui {
 namespace {
 
+struct DiagnosticRow {
+    QString key;
+    QString parent;
+    int position{};
+    QString column0;
+    QString column1;
+    QString column2;
+    QString column3;
+};
+
 QString score_text(const std::optional<double>& latest, const std::optional<double>& maximum) {
     if (!latest.has_value() && !maximum.has_value()) {
         return {};
     }
-    QString text;
-    if (latest.has_value()) {
-        text = QString::number(*latest, 'f', 4);
-    } else {
-        text = QStringLiteral("-");
-    }
+    QString text = latest.has_value() ? QString::number(*latest, 'f', 4) : QStringLiteral("-");
     if (maximum.has_value()) {
         text += QStringLiteral(" (max %1)").arg(*maximum, 0, 'f', 4);
     }
@@ -41,6 +48,206 @@ QString instance_state_text(InstanceState state) {
             return QObject::tr("stopped");
     }
     return {};
+}
+
+QString condition_detail(const ConditionDiagnosticsNode& node) {
+    QString detail = QString::fromStdString(node.description);
+    if (!node.detector_type.empty()) {
+        detail += QStringLiteral(" [%1]").arg(QString::fromStdString(node.detector_type));
+    }
+    if (node.minimum_score.has_value()) {
+        detail += QStringLiteral(" threshold=%1").arg(*node.minimum_score);
+    }
+    return detail;
+}
+
+class RowBuilder {
+public:
+    void add(
+        const QString& key,
+        const QString& parent,
+        QString column0,
+        QString column1 = {},
+        QString column2 = {},
+        QString column3 = {}
+    ) {
+        rows.push_back(DiagnosticRow{
+            key,
+            parent,
+            next_position_[parent]++,
+            std::move(column0),
+            std::move(column1),
+            std::move(column2),
+            std::move(column3),
+        });
+    }
+
+    void add_condition(
+        const QString& parent,
+        const ConditionDiagnosticsNode& node,
+        const QString& scenario_prefix
+    ) {
+        const QString key = scenario_prefix + QString::fromStdString(node.path);
+        add(
+            key,
+            parent,
+            QString::fromStdString(node.type),
+            QString::fromStdString(node.status),
+            score_text(node.latest_score, node.max_score),
+            condition_detail(node)
+        );
+        for (const auto& child : node.children) {
+            add_condition(key, child, scenario_prefix);
+        }
+    }
+
+    void add_rule(
+        const QString& parent,
+        const RuleDiagnosticsNode& node,
+        const QString& scenario_prefix
+    ) {
+        const QString key = scenario_prefix + QString::fromStdString(node.path);
+        QString label = QString::fromStdString(node.type);
+        if (node.action.has_value()) {
+            label = QObject::tr("Rule %1 -> %2")
+                        .arg(node.index)
+                        .arg(QString::fromStdString(std::string{to_string(*node.action)}));
+        }
+        const QString active = node.active_rule_index.has_value()
+            ? QObject::tr("active step %1").arg(*node.active_rule_index)
+            : QString{};
+        add(key, parent, label, {}, {}, active);
+        if (node.condition.type != "none" && !node.condition.type.empty()) {
+            add_condition(key, node.condition, scenario_prefix);
+        }
+        for (const auto& rule : node.sequence_rules) {
+            add_rule(key, rule, scenario_prefix);
+        }
+    }
+
+    void add_group(
+        const QString& name,
+        const QString& path,
+        const std::vector<RuleGroupDiagnostics>& groups,
+        const QString& scenario_prefix,
+        const QString& parent
+    ) {
+        const QString key = scenario_prefix + path;
+        add(key, parent, name);
+        for (const auto& group : groups) {
+            for (const auto& rule : group.rules) {
+                add_rule(key, rule, scenario_prefix);
+            }
+        }
+    }
+
+    std::vector<DiagnosticRow> rows;
+
+private:
+    QHash<QString, int> next_position_;
+};
+
+std::vector<DiagnosticRow> build_rows(
+    const std::vector<InstanceDiagnosticsSnapshot>& instances
+) {
+    RowBuilder builder;
+    for (const auto& instance : instances) {
+        const QString root = QStringLiteral("s%1").arg(instance.index);
+        const QString prefix = root + QLatin1Char('/');
+        builder.add(
+            root,
+            {},
+            QObject::tr("Scenario %1").arg(instance.index),
+            instance_state_text(instance.state),
+            {},
+            QString::fromStdString(instance.error)
+        );
+        if (instance.run.has_value()) {
+            builder.add(
+                root + QStringLiteral("/run"),
+                root,
+                QObject::tr("Run"),
+                {},
+                {},
+                QString::fromStdString(
+                    instance.run->segments.empty() ? std::string{"no segments"}
+                                                   : instance.run->segments.front().name
+                )
+            );
+        }
+        if (!instance.scenario.has_value()) {
+            continue;
+        }
+        const auto& scenario = *instance.scenario;
+        builder.add_group(QObject::tr("Start"), QStringLiteral("start"), scenario.start, prefix, root);
+        builder.add_group(QObject::tr("Reset"), QStringLiteral("reset"), scenario.reset, prefix, root);
+        builder.add_group(QObject::tr("Incomplete"), QStringLiteral("incomplete"), scenario.incomplete, prefix, root);
+
+        const QString splits_key = prefix + QStringLiteral("splits");
+        builder.add(splits_key, root, QObject::tr("Splits"));
+        for (const auto& split : scenario.splits) {
+            const QString split_key = prefix + QString::fromStdString(split.path);
+            builder.add(
+                split_key,
+                splits_key,
+                QObject::tr("Split %1").arg(split.index),
+                split.configured ? QObject::tr("configured") : QObject::tr("not configured")
+            );
+            for (const auto& rule : split.rules) {
+                builder.add_rule(split_key, rule, prefix);
+            }
+        }
+        builder.add(
+            prefix + QStringLiteral("metrics"),
+            root,
+            QObject::tr("Evaluation"),
+            {},
+            {},
+            QObject::tr("%1 evaluations, %2 ms last, %3 rule errors")
+                .arg(scenario.evaluation_count)
+                .arg(scenario.last_evaluation_ms, 0, 'f', 3)
+                .arg(scenario.rule_errors)
+        );
+    }
+    return std::move(builder.rows);
+}
+
+QString signature_of(const std::vector<DiagnosticRow>& rows) {
+    QString signature;
+    signature.reserve(static_cast<int>(rows.size() * 48));
+    for (const auto& row : rows) {
+        signature += row.key;
+        signature += QLatin1Char('|');
+        signature += row.parent;
+        signature += QLatin1Char('|');
+        signature += QString::number(row.position);
+        signature += QLatin1Char('\n');
+    }
+    return signature;
+}
+
+void collect_state(
+    QTreeWidgetItem* item,
+    QSet<QString>& expanded,
+    QString& selected_key
+) {
+    const QString key = item->data(0, Qt::UserRole).toString();
+    if (item->isExpanded()) {
+        expanded.insert(key);
+    }
+    if (item->isSelected()) {
+        selected_key = key;
+    }
+    for (int index = 0; index < item->childCount(); ++index) {
+        collect_state(item->child(index), expanded, selected_key);
+    }
+}
+
+void set_columns(QTreeWidgetItem* item, const DiagnosticRow& row) {
+    item->setText(0, row.column0);
+    item->setText(1, row.column1);
+    item->setText(2, row.column2);
+    item->setText(3, row.column3);
 }
 
 }  // namespace
@@ -64,140 +271,55 @@ DiagnosticsPage::DiagnosticsPage(AppController* controller, QWidget* parent)
 }
 
 void DiagnosticsPage::refresh() {
-    QSet<QString> expanded;
-    for (int index = 0; index < tree_->topLevelItemCount(); ++index) {
-        collect_expanded(tree_->topLevelItem(index), expanded);
-    }
-    tree_->clear();
-
     const auto instances = controller_->session().instance_diagnostics();
-    for (const auto& instance : instances) {
-        auto* scenario_item = new QTreeWidgetItem(tree_);
-        scenario_item->setText(0, tr("Scenario %1").arg(instance.index));
-        scenario_item->setText(1, instance_state_text(instance.state));
-        scenario_item->setText(3, QString::fromStdString(instance.error));
-        scenario_item->setData(0, Qt::UserRole, QStringLiteral("scenario:%1").arg(instance.index));
+    const auto rows = build_rows(instances);
+    const QString signature = signature_of(rows);
 
-        if (instance.run.has_value()) {
-            auto* run_item = new QTreeWidgetItem(scenario_item);
-            run_item->setText(0, tr("Run"));
-            run_item->setText(3, QString::fromStdString(instance.run->segments.empty()
-                ? std::string{"no segments"}
-                : instance.run->segments.front().name));
-        }
-
-        if (!instance.scenario.has_value()) {
-            continue;
-        }
-        const auto& scenario = *instance.scenario;
-        const auto add_group = [&](const QString& name,
-                                   const std::vector<RuleGroupDiagnostics>& groups) {
-            auto* group_item = new QTreeWidgetItem(scenario_item);
-            group_item->setText(0, name);
-            for (const auto& group : groups) {
-                for (const auto& rule : group.rules) {
-                    make_rule_item(group_item, rule);
-                }
-            }
-        };
-        add_group(tr("Start"), scenario.start);
-        add_group(tr("Reset"), scenario.reset);
-        add_group(tr("Incomplete"), scenario.incomplete);
-
-        auto* splits_item = new QTreeWidgetItem(scenario_item);
-        splits_item->setText(0, tr("Splits"));
-        for (const auto& split : scenario.splits) {
-            auto* split_item = new QTreeWidgetItem(splits_item);
-            split_item->setText(0, tr("Split %1").arg(split.index));
-            split_item->setText(1, split.configured ? tr("configured") : tr("not configured"));
-            for (const auto& rule : split.rules) {
-                make_rule_item(split_item, rule);
-            }
-        }
-        auto* metrics_item = new QTreeWidgetItem(scenario_item);
-        metrics_item->setText(0, tr("Evaluation"));
-        metrics_item->setText(3,
-            tr("%1 evaluations, %2 ms last, %3 rule errors")
-                .arg(scenario.evaluation_count)
-                .arg(scenario.last_evaluation_ms, 0, 'f', 3)
-                .arg(scenario.rule_errors));
-    }
-
+    QSet<QString> expanded;
+    QString selected_key;
     for (int index = 0; index < tree_->topLevelItemCount(); ++index) {
-        restore_expanded(tree_->topLevelItem(index), expanded);
+        collect_state(tree_->topLevelItem(index), expanded, selected_key);
     }
-    tree_->resizeColumnToContents(0);
-    tree_->resizeColumnToContents(1);
-    tree_->resizeColumnToContents(2);
-}
 
-QTreeWidgetItem* DiagnosticsPage::make_condition_item(
-    QTreeWidgetItem* parent,
-    const ConditionDiagnosticsNode& node
-) const {
-    auto* item = new QTreeWidgetItem(parent);
-    item->setText(0, QString::fromStdString(node.type));
-    item->setText(1, QString::fromStdString(node.status));
-    item->setText(2, score_text(node.latest_score, node.max_score));
-    QString detail = QString::fromStdString(node.description);
-    if (!node.detector_type.empty()) {
-        detail += QStringLiteral(" [%1]").arg(QString::fromStdString(node.detector_type));
-    }
-    if (node.minimum_score.has_value()) {
-        detail += QStringLiteral(" threshold=%1").arg(*node.minimum_score);
-    }
-    item->setText(3, detail);
-    item->setData(0, Qt::UserRole, QString::fromStdString(node.type) + detail);
-    for (const auto& child : node.children) {
-        make_condition_item(item, child);
-    }
-    return item;
-}
-
-QTreeWidgetItem* DiagnosticsPage::make_rule_item(
-    QTreeWidgetItem* parent,
-    const RuleDiagnosticsNode& node
-) const {
-    auto* item = new QTreeWidgetItem(parent);
-    const QString type = QString::fromStdString(node.type);
-    if (node.action.has_value()) {
-        item->setText(0, tr("Rule %1 -> %2")
-            .arg(node.index)
-            .arg(QString::fromStdString(std::string{to_string(*node.action)})));
+    tree_->setUpdatesEnabled(false);
+    const bool rebuild = signature != structure_signature_ ||
+                         items_.size() != static_cast<int>(rows.size());
+    if (rebuild) {
+        const bool first_build = structure_signature_.isEmpty();
+        tree_->clear();
+        items_.clear();
+        for (const auto& row : rows) {
+            QTreeWidgetItem* parent = row.parent.isEmpty()
+                ? nullptr
+                : items_.value(row.parent, nullptr);
+            auto* item = parent != nullptr
+                ? new QTreeWidgetItem(parent)
+                : new QTreeWidgetItem(tree_);
+            item->setData(0, Qt::UserRole, row.key);
+            set_columns(item, row);
+            items_.insert(row.key, item);
+            if (first_build && row.parent.isEmpty()) {
+                item->setExpanded(true);
+            } else if (expanded.contains(row.key)) {
+                item->setExpanded(true);
+            }
+        }
+        structure_signature_ = signature;
+        if (!selected_key.isEmpty() && items_.contains(selected_key)) {
+            tree_->setCurrentItem(items_.value(selected_key));
+        }
+        tree_->resizeColumnToContents(0);
+        tree_->resizeColumnToContents(1);
+        tree_->resizeColumnToContents(2);
     } else {
-        item->setText(0, type);
+        for (const auto& row : rows) {
+            if (auto* item = items_.value(row.key, nullptr); item != nullptr) {
+                set_columns(item, row);
+            }
+        }
     }
-    if (node.active_rule_index.has_value()) {
-        item->setText(3, tr("active step %1").arg(*node.active_rule_index));
-    }
-    item->setData(0, Qt::UserRole,
-        QStringLiteral("%1:%2:%3").arg(type).arg(node.index).arg(
-            node.active_rule_index.value_or(0)));
-    if (node.condition.type != "none" && !node.condition.type.empty()) {
-        make_condition_item(item, node.condition);
-    }
-    for (const auto& rule : node.sequence_rules) {
-        make_rule_item(item, rule);
-    }
-    return item;
-}
-
-void DiagnosticsPage::collect_expanded(QTreeWidgetItem* item, QSet<QString>& keys) const {
-    if (item->isExpanded()) {
-        keys.insert(item->data(0, Qt::UserRole).toString());
-    }
-    for (int index = 0; index < item->childCount(); ++index) {
-        collect_expanded(item->child(index), keys);
-    }
-}
-
-void DiagnosticsPage::restore_expanded(QTreeWidgetItem* item, const QSet<QString>& keys) {
-    if (keys.contains(item->data(0, Qt::UserRole).toString())) {
-        item->setExpanded(true);
-    }
-    for (int index = 0; index < item->childCount(); ++index) {
-        restore_expanded(item->child(index), keys);
-    }
+    tree_->setUpdatesEnabled(true);
+    tree_->viewport()->update();
 }
 
 }  // namespace divergencesplitter::ui

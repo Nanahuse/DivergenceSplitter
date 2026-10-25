@@ -7,6 +7,7 @@
 
 #include "divergencesplitter/condition/conditions.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
+#include "divergencesplitter/livesplit/adapter.hpp"
 #include "divergencesplitter/runtime/instance_runtime.hpp"
 #include "test_support.hpp"
 
@@ -185,6 +186,65 @@ TEST(InstanceRuntime, UnknownControlIsNotAutomaticallyResent) {
     pump(runtime, []() { return false; }, 300ms);
     EXPECT_EQ(bridge->actions().size(), 1U);
 
+    runtime.stop();
+}
+
+TEST(Adapter, TimerEventUpdatesStateWithoutQuery) {
+    test::FakeBridgeClient client{test::make_snapshot(TimerPhase::running, 0, 2)};
+    LiveSplitBridgeAdapter adapter{client};
+    (void)adapter.attach();
+    EXPECT_EQ(client.sync_count(), 1U);
+
+    BridgeEvent event;
+    event.kind = BridgeEventKind::timer;
+    event.session_id = 1;
+    event.phase = TimerPhase::paused;
+    event.split_index = 2;
+    const auto update = adapter.apply_event(event);
+    ASSERT_TRUE(update.has_value());
+    EXPECT_EQ(update->snapshot.phase, TimerPhase::paused);
+    EXPECT_EQ(update->snapshot.split_index, 2);
+    EXPECT_EQ(client.sync_count(), 1U);
+}
+
+TEST(Adapter, ContextEventDoesNotQuery) {
+    test::FakeBridgeClient client{test::make_snapshot(TimerPhase::running, 0, 2)};
+    LiveSplitBridgeAdapter adapter{client};
+    (void)adapter.attach();
+    BridgeEvent event;
+    event.kind = BridgeEventKind::context_changed;
+    event.session_id = 1;
+    EXPECT_FALSE(adapter.apply_event(event).has_value());
+    EXPECT_EQ(client.sync_count(), 1U);
+}
+
+TEST(InstanceRuntime, TimerEventDoesNotBlockOnSnapshotQuery) {
+    auto fake = std::make_unique<test::FakeBridgeClient>(
+        test::make_snapshot(TimerPhase::running, 0, 2)
+    );
+    auto* bridge = fake.get();
+
+    Scenario scenario;
+    scenario.start_condition = visible();
+    InstanceRuntime runtime{0, std::move(scenario), std::move(fake)};
+    runtime.start();
+    ASSERT_TRUE(test::wait_until([&]() {
+        return runtime.diagnostics().state == InstanceState::ready;
+    }));
+    const auto baseline_syncs = bridge->sync_count();
+    BridgeEvent event;
+    event.kind = BridgeEventKind::timer;
+    event.session_id = 1;
+    event.phase = TimerPhase::paused;
+    event.split_index = 1;
+    bridge->push_event(event);
+    ASSERT_TRUE(test::wait_until([&]() {
+        const auto diagnostics = runtime.diagnostics();
+        return diagnostics.scenario.has_value() &&
+               diagnostics.scenario->snapshot.has_value() &&
+               diagnostics.scenario->snapshot->phase == TimerPhase::paused;
+    }));
+    EXPECT_EQ(bridge->sync_count(), baseline_syncs);
     runtime.stop();
 }
 

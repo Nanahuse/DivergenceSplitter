@@ -144,7 +144,7 @@ BridgeSnapshot LiveSplitBridgeClient::synchronize() {
     }
 }
 
-std::optional<BridgeEventKind> LiveSplitBridgeClient::next_event(
+std::optional<BridgeEvent> LiveSplitBridgeClient::next_event(
     std::chrono::milliseconds timeout
 ) {
     try {
@@ -153,24 +153,32 @@ std::optional<BridgeEventKind> LiveSplitBridgeClient::next_event(
             return std::nullopt;
         }
         return std::visit(
-            [](const auto& value) -> BridgeEventKind {
+            [](const auto& value) -> BridgeEvent {
                 using Value = std::decay_t<decltype(value)>;
+                BridgeEvent mapped;
+                mapped.session_id = value.session_id;
                 if constexpr (std::is_same_v<Value, livesplit::bridge::timer_event>) {
-                    return BridgeEventKind::timer;
+                    mapped.kind = BridgeEventKind::timer;
+                    mapped.phase = map_phase(value.timer_state.phase);
+                    mapped.split_index = value.timer_state.split_index;
                 } else if constexpr (std::is_same_v<Value, livesplit::bridge::reset_event>) {
-                    return BridgeEventKind::reset;
+                    mapped.kind = BridgeEventKind::reset;
+                    if (value.timer_state.has_value()) {
+                        mapped.phase = map_phase(value.timer_state->phase);
+                        mapped.split_index = value.timer_state->split_index;
+                    }
                 } else if constexpr (std::is_same_v<Value, livesplit::bridge::changed_event>) {
                     using enum livesplit::bridge::changed_event_type;
                     switch (value.type) {
                         case RUN_CHANGED:
-                            return BridgeEventKind::run_changed;
+                            mapped.kind = BridgeEventKind::run_changed;
+                            break;
                         case CONTEXT_CHANGED:
-                            return BridgeEventKind::context_changed;
+                            mapped.kind = BridgeEventKind::context_changed;
+                            break;
                     }
-                    return BridgeEventKind::other;
-                } else {
-                    return BridgeEventKind::other;
                 }
+                return mapped;
             },
             *event
         );

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QSet>
 #include <QString>
 #include <QWidget>
@@ -22,19 +23,10 @@ public:
     void refresh();
 
 private:
-    void collect_expanded(QTreeWidgetItem* item, QSet<QString>& keys) const;
-    void restore_expanded(QTreeWidgetItem* item, const QSet<QString>& keys);
-    QTreeWidgetItem* make_condition_item(
-        QTreeWidgetItem* parent,
-        const ConditionDiagnosticsNode& node
-    ) const;
-    QTreeWidgetItem* make_rule_item(
-        QTreeWidgetItem* parent,
-        const RuleDiagnosticsNode& node
-    ) const;
-
     AppController* controller_;
     QTreeWidget* tree_;
+    QHash<QString, QTreeWidgetItem*> items_;
+    QString structure_signature_;
 };
 
 }  // namespace divergencesplitter::ui

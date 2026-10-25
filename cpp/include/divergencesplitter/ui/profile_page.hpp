@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "divergencesplitter/capture/camera_devices.hpp"
 #include "divergencesplitter/configuration/configuration.hpp"
 
 class QCheckBox;
@@ -42,6 +43,17 @@ private:
     void browse_video();
     void source_type_changed(int index);
     void update_source_stack();
+    void refresh_camera_devices();
+    void populate_camera_devices(
+        const std::optional<CameraDeviceConfiguration>& device,
+        const std::optional<CameraModeConfiguration>& mode
+    );
+    void populate_camera_modes(
+        const std::vector<CameraModeInfo>& modes,
+        const std::optional<CameraModeConfiguration>& configured
+    );
+    void camera_device_changed(int index);
+    void camera_mode_changed(int index);
 
     AppController* controller_;
 
@@ -50,6 +62,14 @@ private:
 
     QSpinBox* camera_index_;
     QComboBox* camera_backend_;
+    QComboBox* camera_device_combo_;
+    QComboBox* camera_mode_combo_;
+    QPushButton* camera_detect_button_;
+    QLineEdit* camera_name_;
+    QLineEdit* camera_subtype_;
+    QLabel* camera_note_;
+    std::vector<CameraDeviceInfo> camera_devices_;
+    std::vector<CameraModeInfo> camera_modes_;
     QSpinBox* camera_width_;
     QSpinBox* camera_height_;
     QDoubleSpinBox* camera_fps_;

@@ -315,14 +315,16 @@ void InstanceRuntime::run_connected() {
         if (pending_event_.has_value()) {
             const auto event = *pending_event_;
             pending_event_.reset();
-            auto update = adapter_->synchronize(event);
-            apply_update(update);
+            if (auto update = adapter_->apply_event(event); update.has_value()) {
+                apply_update(*update);
+            }
         }
 
         const auto event = client_->next_event(std::chrono::milliseconds{0});
         if (event.has_value()) {
-            auto update = adapter_->synchronize(*event);
-            apply_update(update);
+            if (auto update = adapter_->apply_event(*event); update.has_value()) {
+                apply_update(*update);
+            }
         }
 
         const auto dropped = client_->dropped_event_count();

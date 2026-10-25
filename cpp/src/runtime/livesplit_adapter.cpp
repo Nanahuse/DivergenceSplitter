@@ -13,6 +13,40 @@ LiveSplitUpdate LiveSplitBridgeAdapter::attach() {
     return make_update(UpdateKind::initial, snapshot);
 }
 
+std::optional<LiveSplitUpdate> LiveSplitBridgeAdapter::apply_event(const BridgeEvent& event) {
+    if (!initialized_ || !last_.has_value() || event.session_id != session_id_) {
+        auto snapshot = client_.synchronize();
+        return make_update(UpdateKind::resync, snapshot);
+    }
+
+    switch (event.kind) {
+        case BridgeEventKind::context_changed:
+            return std::nullopt;
+        case BridgeEventKind::timer:
+        case BridgeEventKind::reset: {
+            if (!event.phase.has_value() || !event.split_index.has_value() ||
+                *event.phase == TimerPhase::unspecified) {
+                auto snapshot = client_.synchronize();
+                return make_update(UpdateKind::resync, snapshot);
+            }
+            if (last_->phase == *event.phase &&
+                last_->split_index == *event.split_index) {
+                return std::nullopt;
+            }
+            BridgeSnapshot snapshot = *last_;
+            snapshot.phase = *event.phase;
+            snapshot.split_index = *event.split_index;
+            return make_update(UpdateKind::transition, snapshot);
+        }
+        case BridgeEventKind::run_changed:
+        case BridgeEventKind::other: {
+            auto snapshot = client_.synchronize();
+            return make_update(UpdateKind::transition, snapshot);
+        }
+    }
+    return std::nullopt;
+}
+
 LiveSplitUpdate LiveSplitBridgeAdapter::synchronize(BridgeEventKind event) {
     auto snapshot = client_.synchronize();
     const UpdateKind kind =

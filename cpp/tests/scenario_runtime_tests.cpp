@@ -210,9 +210,12 @@ TEST(ScenarioRuntime, DiagnosticsExposeConditionTree) {
     ASSERT_FALSE(diagnostics.start.front().rules.empty());
     const auto& condition = diagnostics.start.front().rules.front().condition;
     EXPECT_EQ(condition.type, "all");
+    EXPECT_EQ(condition.path, "start.r0.cond");
     ASSERT_EQ(condition.children.size(), 2U);
     EXPECT_EQ(condition.children[0].type, "detected");
     EXPECT_EQ(condition.children[0].status, "true");
+    EXPECT_EQ(condition.children[0].path, "start.r0.cond.c0");
+    EXPECT_EQ(condition.children[1].path, "start.r0.cond.c1");
 }
 
 TEST(ScenarioRuntime, TransitionToNewSplitResetsRules) {
