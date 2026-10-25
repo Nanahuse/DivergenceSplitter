@@ -11,6 +11,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+    defaults:
+      run:
+        working-directory: cpp
     env:
       VCPKG_ROOT: C:\vcpkg
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
