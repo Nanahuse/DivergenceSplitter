@@ -9,7 +9,20 @@
     "boost-asio",
     "boost-beast",
     "nlohmann-json",
-    "opencv4",
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": [
+        "dshow",
+        "intrinsics",
+        "jpeg",
+        "msmf",
+        "png",
+        "thread",
+        "tiff",
+        "webp"
+      ]
+    },
     "yaml-cpp"
   ],
   "features": {
