@@ -82,13 +82,13 @@ jobs:
         run: ctest --preset ci --output-on-failure
 
       - name: TestHost integration
+        shell: pwsh
         working-directory: ${{ github.workspace }}
-        run: >-
-          python cpp/tools/run_testhost.py
-          --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin/Release/net4.8.1/LiveSplit.Bridge.TestHost.exe
-          --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe
-          --port 54000
-
+        run: |
+          $testhost = Get-ChildItem '.testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin' -Recurse -Filter 'LiveSplit.Bridge.TestHost.exe' | Select-Object -First 1
+          if (-not $testhost) { throw 'TestHost executable was not found' }
+          python cpp/tools/run_testhost.py --testhost $testhost.FullName --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
+          if ($LASTEXITCODE -ne 0) { throw "TestHost integration failed: $LASTEXITCODE" }
       - name: Package ZIP
         run: cmake --build --preset ci --target package
 
