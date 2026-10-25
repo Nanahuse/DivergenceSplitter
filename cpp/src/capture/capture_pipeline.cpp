@@ -193,8 +193,8 @@ void CapturePipeline::publish_error(const std::string& message) {
 
 void CapturePipeline::run() {
     std::string error;
+    bool source_open = false;
     try {
-        source_->open();
         auto last_fps_at = std::chrono::steady_clock::now();
         std::uint64_t frames_since_sample = 0;
         while (true) {
@@ -202,6 +202,21 @@ void CapturePipeline::run() {
                 std::scoped_lock lock{mutex_};
                 if (stop_requested_) {
                     break;
+                }
+            }
+            if (!source_open) {
+                try {
+                    source_->open();
+                    source_open = true;
+                } catch (const FrameSourceError& source_error) {
+                    if (stop_requested()) {
+                        break;
+                    }
+                    if (source_error.retryable()) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+                        continue;
+                    }
+                    throw;
                 }
             }
             try {
@@ -238,6 +253,7 @@ void CapturePipeline::run() {
                     frame_sink_(std::move(shared));
                 }
             } catch (const FrameSourceError& source_error) {
+                source_open = false;
                 {
                     std::scoped_lock lock{mutex_};
                     if (stop_requested_) {
