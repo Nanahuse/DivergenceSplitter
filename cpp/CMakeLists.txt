@@ -253,8 +253,12 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
         else()
             set(_qt_test_plugin_path "${VCPKG_INSTALLED_DIR}/x64-windows/Qt6/plugins")
         endif()
+        set(_ui_test_environment "QT_QPA_PLATFORM=offscreen")
+        if(EXISTS "${_qt_test_plugin_path}")
+            string(APPEND _ui_test_environment ";QT_PLUGIN_PATH=${_qt_test_plugin_path}")
+        endif()
         set_tests_properties(divergencesplitter_ui_tests PROPERTIES ENVIRONMENT
-            "QT_PLUGIN_PATH=${_qt_test_plugin_path};QT_QPA_PLATFORM=offscreen"
+            "${_ui_test_environment}"
         )
     endif()
 endif()
