@@ -209,8 +209,11 @@ void CapturePipeline::run() {
                     source_->open();
                     source_open = true;
                 } catch (const FrameSourceError& source_error) {
-                    if (stop_requested()) {
-                        break;
+                    {
+                        std::scoped_lock lock{mutex_};
+                        if (stop_requested_) {
+                            break;
+                        }
                     }
                     if (source_error.retryable()) {
                         std::this_thread::sleep_for(std::chrono::milliseconds{100});
