@@ -257,8 +257,9 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
         if(EXISTS "${_qt_test_plugin_path}")
             string(APPEND _ui_test_environment ";QT_PLUGIN_PATH=${_qt_test_plugin_path}")
         endif()
-        set_tests_properties(divergencesplitter_ui_tests PROPERTIES ENVIRONMENT
-            "${_ui_test_environment}"
+        set_tests_properties(divergencesplitter_ui_tests PROPERTIES
+            ENVIRONMENT "${_ui_test_environment}"
+            TIMEOUT 120
         )
     endif()
 endif()
