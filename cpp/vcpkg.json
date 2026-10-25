@@ -1,0 +1,33 @@
+{
+  "name": "divergencesplitter",
+  "version-semver": "0.1.0",
+  "description": "Automatic splitter for LiveSplit.Bridge",
+  "homepage": "https://github.com/Nanahuse/DivergenceSplitter",
+  "license": "MIT",
+  "builtin-baseline": "0c2a9ace1964b818b15f7ae50ba1c42404918a7b",
+  "dependencies": [
+    "boost-asio",
+    "boost-beast",
+    "nlohmann-json",
+    "opencv4",
+    "yaml-cpp"
+  ],
+  "features": {
+    "ui": {
+      "description": "Qt Widgets desktop interface",
+      "dependencies": [
+        "qtbase"
+      ]
+    },
+    "tests": {
+      "description": "GoogleTest unit and integration tests",
+      "dependencies": [
+        "gtest"
+      ]
+    }
+  },
+  "default-features": [
+    "ui",
+    "tests"
+  ]
+}

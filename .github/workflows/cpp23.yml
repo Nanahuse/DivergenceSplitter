@@ -1,0 +1,67 @@
+name: C++23
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.2"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          archives: qtbase
+          cache: true
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          if (-not (Test-Path C:\vcpkg\vcpkg.exe)) {
+            & C:\vcpkg\bootstrap-vcpkg.bat
+          }
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\downloads
+            C:\vcpkg-cache
+          key: cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('cpp/vcpkg.json') }}
+          restore-keys: |
+            cpp23-vcpkg-${{ runner.os }}-
+
+      - name: Configure
+        run: cmake --preset ci
+
+      - name: Build
+        run: cmake --build --preset ci --parallel
+
+      - name: Test
+        run: ctest --preset ci --output-on-failure
+
+      - name: Package ZIP
+        run: cmake --build --preset ci --target package
+
+      - name: Upload distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-cpp23-windows-x64
+          path: cpp/build/ci/*.zip
+          if-no-files-found: error

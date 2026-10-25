@@ -1,0 +1,105 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "DIVERGENCESPLITTER_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "core",
+      "inherits": "base",
+      "displayName": "Core runtime (no UI)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "DIVERGENCESPLITTER_BUILD_UI": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
+      "name": "core-release",
+      "inherits": "base",
+      "displayName": "Core runtime release (no UI)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "DIVERGENCESPLITTER_BUILD_UI": "OFF",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
+      "name": "full",
+      "inherits": "base",
+      "displayName": "Full application with Qt Widgets",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "DIVERGENCESPLITTER_BUILD_UI": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests;ui"
+      }
+    },
+    {
+      "name": "full-release",
+      "inherits": "base",
+      "displayName": "Full application release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "DIVERGENCESPLITTER_BUILD_UI": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests;ui"
+      }
+    },
+    {
+      "name": "ci",
+      "inherits": "base",
+      "displayName": "CI: Release UI with external Qt",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "DIVERGENCESPLITTER_BUILD_UI": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "core", "configurePreset": "core" },
+    { "name": "core-release", "configurePreset": "core-release" },
+    { "name": "full", "configurePreset": "full" },
+    { "name": "full-release", "configurePreset": "full-release" },
+    { "name": "ci", "configurePreset": "ci" }
+  ],
+  "testPresets": [
+    {
+      "name": "core",
+      "configurePreset": "core",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "core-release",
+      "configurePreset": "core-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "full",
+      "configurePreset": "full",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "full-release",
+      "configurePreset": "full-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
