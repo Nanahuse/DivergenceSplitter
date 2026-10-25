@@ -38,9 +38,5 @@
         "gtest"
       ]
     }
-  },
-  "default-features": [
-    "ui",
-    "tests"
-  ]
+  }
 }
