@@ -64,8 +64,22 @@ TEST(CameraDevices, RejectsMissingDevice) {
 
 TEST(CameraDevices, ResolvesExactModeWithFpsTolerance) {
     const std::vector<CameraModeInfo> modes{
-        CameraModeInfo{1920, 1080, 59.9400599, "MJPG", "47504A4D-0000-0010-8000-00AA00389B71"},
-        CameraModeInfo{1280, 720, 30.0, "NV12", "3231564E-0000-0010-8000-00AA00389B71"},
+        CameraModeInfo{
+            1920,
+            1080,
+            59.9400599,
+            "MJPG",
+            "47504A4D-0000-0010-8000-00AA00389B71",
+            true,
+        },
+        CameraModeInfo{
+            1280,
+            720,
+            30.0,
+            "NV12",
+            "3231564E-0000-0010-8000-00AA00389B71",
+            false,
+        },
     };
     const CameraModeConfiguration configured{
         1920,
@@ -81,7 +95,14 @@ TEST(CameraDevices, ResolvesExactModeWithFpsTolerance) {
 
 TEST(CameraDevices, RejectsUnavailableMode) {
     const std::vector<CameraModeInfo> modes{
-        CameraModeInfo{1280, 720, 30.0, "NV12", "3231564E-0000-0010-8000-00AA00389B71"},
+        CameraModeInfo{
+            1280,
+            720,
+            30.0,
+            "NV12",
+            "3231564E-0000-0010-8000-00AA00389B71",
+            false,
+        },
     };
     const CameraModeConfiguration configured{
         1920,
@@ -94,4 +115,12 @@ TEST(CameraDevices, RejectsUnavailableMode) {
 
 TEST(CameraDevices, EnumerationDoesNotThrow) {
     EXPECT_NO_THROW((void)list_camera_devices());
+}
+
+TEST(CameraDevices, ConvertsWideDeviceNamesToUtf8) {
+    const std::wstring name = L"Camera \u65E5\u672C\u8A9E 123";
+    const std::string expected = "Camera \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E 123";
+    EXPECT_EQ(utf8_from_wide(name), expected);
+    EXPECT_EQ(utf8_from_wide(name + L'\0'), expected);
+    EXPECT_TRUE(utf8_from_wide(std::wstring_view{}).empty());
 }

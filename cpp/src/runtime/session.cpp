@@ -181,6 +181,13 @@ std::unique_ptr<FrameSource> Session::create_source(
                     );
                 }
                 const auto mode = resolve_camera_mode(value.mode, device->modes);
+                if (device->backend == CameraBackend::direct_show &&
+                    !mode.subtype_selectable) {
+                    throw ConfigurationError(
+                        "DirectShow/OpenCV cannot select this camera subtype exactly: " +
+                        mode.subtype_guid + ". Choose a compressed mode or use Media Foundation."
+                    );
+                }
                 CameraSourceOptions options;
                 options.device_index = device->index;
                 options.backend = device->backend == CameraBackend::direct_show

@@ -91,7 +91,11 @@ Source types:
 - `camera` with backend/device name, index for duplicate names, and an exact
   enumerated mode (width, height, fps, subtype GUID). The UI can enumerate
   devices with DirectShow and Media Foundation and keeps the configured
-  identifiers when saving.
+  identifiers when saving. DirectShow FourCC modes are set and verified; modes
+  whose subtype cannot be selected through OpenCV are rejected at Apply. Media
+  Foundation verifies width/height/FPS, while its subtype is matched from
+  enumeration but is not selectable through OpenCV; the UI labels these modes
+  as `size/FPS`.
 - `video` with an absolute local file path
 - `ndi` with the advertised source name
 

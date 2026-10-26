@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "divergencesplitter/configuration/configuration.hpp"
@@ -14,6 +15,7 @@ struct CameraModeInfo {
     double fps{};
     std::string format;
     std::string subtype_guid;
+    bool subtype_selectable{false};
 
     friend bool operator==(const CameraModeInfo&, const CameraModeInfo&) = default;
 };
@@ -25,6 +27,7 @@ struct CameraDeviceInfo {
     std::vector<CameraModeInfo> modes;
 };
 
+[[nodiscard]] std::string utf8_from_wide(std::wstring_view value);
 [[nodiscard]] std::vector<CameraDeviceInfo> list_camera_devices();
 [[nodiscard]] std::vector<CameraDeviceInfo> list_camera_devices(CameraBackend backend);
 

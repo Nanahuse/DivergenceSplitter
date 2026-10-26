@@ -576,11 +576,12 @@ void ProfilePage::populate_camera_modes(
     for (std::size_t index = 0; index < modes.size(); ++index) {
         const auto& mode = modes[index];
         camera_mode_combo_->addItem(
-            QStringLiteral("%1x%2 @ %3 %4")
+            QStringLiteral("%1x%2 @ %3 %4 (%5)")
                 .arg(mode.width)
                 .arg(mode.height)
                 .arg(mode.fps, 0, 'f', 3)
-                .arg(QString::fromStdString(mode.format)),
+                .arg(QString::fromStdString(mode.format))
+                .arg(mode.subtype_selectable ? tr("exact subtype") : tr("size/FPS")),
             static_cast<int>(index)
         );
     }
@@ -599,6 +600,15 @@ void ProfilePage::populate_camera_modes(
         }
     }
     camera_mode_combo_->setCurrentIndex(selected);
+    if (selected >= 0) {
+        const auto& mode = modes[static_cast<std::size_t>(selected)];
+        camera_note_->setText(
+            mode.subtype_selectable
+                ? tr("The capture backend can select and verify this exact subtype.")
+                : tr("This mode verifies width/height/FPS only; OpenCV does not expose "
+                     "exact subtype selection for this backend.")
+        );
+    }
 }
 
 void ProfilePage::camera_device_changed(int index) {
@@ -635,7 +645,12 @@ void ProfilePage::camera_mode_changed(int index) {
     camera_height_->setValue(mode.height);
     camera_fps_->setValue(mode.fps);
     camera_subtype_->setText(QString::fromStdString(mode.subtype_guid));
-    camera_note_->clear();
+    camera_note_->setText(
+        mode.subtype_selectable
+            ? tr("The capture backend can select and verify this exact subtype.")
+            : tr("This mode verifies width/height/FPS only; OpenCV does not expose "
+                 "exact subtype selection for this backend.")
+    );
 }
 
 }  // namespace divergencesplitter::ui

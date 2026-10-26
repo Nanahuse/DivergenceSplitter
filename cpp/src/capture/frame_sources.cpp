@@ -80,9 +80,34 @@ void CameraFrameSource::open() {
     configure(cv::CAP_PROP_FRAME_HEIGHT, options_.height, "height");
     configure(cv::CAP_PROP_FPS, options_.fps, "fps");
     if (backend == cv::CAP_DSHOW && !options_.subtype_guid.empty()) {
-        if (const auto fourcc = fourcc_from_guid(options_.subtype_guid);
-            fourcc.has_value()) {
-            impl_->capture.set(cv::CAP_PROP_FOURCC, *fourcc);
+        const auto fourcc = fourcc_from_guid(options_.subtype_guid);
+        if (!fourcc.has_value()) {
+            impl_->capture.release();
+            impl_->opened = false;
+            throw FrameSourceError(
+                "DirectShow/OpenCV cannot select the configured camera subtype: " +
+                    options_.subtype_guid,
+                false
+            );
+        }
+        if (!impl_->capture.set(cv::CAP_PROP_FOURCC, *fourcc)) {
+            impl_->capture.release();
+            impl_->opened = false;
+            throw FrameSourceError(
+                "DirectShow rejected the configured camera subtype: " +
+                    options_.subtype_guid,
+                false
+            );
+        }
+        const int actual = static_cast<int>(impl_->capture.get(cv::CAP_PROP_FOURCC));
+        if (actual == 0 || actual != *fourcc) {
+            impl_->capture.release();
+            impl_->opened = false;
+            throw FrameSourceError(
+                "DirectShow did not confirm the configured camera subtype: " +
+                    options_.subtype_guid,
+                false
+            );
         }
     }
     if (options_.request_60_fps) {

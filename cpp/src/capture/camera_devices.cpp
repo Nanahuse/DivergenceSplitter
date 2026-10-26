@@ -144,30 +144,7 @@ std::string property_string(IPropertyBag* bag, LPCWSTR property) {
     if (value.vt != VT_BSTR || value.bstrVal == nullptr) {
         return "Unknown";
     }
-    const int size = WideCharToMultiByte(
-        CP_UTF8,
-        0,
-        value.bstrVal,
-        -1,
-        nullptr,
-        0,
-        nullptr,
-        nullptr
-    );
-    std::string result(size > 0 ? size - 1 : 0, '\0');
-    if (size > 1) {
-        WideCharToMultiByte(
-            CP_UTF8,
-            0,
-            value.bstrVal,
-            -1,
-            &result[0],
-            size - 1,
-            nullptr,
-            nullptr
-        );
-    }
-    return result;
+    return utf8_from_wide(std::wstring_view(value.bstrVal));
 }
 
 std::string device_name(IMoniker* moniker) {
@@ -311,12 +288,14 @@ std::vector<CameraModeInfo> direct_show_modes(IMoniker* moniker) {
         if (width <= 0 || height == 0 || frame_time <= 0) {
             continue;
         }
-        modes.push_back(make_mode(
+        auto mode = make_mode(
             width,
             std::abs(height),
             10000000.0 / static_cast<double>(frame_time),
             media_type->subtype
-        ));
+        );
+        mode.subtype_selectable = equal_guid_tail(media_type->subtype);
+        modes.push_back(std::move(mode));
     }
     deduplicate_modes(modes);
     return modes;
@@ -447,30 +426,7 @@ std::string activate_name(IMFActivate* activate) {
     }
     ScopeGuard guard;
     guard.add([&] { CoTaskMemFree(value); });
-    const int size = WideCharToMultiByte(
-        CP_UTF8,
-        0,
-        value,
-        static_cast<int>(length),
-        nullptr,
-        0,
-        nullptr,
-        nullptr
-    );
-    std::string result(size, '\0');
-    if (size > 0) {
-        WideCharToMultiByte(
-            CP_UTF8,
-            0,
-            value,
-            static_cast<int>(length),
-            &result[0],
-            size,
-            nullptr,
-            nullptr
-        );
-    }
-    return result;
+    return utf8_from_wide(std::wstring_view(value, length));
 }
 
 std::vector<CameraDeviceInfo> enumerate_media_foundation() {
@@ -528,6 +484,53 @@ std::vector<CameraDeviceInfo> enumerate_media_foundation() {
 #endif
 
 }  // namespace
+
+std::string utf8_from_wide(std::wstring_view value) {
+    while (!value.empty() && value.back() == L'\0') {
+        value.remove_suffix(1);
+    }
+    if (value.empty()) {
+        return {};
+    }
+#ifdef _WIN32
+    const int size = WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+    if (size <= 0) {
+        return {};
+    }
+    std::string result(static_cast<std::size_t>(size), '\0');
+    const int written = WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        result.data(),
+        size,
+        nullptr,
+        nullptr
+    );
+    if (written <= 0) {
+        return {};
+    }
+    result.resize(static_cast<std::size_t>(written));
+    return result;
+#else
+    std::string result;
+    result.reserve(value.size());
+    for (const wchar_t character : value) {
+        result.push_back(static_cast<char>(character));
+    }
+    return result;
+#endif
+}
 
 std::vector<CameraDeviceInfo> list_camera_devices(CameraBackend backend) {
 #ifdef _WIN32
