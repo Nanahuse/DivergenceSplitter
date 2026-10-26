@@ -152,7 +152,7 @@ TEST(InstanceRuntime, ManualResetUsesInstanceThread) {
     };
 
     Scenario scenario;
-    scenario.start_condition = visible();
+    scenario.start_condition = std::make_shared<NotCondition>(visible());
     InstanceRuntime runtime{0, std::move(scenario), std::move(fake)};
     runtime.start();
     ASSERT_TRUE(test::wait_until([&]() {
