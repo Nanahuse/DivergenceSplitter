@@ -36,7 +36,7 @@ def test_qml_metadata_ownership_uses_installed_paths(tmp_path: Path) -> None:
     }
 
 
-@pytest.mark.parametrize("candidate", ["qt", "qtquick", "wx", "imgui"])
+@pytest.mark.parametrize("candidate", ["qt", "qtquick", "wx", "imgui", "webview2"])
 def test_exit_success_without_gui_checks_is_not_accepted(candidate: str) -> None:
     with pytest.raises(ValueError, match="Incomplete/failed"):
         verify_smoke_report({"candidate": candidate, "self_test": True}, candidate)
@@ -55,6 +55,10 @@ def test_exit_success_without_gui_checks_is_not_accepted(candidate: str) -> None
                 "Q02_qml_preview_and_reference_delegates",
             )
         )
+    if candidate == "webview2":
+        with pytest.raises(ValueError, match="Incomplete/failed"):
+            verify_smoke_report(report, candidate)
+        report["checks"].extend(("W01_virtualized_rows_bounded", "W02_reload_keeps_core", "W03_renderer_failure_reload", "W04_browser_failure_recreation"))
     verify_smoke_report(report, candidate)
     report["error"] = "Failed after earlier checks"
     with pytest.raises(ValueError, match="Incomplete/failed"):

@@ -1,0 +1,17 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px 'Segoe UI', sans-serif; }
+main { --bg:#f4f6f9; --panel:#fff; --fg:#152338; --border:#ccd5e1; background:var(--bg); color:var(--fg); height:100vh; padding:20px; display:flex; flex-direction:column; gap:12px; }
+main[data-theme=dark] { --bg:#131c2b; --panel:#1c293b; --fg:#e6edf7; --border:#42536a; color-scheme:dark; }
+header { display:flex; justify-content:space-between; gap:20px; align-items:center; }
+strong { font-size:21px; } small { font-size:12px; font-weight:400; display:block; }
+button, input, select { font:inherit; padding:8px 12px; border:1px solid var(--border); border-radius:5px; color:var(--fg); background:var(--panel); }
+button { cursor:pointer; } button:hover, button[aria-pressed=true] { border-color:#2671cf; background:#2671cf; color:white; }
+.toolbar, nav { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+section { min-height:0; flex:1; } .monitor { display:flex; gap:18px; overflow:auto; }
+.cards { min-width:240px; overflow:auto; } article { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px 18px; margin-bottom:12px; } h2 { margin:0; font-size:17px; }
+.preview { width:calc(100% - 260px); align-self:flex-start; object-fit:contain; max-height:100%; background:var(--panel); border-radius:8px; }
+.diagnostics { display:flex; flex-direction:column; } .tree { flex:1; min-height:150px; overflow:auto; border:1px solid var(--border); background:var(--panel); overflow-anchor:none; }
+.tree-row { position:absolute; height:32px; width:100%; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+.tree-row button { padding:2px 8px; } output { margin-left:auto; padding-right:14px; font-variant-numeric:tabular-nums; }
+.references { display:flex; gap:8px; overflow:auto; min-height:96px; padding-top:6px; }
+.configuration { display:flex; flex-direction:column; gap:12px; } .form-rows { overflow:auto; flex:1; } fieldset { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:10px; border:1px solid var(--border); border-radius:8px; } label { display:inline-flex; gap:8px; align-items:center; } input[type=number] { width:110px; } [role=alert] { color:#d44545; }

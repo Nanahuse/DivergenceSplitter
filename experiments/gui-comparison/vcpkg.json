@@ -6,6 +6,10 @@
     { "name": "opencv4", "features": ["contrib"] }
   ],
   "features": {
+    "webview2": {
+      "description": "Win32 WebView2 host with a versioned JSON boundary; no Qt dependency",
+      "dependencies": ["webview2", "nlohmann-json"]
+    },
     "qtquick": {
       "description": "Qt Quick / QML / Quick Controls implementation with the standard Qt base",
       "dependencies": [

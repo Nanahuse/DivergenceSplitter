@@ -20,6 +20,7 @@ GUI_PORTS = {
     "qtquick": "qtdeclarative",
     "wx": "wxwidgets",
     "imgui": "imgui",
+    "webview2": "webview2",
 }
 QT_CONFIGURATIONS = ("standard", "features", "optimized")
 QT_RUNTIME_CHECKS = {
@@ -66,6 +67,13 @@ def verify_smoke_report(report: dict[str, Any], candidate: str) -> None:
         and not {
             "Q01_packaged_qml_imports_and_runtime",
             "Q02_qml_preview_and_reference_delegates",
+        }.issubset(report.get("checks", []))
+        or candidate == "webview2"
+        and not {
+            "W01_virtualized_rows_bounded",
+            "W02_reload_keeps_core",
+            "W03_renderer_failure_reload",
+            "W04_browser_failure_recreation",
         }.issubset(report.get("checks", []))
     ):
         raise ValueError(f"Incomplete/failed GUI contract report: {candidate}")
@@ -234,6 +242,14 @@ def prepare(root: Path, installed: Path, candidate: str, manifest: Path) -> None
             raise ValueError(f"Missing OpenCV component: {component}")
     if candidate == "wx" and not list((root / "bin").glob("wx*core*.dll")):
         raise ValueError("Missing wxWidgets core DLL")
+    if candidate == "webview2":
+        for relative in ("bin/WebView2Loader.dll", "bin/ui/index.html"):
+            if not (root / relative).is_file():
+                raise ValueError(f"Missing WebView2 distribution file: {relative}")
+        if not list((root / "bin/ui/assets").glob("*.js")):
+            raise ValueError("Missing built TypeScript UI")
+        if list(root.rglob("Qt6*.dll")):
+            raise ValueError("WebView2 candidate must not depend on Qt")
     owners, _ = installed_inventory(installed)
     metadata = root / "build-metadata"
     metadata.mkdir(parents=True, exist_ok=True)
@@ -249,6 +265,18 @@ def prepare(root: Path, installed: Path, candidate: str, manifest: Path) -> None
     for package in (GUI_PORTS[candidate], "opencv4"):
         if not (notices / package / "copyright").is_file():
             raise ValueError(f"Missing dependency notice: {package}")
+    if candidate == "webview2":
+        ui = Path(__file__).resolve().parents[1] / "experiments/gui-comparison/webview2/ui"
+        for name in ("react", "react-dom", "scheduler", "zod"):
+            package_root = ui / "node_modules" / name
+            notice = next((package_root / n for n in ("LICENSE", "LICENSE.md") if (package_root / n).is_file()), None)
+            if notice is None:
+                raise ValueError(f"Missing bundled npm notice: {name}")
+            destination = root / "licenses/npm" / name
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(notice, destination / notice.name)
+            shutil.copy2(package_root / "package.json", destination / "package.json")
+        shutil.copy2(ui / "package-lock.json", metadata / "package-lock.json")
     forbidden = {".pdb", ".lib", ".a", ".obj", ".h", ".hpp", ".ilk", ".exp"}
     for path in root.rglob("*"):
         if path.suffix.casefold() in forbidden or path.name.casefold() == "debug":
@@ -293,6 +321,8 @@ def classify(
         return "Application (including statically linked GUI code)", "application"
     if path.startswith(("licenses/", "build-metadata/")) or "NOTICE" in path:
         return "Notices and metadata", ""
+    if path.startswith("bin/ui/"):
+        return "Web UI assets (React/TypeScript/CSS)", "application and npm dependencies"
     if name in SDK_GRAPHICS_DLLS:
         return "Windows SDK graphics runtime", "Windows SDK redistributable"
     if name.startswith(("msvcp", "vcruntime", "concrt", "vccorlib", "vcomp")):
@@ -377,6 +407,11 @@ def package(
     )
     if candidate == "qt":
         report["qt_configuration"] = qt_configuration
+    if candidate == "webview2":
+        report["runtime_requirement"] = (
+            "Evergreen WebView2 Runtime required; detected at startup, excluded from app ZIP. "
+            "Host-only CPU/memory reports must not be used for comparison."
+        )
     archive = output / f"{variant}.zip"
     (output / "cpp.zip").rename(archive)
     extracted = output / "zip-extracted"

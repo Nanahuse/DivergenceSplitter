@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       all_candidates:
-        description: 'Explicitly retest all candidates; otherwise test only the new Qt Quick candidate'
+        description: 'Explicitly retest all candidates; otherwise test WebView2 and the Widgets maintenance change'
         type: boolean
         default: false
 
@@ -35,8 +35,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Existing implementations keep their recorded results. This addition tests Qt Quick only.
-        include: ${{ fromJSON(inputs.all_candidates && '[{"candidate":"qtquick","qt_configuration":"standard"},{"candidate":"qt","qt_configuration":"standard"},{"candidate":"qt","qt_configuration":"features"},{"candidate":"qt","qt_configuration":"optimized"},{"candidate":"wx","qt_configuration":"standard"},{"candidate":"imgui","qt_configuration":"standard"}]' || '[{"candidate":"qtquick","qt_configuration":"standard"}]') }}
+        # Preserve historical measurements; only changed implementations run by default.
+        include: ${{ fromJSON(inputs.all_candidates && '[{"candidate":"webview2","qt_configuration":"standard"},{"candidate":"qtquick","qt_configuration":"standard"},{"candidate":"qt","qt_configuration":"standard"},{"candidate":"qt","qt_configuration":"features"},{"candidate":"qt","qt_configuration":"optimized"},{"candidate":"wx","qt_configuration":"standard"},{"candidate":"imgui","qt_configuration":"standard"}]' || '[{"candidate":"webview2","qt_configuration":"standard"},{"candidate":"qt","qt_configuration":"optimized"}]') }}
     defaults:
       run:
         shell: pwsh
@@ -48,6 +48,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14.6'
+      - uses: actions/setup-node@v4
+        if: matrix.candidate == 'webview2'
+        with:
+          node-version: '22.21.0'
+          cache: npm
+          cache-dependency-path: experiments/gui-comparison/webview2/ui/package-lock.json
       - name: Test distribution tools
         run: |
           $ErrorActionPreference = 'Stop'
