@@ -57,7 +57,8 @@ public:
         assets_ = std::filesystem::path(path).parent_path() / "ui";
         if (!std::filesystem::exists(assets_ / "index.html")) throw std::runtime_error("Missing static UI assets next to executable");
         PWSTR local{}; check(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local));
-        user_data_ = std::filesystem::path(local) / L"DivergenceSplitter" / L"gui-comparison-webview2" / std::to_wstring(GetCurrentProcessId());
+        user_data_root_ = std::filesystem::path(local) / L"DivergenceSplitter" / L"gui-comparison-webview2";
+        user_data_ = user_data_root_ / std::to_wstring(GetCurrentProcessId());
         CoTaskMemFree(local);
         WNDCLASSW wc{}; wc.lpfnWndProc = window_proc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"DivergenceSplitterWebViewComparison";
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&wc);
@@ -128,6 +129,7 @@ private:
                     check(hr); environment_ = environment; check(environment_.As(&environment5_));
                     check(environment5_->add_BrowserProcessExited(Callback<ICoreWebView2BrowserProcessExitedEventHandler>(
                         [this](ICoreWebView2Environment*, ICoreWebView2BrowserProcessExitedEventArgs* args) {
+                            if (closing_) { browser_exited_ = true; return S_OK; }
                             return guard([&] {
                                 COREWEBVIEW2_BROWSER_PROCESS_EXIT_KIND kind{}; check(args->get_BrowserProcessExitKind(&kind));
                                 if (kind == COREWEBVIEW2_BROWSER_PROCESS_EXIT_KIND_FAILED) { ++browser_failures_; recreate_ = true; schedule_recovery(); }
@@ -153,7 +155,7 @@ private:
         check(web3->SetVirtualHostNameToFolderMapping(L"comparison.local", assets_.c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS));
         ComPtr<ICoreWebView2Settings> settings; check(web_->get_Settings(&settings));
         check(settings->put_AreHostObjectsAllowed(FALSE)); check(settings->put_AreDefaultScriptDialogsEnabled(FALSE));
-        check(settings->put_AreDevToolsEnabled(session_.options.self_test ? TRUE : FALSE));
+        check(settings->put_AreDevToolsEnabled(session_.options.self_test || GetEnvironmentVariableW(L"GUI_WEBVIEW2_DEVTOOLS", nullptr, 0) ? TRUE : FALSE));
         check(settings->put_AreDefaultContextMenusEnabled(FALSE));
         check(web_->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>([this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) {
             return guard([&] {
@@ -173,7 +175,10 @@ private:
                 if (text.size() > 262144) { ++rejected_messages_; return; }
                 Json request;
                 try { request = Json::parse(text); validate_envelope(request, epoch_); command(request); }
-                catch (const std::exception& e) { ++rejected_messages_; if (request.is_object() && request.contains("id") && request["id"].is_number_unsigned()) respond(request["id"], false, {}, e.what()); }
+                catch (const std::exception& e) {
+                    ++rejected_messages_; if (rejection_reasons_.size() < 16) rejection_reasons_.push_back(e.what());
+                    if (request.is_object() && request.contains("id") && request["id"].is_number_unsigned()) respond(request["id"], false, {}, e.what());
+                }
             });
         }).Get(), &message_token_));
         check(web_->add_ProcessFailed(Callback<ICoreWebView2ProcessFailedEventHandler>([this](ICoreWebView2*, ICoreWebView2ProcessFailedEventArgs* args) {
@@ -269,6 +274,9 @@ private:
         Json value = {{"version", 1}, {"type", "snapshot"}, {"epoch", epoch_}, {"delivery", ++delivery_},
             {"sequence", std::to_string(state->sequence)}, {"revision", std::to_string(state->topology->revision)}, {"running", state->running},
             {"resets", std::to_string(state->resets)}, {"metrics", metrics}, {"profile", profile_json(*state->applied_profile)}};
+        Topology roots;
+        for (const auto& node : state->topology->nodes) if (node.kind == NodeKind::scenario) roots.nodes.push_back(node);
+        value["roots"] = topology_json(roots);
         if (sent_topology_ != state->topology && (probe_.page == Page::diagnostics || !sent_topology_)) { value["nodes"] = topology_json(*state->topology); sent_topology_ = state->topology; }
         std::set<NodeId> live;
         for (const auto& node : state->topology->nodes) if (node.kind == NodeKind::detector) live.insert(node.id);
@@ -300,6 +308,7 @@ private:
         if (closing_ || dialog_ || finishing_) return;
         if (hold_.poll(std::chrono::steady_clock::now())) session_.engine.reset_all();
         session_.sample_process();
+        if (IsIconic(window_)) { hold_.cancel(); return; }
         if (inflight_ && std::chrono::steady_clock::now() - sent_at_ > std::chrono::seconds(10)) schedule_recovery();
         if (!ready_ && std::chrono::steady_clock::now() - waiting_since_ > std::chrono::seconds(20) && !recovery_pending_) { fail("WebView2 ready timeout"); return; }
         if (ready_) {
@@ -365,19 +374,32 @@ private:
     void shutdown() {
         if (closing_) return; closing_ = true; hold_.cancel(); if (window_) KillTimer(window_, 1);
         close_controller();
+        // Wait only for this isolated UDF's BrowserProcessExited event before cleanup.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (environment5_ && !browser_exited_ && std::chrono::steady_clock::now() < deadline) {
+            MsgWaitForMultipleObjectsEx(0, nullptr, 50, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+            MSG message{};
+            while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                if (message.message == WM_QUIT) { PostQuitMessage(int(message.wParam)); break; }
+                TranslateMessage(&message); DispatchMessageW(&message);
+            }
+        }
         if (environment5_) environment5_->remove_BrowserProcessExited(browser_token_);
         environment5_.Reset(); environment_.Reset();
-        // Runtime owns the cache until all its processes exit. Never remove a live UDF.
-        // The per-process directory is retained for inspection; it is outside the ZIP.
+        if (browser_exited_ && std::filesystem::weakly_canonical(user_data_.parent_path()) == std::filesystem::weakly_canonical(user_data_root_)
+            && user_data_.filename() == std::to_wstring(GetCurrentProcessId())) {
+            std::error_code error; std::filesystem::remove_all(user_data_, error); user_data_cleaned_ = !error;
+        }
     }
     void write_web_report() {
         if (session_.options.report.empty()) return;
         auto path = session_.options.report; path.replace_extension("webview2.json");
         std::ofstream out(path);
-        out << Json({{"runtime", runtime_}, {"user_data_folder", utf8(user_data_.c_str())}, {"static_assets", utf8(assets_.c_str())},
+        out << Json({{"runtime", runtime_}, {"user_data_folder", utf8(user_data_.c_str())}, {"user_data_cleaned_after_browser_exit", user_data_cleaned_}, {"static_assets", utf8(assets_.c_str())},
             {"transport", "JPEG base64 JSON; maximum one unacknowledged snapshot/frame"}, {"sent_snapshots", sent_snapshots_},
             {"decoded_frame_acks", decoded_frames_}, {"max_dom_rows", max_dom_rows_}, {"recoveries", recoveries_},
             {"renderer_failures", renderer_failures_}, {"browser_failures", browser_failures_}, {"rejected_messages", rejected_messages_},
+            {"rejection_reasons", rejection_reasons_},
             {"rejected_origins", rejected_origins_}, {"cpu_memory_scope", "Session report is host-only; use process-tree sampling for comparison"},
             {"not_verified", {"physical IME", "GPU memory", "display scanout", "controlled performance ranking"}}}).dump(2);
     }
@@ -385,13 +407,15 @@ private:
     ComPtr<ICoreWebView2Environment> environment_; ComPtr<ICoreWebView2Environment5> environment5_;
     ComPtr<ICoreWebView2Controller> controller_; ComPtr<ICoreWebView2> web_;
     EventRegistrationToken navigation_token_{}, message_token_{}, failed_token_{}, new_window_token_{}, permission_token_{}, browser_token_{};
-    std::filesystem::path assets_, user_data_; std::string runtime_;
+    std::filesystem::path assets_, user_data_, user_data_root_; std::string runtime_;
     Probe probe_; ResetHold hold_; std::optional<std::pair<std::uint64_t, std::string>> dialog_;
     std::deque<Action> test_actions_;
+    std::vector<std::string> rejection_reasons_;
     std::shared_ptr<const Topology> sent_topology_; std::shared_ptr<const Frame> held_frame_;
     std::set<NodeId> reference_ids_; std::map<NodeId, std::string> reference_cache_;
     Time sent_at_{}, waiting_since_ = std::chrono::steady_clock::now();
     bool ready_ = false, inflight_ = false, closing_ = false, finishing_ = false, recreate_ = false, recovery_pending_ = false, contract_done_ = false;
+    bool browser_exited_ = false, user_data_cleaned_ = false;
     unsigned epoch_ = 0, generation_ = 0, recoveries_ = 0, max_dom_rows_ = 0, file_cancels_ = 0, discard_cancels_ = 0;
     unsigned renderer_failures_ = 0, browser_failures_ = 0, rejected_messages_ = 0, rejected_origins_ = 0, recovery_step_ = 0, old_epoch_ = 0;
     std::uint64_t delivery_ = 0, decoded_frames_ = 0, sent_snapshots_ = 0, sequence_before_reload_ = 0, old_resets_ = 0;

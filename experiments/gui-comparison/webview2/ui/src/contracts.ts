@@ -10,6 +10,7 @@ export const Snapshot = z.object({
   version: z.literal(1), type: z.literal('snapshot'), epoch: z.number().int(), delivery: z.number().int(),
   sequence: z.string(), revision: z.string(), running: z.boolean(), resets: z.string(),
   nodes: z.array(Node).optional(), metrics: z.array(Metric), profile: Profile,
+  roots: z.array(Node),
   frame: z.object({ sequence: z.string(), jpeg: z.string() }).optional(),
   references: z.record(z.string(), z.string()),
 });

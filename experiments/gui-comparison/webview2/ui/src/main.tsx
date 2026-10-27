@@ -119,7 +119,7 @@ function App() {
     </div>
     <nav>{(['monitor', 'diagnostics', 'profile'] as Page[]).map(p => <button id={p} key={p} aria-pressed={page === p} onClick={() => navigate(p)}>{p === 'profile' ? 'Configuration' : p}</button>)}</nav>
     {page === 'monitor' && <section className="monitor"><div className="cards">{snapshot?.profile.scenarios.map(s => {
-      const root = tree.nodes.find(n => n.kind === 0 && n.label === s.name), m = root && metrics.get(root.id);
+      const root = snapshot.roots.find(n => n.label === s.name), m = root && metrics.get(root.id);
       return <article key={s.id}><h2>{s.name}</h2><p>{s.enabled ? snapshot.running ? 'Running' : 'Stopped' : 'Disabled'} · :{s.port}</p><output>{m?.[1].toFixed(3) ?? '—'}</output></article>;
     })}</div><img ref={image} className="preview" alt="Latest mock preview, 15Hz intake cap" src={snapshot?.frame?.jpeg} /></section>}
     {page === 'diagnostics' && <section className="diagnostics"><p>{tree.nodes.length.toLocaleString()} nodes · {rows.length} expanded rows · {to - from} DOM rows</p>
@@ -153,7 +153,11 @@ createRoot(document.getElementById('root')!).render(<App />);
 bridge.onSnapshot = async snapshot => {
   flushSync(() => receiveSnapshot(snapshot));
   await Promise.all([...document.images].filter(i => i.src).map(i => i.decode().catch(() => { throw new Error('JPEG decode failed'); })));
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  await new Promise<void>(resolve => {
+    // A minimized renderer can suspend animation frames. Never let visibility grow a queue.
+    const fallback = setTimeout(resolve, 250);
+    requestAnimationFrame(() => { clearTimeout(fallback); resolve(); });
+  });
   return readProbe();
 };
 // React must commit before the native ready handshake sends the initial snapshot.
