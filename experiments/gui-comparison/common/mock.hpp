@@ -22,6 +22,7 @@ struct Node {
     NodeKind kind;
     std::string label;
     bool enabled = true;
+    std::string note;
 };
 struct Topology {
     std::uint64_t revision = 0;
@@ -144,6 +145,7 @@ struct ScenarioSettings {
     std::string name;
     int port;
     bool enabled = true;
+    std::string note;
     bool operator==(const ScenarioSettings&) const = default;
 };
 struct Profile {

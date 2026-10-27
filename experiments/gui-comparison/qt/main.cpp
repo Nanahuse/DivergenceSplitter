@@ -37,6 +37,7 @@ QImage image(const Image& value) {
 class Window final : public QWidget, public Driver {
 public:
     explicit Window(Session& session) : session_(session), script_(session) {
+        session_.scenario_notes = true;
         setWindowTitle("DivergenceSplitter comparison - Qt Widgets");
         resize(1100, 760);
         auto layout = new QVBoxLayout(this);
@@ -97,7 +98,7 @@ public:
             break;
         case Action::mutate: mutate_->click(); break;
         case Action::invalid_draft: table_->item(0, 0)->setText(""); break;
-        case Action::valid_draft: table_->item(0, 0)->setText("Edited scenario"); table_->item(0, 2)->setCheckState(Qt::Unchecked); break;
+        case Action::valid_draft: table_->item(0, 0)->setText("Edited scenario"); table_->item(0, 2)->setCheckState(Qt::Unchecked); table_->item(0, 3)->setText("Maintenance note"); break;
         case Action::apply: apply_->click(); break;
         case Action::add_scenario: add_->click(); break;
         case Action::remove_scenario: table_->selectRow(table_->rowCount() - 1); remove_->click(); break;
@@ -182,7 +183,7 @@ private:
             else ++file_cancels_;
         });
         layout->addLayout(source_row);
-        table_ = new QTableWidget; table_->setColumnCount(3); table_->setHorizontalHeaderLabels({"Scenario name", "Port", "Enabled"});
+        table_ = new QTableWidget; table_->setColumnCount(4); table_->setHorizontalHeaderLabels({"Scenario name", "Port", "Enabled", "Note"});
         table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); layout->addWidget(table_, 1);
         auto buttons = new QHBoxLayout;
         add_ = button("Add Scenario", buttons, [this] { session_.profile.add_scenario(); sync_form(); table_->selectRow(table_->rowCount() - 1); });
@@ -210,7 +211,8 @@ private:
             auto& row = session_.profile.draft.scenarios.at(std::size_t(item->row()));
             if (item->column() == 0) row.name = item->text().toUtf8().toStdString();
             else if (item->column() == 1) { bool ok = false; row.port = item->text().toInt(&ok); if (!ok) row.port = 0; }
-            else row.enabled = item->checkState() == Qt::Checked;
+            else if (item->column() == 2) row.enabled = item->checkState() == Qt::Checked;
+            else row.note = item->text().toUtf8().toStdString();
         });
         tabs_->addTab(page, "Profile"); sync_form();
     }
@@ -223,6 +225,7 @@ private:
             table_->setItem(i, 0, new QTableWidgetItem(text(row.name))); table_->setItem(i, 1, new QTableWidgetItem(QString::number(row.port)));
             auto enabled = new QTableWidgetItem; enabled->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable);
             enabled->setCheckState(row.enabled ? Qt::Checked : Qt::Unchecked); table_->setItem(i, 2, enabled);
+            table_->setItem(i, 3, new QTableWidgetItem(text(row.note)));
         }
         syncing_ = false;
     }
@@ -276,8 +279,9 @@ private:
             }
         }
         for (const auto& node : state->topology->nodes) {
-            if (items_.contains(node.id)) { items_.at(node.id)->setText(text(node.label)); continue; }
-            auto label = new QStandardItem(text(node.label)); label->setEditable(false);
+            const auto caption = node.label + (node.note.empty() ? "" : " · " + node.note);
+            if (items_.contains(node.id)) { items_.at(node.id)->setText(text(caption)); continue; }
+            auto label = new QStandardItem(text(caption)); label->setEditable(false);
             label->setData(QVariant::fromValue<qulonglong>(node.id), Qt::UserRole);
             auto value = new QStandardItem; value->setEditable(false);
             auto parent = node.parent ? items_.at(node.parent) : model_->invisibleRootItem();
@@ -335,7 +339,7 @@ private:
                 std::size_t card = 0;
                 for (std::size_t i = 0; i < state->topology->nodes.size(); ++i) if (state->topology->nodes[i].kind == NodeKind::scenario) {
                     const auto& metric = state->metrics[i];
-                    card_labels_.at(card++)->setText(text(state->topology->nodes[i].label + "\n" + (!metric.enabled ? "Disabled" : metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score)));
+                    card_labels_.at(card++)->setText(text(state->topology->nodes[i].label + "\n" + (!metric.enabled ? "Disabled" : metric.connected ? "Connected" : "Disconnected") + " | " + score_text(metric.score) + "\n" + state->topology->nodes[i].note));
                 }
             } else if (tabs_->currentIndex() == 1) { sync_tree(); update_values(*state); }
             session_.sample_process(); session_.exercise(*this);

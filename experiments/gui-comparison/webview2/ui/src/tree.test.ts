@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Tree, restoreAnchor } from './tree';
 import type { Node } from './contracts';
-const node = (id: string, parent = '0'): Node => ({ id, parent, kind: parent === '0' ? 0 : 3, label: id, enabled: true });
+const node = (id: string, parent = '0'): Node => ({ id, parent, kind: parent === '0' ? 0 : 3, label: id, enabled: true, note: '' });
 describe('stable hierarchy and viewport', () => {
   it('retains expansion only for surviving IDs and restores deleted anchor to a neighbour', () => {
     const old = new Tree([node('1'), node('2', '1'), node('3', '1')]);

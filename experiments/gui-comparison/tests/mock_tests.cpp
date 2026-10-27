@@ -69,6 +69,20 @@ void profile_contract() {
     editor.draft.scenarios[1].name = editor.draft.scenarios[0].name;
     require(!editor.apply().empty(), "Duplicate names accepted");
 }
+void note_change_contract() {
+    ProfileEditor editor;
+    editor.draft.scenarios.front().note = "Maintenance note";
+    require(editor.dirty() && editor.applied().scenarios.front().note.empty(), "Note draft escaped into applied state");
+    require(editor.apply().empty(), "Note Apply failed");
+    Simulation simulation;
+    const auto id = simulation.topology()->nodes.front().id;
+    simulation.apply_profile(editor.applied());
+    const auto state = simulation.advance(Time{});
+    require(state->topology->nodes.front().id == id && state->topology->nodes.front().note == "Maintenance note", "Note lost stable ID or topology value");
+    editor.draft.scenarios.front().note = std::string(121, 'x');
+    require(!editor.apply().empty() && editor.applied().scenarios.front().note == "Maintenance note", "Oversized note changed applied state");
+    editor.discard(); require(!editor.dirty(), "Note discard failed");
+}
 void enabled_change_contract() {
     Simulation simulation;
     const auto before = simulation.advance(Time{});
@@ -217,6 +231,7 @@ int main() {
         require(invalid_shape, "Invalid fixture dimensions accepted");
         profile_contract();
         enabled_change_contract();
+        note_change_contract();
         hold_contract();
         latest_contract();
         worker_contract();

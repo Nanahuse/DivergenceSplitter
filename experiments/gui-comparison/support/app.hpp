@@ -62,6 +62,7 @@ public:
     std::vector<std::string> checks;
     std::string error;
     std::string renderer;
+    bool scenario_notes = false; // Opt in only for the two maintenance-change participants.
     void observe_frame(const Frame& frame);
     void sample_process();
     void exercise(Driver& driver);

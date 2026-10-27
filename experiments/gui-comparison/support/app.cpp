@@ -275,6 +275,11 @@ bool ContractScript::tick(Driver& driver) {
             require(!state->topology->nodes.front().enabled && !state->metrics.front().enabled && !state->metrics.front().active, "Disabled scenario still evaluates as enabled");
             session_.checks.push_back("C01_valid_apply_reaches_worker");
             session_.checks.push_back("MC01_enabled_draft_apply_and_backend");
+            if (session_.scenario_notes) {
+                require(state->applied_profile->scenarios.front().note == "Maintenance note"
+                    && state->topology->nodes.front().note == "Maintenance note", "Scenario note did not reach Core/topology");
+                session_.checks.push_back("MC02_note_draft_apply_and_backend");
+            }
             scenarios_ = p.draft_count; driver.perform(Action::add_scenario); next(); break;
         case 9:
             if (p.draft_count != scenarios_ + 1) break;

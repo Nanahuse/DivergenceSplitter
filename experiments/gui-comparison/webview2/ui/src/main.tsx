@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { Bridge } from './bridge';
-import { Profile, type Page, type Probe, type Snapshot } from './contracts';
+import { Profile, ValidProfile, type Page, type Probe, type Snapshot } from './contracts';
 import { Tree, restoreAnchor } from './tree';
 import './style.css';
 
@@ -84,7 +84,7 @@ function App() {
       case 4: setExpanded(e => { const next = new Set(e); next.delete(tree.nodes.find(n => n.kind === 3)?.id ?? ''); return next; }); break;
       case 5: click('mutate'); break;
       case 6: input('name-0', ''); break;
-      case 7: input('name-0', 'Edited scenario'); queueMicrotask(() => click('enabled-0')); break;
+      case 7: input('name-0', 'Edited scenario'); queueMicrotask(() => { click('enabled-0'); queueMicrotask(() => input('note-0', 'Maintenance note')); }); break;
       case 8: click('apply'); break; case 9: click('add'); break;
       case 10: click(`remove-${draft.scenarios.length - 1}`); break;
       case 11: click('enabled-0'); queueMicrotask(() => click('fresh')); break;
@@ -102,7 +102,7 @@ function App() {
   };
   const from = Math.max(0, Math.floor(scroll / 32) - 4), to = Math.min(rows.length, Math.ceil((scroll + height) / 32) + 4);
   const apply = async () => {
-    const parsed = Profile.safeParse(draft);
+    const parsed = ValidProfile.safeParse(draft);
     if (!parsed.success) { setErrors(parsed.error.issues.map(i => i.message)); return; }
     const result = await invoke('apply', { profile: parsed.data }) as { errors: string[] } | undefined;
     if (result) setErrors(result.errors);
@@ -120,14 +120,14 @@ function App() {
     <nav>{(['monitor', 'diagnostics', 'profile'] as Page[]).map(p => <button id={p} key={p} aria-pressed={page === p} onClick={() => navigate(p)}>{p === 'profile' ? 'Configuration' : p}</button>)}</nav>
     {page === 'monitor' && <section className="monitor"><div className="cards">{snapshot?.profile.scenarios.map(s => {
       const root = snapshot.roots.find(n => n.label === s.name), m = root && metrics.get(root.id);
-      return <article key={s.id}><h2>{s.name}</h2><p>{s.enabled ? snapshot.running ? 'Running' : 'Stopped' : 'Disabled'} · :{s.port}</p><output>{m?.[1].toFixed(3) ?? '—'}</output></article>;
+      return <article key={s.id}><h2>{s.name}</h2><p>{s.enabled ? snapshot.running ? 'Running' : 'Stopped' : 'Disabled'} · :{s.port}</p><p>{s.note}</p><output>{m?.[1].toFixed(3) ?? '—'}</output></article>;
     })}</div><img ref={image} className="preview" alt="Latest mock preview, 15Hz intake cap" src={snapshot?.frame?.jpeg} /></section>}
     {page === 'diagnostics' && <section className="diagnostics"><p>{tree.nodes.length.toLocaleString()} nodes · {rows.length} expanded rows · {to - from} DOM rows</p>
       <div role="tree" className="tree" ref={viewport} onScroll={e => setScroll(e.currentTarget.scrollTop)}>
         <div style={{ height: rows.length * 32, position: 'relative' }}>
           {rows.slice(from, to).map(({ node, depth }, i) => <div key={node.id} role="treeitem" aria-level={depth + 1} aria-expanded={expanded.has(node.id)} className="tree-row" style={{ top: (from + i) * 32, paddingLeft: depth * 22 }}>
             <button onClick={() => setExpanded(e => { const next = new Set(e); if (!next.delete(node.id)) next.add(node.id); return next; })}>{expanded.has(node.id) ? '▾' : '▸'}</button>
-            <span>{node.label}</span><output>{metrics.get(node.id)?.[1].toFixed(3)} {metrics.get(node.id)?.[4] ? metrics.get(node.id)?.[2] ? 'active' : 'waiting' : 'disabled'}</output>
+            <span title={node.note}>{node.label}{node.note && ` · ${node.note}`}</span><output>{metrics.get(node.id)?.[1].toFixed(3)} {metrics.get(node.id)?.[4] ? metrics.get(node.id)?.[2] ? 'active' : 'waiting' : 'disabled'}</output>
           </div>)}
         </div>
       </div><div className="references">{wanted.map(id => <img key={id} alt={`Reference ${id}`} width="160" height="90" src={snapshot?.references[id]} />)}</div>
@@ -140,6 +140,7 @@ function App() {
         <label>Name<input id={`name-${index}`} value={s.name} onInput={e => edit({ ...draft, scenarios: draft.scenarios.map((v, i) => i === index ? { ...v, name: e.currentTarget.value } : v) })} /></label>
         <label>Port<input type="number" min="1" max="65535" value={s.port} onInput={e => edit({ ...draft, scenarios: draft.scenarios.map((v, i) => i === index ? { ...v, port: Number(e.currentTarget.value) } : v) })} /></label>
         <label><input id={`enabled-${index}`} type="checkbox" checked={s.enabled} onChange={e => edit({ ...draft, scenarios: draft.scenarios.map((v, i) => i === index ? { ...v, enabled: e.target.checked } : v) })} />Enabled</label>
+        <label>Note<input id={`note-${index}`} value={s.note} onInput={e => edit({ ...draft, scenarios: draft.scenarios.map((v, i) => i === index ? { ...v, note: e.currentTarget.value } : v) })} /></label>
         <button id={`remove-${index}`} onClick={async () => { const p = await invoke('remove', { id: s.id }) as Profile | undefined; if (p) setDraft(p); }}>Remove</button>
       </fieldset>)}</div>
       <div className="toolbar"><button id="add" onClick={async () => { const p = await invoke('add') as Profile | undefined; if (p) setDraft(p); }}>Add Scenario</button>

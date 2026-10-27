@@ -53,6 +53,7 @@ std::string jpeg(const Image& image) {
 class Host final : public Driver {
 public:
     explicit Host(Session& session) : session_(session), script_(session) {
+        session_.scenario_notes = true;
         wchar_t path[32768]{}; GetModuleFileNameW(nullptr, path, 32768);
         assets_ = std::filesystem::path(path).parent_path() / "ui";
         if (!std::filesystem::exists(assets_ / "index.html")) throw std::runtime_error("Missing static UI assets next to executable");

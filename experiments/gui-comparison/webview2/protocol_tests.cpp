@@ -5,7 +5,7 @@ using namespace comparison::web;
 int main() {
     try {
         auto require = [](bool condition) { if (!condition) throw std::runtime_error("Protocol contract failed"); };
-        Profile p; p.scenarios.front().id = 9'007'199'254'740'993ULL; p.scenarios.front().name = "日本語 Scenario";
+        Profile p; p.scenarios.front().id = 9'007'199'254'740'993ULL; p.scenarios.front().name = "日本語 Scenario"; p.scenarios.front().note = "Maintenance note";
         require(parse_profile(profile_json(p)) == p);
         auto reject = [&](auto function) { bool rejected = false; try { function(); } catch (const std::exception&) { rejected = true; } require(rejected); };
         auto j = profile_json(p); j["scenarios"][1]["id"] = j["scenarios"][0]["id"]; reject([&] { parse_profile(j); });

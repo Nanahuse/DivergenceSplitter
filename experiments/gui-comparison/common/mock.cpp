@@ -127,6 +127,7 @@ void Simulation::apply_profile(const Profile& profile) {
             }
         }
         for (auto i = first; i < next->nodes.size(); ++i) next->nodes[i].enabled = scenario.enabled;
+          next->nodes[first].note = scenario.note;
     }
     if (std::ranges::none_of(next->nodes, [this](const Node& n) { return n.id == dynamic_condition_; })) {
         dynamic_condition_ = 0;
@@ -241,6 +242,7 @@ std::vector<std::string> validate(const Profile& profile) {
         if (!names.insert(scenario.name).second) errors.push_back("Scenario names must be unique");
         if (!scenario.id || !ids.insert(scenario.id).second) errors.push_back("Scenario IDs must be unique");
         if (scenario.port < 1 || scenario.port > 65535) errors.push_back("Port must be 1..65535");
+        if (scenario.note.size() > 120) errors.push_back("Scenario note must be at most 120 UTF-8 bytes");
     }
     return errors;
 }
