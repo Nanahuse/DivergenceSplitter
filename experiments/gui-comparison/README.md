@@ -1,8 +1,8 @@
 # GUIライブラリ比較
 
-採用ライブラリは未決定。比較対象は **Qt Widgets、Qt Quick、wxWidgets、Dear ImGuiの4実装** とし、同じ仕様・合格条件で比較する。PR #152はQt Widgetsの依存・配布経路の証拠として再利用するが、共通GUI仕様の合格証拠や選定結果にはしない。
+今回の選定比較は **Qt WidgetsとWebView2**。共通mockのWebView2試作と同じScenario note追加による保守性比較を追加し、今回の範囲では **Qt Widgetsを推奨する**。[WebView2構成・再現](webview2/README.md) / [比較結果](results/webview2.md)を参照。以下のQt Quick、wxWidgets、Dear ImGuiの計画・実測は過去の証拠として保持し、今回の選定条件とは分ける。
 
-Qt Quickの追加検証は [追加記録](results/qtquick.md) に分ける。既存3候補の結果・構成・配布物を保持し、今回の追加で再テストしない。通常のGUI比較CIはQt Quickのみを実行する。全候補の再実行はworkflow_dispatchの`all_candidates`を明示した場合だけ行う。以下の既存3候補の記録はその測定時点の証拠であり、Qt Quickへ転用しない。
+Qt Quickの追加検証は [追加記録](results/qtquick.md) に分ける。通常のGUI比較CIは今回変更したWebView2とQt Widgets Cだけを実行する。全候補の再実行はworkflow_dispatchの`all_candidates`を明示した場合だけ行う。以下の既存3候補の記録はその測定時点の証拠であり、新候補へ転用しない。
 
 Qt QuickはWindows CI、CTest 7件、検証ツール48件、ZIP展開後のGUI契約に成功し、CI配布は展開後144.48MB / ZIP 55.85MB。Monitor・Diagnosticsの各180秒×3回（両規模、計12件）も完了した。[4実装の比較表](results/comparison.md#qt-quick追加後の4実装比較)と生データへのリンクを残している。Qt Quickの30分試験と独立した仕様変更実験は未実施。
 

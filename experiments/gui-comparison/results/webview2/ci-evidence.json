@@ -1,0 +1,107 @@
+{
+  "source_commit": "79d600c199c52cba2da2fb76c25d4f01e15c6024",
+  "run_url": "https://github.com/Nanahuse/DivergenceSplitter/actions/runs/40480148118",
+  "candidates": {
+    "webview2": {
+      "job_id": 122108123047,
+      "conclusion": "success",
+      "ctest_count": 8,
+      "tool_test_count": 49,
+      "restored_packages": 18,
+      "unpacked_bytes": 16501831,
+      "zip_bytes": 5841730
+    },
+    "qt_optimized": {
+      "job_id": 122108123253,
+      "conclusion": "success",
+      "ctest_count": 6,
+      "tool_test_count": 49,
+      "restored_packages": 28,
+      "unpacked_bytes": 45207140,
+      "zip_bytes": 17555568
+    }
+  },
+  "artifacts": [
+    {
+      "id": 12722737492,
+      "name": "gui-comparison-webview2-windows-x64",
+      "size_in_bytes": 6104413,
+      "url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12722737492",
+      "archive_download_url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12722737492/zip",
+      "expired": false,
+      "created_at": "2026-10-27T09:25:27Z",
+      "expires_at": "2027-01-25T09:21:25Z",
+      "updated_at": "2026-10-27T09:25:27Z",
+      "digest": "sha256:3e5c79dc93d27fdfa3e03326f9e8517c02067a819a66305af834619f09cea947",
+      "workflow_run": {
+        "id": 40480148118,
+        "repository_id": 1333129048,
+        "head_repository_id": 1333129048,
+        "head_branch": "experiment/gui-library-comparison",
+        "head_sha": "79d600c199c52cba2da2fb76c25d4f01e15c6024"
+      }
+    },
+    {
+      "id": 12722657607,
+      "name": "gui-comparison-webview2-diagnostics",
+      "size_in_bytes": 174660,
+      "url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12722657607",
+      "archive_download_url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12722657607/zip",
+      "expired": false,
+      "created_at": "2026-10-27T09:25:28Z",
+      "expires_at": "2027-01-25T09:21:25Z",
+      "updated_at": "2026-10-27T09:25:28Z",
+      "digest": "sha256:56e3c89ef28090bdc85a1ba80ceb9a20aa563969765cc0cf8296d4357b7d74de",
+      "workflow_run": {
+        "id": 40480148118,
+        "repository_id": 1333129048,
+        "head_repository_id": 1333129048,
+        "head_branch": "experiment/gui-library-comparison",
+        "head_sha": "79d600c199c52cba2da2fb76c25d4f01e15c6024"
+      }
+    },
+    {
+      "id": 12721978856,
+      "name": "gui-comparison-qt-optimized-diagnostics",
+      "size_in_bytes": 176124,
+      "url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12721978856",
+      "archive_download_url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12721978856/zip",
+      "expired": false,
+      "created_at": "2026-10-27T09:24:09Z",
+      "expires_at": "2027-01-25T09:21:25Z",
+      "updated_at": "2026-10-27T09:24:09Z",
+      "digest": "sha256:d641da4fb921415abfab3d457f8dd92509a1b70cbf8b62cb15ea8d4d0a5818db",
+      "workflow_run": {
+        "id": 40480148118,
+        "repository_id": 1333129048,
+        "head_repository_id": 1333129048,
+        "head_branch": "experiment/gui-library-comparison",
+        "head_sha": "79d600c199c52cba2da2fb76c25d4f01e15c6024"
+      }
+    },
+    {
+      "id": 12721789779,
+      "name": "gui-comparison-qt-optimized-windows-x64",
+      "size_in_bytes": 17914278,
+      "url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12721789779",
+      "archive_download_url": "https://api.github.com/repos/Nanahuse/DivergenceSplitter/actions/artifacts/12721789779/zip",
+      "expired": false,
+      "created_at": "2026-10-27T09:24:08Z",
+      "expires_at": "2027-01-25T09:21:25Z",
+      "updated_at": "2026-10-27T09:24:08Z",
+      "digest": "sha256:4792dd2985e6bd288418b16c1666b4470030e26482e020cd396a37b4086af45a",
+      "workflow_run": {
+        "id": 40480148118,
+        "repository_id": 1333129048,
+        "head_repository_id": 1333129048,
+        "head_branch": "experiment/gui-library-comparison",
+        "head_sha": "79d600c199c52cba2da2fb76c25d4f01e15c6024"
+      }
+    }
+  ],
+  "notes": [
+    "App ZIP and outer artifact are separate archives.",
+    "CI CPU/memory is not used for performance ranking.",
+    "Numbers transcribed from completed job logs; raw downloadable reports remain in artifacts."
+  ]
+}

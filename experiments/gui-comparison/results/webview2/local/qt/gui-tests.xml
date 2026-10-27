@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Win32-ninja"
+	tests="6"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname="SacredHeart"
+	time="20"
+	timestamp="2026-10-27T18:01:58"
+	>
+	<testcase name="common-mock-contract" classname="common-mock-contract" time="0.983723" status="run">
+		<properties/>
+		<system-out>PASS: fixtures, stable IDs, immutable values/pixels, latest-only, profile, hold, worker lifecycle
+</system-out>
+	</testcase>
+	<testcase name="qt-small-gui-contract" classname="qt-small-gui-contract" time="7.34884" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="qt-large-gui-contract" classname="qt-large-gui-contract" time="6.70611" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="qt-diagnostics-capture" classname="qt-diagnostics-capture" time="2.33468" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="qt-profile-capture" classname="qt-profile-capture" time="2.21185" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="qt-exit-during-hold" classname="qt-exit-during-hold" time="1.16422" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+</testsuite>

@@ -1,5 +1,7 @@
 # GUI比較の実測記録
 
+今回のQt Widgets / WebView2比較と推奨は[追加レポート](webview2.md)を参照。以下はQt Quick追加までの計画・実測を保持した履歴。
+
 ## Qt Quick追加後の4実装比較
 
 比較対象は**Qt Widgets、Qt Quick、wxWidgets、Dear ImGui**。Qt Quickに同じ共通モックとMonitor・Diagnostics・Profileを実装し、Windows CIとローカル性能測定を追加した。[Qt Quick追加記録](qtquick.md)に実装・出所・生データ・未検証事項をまとめた。既存3候補の構成・結果を保持し、今回再テストしていない。採用決定、本体移植、NDI、完全移植版の容量推定は行わない。

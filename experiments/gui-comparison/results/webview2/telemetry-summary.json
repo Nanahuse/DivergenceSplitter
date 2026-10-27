@@ -1,0 +1,67 @@
+{
+  "source_commit": "79d600c199c52cba2da2fb76c25d4f01e15c6024",
+  "warmup_seconds": 5,
+  "requested_seconds": 20,
+  "performance_ranking": false,
+  "notes": [
+    "desktop/occlusion uncontrolled",
+    "small Monitor overlaps a separate GUI contract run; functional telemetry only",
+    "RSS sums double-count shared pages",
+    "Session measurement includes browser rundown after final intake",
+    "GPU, physical input and scanout unmeasured"
+  ],
+  "cases": {
+    "monitor-small": {
+      "gui_frame_intakes": 300,
+      "measurement_seconds_including_rundown": 20.3597584,
+      "frame_age_p95_ms": 32.9781,
+      "first_frame_ms": 2391.7942,
+      "value_update_cycles": 0,
+      "topology_builds": 1,
+      "reference_requests": 0,
+      "sampled_process_count": 7,
+      "private_bytes_sum_peak": 699650048,
+      "rss_sum_peak": 489644032,
+      "sampled_cpu_seconds": 10.25
+    },
+    "monitor-large": {
+      "gui_frame_intakes": 300,
+      "measurement_seconds_including_rundown": 20.3628331,
+      "frame_age_p95_ms": 40.3933,
+      "first_frame_ms": 2414.5743,
+      "value_update_cycles": 0,
+      "topology_builds": 1,
+      "reference_requests": 0,
+      "sampled_process_count": 7,
+      "private_bytes_sum_peak": 746745856,
+      "rss_sum_peak": 539967488,
+      "sampled_cpu_seconds": 18.140625
+    },
+    "diagnostics-small": {
+      "gui_frame_intakes": 0,
+      "measurement_seconds_including_rundown": 20.2613163,
+      "frame_age_p95_ms": 0,
+      "first_frame_ms": 2392.8087,
+      "value_update_cycles": 340,
+      "topology_builds": 1,
+      "reference_requests": 1,
+      "sampled_process_count": 7,
+      "private_bytes_sum_peak": 240918528,
+      "rss_sum_peak": 435441664,
+      "sampled_cpu_seconds": 5.671875
+    },
+    "diagnostics-large": {
+      "gui_frame_intakes": 0,
+      "measurement_seconds_including_rundown": 20.3606017,
+      "frame_age_p95_ms": 0,
+      "first_frame_ms": 2398.586,
+      "value_update_cycles": 340,
+      "topology_builds": 1,
+      "reference_requests": 1,
+      "sampled_process_count": 7,
+      "private_bytes_sum_peak": 315621376,
+      "rss_sum_peak": 508469248,
+      "sampled_cpu_seconds": 18.46875
+    }
+  }
+}

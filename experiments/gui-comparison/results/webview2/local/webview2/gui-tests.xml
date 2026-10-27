@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Win32-ninja"
+	tests="8"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname="SacredHeart"
+	time="46"
+	timestamp="2026-10-27T18:28:18"
+	>
+	<testcase name="common-mock-contract" classname="common-mock-contract" time="0.86455" status="run">
+		<properties/>
+		<system-out>PASS: fixtures, stable IDs, immutable values/pixels, latest-only, profile, hold, worker lifecycle
+</system-out>
+	</testcase>
+	<testcase name="webview2-protocol-contract" classname="webview2-protocol-contract" time="0.0368954" status="run">
+		<properties/>
+		<system-out>WebView2 JSON boundary passed
+</system-out>
+	</testcase>
+	<testcase name="webview2-typescript-contract" classname="webview2-typescript-contract" time="1.0422" status="run">
+		<properties/>
+		<system-out>
+&gt; divergencesplitter-webview2-comparison@0.1.0 test
+&gt; vitest run --reporter=verbose
+
+
+ RUN  v5.0.5 C:/Users/7huse/ghq/github.com/Nanahuse/DivergenceSplitter/experiments/gui-comparison/webview2/ui
+
+ ✓ src/tree.test.ts &gt; stable hierarchy and viewport &gt; retains expansion only for surviving IDs and restores deleted anchor to a neighbour 2ms
+ ✓ src/tree.test.ts &gt; stable hierarchy and viewport &gt; keeps a surviving scroll anchor across insertion and supports 10,220 nodes 6ms
+ ✓ src/contracts.test.ts &gt; validates the shared note limit in UTF-8 bytes, including Japanese input 5ms
+ ✓ src/bridge.test.ts &gt; native contract &gt; acknowledges snapshots only after UI consumption finishes 8ms
+ ✓ src/bridge.test.ts &gt; native contract &gt; correlates responses, rejects errors, ignores stale epochs and bounds pending commands 3ms
+
+ Test Files  3 passed (3)
+      Tests  5 passed (5)
+   Start at  18:28:19
+   Duration  290ms (import 55%, transform 33%, tests 8%, worker 4%)
+
+</system-out>
+	</testcase>
+	<testcase name="webview2-small-gui-contract" classname="webview2-small-gui-contract" time="17.3823" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="webview2-large-gui-contract" classname="webview2-large-gui-contract" time="17.2146" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="webview2-diagnostics-capture" classname="webview2-diagnostics-capture" time="3.10606" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="webview2-profile-capture" classname="webview2-profile-capture" time="2.96653" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="webview2-exit-during-hold" classname="webview2-exit-during-hold" time="3.81508" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+</testsuite>

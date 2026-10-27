@@ -1,0 +1,19 @@
+{
+  "maintenance_change": "dbdaf8f..6d28196",
+  "performance_and_distribution_source": "79d600c199c52cba2da2fb76c25d4f01e15c6024",
+  "later_startup_theme_fix": "bf352fc544b38a871d45ec56fc81ad15c6ca0450",
+  "local_webview2": {
+    "report_json_files_csv_installed_and_zip_smoke": "79d600c",
+    "ctest_reports_and_captures": "bf352fc",
+    "note": "Telemetry executable SHA256 matches the executable in local report.json; later theme-only change is separate."
+  },
+  "local_qt": {
+    "adapter_source": "6d28196",
+    "note": "Qt adapter and shared Core did not change in subsequent WebView2 fixes. Uses pre-existing qt-optimized dependencies in a new build/stage."
+  },
+  "ci_evidence_json": "79d600c",
+  "limitations": [
+    "No binary reproducibility claim between local and CI builds",
+    "Latest artifacts can include the later theme fix; use their run/head SHA"
+  ]
+}

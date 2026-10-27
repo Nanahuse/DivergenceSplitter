@@ -1,0 +1,26 @@
+{
+  "browser_failures": 1,
+  "cpu_memory_scope": "Session report is host-only; use process-tree sampling for comparison",
+  "decoded_frame_acks": 61,
+  "max_dom_rows": 18,
+  "not_verified": [
+    "physical IME",
+    "GPU memory",
+    "display scanout",
+    "controlled performance ranking"
+  ],
+  "recoveries": 2,
+  "rejected_messages": 2,
+  "rejected_origins": 0,
+  "rejection_reasons": [
+    "Stale document epoch",
+    "Stale document epoch"
+  ],
+  "renderer_failures": 1,
+  "runtime": "155.0.4283.62",
+  "sent_snapshots": 104,
+  "static_assets": "C:\\Users\\7huse\\ghq\\github.com\\Nanahuse\\DivergenceSplitter\\build\\gui-comparison-reports\\webview2-final\\zip-extracted\\distribution\\bin\\ui",
+  "transport": "JPEG base64 JSON; maximum one unacknowledged snapshot/frame",
+  "user_data_cleaned_after_browser_exit": true,
+  "user_data_folder": "C:\\Users\\7huse\\AppData\\Local\\DivergenceSplitter\\gui-comparison-webview2\\5176"
+}
