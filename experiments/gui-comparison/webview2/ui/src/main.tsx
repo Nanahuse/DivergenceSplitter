@@ -20,6 +20,7 @@ function App() {
   const [errors, setErrors] = useState<string[]>([]);
   const [expanded, setExpanded] = useState(new Set<string>());
   const [dark, setDark] = useState(false);
+  const themeInitialized = useRef(false);
   const [scroll, setScroll] = useState(0);
   const [height, setHeight] = useState(320);
   const viewport = useRef<HTMLDivElement>(null);
@@ -61,6 +62,7 @@ function App() {
   }, [rows]);
   receiveDraft = p => { setDraft(p); setErrors([]); };
   receiveSnapshot = s => {
+    if (!themeInitialized.current) { setDark(s.initial_dark); themeInitialized.current = true; }
     if (s.nodes) { const next = new Tree(s.nodes); setTree(next); setExpanded(e => next.retain(e)); builds.current++; }
     if (page === 'diagnostics') updates.current++;
     setSnapshot(s); setStatus(`State ${s.sequence} · resets ${s.resets} · ${s.running ? 'Running' : 'Stopped'}`);

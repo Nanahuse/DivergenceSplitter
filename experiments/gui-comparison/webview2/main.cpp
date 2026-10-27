@@ -283,6 +283,7 @@ private:
         Topology roots;
         for (const auto& node : state->topology->nodes) if (node.kind == NodeKind::scenario) roots.nodes.push_back(node);
         value["roots"] = topology_json(roots);
+        value["initial_dark"] = session_.options.dark;
         if (sent_topology_ != state->topology && (probe_.page == Page::diagnostics || !sent_topology_)) { value["nodes"] = topology_json(*state->topology); sent_topology_ = state->topology; }
         std::set<NodeId> live;
         for (const auto& node : state->topology->nodes) if (node.kind == NodeKind::detector) live.insert(node.id);

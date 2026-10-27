@@ -20,6 +20,7 @@ export const Snapshot = z.object({
   sequence: z.string(), revision: z.string(), running: z.boolean(), resets: z.string(),
   nodes: z.array(Node).optional(), metrics: z.array(Metric), profile: Profile,
   roots: z.array(Node),
+  initial_dark: z.boolean(),
   frame: z.object({ sequence: z.string(), jpeg: z.string() }).optional(),
   references: z.record(z.string(), z.string()),
 });
