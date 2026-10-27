@@ -97,7 +97,7 @@ if(NOT GUI_CANDIDATE STREQUAL "none")
         find_package(unofficial-webview2 CONFIG REQUIRED)
         find_package(nlohmann_json CONFIG REQUIRED)
         target_link_libraries(${gui_target} PRIVATE unofficial::webview2::webview2 nlohmann_json::nlohmann_json
-            ole32 comdlg32 shlwapi shell32 crypt32)
+            ole32 comdlg32 shlwapi shell32 crypt32 winmm)
         target_sources(${gui_target} PRIVATE webview2/protocol.cpp)
         find_program(NPM_EXECUTABLE npm.cmd REQUIRED)
         set(web_ui "${CMAKE_CURRENT_SOURCE_DIR}/webview2/ui")

@@ -75,6 +75,8 @@ def verify_smoke_report(report: dict[str, Any], candidate: str) -> None:
             "W03_renderer_failure_reload",
             "W04_browser_failure_recreation",
         }.issubset(report.get("checks", []))
+        or candidate in {"qt", "webview2"}
+        and "MC02_note_draft_apply_and_backend" not in report.get("checks", [])
     ):
         raise ValueError(f"Incomplete/failed GUI contract report: {candidate}")
 
@@ -266,10 +268,20 @@ def prepare(root: Path, installed: Path, candidate: str, manifest: Path) -> None
         if not (notices / package / "copyright").is_file():
             raise ValueError(f"Missing dependency notice: {package}")
     if candidate == "webview2":
-        ui = Path(__file__).resolve().parents[1] / "experiments/gui-comparison/webview2/ui"
+        ui = (
+            Path(__file__).resolve().parents[1]
+            / "experiments/gui-comparison/webview2/ui"
+        )
         for name in ("react", "react-dom", "scheduler", "zod"):
             package_root = ui / "node_modules" / name
-            notice = next((package_root / n for n in ("LICENSE", "LICENSE.md") if (package_root / n).is_file()), None)
+            notice = next(
+                (
+                    package_root / n
+                    for n in ("LICENSE", "LICENSE.md")
+                    if (package_root / n).is_file()
+                ),
+                None,
+            )
             if notice is None:
                 raise ValueError(f"Missing bundled npm notice: {name}")
             destination = root / "licenses/npm" / name
@@ -322,7 +334,10 @@ def classify(
     if path.startswith(("licenses/", "build-metadata/")) or "NOTICE" in path:
         return "Notices and metadata", ""
     if path.startswith("bin/ui/"):
-        return "Web UI assets (React/TypeScript/CSS)", "application and npm dependencies"
+        return (
+            "Web UI assets (React/TypeScript/CSS)",
+            "application and npm dependencies",
+        )
     if name in SDK_GRAPHICS_DLLS:
         return "Windows SDK graphics runtime", "Windows SDK redistributable"
     if name.startswith(("msvcp", "vcruntime", "concrt", "vccorlib", "vcomp")):

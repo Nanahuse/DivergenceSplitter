@@ -9,6 +9,7 @@
 #include <shlobj.h>
 #include <wincrypt.h>
 #include <commdlg.h>
+#include <mmsystem.h>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
@@ -74,7 +75,8 @@ public:
         }
         runtime_ = utf8(version); CoTaskMemFree(version);
         session_.renderer = "Win32 / WebView2 " + runtime_ + " / React / JPEG JSON";
-        ShowWindow(window_, SW_SHOW); SetTimer(window_, 1, 67, nullptr);
+        timer_resolution_ = timeBeginPeriod(1) == TIMERR_NOERROR;
+        ShowWindow(window_, SW_SHOW); SetTimer(window_, 1, 8, nullptr);
         create_environment();
     }
     ~Host() override { shutdown(); }
@@ -239,7 +241,10 @@ private:
         else if (name == "browse" || name == "fresh") {
             if (dialog_) throw std::runtime_error("Dialog busy"); dialog_ = std::make_pair(id, name); PostMessageW(window_, dialog_message, 0, 0); return;
         }
-        else if (name == "holdPress") { hold_.press(std::chrono::steady_clock::now()); }
+        else if (name == "holdPress") {
+            const auto now = std::chrono::steady_clock::now(); hold_.press(now);
+            if (session_.options.hold_on_exit) exit_hold_at_ = now + std::chrono::duration_cast<Time::duration>(std::chrono::duration<double>(session_.options.seconds));
+        }
         else if (name == "holdCancel") { hold_.cancel(); }
         else if (name == "resize") { SetWindowPos(window_, nullptr, 0, 0, 800, 600, SWP_NOMOVE | SWP_NOZORDER); }
         else if (name == "reload") { respond(id, true); check(web_->Reload()); return; }
@@ -307,6 +312,7 @@ private:
     }
     void tick() {
         if (closing_ || dialog_ || finishing_) return;
+        if (!cadence_.due(std::chrono::steady_clock::now())) return;
         if (hold_.poll(std::chrono::steady_clock::now())) session_.engine.reset_all();
         session_.sample_process();
         if (IsIconic(window_)) { hold_.cancel(); return; }
@@ -322,7 +328,13 @@ private:
             }
             publish();
         }
-        if (session_.expired()) finish();
+        const bool ui_consumed = ready_ && test_actions_.empty() && sent_snapshots_ > 0
+            && probe_.page == session_.options.page && probe_.draft_count > 0
+            && (probe_.page != Page::diagnostics || (probe_.expanded && session_.counters.value_updates > 0));
+        if (!session_.error.empty()) finish();
+        else if (session_.options.hold_on_exit) {
+            if (exit_hold_at_ && std::chrono::steady_clock::now() >= *exit_hold_at_) finish();
+        } else if (session_.expired() && ui_consumed) finish();
     }
     void recovery_test() {
         if (!session_.error.empty() || inflight_) return;
@@ -374,6 +386,7 @@ private:
     }
     void shutdown() {
         if (closing_) return; closing_ = true; hold_.cancel(); if (window_) KillTimer(window_, 1);
+        if (timer_resolution_) { timeEndPeriod(1); timer_resolution_ = false; }
         close_controller();
         // Wait only for this isolated UDF's BrowserProcessExited event before cleanup.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -409,14 +422,16 @@ private:
     ComPtr<ICoreWebView2Controller> controller_; ComPtr<ICoreWebView2> web_;
     EventRegistrationToken navigation_token_{}, message_token_{}, failed_token_{}, new_window_token_{}, permission_token_{}, browser_token_{};
     std::filesystem::path assets_, user_data_, user_data_root_; std::string runtime_;
-    Probe probe_; ResetHold hold_; std::optional<std::pair<std::uint64_t, std::string>> dialog_;
+    Probe probe_; ResetHold hold_; PreviewCadence cadence_; std::optional<std::pair<std::uint64_t, std::string>> dialog_;
     std::deque<Action> test_actions_;
     std::vector<std::string> rejection_reasons_;
     std::shared_ptr<const Topology> sent_topology_; std::shared_ptr<const Frame> held_frame_;
     std::set<NodeId> reference_ids_; std::map<NodeId, std::string> reference_cache_;
     Time sent_at_{}, waiting_since_ = std::chrono::steady_clock::now();
+    std::optional<Time> exit_hold_at_;
     bool ready_ = false, inflight_ = false, closing_ = false, finishing_ = false, recreate_ = false, recovery_pending_ = false, contract_done_ = false;
     bool browser_exited_ = false, user_data_cleaned_ = false;
+    bool timer_resolution_ = false;
     unsigned epoch_ = 0, generation_ = 0, recoveries_ = 0, max_dom_rows_ = 0, file_cancels_ = 0, discard_cancels_ = 0;
     unsigned renderer_failures_ = 0, browser_failures_ = 0, rejected_messages_ = 0, rejected_origins_ = 0, recovery_step_ = 0, old_epoch_ = 0;
     std::uint64_t delivery_ = 0, decoded_frames_ = 0, sent_snapshots_ = 0, sequence_before_reload_ = 0, old_resets_ = 0;

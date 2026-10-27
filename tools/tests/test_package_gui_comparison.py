@@ -58,7 +58,18 @@ def test_exit_success_without_gui_checks_is_not_accepted(candidate: str) -> None
     if candidate == "webview2":
         with pytest.raises(ValueError, match="Incomplete/failed"):
             verify_smoke_report(report, candidate)
-        report["checks"].extend(("W01_virtualized_rows_bounded", "W02_reload_keeps_core", "W03_renderer_failure_reload", "W04_browser_failure_recreation"))
+        report["checks"].extend(
+            (
+                "W01_virtualized_rows_bounded",
+                "W02_reload_keeps_core",
+                "W03_renderer_failure_reload",
+                "W04_browser_failure_recreation",
+            )
+        )
+    if candidate in {"qt", "webview2"}:
+        with pytest.raises(ValueError, match="Incomplete/failed"):
+            verify_smoke_report(report, candidate)
+        report["checks"].append("MC02_note_draft_apply_and_backend")
     verify_smoke_report(report, candidate)
     report["error"] = "Failed after earlier checks"
     with pytest.raises(ValueError, match="Incomplete/failed"):
