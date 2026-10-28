@@ -1903,20 +1903,6 @@ class _ProtocolErrorAdapter(ScriptedAdapter):
         raise BridgeProtocolError("Bridge returned a malformed response")
 
 
-class _FatalControlAdapter(ScriptedAdapter):
-    def execute_action(
-        self,
-        action: Action,
-        expected_snapshot: LiveSplitSnapshot,
-        expected_state_epoch: int,
-    ) -> ActionOutcome:
-        self.attempts.append((action, expected_snapshot))
-        return ActionOutcome(
-            ActionExecution.FAILED,
-            RuntimeError("Bridge control failed"),
-        )
-
-
 def test_control_protocol_error_recovers_without_resend() -> None:
     harness = Harness(
         make_scenario(RecordingCondition(True)),
@@ -1937,24 +1923,6 @@ def test_control_protocol_error_recovers_without_resend() -> None:
     assert harness.adapters[0].attempts
     assert harness.adapters[1].attempts == []
     assert harness.instance.generation == 1
-
-
-def test_control_failed_result_is_terminal_without_resend() -> None:
-    adapter = _FatalControlAdapter(initial_update())
-    harness = Harness(make_scenario(RecordingCondition(True)), adapter=adapter)
-    harness.start()
-    try:
-        harness.wait_ready()
-        harness.instance.publish_frame(shared_frame(1))
-        wait_for(lambda: harness.instance.state is InstanceRuntimeState.FAILED)
-        wait_for(lambda: not harness.thread_alive())
-    finally:
-        harness.instance.request_stop()
-        harness.join(2)
-
-    assert isinstance(harness.instance.error, RuntimeError)
-    assert len(harness.adapters) == 1
-    assert adapter.attempts
 
 
 # -- Regression: Initial synchronization convergence ---------------------------

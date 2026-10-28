@@ -108,6 +108,10 @@ def _wait_for_event(
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
+        found = False
+        # Apply every event in the batch before returning: a target event can
+        # be followed by other authoritative events that the next Control
+        # depends on.
         for message in receiver.drain():
             if isinstance(message, BridgeEventConnectionLost):
                 pytest.fail(f"Bridge event connection was lost: {message.error}")
@@ -116,7 +120,9 @@ def _wait_for_event(
             if isinstance(received, LiveSplitResyncReason):
                 pytest.fail(f"Bridge event stream lost integrity: {received}")
             if message.event.type is target:
-                return
+                found = True
+        if found:
+            return
         time.sleep(0.01)
     pytest.fail(f"No {target} event arrived from the live v4 Bridge")
 
@@ -165,7 +171,9 @@ def test_live_v4_bridge_events_and_controls() -> None:
     try:
         initial = adapter.synchronize()
         assert initial.session_id > 0
-        assert initial.snapshot.split_count > 0
+        # The official TestHost exposes a two-segment Run. Requiring it keeps
+        # Split, Undo, and Skip in the verified Control set.
+        assert initial.snapshot.split_count >= 2
         assert initial.snapshot.phase in (
             TimerPhase.NOT_RUNNING,
             TimerPhase.RUNNING,
@@ -190,33 +198,30 @@ def test_live_v4_bridge_events_and_controls() -> None:
             TimerPhase.RUNNING,
             0,
         )
-        if adapter.current_snapshot is not None and (
-            adapter.current_snapshot.split_count > 1
-        ):
-            _control(
-                adapter,
-                receiver,
-                "split",
-                EventType.TIMER_SPLIT,
-                TimerPhase.RUNNING,
-                1,
-            )
-            _control(
-                adapter,
-                receiver,
-                "undo",
-                EventType.TIMER_UNDO,
-                TimerPhase.RUNNING,
-                0,
-            )
-            _control(
-                adapter,
-                receiver,
-                "skip",
-                EventType.TIMER_SKIPPED,
-                TimerPhase.RUNNING,
-                1,
-            )
+        _control(
+            adapter,
+            receiver,
+            "split",
+            EventType.TIMER_SPLIT,
+            TimerPhase.RUNNING,
+            1,
+        )
+        _control(
+            adapter,
+            receiver,
+            "undo",
+            EventType.TIMER_UNDO,
+            TimerPhase.RUNNING,
+            0,
+        )
+        _control(
+            adapter,
+            receiver,
+            "skip",
+            EventType.TIMER_SKIPPED,
+            TimerPhase.RUNNING,
+            1,
+        )
         _control(
             adapter,
             receiver,

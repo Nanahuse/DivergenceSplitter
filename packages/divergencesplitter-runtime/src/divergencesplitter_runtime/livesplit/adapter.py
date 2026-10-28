@@ -101,7 +101,6 @@ class ActionExecution(Enum):
     DISPATCHED = auto()
     REJECTED = auto()
     UNKNOWN = auto()
-    FAILED = auto()
 
 
 @dataclass(frozen=True)

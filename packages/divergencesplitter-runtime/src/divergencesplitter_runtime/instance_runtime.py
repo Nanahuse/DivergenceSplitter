@@ -887,9 +887,6 @@ class InstanceRuntime:
                 # state and resume judgment from it. Never resend the Reset.
                 return self._reconcile_rejected_reset(adapter, runtime)
             runtime.action_not_dispatched(action)
-        elif result.execution is ActionExecution.FAILED:
-            self._fail(result.error or RuntimeError("Bridge control failed"))
-            return _Attempt.TERMINAL
         elif result.execution is ActionExecution.UNKNOWN:
             self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
             return _Attempt.CONNECTION_LOST
