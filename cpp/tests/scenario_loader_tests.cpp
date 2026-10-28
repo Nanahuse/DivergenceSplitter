@@ -280,8 +280,11 @@ TEST(ScenarioLoader, ProfileReferenceResizeIsOptInAndNeverCrops) {
 
 TEST(ScenarioLoader, ResizesEveryReferenceDetectorAndPreservesRoiCoordinates) {
     TemporaryDirectory directory;
-    const auto image_path = write_reference(directory.path());
-    const auto original = cv::imread(image_path.string(), cv::IMREAD_UNCHANGED);
+    // A non-separable texture gives phase correlation a unique peak as well.
+    cv::Mat original(8, 8, CV_8UC3);
+    cv::RNG random{1234};
+    random.fill(original, cv::RNG::UNIFORM, 0, 256);
+    ASSERT_TRUE(cv::imwrite((directory.path() / "reference.png").string(), original));
     const auto path = directory.path() / "scenario.yaml";
     const std::pair<ResizeInterpolation, int> interpolations[] = {
         {ResizeInterpolation::area, cv::INTER_AREA},
@@ -298,7 +301,9 @@ TEST(ScenarioLoader, ResizesEveryReferenceDetectorAndPreservesRoiCoordinates) {
             for (const auto& [interpolation, cv_method] : interpolations) {
                 SCOPED_TRACE(std::string{type} + "/" + std::string{to_string(interpolation)} +
                              (roi ? "/roi" : "/full"));
-                const auto loaded = load_scenario(path, ReferenceResizeOptions{{12, 10}, interpolation});
+                const auto loaded = load_profile_scenario(path, VideoSourceConfiguration{"", {
+                    std::nullopt, ResizeConfiguration{12, 10, interpolation, true},
+                }});
                 const auto* detector = loaded.scenario.start_condition->detector();
                 const auto image = detector->reference_images()[0].image;
                 cv::Mat expected;
