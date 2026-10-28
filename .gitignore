@@ -225,3 +225,7 @@ __marimo__/
 # AI
 AGENTS.md
 .docs
+
+# C++/vcpkg
+vcpkg_installed/
+*.vcxproj.user

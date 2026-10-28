@@ -1,0 +1,28 @@
+DivergenceSplitter
+==================
+
+Copyright (c) Nanahuse. Distributed under the MIT License. See LICENSE.txt.
+
+This distribution bundles or links the following third-party components:
+
+- Qt 6 (Widgets, Core, Gui, Test) - LGPL-3.0 / GPL-3.0 / commercial.
+  The full Qt licensing text is in licenses/qtbase.txt.
+- OpenCV 4 - Apache-2.0. See licenses/opencv.txt.
+- Boost (Asio, Beast and dependencies) - Boost Software License 1.0.
+  See licenses/boost.txt.
+- yaml-cpp - MIT. See licenses/yaml-cpp.txt.
+- nlohmann/json - MIT. See licenses/nlohmann-json.txt.
+- livesplit-bridge-client-cpp - MIT. See
+  licenses/livesplit-bridge-client-cpp.txt.
+- windows-capture-device-list - MIT. Camera enumeration code is adapted from
+  this project. See licenses/windows-capture-device-list.txt.
+
+NDI
+---
+NDI input is an optional integration. The NDI SDK and runtime are not
+distributed in this archive. See licenses/NDI.md for the NDI notice. Builds
+without the NDI SDK report a configuration error instead of silently using a
+different input.
+
+Source code and build files for the LGPL-licensed Qt components are available
+from https://github.com/Nanahuse/DivergenceSplitter and from the Qt project.

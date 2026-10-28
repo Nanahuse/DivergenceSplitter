@@ -1,0 +1,28 @@
+# A minimal declarative scenario. It does not need Python.
+# Replace the detector/threshold values with values that match your game.
+
+start_condition:
+  type: detected
+  minimum_score: 0.1
+  detector:
+    type: mean_brightness
+
+reset_condition:
+  type: not
+  condition:
+    type: detected
+    minimum_score: 0.05
+    detector:
+      type: mean_brightness
+
+splits:
+  - rules:
+      - condition:
+          type: falling_edge
+          condition:
+            type: detected
+            minimum_score: 0.8
+            detector:
+              type: mean_brightness
+        action: split
+  - null

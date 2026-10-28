@@ -1,0 +1,135 @@
+name: C++23
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: cpp
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          archives: qtbase
+          cache: true
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          if (-not (Test-Path C:\vcpkg\vcpkg.exe)) {
+            & C:\vcpkg\bootstrap-vcpkg.bat
+          }
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\downloads
+            C:\vcpkg-cache
+          key: cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('cpp/vcpkg.json') }}
+          restore-keys: |
+            cpp23-vcpkg-${{ runner.os }}-
+
+      - name: Check out LiveSplit.Bridge TestHost
+        uses: actions/checkout@v5
+        with:
+          repository: Nanahuse/LiveSplit.Bridge
+          ref: 4c14c0161eacd50b05411c0d20f5eff523e9c155
+          submodules: recursive
+          path: .testhost/LiveSplit.Bridge
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Python for TestHost runner
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build TestHost
+        working-directory: ${{ github.workspace }}
+        run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
+
+      - name: Configure
+        run: cmake --preset ci
+
+      - name: Build
+        run: cmake --build --preset ci --parallel
+
+      - name: Test
+        run: ctest --preset ci --output-on-failure
+
+      - name: TestHost integration
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $testhost = Get-ChildItem '.testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin' -Recurse -Filter 'LiveSplit.Bridge.TestHost.exe' | Select-Object -First 1
+          if (-not $testhost) { throw 'TestHost executable was not found' }
+          python cpp/tools/run_testhost.py --testhost $testhost.FullName --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
+          if ($LASTEXITCODE -ne 0) { throw "TestHost integration failed: $LASTEXITCODE" }
+      - name: Package ZIP
+        run: cmake --build --preset ci --target package
+
+      - name: Verify extracted ZIP
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem build/ci/*.zip | Select-Object -First 1
+          if (-not $zip) { throw 'No ZIP package was produced' }
+          $destination = Join-Path $env:RUNNER_TEMP 'divergencesplitter-zip'
+          Remove-Item $destination -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip.FullName -DestinationPath $destination
+          foreach ($file in @('platforms\qwindows.dll', 'Qt6Core.dll', 'opencv_core4.dll', 'vc_redist.x64.exe', 'LICENSE.txt', 'licenses\qtbase.txt')) {
+            if (-not (Test-Path (Join-Path $destination $file))) {
+              throw "Extracted ZIP is missing $file"
+            }
+          }
+          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+          $env:PATH = "$destination;$env:SystemRoot\System32;$env:SystemRoot"
+          & "$destination\divergencesplitter-cli.exe" --help
+          if ($LASTEXITCODE -ne 0) { throw "CLI failed from extracted ZIP: $LASTEXITCODE" }
+          $gui = Start-Process -FilePath "$destination\DivergenceSplitter.exe" -WorkingDirectory $destination -PassThru
+          try {
+            $windowReady = $false
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $gui.Refresh()
+              if ($gui.HasExited) { throw "GUI exited from extracted ZIP: $($gui.ExitCode)" }
+              if ($gui.MainWindowTitle -eq 'DivergenceSplitter') {
+                $windowReady = $true
+                break
+              }
+            }
+            if (-not $windowReady) { throw 'GUI did not create its main window from the extracted ZIP' }
+          } finally {
+            if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force }
+          }
+
+      - name: Upload distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-cpp23-windows-x64
+          path: cpp/build/ci/*.zip
+          if-no-files-found: error
