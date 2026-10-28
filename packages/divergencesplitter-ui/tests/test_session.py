@@ -616,7 +616,6 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
     from divergencesplitter import ErrorAction, FrameSourceError
     from divergencesplitter_runtime import AllInstancesFailedError
     from divergencesplitter_ui.session import ApplicationRuntimeFactory
-    from livesplit_bridge import BridgeProtocolError
 
     class WaitingSource(VideoFileSource):
         def __init__(self) -> None:
@@ -665,7 +664,7 @@ def test_all_failed_without_frames_closes_runtime_and_allows_restart() -> None:
             IdleSubscriber,
         ),
     ):
-        adapter.return_value.synchronize.side_effect = BridgeProtocolError(
+        adapter.return_value.synchronize.side_effect = ValueError(
             "incompatible protocol"
         )
         for _ in range(2):

@@ -547,7 +547,7 @@ class RecordingDiagnostics:
         connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
-        code: int | None,
+        code: str | None,
         message: str,
     ) -> None:
         pass

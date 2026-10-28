@@ -12,18 +12,30 @@ from divergencesplitter_runtime.livesplit.event_receiver import (
     BridgeEventReceived,
     BridgeEventReceiver,
 )
-from livesplit_bridge import BridgeConnectionLostError, common_pb2
+from livesplit_bridge import (
+    BridgeConnectionLostError,
+    BridgeEvent,
+    EventType,
+    TimerPhase,
+    TimerState,
+)
 
 
-def make_event(sequence: int) -> common_pb2.BridgeEvent:
-    return common_pb2.BridgeEvent(
-        session_id=1,
-        event_sequence=sequence,
-        type=common_pb2.EVENT_TIMER_SPLIT,
-        timer_state=common_pb2.TimerState(
-            phase=common_pb2.RUNNING,
-            split_index=0,
-        ),
+def make_event(sequence: int) -> BridgeEvent:
+    return BridgeEvent.model_validate(
+        {
+            "session_id": 1,
+            "event_sequence": sequence,
+            "type": EventType.TIMER_SPLIT,
+            "timer_state": TimerState(
+                phase=TimerPhase.RUNNING,
+                split_index=0,
+                real_time_ticks=0,
+                game_time_ticks=None,
+                is_game_time_initialized=False,
+                is_game_time_paused=False,
+            ),
+        }
     )
 
 
@@ -41,9 +53,7 @@ class QueueSubscriber:
             self._items.append(item)
             self._condition.notify_all()
 
-    def receive(
-        self, *, timeout_ms: int | None = None
-    ) -> common_pb2.BridgeEvent | None:
+    def receive(self, *, timeout_ms: int | None = None) -> BridgeEvent | None:
         with self._condition:
             if not self._items:
                 self._condition.wait(None if timeout_ms is None else timeout_ms / 1000)
@@ -52,7 +62,7 @@ class QueueSubscriber:
             item = self._items.popleft()
         if isinstance(item, Exception):
             raise item
-        return cast(common_pb2.BridgeEvent, item)
+        return cast(BridgeEvent, item)
 
     def close(self) -> None:
         self.closed = True
