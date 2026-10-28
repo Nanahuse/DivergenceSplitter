@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "divergencesplitter/capture/normalizer.hpp"
 #include "divergencesplitter/condition/condition.hpp"
 #include "divergencesplitter/rule/rule.hpp"
 
@@ -41,6 +42,15 @@ struct LoadedScenario {
     std::filesystem::path path;
 };
 
-[[nodiscard]] LoadedScenario load_scenario(const std::filesystem::path& path);
+// Only reference resizing is applied; capture crop margins never affect references.
+struct ReferenceResizeOptions {
+    OutputSize output_size;
+    ResizeInterpolation interpolation{ResizeInterpolation::area};
+};
+
+[[nodiscard]] LoadedScenario load_scenario(
+    const std::filesystem::path& path,
+    std::optional<ReferenceResizeOptions> reference_resize = std::nullopt
+);
 
 }  // namespace divergencesplitter

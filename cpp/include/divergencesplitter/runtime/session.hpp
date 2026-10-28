@@ -13,8 +13,15 @@
 #include "divergencesplitter/runtime/diagnostics.hpp"
 #include "divergencesplitter/runtime/instance_runtime.hpp"
 #include "divergencesplitter/runtime/logging.hpp"
+#include "divergencesplitter/scenario/scenario.hpp"
 
 namespace divergencesplitter {
+
+// Shared by Apply validation and runtime startup, including reference transforms.
+[[nodiscard]] LoadedScenario load_profile_scenario(
+    const std::filesystem::path& path,
+    const SourceConfiguration& source
+);
 
 class Session {
 public:

@@ -99,6 +99,14 @@ Source types:
 - `video` with an absolute local file path
 - `ndi` with the advertised source name
 
+Enable **Resize reference images** in Profile (JSON: `resize.resize_references`)
+to resize scenario references using the selected interpolation. References without
+an ROI use the resize output dimensions; references with an ROI use its width and
+height, keeping the ROI coordinates unchanged. Capture crop margins do not apply
+to references. Apply validates the transformed images before starting the runtime;
+the YAML and image files are left unchanged. With resize disabled or
+`resize_references: false` (the default), references keep their original size.
+
 Scenarios use the existing declarative YAML format. Supported condition types
 are `detected`, `all`, `any`, `not`, `rising_edge`, `falling_edge`, `once`,
 `elapsed`, `hold`, `nth`, `reset_when`, and `then`. Supported detectors are

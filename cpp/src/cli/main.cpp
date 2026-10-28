@@ -91,7 +91,9 @@ int main(int argc, char** argv) {
         }
         if (check_only) {
             for (const auto& instance : loaded.profile.instances) {
-                (void)load_scenario(std::filesystem::path{instance.scenario});
+                (void)load_profile_scenario(
+                    std::filesystem::path{instance.scenario}, loaded.profile.source
+                );
             }
             std::cout << "profile and scenarios are valid\n";
             return 0;

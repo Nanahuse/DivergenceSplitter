@@ -78,6 +78,23 @@ TEST(Profile, MigratesVersion1Ports) {
     EXPECT_EQ(loaded.profile.instances[1].connection.port, 54001);
 }
 
+TEST(Profile, RoundTripsReferenceResizeEnabledAndDisabled) {
+    TemporaryDirectory directory;
+    for (const bool enabled : {false, true}) {
+        Profile profile;
+        const ResizeConfiguration resize{13, 7, ResizeInterpolation::cubic, enabled};
+        profile.source = VideoSourceConfiguration{
+            (directory.path() / "run.mp4").string(), {std::nullopt, resize},
+        };
+        const auto path = directory.path() / "profile.json";
+        save_profile(path, profile);
+        const auto loaded = load_profile(path);
+        const auto& transform = std::get<VideoSourceConfiguration>(loaded.profile.source).transform;
+        ASSERT_TRUE(transform.resize);
+        EXPECT_EQ(*transform.resize, resize);
+    }
+}
+
 TEST(Profile, RejectsUnknownFields) {
     TemporaryDirectory directory;
     const auto path = directory.path() / "profile.json";

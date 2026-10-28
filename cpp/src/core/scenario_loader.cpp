@@ -22,6 +22,11 @@ namespace {
 
 using StringSet = std::set<std::string>;
 
+struct LoadContext {
+    std::filesystem::path base_directory;
+    std::optional<ReferenceResizeOptions> reference_resize;
+};
+
 std::string lower_extension(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char value) {
@@ -146,11 +151,12 @@ std::optional<Region> parse_roi(const YAML::Node& node, std::string_view field) 
 cv::Mat read_reference(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context,
+    const std::optional<Region>& roi
 ) {
     std::filesystem::path path = as_string(node, field);
     if (path.is_relative()) {
-        path = base_directory / path;
+        path = context.base_directory / path;
     }
     std::ifstream stream{path, std::ios::binary};
     if (!stream) {
@@ -167,29 +173,34 @@ cv::Mat read_reference(
     if (image.empty()) {
         schema_error(std::string(field) + " could not be read as an image: " + path.string());
     }
+    if (context.reference_resize) {
+        const auto& resize = *context.reference_resize;
+        const auto size = roi ? OutputSize{roi->width, roi->height} : resize.output_size;
+        image = FrameNormalizer{std::nullopt, size, resize.interpolation}.normalize(image);
+    }
     return image;
 }
 
 DetectorPtr parse_detector(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 );
 
 ConditionPtr parse_condition(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 );
 
 std::vector<ConditionPtr> parse_condition_list(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 ) {
     std::vector<ConditionPtr> result;
     for (const auto& item : as_list(node, field)) {
-        result.push_back(parse_condition(item, field, base_directory));
+        result.push_back(parse_condition(item, field, context));
     }
     return result;
 }
@@ -197,7 +208,7 @@ std::vector<ConditionPtr> parse_condition_list(
 DetectorPtr parse_detector(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 ) {
     const auto mapping = require_map(node, field);
     if (!mapping["type"]) {
@@ -206,23 +217,26 @@ DetectorPtr parse_detector(
     const std::string type = as_string(mapping["type"], std::string(field) + ".type");
     if (type == "template_match") {
         check_keys(mapping, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(mapping["roi"], std::string(field) + ".roi");
         return std::make_shared<TemplateMatchDetector>(
-            read_reference(mapping["reference"], std::string(field) + ".reference", base_directory),
-            parse_roi(mapping["roi"], std::string(field) + ".roi")
+            read_reference(mapping["reference"], std::string(field) + ".reference", context, roi),
+            roi
         );
     }
     if (type == "mean_absolute_similarity") {
         check_keys(mapping, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(mapping["roi"], std::string(field) + ".roi");
         return std::make_shared<MeanAbsoluteSimilarityDetector>(
-            read_reference(mapping["reference"], std::string(field) + ".reference", base_directory),
-            parse_roi(mapping["roi"], std::string(field) + ".roi")
+            read_reference(mapping["reference"], std::string(field) + ".reference", context, roi),
+            roi
         );
     }
     if (type == "root_mean_square_similarity") {
         check_keys(mapping, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(mapping["roi"], std::string(field) + ".roi");
         return std::make_shared<RootMeanSquareSimilarityDetector>(
-            read_reference(mapping["reference"], std::string(field) + ".reference", base_directory),
-            parse_roi(mapping["roi"], std::string(field) + ".roi")
+            read_reference(mapping["reference"], std::string(field) + ".reference", context, roi),
+            roi
         );
     }
     if (type == "difference_hash_similarity") {
@@ -230,17 +244,19 @@ DetectorPtr parse_detector(
         const int hash_size = mapping["hash_size"]
             ? as_integer(mapping["hash_size"], std::string(field) + ".hash_size")
             : 8;
+        const auto roi = parse_roi(mapping["roi"], std::string(field) + ".roi");
         return std::make_shared<DifferenceHashSimilarityDetector>(
-            read_reference(mapping["reference"], std::string(field) + ".reference", base_directory),
+            read_reference(mapping["reference"], std::string(field) + ".reference", context, roi),
             hash_size,
-            parse_roi(mapping["roi"], std::string(field) + ".roi")
+            roi
         );
     }
     if (type == "phase_correlation") {
         check_keys(mapping, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(mapping["roi"], std::string(field) + ".roi");
         return std::make_shared<PhaseCorrelationDetector>(
-            read_reference(mapping["reference"], std::string(field) + ".reference", base_directory),
-            parse_roi(mapping["roi"], std::string(field) + ".roi")
+            read_reference(mapping["reference"], std::string(field) + ".reference", context, roi),
+            roi
         );
     }
     if (type == "mean_brightness") {
@@ -270,7 +286,7 @@ DetectorPtr parse_detector(
 ConditionPtr parse_condition(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 ) {
     const auto mapping = require_map(node, field);
     if (!mapping["type"]) {
@@ -280,7 +296,7 @@ ConditionPtr parse_condition(
     if (type == "detected") {
         check_keys(mapping, {"type", "minimum_score", "detector"});
         return std::make_shared<DetectedCondition>(
-            parse_detector(mapping["detector"], std::string(field) + ".detector", base_directory),
+            parse_detector(mapping["detector"], std::string(field) + ".detector", context),
             as_number(mapping["minimum_score"], std::string(field) + ".minimum_score")
         );
     }
@@ -290,7 +306,7 @@ ConditionPtr parse_condition(
             parse_condition_list(
                 mapping["conditions"],
                 std::string(field) + ".conditions",
-                base_directory
+                context
             )
         );
     }
@@ -300,32 +316,32 @@ ConditionPtr parse_condition(
             parse_condition_list(
                 mapping["conditions"],
                 std::string(field) + ".conditions",
-                base_directory
+                context
             )
         );
     }
     if (type == "not") {
         check_keys(mapping, {"type", "condition"});
         return std::make_shared<NotCondition>(
-            parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory)
+            parse_condition(mapping["condition"], std::string(field) + ".condition", context)
         );
     }
     if (type == "rising_edge") {
         check_keys(mapping, {"type", "condition"});
         return std::make_shared<RisingEdgeCondition>(
-            parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory)
+            parse_condition(mapping["condition"], std::string(field) + ".condition", context)
         );
     }
     if (type == "falling_edge") {
         check_keys(mapping, {"type", "condition"});
         return std::make_shared<FallingEdgeCondition>(
-            parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory)
+            parse_condition(mapping["condition"], std::string(field) + ".condition", context)
         );
     }
     if (type == "once") {
         check_keys(mapping, {"type", "condition"});
         return std::make_shared<OnceCondition>(
-            parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory)
+            parse_condition(mapping["condition"], std::string(field) + ".condition", context)
         );
     }
     if (type == "elapsed") {
@@ -337,25 +353,25 @@ ConditionPtr parse_condition(
     if (type == "hold") {
         check_keys(mapping, {"type", "duration", "condition"});
         return std::make_shared<HoldCondition>(
-            parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory),
+            parse_condition(mapping["condition"], std::string(field) + ".condition", context),
             parse_duration(mapping["duration"], std::string(field) + ".duration")
         );
     }
     if (type == "nth") {
         check_keys(mapping, {"type", "count", "condition"});
         return std::make_shared<NthCondition>(
-            parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory),
+            parse_condition(mapping["condition"], std::string(field) + ".condition", context),
             as_integer(mapping["count"], std::string(field) + ".count")
         );
     }
     if (type == "reset_when") {
         check_keys(mapping, {"type", "condition", "reset_condition"});
         return std::make_shared<ResetWhenCondition>(
-            parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory),
+            parse_condition(mapping["condition"], std::string(field) + ".condition", context),
             parse_condition(
                 mapping["reset_condition"],
                 std::string(field) + ".reset_condition",
-                base_directory
+                context
             )
         );
     }
@@ -369,7 +385,7 @@ ConditionPtr parse_condition(
             parse_condition_list(
                 mapping["conditions"],
                 std::string(field) + ".conditions",
-                base_directory
+                context
             ),
             within
         );
@@ -380,7 +396,7 @@ ConditionPtr parse_condition(
 std::shared_ptr<Rule> parse_rule(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 ) {
     const auto mapping = require_map(node, field);
     check_keys(mapping, {"condition", "action"});
@@ -390,7 +406,7 @@ std::shared_ptr<Rule> parse_rule(
         schema_error("unsupported action operation: " + action_name);
     }
     return std::make_shared<Rule>(
-        parse_condition(mapping["condition"], std::string(field) + ".condition", base_directory),
+        parse_condition(mapping["condition"], std::string(field) + ".condition", context),
         Action{*action}
     );
 }
@@ -398,7 +414,7 @@ std::shared_ptr<Rule> parse_rule(
 ScenarioRulePtr parse_scenario_rule(
     const YAML::Node& node,
     std::string_view field,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 ) {
     const auto mapping = require_map(node, field);
     if (mapping["sequence"]) {
@@ -409,16 +425,16 @@ ScenarioRulePtr parse_scenario_rule(
         }
         std::vector<std::shared_ptr<Rule>> rules;
         for (const auto& item : items) {
-            rules.push_back(parse_rule(item, std::string(field) + ".sequence", base_directory));
+            rules.push_back(parse_rule(item, std::string(field) + ".sequence", context));
         }
         return std::make_shared<RuleSequence>(std::move(rules));
     }
-    return parse_rule(node, field, base_directory);
+    return parse_rule(node, field, context);
 }
 
 std::vector<std::optional<std::vector<ScenarioRulePtr>>> parse_splits(
     const YAML::Node& node,
-    const std::filesystem::path& base_directory
+    const LoadContext& context
 ) {
     std::vector<std::optional<std::vector<ScenarioRulePtr>>> splits;
     for (const auto& item : as_list(node, "splits")) {
@@ -430,33 +446,36 @@ std::vector<std::optional<std::vector<ScenarioRulePtr>>> parse_splits(
         check_keys(mapping, {"rules"});
         std::vector<ScenarioRulePtr> rules;
         for (const auto& rule_node : as_list(mapping["rules"], "split.rules")) {
-            rules.push_back(parse_scenario_rule(rule_node, "rule", base_directory));
+            rules.push_back(parse_scenario_rule(rule_node, "rule", context));
         }
         splits.push_back(std::move(rules));
     }
     return splits;
 }
 
-Scenario parse_scenario(const YAML::Node& root, const std::filesystem::path& base_directory) {
+Scenario parse_scenario(const YAML::Node& root, const LoadContext& context) {
     const auto mapping = require_map(root, "scenario");
     check_keys(mapping, {"start_condition", "splits"}, {"reset_condition", "incomplete_condition"}, true);
     Scenario scenario;
-    scenario.start_condition = parse_condition(mapping["start_condition"], "start_condition", base_directory);
+    scenario.start_condition = parse_condition(mapping["start_condition"], "start_condition", context);
     if (mapping["reset_condition"] && !mapping["reset_condition"].IsNull()) {
         scenario.reset_condition =
-            parse_condition(mapping["reset_condition"], "reset_condition", base_directory);
+            parse_condition(mapping["reset_condition"], "reset_condition", context);
     }
     if (mapping["incomplete_condition"] && !mapping["incomplete_condition"].IsNull()) {
         scenario.incomplete_condition =
-            parse_condition(mapping["incomplete_condition"], "incomplete_condition", base_directory);
+            parse_condition(mapping["incomplete_condition"], "incomplete_condition", context);
     }
-    scenario.splits = parse_splits(mapping["splits"], base_directory);
+    scenario.splits = parse_splits(mapping["splits"], context);
     return scenario;
 }
 
 }  // namespace
 
-LoadedScenario load_scenario(const std::filesystem::path& path) {
+LoadedScenario load_scenario(
+    const std::filesystem::path& path,
+    std::optional<ReferenceResizeOptions> reference_resize
+) {
     const std::string extension = lower_extension(path);
     if (extension == ".py") {
         throw ScenarioLoadError(
@@ -491,7 +510,7 @@ LoadedScenario load_scenario(const std::filesystem::path& path) {
     }
 
     try {
-        return LoadedScenario{parse_scenario(root, path.parent_path()), path};
+        return LoadedScenario{parse_scenario(root, LoadContext{path.parent_path(), reference_resize}), path};
     } catch (const ScenarioLoadError&) {
         throw;
     } catch (const std::exception& error) {

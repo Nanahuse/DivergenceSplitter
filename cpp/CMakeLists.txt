@@ -54,6 +54,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 add_library(divergencesplitter_core STATIC
+    src/core/frame_normalizer.cpp
     src/core/detectors.cpp
     src/core/conditions.cpp
     src/core/rules.cpp

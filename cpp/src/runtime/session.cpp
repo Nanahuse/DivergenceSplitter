@@ -13,6 +13,29 @@
 
 namespace divergencesplitter {
 
+LoadedScenario load_profile_scenario(
+    const std::filesystem::path& path,
+    const SourceConfiguration& source
+) {
+    const auto options = std::visit(
+        [](const auto& value) -> std::optional<ReferenceResizeOptions> {
+            const auto& resize = value.transform.resize;
+            if (!resize || !resize->resize_references) {
+                return std::nullopt;
+            }
+            return ReferenceResizeOptions{
+                {resize->width, resize->height}, resize->interpolation,
+            };
+        },
+        source
+    );
+    try {
+        return load_scenario(path, options);
+    } catch (const ScenarioLoadError& error) {
+        throw ConfigurationError(error.what());
+    }
+}
+
 Session::Session(std::shared_ptr<TimeProvider> time_provider)
     : time_provider_(time_provider ? std::move(time_provider) : std::make_shared<SteadyTimeProvider>()) {}
 
@@ -36,7 +59,7 @@ void Session::apply_profile(const Profile& profile, const AppSettings& settings)
                 "scenario path must be an absolute path: " + instance.scenario
             );
         }
-        auto loaded = load_scenario(scenario_path);
+        auto loaded = load_profile_scenario(scenario_path, profile.source);
         LiveSplitClientOptions options;
         options.port = static_cast<std::uint16_t>(instance.connection.port);
         auto client = std::make_unique<LiveSplitBridgeClient>(std::move(options));

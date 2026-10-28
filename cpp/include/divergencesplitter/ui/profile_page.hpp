@@ -87,6 +87,7 @@ private:
     QSpinBox* crop_bottom_;
 
     QCheckBox* resize_enabled_;
+    QCheckBox* resize_references_;
     QSpinBox* resize_width_;
     QSpinBox* resize_height_;
     QComboBox* resize_interpolation_;

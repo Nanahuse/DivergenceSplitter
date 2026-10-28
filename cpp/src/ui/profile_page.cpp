@@ -165,6 +165,7 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
 
     auto* resize_row = new QHBoxLayout;
     resize_enabled_ = new QCheckBox(tr("Resize"), transform_group);
+    resize_enabled_->setObjectName(QStringLiteral("resizeEnabled"));
     resize_width_ = new QSpinBox(transform_group);
     resize_width_->setRange(1, 16384);
     resize_width_->setValue(1280);
@@ -185,6 +186,11 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
     resize_row->addWidget(resize_interpolation_);
     resize_row->addStretch(1);
     transform_layout->addLayout(resize_row);
+    resize_references_ = new QCheckBox(tr("Resize reference images"), transform_group);
+    resize_references_->setObjectName(QStringLiteral("resizeReferences"));
+    resize_references_->setEnabled(false);
+    connect(resize_enabled_, &QCheckBox::toggled, resize_references_, &QWidget::setEnabled);
+    transform_layout->addWidget(resize_references_);
     layout->addWidget(transform_group);
 
     auto* instances_group = new QGroupBox(tr("LiveSplit instances"), content);
@@ -274,6 +280,9 @@ void ProfilePage::load_profile(const Profile& profile) {
             crop_top_->setValue(transform.crop ? transform.crop->top : 0);
             crop_bottom_->setValue(transform.crop ? transform.crop->bottom : 0);
             resize_enabled_->setChecked(transform.resize.has_value());
+            resize_references_->setChecked(
+                transform.resize && transform.resize->resize_references
+            );
             resize_width_->setValue(transform.resize ? transform.resize->width : 1280);
             resize_height_->setValue(transform.resize ? transform.resize->height : 720);
             if (transform.resize.has_value()) {
@@ -314,6 +323,7 @@ Profile ProfilePage::draft_profile() const {
         ResizeConfiguration resize;
         resize.width = resize_width_->value();
         resize.height = resize_height_->value();
+        resize.resize_references = resize_references_->isChecked();
         resize.interpolation = parse_interpolation_string(
             to_std(resize_interpolation_->currentText())
         );
@@ -421,7 +431,7 @@ void ProfilePage::apply() {
             return;
         }
         try {
-            (void)load_scenario(scenario);
+            (void)load_profile_scenario(scenario, profile.source);
         } catch (const std::exception& error) {
             fail(tr("Scenario validation failed: %1").arg(QString::fromUtf8(error.what())));
             return;
