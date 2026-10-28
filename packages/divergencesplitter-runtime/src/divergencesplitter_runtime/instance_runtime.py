@@ -31,10 +31,10 @@ from divergencesplitter.scenario.models import Scenario
 from livesplit_bridge import (
     BridgeClientError,
     BridgeConnectionLostError,
+    BridgeEvent,
     BridgeEventSubscriber,
     BridgeProtocolError,
     BridgeRemoteError,
-    common_pb2,
 )
 
 from divergencesplitter_runtime.configuration.validation import validate_split_count
@@ -355,7 +355,10 @@ class InstanceRuntime:
             adapter = self._adapter_factory()
             self._adapter = adapter
             initial = adapter.synchronize()
-        except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+        except BridgeProtocolError as error:
+            self._diagnostics.initial_sync_failed(self.connection, error)
+            return _Attempt.CONNECTION_LOST
+        except (BridgeRemoteError, ValueError) as error:
             self._fail(error)
             return _Attempt.TERMINAL
         except BridgeClientError as error:
@@ -416,7 +419,10 @@ class InstanceRuntime:
             adapter.establish_event_cursor(events)
             try:
                 initial = adapter.synchronize()
-            except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+            except BridgeProtocolError as error:
+                self._diagnostics.initial_sync_failed(self.connection, error)
+                return _Attempt.CONNECTION_LOST
+            except (BridgeRemoteError, ValueError) as error:
                 self._fail(error)
                 return _Attempt.TERMINAL
             except BridgeClientError as error:
@@ -529,7 +535,10 @@ class InstanceRuntime:
             return None
         try:
             update = adapter.confirm_timer_state()
-        except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+        except BridgeProtocolError as error:
+            self._connection_lost(error)
+            return _Attempt.CONNECTION_LOST
+        except (BridgeRemoteError, ValueError) as error:
             self._fail(error)
             return _Attempt.TERMINAL
         except BridgeClientError as error:
@@ -799,12 +808,15 @@ class InstanceRuntime:
         self,
         adapter: LiveSplitBridgeAdapter,
         runtime: ScenarioRuntime,
-        event: common_pb2.BridgeEvent,
+        event: BridgeEvent,
         expected: LiveSplitSnapshot,
     ) -> tuple[_ReactionResult, LiveSplitSnapshot, _Attempt | None]:
         try:
             received = adapter.handle_event(event)
-        except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+        except BridgeProtocolError as error:
+            self._connection_lost(error)
+            return _ReactionResult.CANCELLED, expected, _Attempt.CONNECTION_LOST
+        except (BridgeRemoteError, ValueError) as error:
             self._fail(error)
             return _ReactionResult.CANCELLED, expected, _Attempt.TERMINAL
         except BridgeClientError as error:
@@ -875,9 +887,6 @@ class InstanceRuntime:
                 # state and resume judgment from it. Never resend the Reset.
                 return self._reconcile_rejected_reset(adapter, runtime)
             runtime.action_not_dispatched(action)
-        elif result.execution is ActionExecution.FAILED:
-            self._fail(result.error or RuntimeError("Bridge control failed"))
-            return _Attempt.TERMINAL
         elif result.execution is ActionExecution.UNKNOWN:
             self._connection_lost(BridgeConnectionLostError("action outcome unknown"))
             return _Attempt.CONNECTION_LOST
@@ -899,12 +908,15 @@ class InstanceRuntime:
         try:
             update = adapter.confirm_timer_state()
         except BridgeRemoteError as error:
-            if error.code == common_pb2.INTERNAL_ERROR:
+            if error.code == "internal_error":
                 self._connection_lost(error)
                 return _Attempt.CONNECTION_LOST
             self._fail(error)
             return _Attempt.TERMINAL
-        except (BridgeProtocolError, ValueError) as error:
+        except BridgeProtocolError as error:
+            self._connection_lost(error)
+            return _Attempt.CONNECTION_LOST
+        except ValueError as error:
             self._fail(error)
             return _Attempt.TERMINAL
         except BridgeClientError as error:
@@ -979,11 +991,14 @@ class InstanceRuntime:
     def _apply_event(
         self,
         adapter: LiveSplitBridgeAdapter,
-        event: common_pb2.BridgeEvent,
+        event: BridgeEvent,
     ) -> _Attempt | None:
         try:
             received = adapter.handle_event(event)
-        except (BridgeProtocolError, BridgeRemoteError, ValueError) as error:
+        except BridgeProtocolError as error:
+            self._connection_lost(error)
+            return _Attempt.CONNECTION_LOST
+        except (BridgeRemoteError, ValueError) as error:
             self._fail(error)
             return _Attempt.TERMINAL
         except BridgeClientError as error:

@@ -91,7 +91,7 @@ port per instance:
 ```
 
 A version `1` Profile is migrated on load. Its Protocol v1 ZeroMQ endpoints are
-not convertible to a Protocol v3 WebSocket port, so their values are discarded
+not convertible to a Protocol v4 WebSocket port, so their values are discarded
 and each instance is assigned a fresh port starting at `54000` in file order.
 The next save writes the version `2` form.
 
@@ -294,16 +294,18 @@ NDI® is a registered trademark of Vizrt NDI AB.
 
 ## LiveSplit Bridge constraints
 
-Run a LiveSplit.Bridge instance exposing Protocol v3 on the WebSocket port each
-scenario is configured with. The runtime connects to the RPC endpoint
-`ws://127.0.0.1:<port>/bridge/v3/rpc` and subscribes to
-`ws://127.0.0.1:<port>/bridge/v3/events`; only the port is stored in the
+Run a LiveSplit.Bridge instance exposing JSON Protocol v4 on the WebSocket port
+each scenario is configured with. The runtime connects to the RPC endpoint
+`ws://127.0.0.1:<port>/bridge/v4/rpc` and subscribes to
+`ws://127.0.0.1:<port>/bridge/v4/events`; only the port is stored in the
 Profile. RPC and Events use separate connections and threads per instance.
 Initial synchronization reads `TimerState` and `RunState` from one RPC session.
-Events carry a session ID and sequence; gaps stop control and trigger a fresh
-query. The protocol has no heartbeat event and does not provide an atomic
-boundary between a query and the event stream, so events received during
-synchronization are drained before the runtime starts.
+Events carry a session ID and a non-zero uint32 sequence that wraps from the
+maximum back to `1`; gaps, duplicates, out-of-order sequences, and session
+changes stop control and rebuild both connections. The protocol has no
+heartbeat event and does not provide an atomic boundary between a query and the
+event stream, so events received during synchronization are drained and the
+baseline is re-read before the runtime starts.
 
 Control success confirms that Bridge handled the operation, but does not include
 the resulting timer state. The runtime waits up to one second for a state event
