@@ -72,6 +72,46 @@ private:
     std::string key_;
 };
 
+class HistogramSimilarityDetector final : public Detector {
+public:
+    explicit HistogramSimilarityDetector(cv::Mat reference, std::optional<Region> roi = std::nullopt);
+
+    [[nodiscard]] std::string_view type_name() const noexcept override {
+        return "histogram_similarity";
+    }
+    [[nodiscard]] std::string cache_key() const override { return key_; }
+    [[nodiscard]] DetectionResult detect(FrameContext& context) const override;
+    [[nodiscard]] std::vector<ReferenceImage> reference_images() const override;
+    [[nodiscard]] std::string describe() const override;
+
+private:
+    cv::Mat reference_;
+    cv::Mat histogram_;
+    cv::Mat mask_;
+    std::optional<Region> roi_;
+    std::string key_;
+};
+
+class PerceptualHashSimilarityDetector final : public Detector {
+public:
+    explicit PerceptualHashSimilarityDetector(cv::Mat reference, std::optional<Region> roi = std::nullopt);
+
+    [[nodiscard]] std::string_view type_name() const noexcept override {
+        return "perceptual_hash_similarity";
+    }
+    [[nodiscard]] std::string cache_key() const override { return key_; }
+    [[nodiscard]] DetectionResult detect(FrameContext& context) const override;
+    [[nodiscard]] std::vector<ReferenceImage> reference_images() const override;
+    [[nodiscard]] std::string describe() const override;
+
+private:
+    cv::Mat reference_;
+    cv::Mat reference_hash_;
+    cv::Mat mask_;
+    std::optional<Region> roi_;
+    std::string key_;
+};
+
 class DifferenceHashSimilarityDetector final : public Detector {
 public:
     explicit DifferenceHashSimilarityDetector(

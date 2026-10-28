@@ -239,6 +239,22 @@ DetectorPtr parse_detector(
             roi
         );
     }
+    if (type == "histogram_similarity") {
+        check_keys(mapping, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(mapping["roi"], std::string(field) + ".roi");
+        return std::make_shared<HistogramSimilarityDetector>(
+            read_reference(mapping["reference"], std::string(field) + ".reference", context, roi),
+            roi
+        );
+    }
+    if (type == "perceptual_hash_similarity") {
+        check_keys(mapping, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(mapping["roi"], std::string(field) + ".roi");
+        return std::make_shared<PerceptualHashSimilarityDetector>(
+            read_reference(mapping["reference"], std::string(field) + ".reference", context, roi),
+            roi
+        );
+    }
     if (type == "difference_hash_similarity") {
         check_keys(mapping, {"type", "reference"}, {"hash_size", "roi"});
         const int hash_size = mapping["hash_size"]

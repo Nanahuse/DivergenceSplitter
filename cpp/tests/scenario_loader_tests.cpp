@@ -9,6 +9,7 @@
 
 #include "divergencesplitter/scenario/scenario.hpp"
 #include "divergencesplitter/runtime/session.hpp"
+#include "divergencesplitter/runtime/scenario_runtime.hpp"
 #include "test_support.hpp"
 
 using namespace divergencesplitter;
@@ -295,6 +296,7 @@ TEST(ScenarioLoader, ResizesEveryReferenceDetectorAndPreservesRoiCoordinates) {
     };
     for (const auto* type : {"template_match", "mean_absolute_similarity",
                             "root_mean_square_similarity", "difference_hash_similarity",
+                            "histogram_similarity", "perceptual_hash_similarity",
                             "phase_correlation"}) {
         for (const bool roi : {false, true}) {
             write_text(path, reference_scenario(type, roi));
@@ -407,7 +409,6 @@ TEST(ScenarioLoader, ProfileValidationAndRuntimeRejectInvalidTransformedReferenc
     image.at<cv::Vec4b>(0, 0)[3] = 0;
     ASSERT_TRUE(cv::imwrite((directory.path() / "reference.png").string(), image));
     const auto path = directory.path() / "scenario.yaml";
-    write_text(path, reference_scenario("mean_absolute_similarity"));
     Profile profile;
     profile.instances.push_back({{54000}, path.string()});
     profile.source = VideoSourceConfiguration{"", {
@@ -415,11 +416,126 @@ TEST(ScenarioLoader, ProfileValidationAndRuntimeRejectInvalidTransformedReferenc
     }};
     // The source image has valid binary alpha; interpolation introduces invalid
     // partial alpha, which must be rejected before any capture/Bridge startup.
-    EXPECT_NO_THROW((void)load_scenario(path));
-    EXPECT_THROW((void)load_profile_scenario(path, profile.source), ConfigurationError);
-    Session session;
-    EXPECT_THROW(session.apply_profile(profile, AppSettings{}), ConfigurationError);
-    EXPECT_FALSE(session.running());
-    std::get<VideoSourceConfiguration>(profile.source).transform.resize->resize_references = false;
-    EXPECT_NO_THROW((void)load_profile_scenario(path, profile.source));
+    for (const auto* type : {"mean_absolute_similarity", "histogram_similarity",
+                            "perceptual_hash_similarity"}) {
+        SCOPED_TRACE(type);
+        write_text(path, reference_scenario(type));
+        auto& resize = *std::get<VideoSourceConfiguration>(profile.source).transform.resize;
+        resize.resize_references = true;
+        EXPECT_NO_THROW((void)load_scenario(path));
+        EXPECT_THROW((void)load_profile_scenario(path, profile.source), ConfigurationError);
+        Session session;
+        EXPECT_THROW(session.apply_profile(profile, AppSettings{}), ConfigurationError);
+        EXPECT_FALSE(session.running());
+        resize.resize_references = false;
+        EXPECT_NO_THROW((void)load_profile_scenario(path, profile.source));
+    }
+}
+
+TEST(ScenarioLoader, ColorSimilaritiesEvaluateAndExposeDiagnostics) {
+    TemporaryDirectory directory;
+    const auto image_path = write_reference(directory.path());
+    const cv::Mat reference = cv::imread(image_path.string());
+    const auto path = directory.path() / "scenario.yaml";
+    for (const auto* type : {"histogram_similarity", "perceptual_hash_similarity"}) {
+        SCOPED_TRACE(type);
+        write_text(path, reference_scenario(type));
+        const auto loaded = load_scenario(path);
+        const auto* detector = loaded.scenario.start_condition->detector();
+        ASSERT_NE(detector, nullptr);
+        EXPECT_EQ(detector->type_name(), type);
+        EXPECT_EQ(cv::norm(detector->reference_images()[0].image, reference, cv::NORM_INF), 0.0);
+        ScenarioRuntime runtime{loaded.scenario};
+        runtime.apply_update(LiveSplitUpdate{
+            UpdateKind::initial, LiveSplitSnapshot{1, 1, 1, TimerPhase::not_running, -1, 0}, {},
+        });
+        test::ManualTimeProvider clock;
+        EXPECT_FALSE(runtime.evaluate(test::make_context(cv::Mat::zeros(reference.size(), CV_8UC3), clock)));
+        const auto action = runtime.evaluate(test::make_context(reference, clock));
+        ASSERT_TRUE(action);
+        EXPECT_EQ(action->operation, ActionOperation::start);
+        const auto diagnostics = runtime.diagnostics();
+        ASSERT_TRUE(diagnostics.configuration_valid);
+        ASSERT_EQ(diagnostics.rule_errors, 0U);
+        ASSERT_EQ(diagnostics.start.size(), 1U);
+        ASSERT_EQ(diagnostics.start[0].rules.size(), 1U);
+        const auto& condition = diagnostics.start[0].rules[0].condition;
+        EXPECT_EQ(condition.detector_type, type);
+        EXPECT_EQ(condition.status, "true");
+        ASSERT_TRUE(condition.latest_score);
+        ASSERT_TRUE(condition.max_score);
+        ASSERT_TRUE(condition.minimum_score);
+        EXPECT_NEAR(*condition.latest_score, 1.0, 1e-7);
+        EXPECT_NEAR(*condition.max_score, 1.0, 1e-7);
+        EXPECT_DOUBLE_EQ(*condition.minimum_score, 0.99);
+        EXPECT_FALSE(condition.description.empty());
+    }
+}
+
+TEST(ScenarioLoader, ColorSimilaritiesResizeMaskedReferencesAndKeepOptInBehavior) {
+    TemporaryDirectory directory;
+    const auto image_path = write_reference(directory.path());
+    cv::Mat original;
+    cv::cvtColor(cv::imread(image_path.string()), original, cv::COLOR_BGR2BGRA);
+    original(cv::Rect{0, 0, 4, 4}).setTo(cv::Scalar{230, 50, 90, 0});
+    ASSERT_TRUE(cv::imwrite(image_path.string(), original));
+    const auto path = directory.path() / "scenario.yaml";
+    for (const auto* type : {"histogram_similarity", "perceptual_hash_similarity"}) {
+        for (const bool roi : {false, true}) {
+            for (const bool enabled : {false, true}) {
+                SCOPED_TRACE(std::string{type} + (roi ? "/roi" : "/full") +
+                             (enabled ? "/resize" : "/original"));
+                write_text(path, reference_scenario(type, roi));
+                const auto loaded = load_profile_scenario(path, VideoSourceConfiguration{"", {
+                    std::nullopt, ResizeConfiguration{12, 10, ResizeInterpolation::nearest, enabled},
+                }});
+                cv::Mat expected;
+                const cv::Size size = enabled ? (roi ? cv::Size{6, 4} : cv::Size{12, 10}) : original.size();
+                cv::resize(original, expected, size, 0.0, 0.0, cv::INTER_NEAREST);
+                const auto* detector = loaded.scenario.start_condition->detector();
+                const auto image = detector->reference_images()[0].image;
+                EXPECT_EQ(image.type(), CV_8UC4);
+                EXPECT_EQ(cv::norm(image, expected, cv::NORM_INF), 0.0);
+                // Without resize the original 8x8 mask cannot fit a 6x4 ROI.
+                if (roi && !enabled) {
+                    continue;
+                }
+                cv::Mat bgr;
+                cv::cvtColor(expected, bgr, cv::COLOR_BGRA2BGR);
+                cv::Mat frame;
+                if (roi) {
+                    frame = cv::Mat::zeros(10, 12, CV_8UC3);
+                    bgr.copyTo(frame(cv::Rect{3, 2, 6, 4}));
+                } else {
+                    frame = bgr;
+                }
+                test::ManualTimeProvider clock;
+                auto context = test::make_context(frame, clock);
+                EXPECT_NEAR(detector->detect(context).score, 1.0, 1e-7);
+            }
+        }
+    }
+}
+
+TEST(ScenarioLoader, ColorSimilaritiesRejectInvalidYamlAndReferenceFormats) {
+    TemporaryDirectory directory;
+    const auto image_path = write_reference(directory.path());
+    const auto path = directory.path() / "scenario.yaml";
+    for (const auto* type : {"histogram_similarity", "perceptual_hash_similarity"}) {
+        SCOPED_TRACE(type);
+        for (const auto* fields : {"", "    reference: missing.png\n",
+                                  "    reference: reference.png\n    hash_size: 8\n",
+                                  "    reference: reference.png\n    mystery: 1\n",
+                                  "    reference: reference.png\n    roi: {x: 0, y: 0, width: 0, height: 8}\n"}) {
+            write_text(path, std::string{"start_condition:\n  type: detected\n  minimum_score: 0.5\n"
+                                        "  detector:\n    type: "} + type + "\n" + fields + "splits: []\n");
+            EXPECT_THROW((void)load_scenario(path), ScenarioLoadError);
+        }
+        for (const int format : {CV_8UC1, CV_16UC3}) {
+            ASSERT_TRUE(cv::imwrite(image_path.string(), cv::Mat::zeros(8, 8, format)));
+            write_text(path, reference_scenario(type));
+            EXPECT_THROW((void)load_scenario(path), ScenarioLoadError);
+        }
+        write_reference(directory.path());
+    }
 }
