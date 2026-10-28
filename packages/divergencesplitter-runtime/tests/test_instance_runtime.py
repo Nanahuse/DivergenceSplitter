@@ -44,10 +44,10 @@ from divergencesplitter_runtime import (
 )
 from livesplit_bridge import (
     BridgeConnectionLostError,
+    BridgeEvent,
     BridgeProtocolError,
     BridgeRemoteError,
     BridgeResponseTimeoutError,
-    common_pb2,
 )
 
 # -- Deterministic test doubles ------------------------------------------------
@@ -133,9 +133,7 @@ class ScriptedAdapter:
         self.event_sequence = response.event_sequence
         return response
 
-    def establish_event_cursor(
-        self, events: tuple[common_pb2.BridgeEvent, ...]
-    ) -> None:
+    def establish_event_cursor(self, events: tuple[BridgeEvent, ...]) -> None:
         del events
 
     def handle_event(self, event: object) -> object:
@@ -328,7 +326,7 @@ class RecordingDiagnostics:
         connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
-        code: int | None,
+        code: str | None,
         message: str,
     ) -> None: ...
 
@@ -515,7 +513,7 @@ class Harness:
         return self.adapters[-1]
 
     def push_event(self, update: LiveSplitUpdate) -> None:
-        self.receiver.push(BridgeEventReceived(cast(common_pb2.BridgeEvent, update)))
+        self.receiver.push(BridgeEventReceived(cast(BridgeEvent, update)))
 
     def push_loss(self, error: Exception) -> None:
         self.receiver.push(BridgeEventConnectionLost(error))
@@ -1160,6 +1158,37 @@ def test_unknown_rpc_result_recovers_without_resend() -> None:
 # -- Reconnect -----------------------------------------------------------------
 
 
+class _ProtocolErrorSyncAdapter(ScriptedAdapter):
+    def synchronize(self) -> LiveSplitUpdate:
+        raise BridgeProtocolError("Bridge returned a malformed response")
+
+
+def test_initial_sync_protocol_error_rebuilds_transport() -> None:
+    calls = 0
+
+    def factory() -> ScriptedAdapter:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return _ProtocolErrorSyncAdapter(initial_update())
+        return ScriptedAdapter(initial_update())
+
+    harness = Harness(
+        make_scenario(RecordingCondition(False)),
+        adapter_factory=factory,
+    )
+    harness.start()
+    try:
+        wait_for(lambda: len(harness.adapters) >= 2)
+        harness.wait_ready()
+    finally:
+        harness.stop()
+
+    assert harness.adapters[0].closed
+    assert harness.adapters[1].synchronized == 1
+    assert harness.instance.state is InstanceRuntimeState.STOPPED
+
+
 def test_connection_loss_rebuilds_transport_and_scenario() -> None:
     harness = Harness(make_scenario(RecordingCondition(False)))
     harness.start()
@@ -1328,9 +1357,7 @@ def test_periodic_update_during_reaction_follows_expected_snapshot() -> None:
     periodic = LiveSplitUpdate(LiveSplitUpdateKind.PERIODIC, snapshot(), state_epoch=1)
 
     def wait(timeout_ns: int) -> None:
-        harness.receiver.push(
-            BridgeEventReceived(cast(common_pb2.BridgeEvent, periodic))
-        )
+        harness.receiver.push(BridgeEventReceived(cast(BridgeEvent, periodic)))
         clock.nanoseconds += timeout_ns
 
     harness = Harness(
@@ -1361,9 +1388,7 @@ def test_transition_during_reaction_cancels_action() -> None:
     )
 
     def wait(timeout_ns: int) -> None:
-        harness.receiver.push(
-            BridgeEventReceived(cast(common_pb2.BridgeEvent, transition))
-        )
+        harness.receiver.push(BridgeEventReceived(cast(BridgeEvent, transition)))
         clock.nanoseconds += timeout_ns
 
     harness = Harness(
@@ -1392,7 +1417,7 @@ def test_event_gap_during_reaction_cancels_action_and_reconnects() -> None:
 
     def wait(timeout_ns: int) -> None:
         harness.receiver.push(
-            BridgeEventReceived(cast(common_pb2.BridgeEvent, LiveSplitResyncReason.GAP))
+            BridgeEventReceived(cast(BridgeEvent, LiveSplitResyncReason.GAP))
         )
         clock.nanoseconds += timeout_ns
 
@@ -1663,7 +1688,7 @@ def test_initial_sync_primes_baseline_from_queued_events() -> None:
     harness = Harness(
         scenario,
         adapter=adapter,
-        preload_events=(BridgeEventReceived(cast(common_pb2.BridgeEvent, queued)),),
+        preload_events=(BridgeEventReceived(cast(BridgeEvent, queued)),),
     )
     harness.start()
     try:
@@ -1753,7 +1778,7 @@ def test_auto_reset_during_reaction_takes_priority() -> None:
 
 def _push_gap(harness: Harness) -> None:
     harness.receiver.push(
-        BridgeEventReceived(cast(common_pb2.BridgeEvent, LiveSplitResyncReason.GAP))
+        BridgeEventReceived(cast(BridgeEvent, LiveSplitResyncReason.GAP))
     )
     harness.receiver.wake()
 
@@ -1826,7 +1851,7 @@ def test_connection_loss_discards_queued_events_before_apply() -> None:
             snapshot(phase=TimerPhase.NOT_RUNNING, split_index=-1),
             state_epoch=99,
         )
-        harness.receiver.push(BridgeEventReceived(cast(common_pb2.BridgeEvent, stale)))
+        harness.receiver.push(BridgeEventReceived(cast(BridgeEvent, stale)))
         harness.receiver.push(
             BridgeEventConnectionLost(BridgeConnectionLostError("lost"))
         )
@@ -1850,10 +1875,7 @@ def test_session_change_does_not_carry_pending_action() -> None:
         generation = harness.instance.generation
         harness.receiver.push(
             BridgeEventReceived(
-                cast(
-                    common_pb2.BridgeEvent,
-                    LiveSplitResyncReason.SESSION_CHANGED,
-                )
+                cast(BridgeEvent, LiveSplitResyncReason.SESSION_CHANGED)
             )
         )
         harness.receiver.wake()
@@ -1881,7 +1903,7 @@ class _ProtocolErrorAdapter(ScriptedAdapter):
         raise BridgeProtocolError("Bridge returned a malformed response")
 
 
-class _FatalProtocolAdapter(ScriptedAdapter):
+class _FatalControlAdapter(ScriptedAdapter):
     def execute_action(
         self,
         action: Action,
@@ -1891,7 +1913,7 @@ class _FatalProtocolAdapter(ScriptedAdapter):
         self.attempts.append((action, expected_snapshot))
         return ActionOutcome(
             ActionExecution.FAILED,
-            BridgeProtocolError("Protocol version mismatch"),
+            RuntimeError("Bridge control failed"),
         )
 
 
@@ -1917,8 +1939,8 @@ def test_control_protocol_error_recovers_without_resend() -> None:
     assert harness.instance.generation == 1
 
 
-def test_control_version_mismatch_fails_without_resend() -> None:
-    adapter = _FatalProtocolAdapter(initial_update())
+def test_control_failed_result_is_terminal_without_resend() -> None:
+    adapter = _FatalControlAdapter(initial_update())
     harness = Harness(make_scenario(RecordingCondition(True)), adapter=adapter)
     harness.start()
     try:
@@ -1930,7 +1952,7 @@ def test_control_version_mismatch_fails_without_resend() -> None:
         harness.instance.request_stop()
         harness.join(2)
 
-    assert isinstance(harness.instance.error, BridgeProtocolError)
+    assert isinstance(harness.instance.error, RuntimeError)
     assert len(harness.adapters) == 1
     assert adapter.attempts
 
@@ -1961,7 +1983,7 @@ class _ReplayingReceiver(ControlledReceiver):
         self._event = event
 
     def drain(self) -> tuple[BridgeEventConnectionLost | BridgeEventReceived, ...]:
-        return (BridgeEventReceived(cast(common_pb2.BridgeEvent, self._event)),)
+        return (BridgeEventReceived(cast(BridgeEvent, self._event)),)
 
     def take_overflow(self) -> bool:
         return False
@@ -2178,7 +2200,7 @@ def test_rejected_reset_remote_internal_error_reconnects() -> None:
     def factory() -> ScriptedAdapter:
         return _RejectingResetAdapter(
             initial_update(split_count=1),
-            confirm_error=BridgeRemoteError(common_pb2.INTERNAL_ERROR, "internal"),
+            confirm_error=BridgeRemoteError("internal_error", "internal"),
         )
 
     harness = Harness(_reset_scenario(True), adapter_factory=factory)
@@ -2206,7 +2228,7 @@ def test_rejected_reset_remote_internal_error_reconnects() -> None:
 def test_rejected_reset_non_recoverable_remote_error_fails() -> None:
     adapter = _RejectingResetAdapter(
         initial_update(split_count=1),
-        confirm_error=BridgeRemoteError(common_pb2.INVALID_REQUEST, "bad request"),
+        confirm_error=BridgeRemoteError("invalid_request", "bad request"),
     )
     harness = Harness(_reset_scenario(True), adapter=adapter)
     harness.start()

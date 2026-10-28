@@ -45,7 +45,7 @@ from divergencesplitter_runtime.configuration.strict_json import (
 )
 
 # A version 1 Profile stored Protocol v1 ZeroMQ endpoints. Those endpoints are
-# not convertible to a Protocol v3 WebSocket port, so the migration discards
+# not convertible to a Protocol v4 WebSocket port, so the migration discards
 # their values entirely and assigns a fresh sequential port instead.
 _LEGACY_MIGRATION_PORT_START = 54000
 
@@ -54,7 +54,7 @@ def load_profile(path: str | Path) -> Profile:
     """Load one versioned Profile file, migrating a version 1 document.
 
     A version 1 Profile stored the two Protocol v1 ZeroMQ endpoints. Those
-    values are incompatible with Protocol v3, so the migration discards them
+    values are incompatible with Protocol v4, so the migration discards them
     without interpretation and assigns a fresh WebSocket port per instance,
     starting at ``54000``. The returned value is always a version 2 Profile, so
     the next save writes the new port form.
@@ -232,7 +232,7 @@ def _instance_v1(value: object, index: int, port: int) -> InstanceConfiguration:
     connection = object_value(instance["connection"], f"{prefix}.connection")
     check_keys(connection, required={"rpc_endpoint", "event_endpoint"})
     # The legacy endpoint values are intentionally discarded: the ZeroMQ
-    # host/scheme/port cannot be mapped to a Protocol v3 WebSocket port. Only
+    # host/scheme/port cannot be mapped to a Protocol v4 WebSocket port. Only
     # their presence and type are validated.
     string_value(connection["rpc_endpoint"], f"{prefix}.connection.rpc_endpoint")
     string_value(connection["event_endpoint"], f"{prefix}.connection.event_endpoint")

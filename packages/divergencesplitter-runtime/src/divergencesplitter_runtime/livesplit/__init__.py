@@ -13,7 +13,7 @@ from divergencesplitter_runtime.livesplit.event_receiver import (
 )
 from divergencesplitter_runtime.livesplit.mapping import (
     event_update_kind,
-    run_info_from_proto,
+    run_info_from_run,
     snapshot_from_timer_state,
 )
 from divergencesplitter_runtime.livesplit.models import (
@@ -48,6 +48,6 @@ __all__ = [
     "event_endpoint",
     "event_update_kind",
     "rpc_endpoint",
-    "run_info_from_proto",
+    "run_info_from_run",
     "snapshot_from_timer_state",
 ]

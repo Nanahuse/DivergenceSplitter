@@ -49,7 +49,6 @@ def main() -> None:
         "divergencesplitter-runtime",
         "divergencesplitter_runtime",
         "livesplit-bridge-client",
-        "protobuf",
         "websocket-client",
     )
     forbidden = tuple(

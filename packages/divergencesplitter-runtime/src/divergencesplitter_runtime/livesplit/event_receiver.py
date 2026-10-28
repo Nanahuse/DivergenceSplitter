@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from livesplit_bridge import BridgeConnectionLostError, common_pb2
+from livesplit_bridge import BridgeConnectionLostError, BridgeEvent
 
 DEFAULT_EVENT_RECEIVE_TIMEOUT_MS = 50
 DEFAULT_EVENT_CAPACITY = 256
@@ -24,16 +24,14 @@ DEFAULT_EVENT_CAPACITY = 256
 class BridgeEventSubscriberLike(Protocol):
     """Transport contract implemented by ``BridgeEventSubscriber``."""
 
-    def receive(
-        self, *, timeout_ms: int | None = None
-    ) -> common_pb2.BridgeEvent | None: ...
+    def receive(self, *, timeout_ms: int | None = None) -> BridgeEvent | None: ...
 
     def close(self) -> None: ...
 
 
 @dataclass(frozen=True)
 class BridgeEventReceived:
-    event: common_pb2.BridgeEvent
+    event: BridgeEvent
 
 
 @dataclass(frozen=True)

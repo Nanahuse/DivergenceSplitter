@@ -1,4 +1,4 @@
-"""Protocol v3 transport adapter for one LiveSplit Bridge connection."""
+"""Protocol v4 transport adapter for one LiveSplit Bridge connection."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -8,16 +8,17 @@ from typing import Protocol, Self
 from divergencesplitter import Action, LiveSplitConnection
 from livesplit_bridge import (
     BridgeClientError,
+    BridgeEvent,
     BridgeProtocolError,
     BridgeReconnectRequiredError,
     BridgeRemoteError,
     BridgeRpcClient,
-    common_pb2,
+    EventType,
 )
 
 from divergencesplitter_runtime.livesplit.mapping import (
     event_update_kind,
-    run_info_from_proto,
+    run_info_from_run,
     snapshot_from_timer_state,
     transition_reason_from_event,
 )
@@ -30,6 +31,8 @@ from divergencesplitter_runtime.livesplit.models import (
     TimerPhase,
     rpc_endpoint,
 )
+
+_UINT32_MAX = 2**32 - 1
 
 
 class LiveSplitBridgeDiagnostics(Protocol):
@@ -72,7 +75,7 @@ class LiveSplitBridgeDiagnostics(Protocol):
         connection: LiveSplitConnection,
         action: Action,
         snapshot: LiveSplitSnapshot,
-        code: int | None,
+        code: str | None,
         message: str,
     ) -> None: ...
 
@@ -107,15 +110,8 @@ class ActionOutcome:
     error: Exception | None = None
 
 
-def _is_protocol_version_mismatch(error: BridgeProtocolError) -> bool:
-    """Detect the fatal protocol-version mismatch among protocol failures.
-
-    The client raises the same ``BridgeProtocolError`` type for a version
-    mismatch and for other malformed responses. Only the former is fatal; the
-    latter still has an ambiguous result and is recovered by reconnecting.
-    """
-
-    return "protocol version mismatch" in str(error).lower()
+def _next_sequence(sequence: int) -> int:
+    return 1 if sequence == _UINT32_MAX else sequence + 1
 
 
 class LiveSplitBridgeAdapter:
@@ -169,7 +165,7 @@ class LiveSplitBridgeAdapter:
 
         timer_state = self._rpc.get_timer_state()
         session_id = self._check_rpc_session()
-        run_info = run_info_from_proto(self._rpc.get_run())
+        run_info = run_info_from_run(self._rpc.get_run())
         self._check_rpc_session(session_id)
         snapshot = snapshot_from_timer_state(
             timer_state,
@@ -188,9 +184,7 @@ class LiveSplitBridgeAdapter:
             state_epoch=self._state_epoch,
         )
 
-    def establish_event_cursor(
-        self, events: tuple[common_pb2.BridgeEvent, ...]
-    ) -> None:
+    def establish_event_cursor(self, events: tuple[BridgeEvent, ...]) -> None:
         """Discard events received during initial queries and retain their cursor.
 
         The follow-up synchronization done by the worker establishes the baseline
@@ -202,7 +196,9 @@ class LiveSplitBridgeAdapter:
         if matching:
             previous = self._last_event_sequence
             for event in matching:
-                if previous is not None and event.event_sequence > previous + 1:
+                if previous is not None and event.event_sequence != _next_sequence(
+                    previous
+                ):
                     self._diagnostics.gap_detected(
                         self._connection,
                         self._require_baseline(),
@@ -214,7 +210,7 @@ class LiveSplitBridgeAdapter:
 
     def handle_event(
         self,
-        event: common_pb2.BridgeEvent,
+        event: BridgeEvent,
     ) -> LiveSplitUpdate | LiveSplitResyncReason | None:
         baseline = self._require_baseline()
         session_id = self._session_id
@@ -229,19 +225,21 @@ class LiveSplitBridgeAdapter:
             return LiveSplitResyncReason.SESSION_CHANGED
 
         last_sequence = self._last_event_sequence
-        if last_sequence is not None:
-            if event.event_sequence <= last_sequence:
-                return None
-            if event.event_sequence != last_sequence + 1:
-                self._diagnostics.gap_detected(
-                    self._connection,
-                    baseline,
-                    event.session_id,
-                    event.event_sequence,
-                )
-                return LiveSplitResyncReason.GAP
+        if last_sequence is not None and event.event_sequence != _next_sequence(
+            last_sequence
+        ):
+            # A duplicate, an already-seen sequence, and a missing event all
+            # make the authoritative stream non-contiguous.
+            self._diagnostics.gap_detected(
+                self._connection,
+                baseline,
+                event.session_id,
+                event.event_sequence,
+            )
+            return LiveSplitResyncReason.GAP
 
-        kind = event_update_kind(event.type)
+        event_type = event.type
+        kind = event_update_kind(event_type)
         self._last_event_sequence = event.event_sequence
         if kind is None:
             return None
@@ -250,7 +248,7 @@ class LiveSplitBridgeAdapter:
         structure_changed = False
         transition = None
         if kind is LiveSplitUpdateKind.RUN_CHANGED:
-            run_info = run_info_from_proto(self._rpc.get_run())
+            run_info = run_info_from_run(self._rpc.get_run())
             self._check_rpc_session(session_id)
             previous_run = self._run_info
             structure_changed = (
@@ -270,21 +268,20 @@ class LiveSplitBridgeAdapter:
                     len(run_info.segments),
                 )
         else:
-            if event.type == common_pb2.EVENT_TIMER_RESET and not event.HasField(
-                "timer_state"
-            ):
+            timer_state = event.timer_state
+            if timer_state is None:
+                if event_type is not EventType.TIMER_RESET:
+                    raise BridgeProtocolError("Bridge timer event has no timer_state")
+                # Reset can arrive without a captured TimerState; read the
+                # authoritative state instead of inferring it from the event.
                 timer_state = self._rpc.get_timer_state()
                 self._check_rpc_session(session_id)
-            else:
-                if not event.HasField("timer_state"):
-                    raise BridgeProtocolError("Bridge timer event has no timer_state")
-                timer_state = event.timer_state
             assert run_info is not None
             snapshot = snapshot_from_timer_state(
                 timer_state,
                 split_count=len(run_info.segments),
             )
-            transition = transition_reason_from_event(event.type, snapshot)
+            transition = transition_reason_from_event(event_type, snapshot)
 
         self._baseline = snapshot
         if kind is not LiveSplitUpdateKind.RUN_CHANGED or structure_changed:
@@ -355,7 +352,7 @@ class LiveSplitBridgeAdapter:
             )
             return ActionOutcome(ActionExecution.NOT_DISPATCHED)
 
-        operation: Callable[[], common_pb2.OperationResponse] = {
+        operation: Callable[[], None] = {
             "start": self._rpc.start,
             "split": self._rpc.split,
             "skip": self._rpc.skip,
@@ -393,38 +390,20 @@ class LiveSplitBridgeAdapter:
                 error.message,
             )
             return ActionOutcome(ActionExecution.REJECTED)
-        except BridgeProtocolError as error:
-            # The control may already have executed, so it must never be
-            # resent. A protocol version mismatch is fatal; any other malformed
-            # response is treated as an unknown result that needs recovery.
-            self._diagnostics.action_result_unknown(
-                self._connection,
-                action,
-                actual_snapshot,
-                error,
-            )
-            if _is_protocol_version_mismatch(error):
-                return ActionOutcome(ActionExecution.FAILED, error)
-            return ActionOutcome(ActionExecution.UNKNOWN, error)
         except BridgeClientError as error:
+            # The control may already have executed, so it must never be
+            # resent. Communication faults and malformed responses are
+            # recovered by rebuilding both connections.
             self._diagnostics.action_result_unknown(
                 self._connection,
                 action,
                 actual_snapshot,
                 error,
             )
-            return ActionOutcome(ActionExecution.UNKNOWN)
+            return ActionOutcome(ActionExecution.UNKNOWN, error)
 
         try:
             self._check_rpc_session(self._session_id)
-        except BridgeProtocolError as error:
-            self._diagnostics.action_result_unknown(
-                self._connection,
-                action,
-                actual_snapshot,
-                error,
-            )
-            return ActionOutcome(ActionExecution.UNKNOWN)
         except BridgeClientError as error:
             # The response arrived but the follow-up session check failed:
             # the operation result is known to be ambiguous, never resend.
@@ -434,7 +413,7 @@ class LiveSplitBridgeAdapter:
                 actual_snapshot,
                 error,
             )
-            return ActionOutcome(ActionExecution.UNKNOWN)
+            return ActionOutcome(ActionExecution.UNKNOWN, error)
 
         self._diagnostics.action_succeeded(self._connection, action, actual_snapshot)
         return ActionOutcome(ActionExecution.DISPATCHED)

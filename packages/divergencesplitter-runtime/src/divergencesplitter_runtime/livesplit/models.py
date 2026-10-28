@@ -6,18 +6,18 @@ from enum import Enum, auto
 from divergencesplitter.livesplit.models import LiveSplitConnection
 
 BRIDGE_HOST = "127.0.0.1"
-RPC_PATH = "/bridge/v3/rpc"
-EVENTS_PATH = "/bridge/v3/events"
+RPC_PATH = "/bridge/v4/rpc"
+EVENTS_PATH = "/bridge/v4/events"
 
 
 def rpc_endpoint(connection: LiveSplitConnection) -> str:
-    """Return the Protocol v3 RPC WebSocket endpoint for one connection."""
+    """Return the Protocol v4 RPC WebSocket endpoint for one connection."""
 
     return f"ws://{BRIDGE_HOST}:{connection.port}{RPC_PATH}"
 
 
 def event_endpoint(connection: LiveSplitConnection) -> str:
-    """Return the Protocol v3 Events WebSocket endpoint for one connection."""
+    """Return the Protocol v4 Events WebSocket endpoint for one connection."""
 
     return f"ws://{BRIDGE_HOST}:{connection.port}{EVENTS_PATH}"
 
@@ -101,7 +101,7 @@ class LiveSplitTransitionReason(Enum):
 
     Derived by the transport layer from the Bridge event type so that the
     scenario runtime can decide which pending action a transition resolves
-    without depending on Protocol v3 protobuf types.
+    without depending on Protocol v4 client types.
     """
 
     START = auto()

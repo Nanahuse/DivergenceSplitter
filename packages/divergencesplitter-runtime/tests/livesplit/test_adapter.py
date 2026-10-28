@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from typing import cast
 
 from divergencesplitter import Action, LiveSplitConnection
@@ -19,12 +20,21 @@ from divergencesplitter_runtime.livesplit.models import (
     rpc_endpoint,
 )
 from livesplit_bridge import (
+    BridgeEvent,
     BridgeProtocolError,
     BridgeRemoteError,
     BridgeRpcClient,
-    common_pb2,
-    run_pb2,
+    EventType,
+    RunState,
+    SegmentInfo,
+    TimerState,
+    TimeValue,
 )
+from livesplit_bridge import (
+    TimerPhase as BridgeTimerPhase,
+)
+
+_UINT32_MAX = 2**32 - 1
 
 
 class Diagnostics:
@@ -73,80 +83,109 @@ class FakeRpc:
     def __init__(self) -> None:
         self.session_id = 1
         self.session_change: tuple[int, int] | None = None
-        self.timer_state = common_pb2.TimerState(
-            phase=common_pb2.RUNNING,
-            split_index=0,
-        )
-        self.run = run_pb2.RunState(
-            game_name="Game",
-            category_name="Any%",
-            segments=(run_pb2.SegmentInfo(index=0, name="A"),),
-        )
+        self.timer_state = timer_state()
+        self.run = run_state()
         self.calls: list[str] = []
         self.operation_error: Exception | None = None
         self.closed = False
 
-    def get_timer_state(self) -> common_pb2.TimerState:
+    def get_timer_state(self) -> TimerState:
         self.calls.append("get_timer_state")
         return self.timer_state
 
-    def get_run(self) -> run_pb2.RunState:
+    def get_run(self) -> RunState:
         self.calls.append("get_run")
         return self.run
 
-    def _operation(self, name: str) -> common_pb2.OperationResponse:
+    def _operation(self, name: str) -> None:
         self.calls.append(name)
         if self.operation_error is not None:
             raise self.operation_error
-        return common_pb2.OperationResponse()
 
-    def start(self) -> common_pb2.OperationResponse:
-        return self._operation("start")
+    def start(self) -> None:
+        self._operation("start")
 
-    def split(self) -> common_pb2.OperationResponse:
-        return self._operation("split")
+    def split(self) -> None:
+        self._operation("split")
 
-    def skip(self) -> common_pb2.OperationResponse:
-        return self._operation("skip")
+    def skip(self) -> None:
+        self._operation("skip")
 
-    def undo(self) -> common_pb2.OperationResponse:
-        return self._operation("undo")
+    def undo(self) -> None:
+        self._operation("undo")
 
-    def reset(self) -> common_pb2.OperationResponse:
-        return self._operation("reset")
+    def reset(self) -> None:
+        self._operation("reset")
 
-    def pause(self) -> common_pb2.OperationResponse:
-        return self._operation("pause")
+    def pause(self) -> None:
+        self._operation("pause")
 
-    def resume(self) -> common_pb2.OperationResponse:
-        return self._operation("resume")
+    def resume(self) -> None:
+        self._operation("resume")
 
     def close(self) -> None:
         self.closed = True
 
 
+def time_value() -> TimeValue:
+    return TimeValue(real_time_ticks=0, game_time_ticks=None)
+
+
+def segment(index: int, name: str) -> SegmentInfo:
+    return SegmentInfo(
+        index=index,
+        name=name,
+        comparisons=[],
+        best_segment_time=time_value(),
+    )
+
+
+def run_state(
+    *segments: SegmentInfo,
+    game_name: str = "Game",
+    category_name: str = "Any%",
+) -> RunState:
+    return RunState(
+        game_name=game_name,
+        category_name=category_name,
+        offset_ticks=0,
+        file_path=None,
+        layout_path=None,
+        metadata=None,
+        comparisons=[],
+        segments=list(segments) if segments else [segment(0, "A")],
+    )
+
+
 def timer_state(
-    phase: common_pb2.TimerPhase = common_pb2.RUNNING,
+    phase: BridgeTimerPhase = BridgeTimerPhase.RUNNING,
     split_index: int = 0,
-) -> common_pb2.TimerState:
-    return common_pb2.TimerState(phase=phase, split_index=split_index)
+) -> TimerState:
+    return TimerState(
+        phase=phase,
+        split_index=split_index,
+        real_time_ticks=0,
+        game_time_ticks=None,
+        is_game_time_initialized=False,
+        is_game_time_paused=False,
+    )
 
 
 def event(
-    kind: common_pb2.BridgeEventType,
+    kind: EventType,
     sequence: int,
     *,
-    state: common_pb2.TimerState | None = None,
+    state: TimerState | None = None,
     session_id: int = 1,
-) -> common_pb2.BridgeEvent:
-    value = common_pb2.BridgeEvent(
-        type=kind,
-        session_id=session_id,
-        event_sequence=sequence,
+) -> BridgeEvent:
+    return BridgeEvent.model_validate(
+        {
+            "session_id": session_id,
+            "event_sequence": sequence,
+            "type": kind,
+            "timer_state": state,
+        }
     )
-    if state is not None:
-        value.timer_state.CopyFrom(state)
-    return value
 
 
 class LiveSplitBridgeAdapterTest(unittest.TestCase):
@@ -166,12 +205,12 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
     def sync(self) -> None:
         self.adapter.synchronize()
 
-    def test_uses_protocol_v3_websocket_endpoints(self) -> None:
+    def test_uses_protocol_v4_websocket_endpoints(self) -> None:
         self.assertEqual(
-            rpc_endpoint(self.connection), "ws://127.0.0.1:54100/bridge/v3/rpc"
+            rpc_endpoint(self.connection), "ws://127.0.0.1:54100/bridge/v4/rpc"
         )
         self.assertEqual(
-            event_endpoint(self.connection), "ws://127.0.0.1:54100/bridge/v3/events"
+            event_endpoint(self.connection), "ws://127.0.0.1:54100/bridge/v4/events"
         )
 
     def test_initial_sync_uses_only_timer_and_run_queries(self) -> None:
@@ -190,29 +229,21 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
     def test_event_order_and_session_validation(self) -> None:
         self.sync()
         first = self.adapter.handle_event(
-            event(common_pb2.EVENT_TIMER_SPLIT, 10, state=timer_state(split_index=0))
+            event(EventType.TIMER_SPLIT, 10, state=timer_state(split_index=0))
         )
         assert isinstance(first, LiveSplitUpdate)
         self.assertEqual(first.kind, LiveSplitUpdateKind.TRANSITION)
         # A timer transition remains observable even if phase and index do not change.
         update = self.adapter.handle_event(
-            event(common_pb2.EVENT_TIMER_SPLIT, 11, state=timer_state(split_index=0))
+            event(EventType.TIMER_SPLIT, 11, state=timer_state(split_index=0))
         )
         assert isinstance(update, LiveSplitUpdate)
         self.assertEqual(update.kind, LiveSplitUpdateKind.TRANSITION)
         self.assertEqual(update.state_epoch, 3)
-        self.assertEqual(
-            self.adapter.handle_event(
-                event(
-                    common_pb2.EVENT_TIMER_SPLIT, 11, state=timer_state(split_index=0)
-                )
-            ),
-            None,
-        )
         self.assertIs(
             self.adapter.handle_event(
                 event(
-                    common_pb2.EVENT_TIMER_SPLIT,
+                    EventType.TIMER_SPLIT,
                     12,
                     session_id=2,
                     state=timer_state(split_index=0),
@@ -226,10 +257,10 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
     ) -> None:
         self.sync()
         self.adapter.handle_event(
-            event(common_pb2.EVENT_TIMER_STARTED, 3, state=timer_state())
+            event(EventType.TIMER_STARTED, 3, state=timer_state())
         )
         result = self.adapter.handle_event(
-            event(common_pb2.EVENT_TIMER_SPLIT, 5, state=timer_state(split_index=0))
+            event(EventType.TIMER_SPLIT, 5, state=timer_state(split_index=0))
         )
         self.assertIs(result, LiveSplitResyncReason.GAP)
         self.assertEqual(self.diagnostics.gaps, [(1, 5)])
@@ -237,47 +268,95 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
         assert current is not None
         self.assertEqual(current.split_index, 0)
 
+    def test_duplicate_and_out_of_order_sequences_are_integrity_losses(self) -> None:
+        self.sync()
+        self.adapter.handle_event(
+            event(EventType.TIMER_SPLIT, 4, state=timer_state(split_index=0))
+        )
+
+        self.assertIs(
+            self.adapter.handle_event(
+                event(EventType.TIMER_SPLIT, 4, state=timer_state(split_index=0))
+            ),
+            LiveSplitResyncReason.GAP,
+        )
+        self.assertEqual(self.diagnostics.gaps, [(1, 4)])
+        self.assertIs(
+            self.adapter.handle_event(
+                event(EventType.TIMER_SPLIT, 3, state=timer_state(split_index=0))
+            ),
+            LiveSplitResyncReason.GAP,
+        )
+        self.assertEqual(self.diagnostics.gaps, [(1, 4), (1, 3)])
+        self.assertEqual(self.adapter.event_sequence, 4)
+
+    def test_sequence_wraps_from_uint32_max_to_one(self) -> None:
+        self.sync()
+        last = self.adapter.handle_event(
+            event(EventType.TIMER_SPLIT, _UINT32_MAX, state=timer_state())
+        )
+        assert isinstance(last, LiveSplitUpdate)
+        wrapped = self.adapter.handle_event(
+            event(EventType.TIMER_SPLIT, 1, state=timer_state())
+        )
+        assert isinstance(wrapped, LiveSplitUpdate)
+        self.assertEqual(wrapped.event_sequence, 1)
+        self.assertEqual(self.adapter.event_sequence, 1)
+
     def test_reset_event_without_timer_state_queries_the_authoritative_state(
         self,
     ) -> None:
         self.sync()
-        self.rpc.timer_state = timer_state(common_pb2.NOT_RUNNING, -1)
+        self.rpc.timer_state = timer_state(BridgeTimerPhase.NOT_RUNNING, -1)
         before = self.rpc.calls.count("get_timer_state")
 
-        update = self.adapter.handle_event(event(common_pb2.EVENT_TIMER_RESET, 1))
+        update = self.adapter.handle_event(event(EventType.TIMER_RESET, 1))
 
         self.assertEqual(self.rpc.calls.count("get_timer_state"), before + 1)
         assert isinstance(update, LiveSplitUpdate)
         self.assertEqual(update.snapshot.phase, TimerPhase.NOT_RUNNING)
         self.assertEqual(update.snapshot.split_index, -1)
 
+    def test_other_timer_event_without_timer_state_is_a_protocol_error(self) -> None:
+        self.sync()
+        malformed = cast(
+            BridgeEvent,
+            SimpleNamespace(
+                session_id=1,
+                event_sequence=1,
+                type=EventType.TIMER_SPLIT,
+                timer_state=None,
+            ),
+        )
+        with self.assertRaises(BridgeProtocolError):
+            self.adapter.handle_event(malformed)
+
     def test_run_changed_fetches_run_and_only_marks_structure_changes(self) -> None:
         self.sync()
         epoch = self.adapter.state_epoch
-        self.rpc.run = run_pb2.RunState(
-            game_name="Game",
-            category_name="Any%",
-            segments=(run_pb2.SegmentInfo(index=0, name="A"),),
-        )
-        timing_update = self.adapter.handle_event(
-            event(common_pb2.EVENT_RUN_CHANGED, 1)
-        )
+        self.rpc.run = run_state()
+        timing_update = self.adapter.handle_event(event(EventType.RUN_CHANGED, 1))
         assert isinstance(timing_update, LiveSplitUpdate)
         self.assertFalse(timing_update.run_structure_changed)
         self.assertEqual(timing_update.state_epoch, epoch)
         self.assertEqual(self.rpc.calls.count("get_timer_state"), 1)
 
-        self.rpc.run = run_pb2.RunState(
-            game_name="Game",
-            category_name="Any%",
-            segments=(run_pb2.SegmentInfo(index=0, name="Changed"),),
-        )
-        structural_update = self.adapter.handle_event(
-            event(common_pb2.EVENT_RUN_CHANGED, 2)
-        )
+        self.rpc.run = run_state(segment(0, "Changed"))
+        structural_update = self.adapter.handle_event(event(EventType.RUN_CHANGED, 2))
         assert isinstance(structural_update, LiveSplitUpdate)
         self.assertTrue(structural_update.run_structure_changed)
         self.assertEqual(structural_update.state_epoch, epoch + 1)
+
+    def test_context_changed_only_advances_the_sequence(self) -> None:
+        self.sync()
+        epoch = self.adapter.state_epoch
+
+        update = self.adapter.handle_event(event(EventType.CONTEXT_CHANGED, 1))
+
+        self.assertIsNone(update)
+        self.assertEqual(self.adapter.event_sequence, 1)
+        self.assertEqual(self.adapter.state_epoch, epoch)
+        self.assertEqual(self.rpc.calls, ["get_timer_state", "get_run"])
 
     def test_control_success_has_no_state_query_or_optimistic_transition(self) -> None:
         self.sync()
@@ -307,7 +386,7 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
 
     def test_remote_rejection_is_distinct_from_unknown_outcome(self) -> None:
         self.sync()
-        self.rpc.operation_error = BridgeRemoteError(4, "not allowed")
+        self.rpc.operation_error = BridgeRemoteError("operation_failed", "not allowed")
         baseline = self.adapter.current_snapshot
         assert baseline is not None
         outcome = self.adapter.execute_action(
@@ -319,7 +398,7 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
 
     def test_remote_error_with_session_change_is_not_a_rejection(self) -> None:
         self.sync()
-        self.rpc.operation_error = BridgeRemoteError(4, "not allowed")
+        self.rpc.operation_error = BridgeRemoteError("operation_failed", "not allowed")
         # The client commits the new session even for a RemoteError.
         self.rpc.session_change = (1, 2)
         baseline = self.adapter.current_snapshot
@@ -342,19 +421,6 @@ class LiveSplitBridgeAdapterTest(unittest.TestCase):
         self.assertEqual(outcome.execution, ActionExecution.UNKNOWN)
         # Only the single control request was sent; nothing is retried.
         self.assertEqual(self.rpc.calls, before + ["split"])
-
-    def test_protocol_version_mismatch_is_fatal(self) -> None:
-        self.sync()
-        self.rpc.operation_error = BridgeProtocolError(
-            "Protocol version mismatch: expected 3, got 2"
-        )
-        baseline = self.adapter.current_snapshot
-        assert baseline is not None
-        outcome = self.adapter.execute_action(
-            Action("split"), baseline, self.adapter.state_epoch
-        )
-        self.assertEqual(outcome.execution, ActionExecution.FAILED)
-        self.assertIsNotNone(outcome.error)
 
 
 if __name__ == "__main__":
