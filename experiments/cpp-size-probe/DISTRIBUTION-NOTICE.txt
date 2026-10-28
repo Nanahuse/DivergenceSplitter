@@ -1,0 +1,11 @@
+DivergenceSplitter C++23 distribution size experiment (not a complete application).
+Project source: https://github.com/Nanahuse/DivergenceSplitter
+Project license: MIT; see LICENSE. Dependency notices are in licenses/.
+Qt and OpenCV use unmodified vcpkg ports; binaries are dynamically linked.
+Exact port versions, features and source references are in build-metadata/.
+The dependency inventory is intentionally conservative and includes notices
+for installed build dependencies as well as shipped runtime dependencies.
+Qt source and license information: https://www.qt.io/licensing/
+NDI® information: https://ndi.video/
+NDI SDK/runtime status: see ndi-status.txt.
+NDI® is a registered trademark of Vizrt NDI AB.

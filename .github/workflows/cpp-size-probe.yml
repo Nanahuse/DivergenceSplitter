@@ -1,0 +1,153 @@
+name: C++23 distribution size probe
+
+on:
+  pull_request:
+    paths:
+      - 'experiments/cpp-size-probe/**'
+      - 'tools/*cpp*'
+      - 'tools/measure_distribution.py'
+      - 'tools/tests/test_measure_distribution.py'
+      - 'tools/tests/test_prepare_cpp_distribution.py'
+      - '.github/workflows/cpp-size-probe.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'experiments/cpp-size-probe/**'
+      - 'tools/*cpp*'
+      - 'tools/measure_distribution.py'
+      - '.github/workflows/cpp-size-probe.yml'
+  workflow_dispatch:
+    inputs:
+      legacy_run_id:
+        description: Successful Windows distribution run to compare (empty skips comparison)
+        default: '38922970221'
+        type: string
+      ndi_sdk_url:
+        description: Authorized SDK ZIP URL with Include/, Bin/x64/, SDK-license.* at its root (optional)
+        type: string
+      ndi_sdk_sha256:
+        description: SHA256 of the exact authorized SDK ZIP (required with URL)
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows-size:
+    runs-on: windows-2025
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite'
+      LEGACY_RUN_ID: ${{ github.event_name != 'workflow_dispatch' && '38922970221' || inputs.legacy_run_id }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14.6'
+      - name: Test distribution verification tools
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install pytest==9.1.1
+          python -m pytest tools/tests/test_measure_distribution.py tools/tests/test_prepare_cpp_distribution.py -q --junitxml=build/size-probe/tool-tests.xml
+      - name: Read pinned vcpkg commit
+        id: manifest
+        run: |
+          $manifest = Get-Content experiments/cpp-size-probe/vcpkg.json -Raw | ConvertFrom-Json
+          "baseline=$($manifest.'builtin-baseline')" >> $env:GITHUB_OUTPUT
+      - name: Checkout pinned vcpkg (same registry and tool revision locally and in CI)
+        uses: actions/checkout@v5
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ steps.manifest.outputs.baseline }}
+          path: build/vcpkg
+      - uses: actions/cache@v6
+        id: binary-cache
+        with:
+          path: .vcpkg-binary-cache
+          key: cpp-size-windows-2025-${{ steps.manifest.outputs.baseline }}-${{ hashFiles('experiments/cpp-size-probe/vcpkg.json') }}
+      - name: Analyze current Python/Flet distribution
+        if: env.LEGACY_RUN_ID != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory -Force build/size-probe | Out-Null
+          gh run download $env:LEGACY_RUN_ID --repo $env:GITHUB_REPOSITORY --name DivergenceSplitter-windows-x64 --dir build/legacy-distribution
+          python tools/measure_distribution.py --root build/legacy-distribution --output build/size-probe/legacy-report --kind legacy --label "Python/Flet run $env:LEGACY_RUN_ID" --provenance "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:LEGACY_RUN_ID"
+      - name: Prepare optional official SDK input
+        env:
+          NDI_SDK_URL: ${{ inputs.ndi_sdk_url }}
+          NDI_SDK_SHA256: ${{ inputs.ndi_sdk_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:NDI_SDK_URL) {
+            if ($env:NDI_SDK_SHA256) { throw 'Supply both SDK URL and SHA256.' }
+            'NDI is UNVERIFIED: no official SDK input supplied.' >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          if ($env:NDI_SDK_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Exact SDK SHA256 is required.' }
+          New-Item -ItemType Directory -Force build/size-probe | Out-Null
+          Invoke-WebRequest -Uri $env:NDI_SDK_URL -OutFile build/size-probe/ndi-sdk.zip
+          $actual = (Get-FileHash build/size-probe/ndi-sdk.zip -Algorithm SHA256).Hash
+          if ($actual -ne $env:NDI_SDK_SHA256) { throw 'NDI SDK archive SHA256 mismatch.' }
+          python -c "import sys; sys.path.insert(0, 'tools'); from pathlib import Path; from measure_distribution import extract_archive; extract_archive(Path('build/size-probe/ndi-sdk.zip'), Path('build/ndi-sdk'))"
+          if ($LASTEXITCODE -ne 0) { throw 'SDK extraction failed.' }
+          $license = @(Get-ChildItem build/ndi-sdk/SDK-license.* -File)
+          if ($license.Count -ne 1) { throw 'Include one unmodified SDK agreement as SDK-license.*.' }
+          "NDI_SDK_DIR=$((Resolve-Path build/ndi-sdk).Path)" >> $env:GITHUB_ENV
+          "NDI_LICENSE_FILE=$($license[0].FullName)" >> $env:GITHUB_ENV
+          "NDI_SDK_SHA256=$actual" >> $env:GITHUB_ENV
+      - name: Build, CTest, install, deploy, isolated smoke test and measure
+        env:
+          PROBE_BINARY_CACHE_HIT: ${{ steps.binary-cache.outputs.cache-hit == 'true' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'MSVC x64 C++ tools required.' }
+          Import-Module "$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          $env:PATH = "$vs/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin;$vs/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja;$env:PATH"
+          $env:VCPKG_ROOT = (Resolve-Path build/vcpkg).Path
+          & build/vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          & tools/build_cpp_size_probe.ps1 *>&1 | Tee-Object -FilePath "$env:GITHUB_WORKSPACE/build/size-probe/build.log"
+      - name: Publish measured summary
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python tools/summarize_cpp_size_probe_ci.py --ci-report build/size-probe/cpp-report/report.json --local-report experiments/cpp-size-probe/results/cpp-local-summary.json --timings build/size-probe/cpp-report/timings.json --build-log build/size-probe/build.log --output build/size-probe/cpp-report/ci-vs-local.md
+          Get-Content build/size-probe/cpp-report/report.md >> $env:GITHUB_STEP_SUMMARY
+          Get-Content build/size-probe/cpp-report/ci-vs-local.md >> $env:GITHUB_STEP_SUMMARY
+          if (Test-Path build/size-probe/cpp-report/comparison.md) {
+            Get-Content build/size-probe/cpp-report/comparison.md >> $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Save distribution ZIPs and reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cpp-size-probe-windows-x64
+          path: |
+            build/size-probe/cpp-report
+            build/size-probe/legacy-report
+            build/size-probe/tool-tests.xml
+            build/size-probe/build.log
+          compression-level: 0
+          if-no-files-found: warn
+      - name: Save build/test diagnostics (including failures)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cpp-size-probe-diagnostics
+          path: |
+            build/cpp-size-probe/Testing/Temporary
+            build/cpp-size-probe/CMakeFiles/CMakeConfigureLog.yaml
+            build/cpp-size-probe/vcpkg-manifest-install.log
+            build/vcpkg/buildtrees/*/*.log
+          if-no-files-found: ignore

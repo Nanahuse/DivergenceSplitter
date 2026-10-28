@@ -1,0 +1,25 @@
+set(probe_bin "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin")
+file(GLOB_RECURSE probe_libraries "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/*.dll")
+file(GET_RUNTIME_DEPENDENCIES
+    EXECUTABLES "${probe_bin}/size-probe.exe"
+    LIBRARIES ${probe_libraries}
+    DIRECTORIES "${probe_bin}" "@VCPKG_INSTALLED_DIR@/@VCPKG_TARGET_TRIPLET@/bin"
+    RESOLVED_DEPENDENCIES_VAR resolved
+    UNRESOLVED_DEPENDENCIES_VAR unresolved
+    PRE_EXCLUDE_REGEXES "[Aa][Pp][Ii]-[Mm][Ss]-.*" "[Ee][Xx][Tt]-[Mm][Ss]-.*"
+    POST_EXCLUDE_REGEXES [[.*[/\\][Ss][Yy][Ss][Tt][Ee][Mm]32[/\\].*]])
+if(unresolved)
+    message(FATAL_ERROR "Unresolved distribution dependencies: ${unresolved}")
+endif()
+foreach(dependency IN LISTS resolved)
+    get_filename_component(name "${dependency}" NAME)
+    if(EXISTS "${probe_bin}/${name}")
+        file(SHA256 "${dependency}" original_hash)
+        file(SHA256 "${probe_bin}/${name}" installed_hash)
+        if(NOT original_hash STREQUAL installed_hash)
+            message(FATAL_ERROR "Conflicting DLL: ${name}")
+        endif()
+    else()
+        file(INSTALL "${dependency}" DESTINATION "${probe_bin}")
+    endif()
+endforeach()
