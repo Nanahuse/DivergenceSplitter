@@ -246,7 +246,7 @@ TEST(Detectors, ColorSimilaritiesMatchPythonOpenCv412Goldens) {
                             masked ? example.masked_histogram : example.histogram, 1e-7);
                 EXPECT_DOUBLE_EQ((1.0 - detectors[1]->detect(context).score) * 64.0,
                                  masked ? example.masked_distance : example.distance);
-                EXPECT_EQ(cv::norm(frame, before, cv::NORM_INF), 0.0);
+                EXPECT_EQ(cv::norm(context.frame().image, before, cv::NORM_INF), 0.0);
             }
         }
     }
