@@ -1,74 +1,33 @@
-# NDI third-party license notices
+# NDI® runtime notices
 
-DivergenceSplitter itself is licensed under the MIT License (see
-[`LICENSE`](../LICENSE)).
+NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
 
-The bundled NDI runtime components are separately licensed by
-Vizrt NDI AB and are subject to the NDI SDK License Agreement.
+DivergenceSplitter's own code remains under its MIT License. NDI-enabled Windows
+ZIPs additionally contain the separately licensed proprietary NDI runtime:
 
-Restrictions applicable to the NDI runtime do not alter the
-MIT License terms applicable to DivergenceSplitter itself.
+- `Processing.NDI.Lib.x64.dll`, loaded from the executable directory;
+- `Processing.NDI.Lib.Licenses.txt`, the unmodified runtime third-party notices;
+- `licenses/ndi-sdk/`, the unmodified agreement from the selected official SDK;
+- [NDI-TERMS.txt](NDI-TERMS.txt), the applicable bundled component use terms,
+  including the requirements of SDK agreement section 3(d).
 
-The conditions described in this document apply only to the NDI Runtime and
-NDI SDK components redistributed with DivergenceSplitter. They do not extend to
-DivergenceSplitter's own source code, which remains under the MIT License.
+SDK headers, import libraries, installers, examples and NDI Tools are excluded.
+An SDK-disabled development build contains these explanatory notices but no
+NDI binaries or SDK agreement. No Python bindings are used by the C++ product.
 
-## Redistributed components
+The SDK/runtime is not relicensed under MIT. Its conditions apply to the SDK,
+runtime and NDI protocols, separately from DivergenceSplitter's own source.
+See the included agreement and [official licensing requirements](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing).
 
-- `ndi-python` — the Python binding, licensed under the MIT License.
-- NDI Runtime (`NDIlib*.pyd`, `Processing.NDI.Lib.x64.dll`) — licensed under the
-  NDI SDK License Agreement.
-- NDI Runtime third-party notices (`Processing.NDI.Lib.Licenses.txt`) —
-  redistributed alongside the runtime.
+The standard SDK license is for its defined general-purpose computer Products;
+excluded appliances, restricted hosted environments and embedded devices need
+a separate commercial agreement. Distributors must check the latest-SDK
+requirement before a release. Review the actual downloaded agreement when
+updating the pin; do not publish a runtime ZIP with unresolved obligations.
 
-## NDI SDK License Agreement
+SDK installers and development files are confidential under the agreement.
+CI downloads directly from the official source on every trusted run and never
+stores the SDK in a public Actions cache or uploads development materials.
 
-The NDI Runtime is **not** licensed under the DivergenceSplitter MIT License.
-Use and redistribution of the NDI Runtime are governed by the NDI SDK License
-Agreement published by Vizrt NDI AB.
-
-The full text of the NDI SDK License Agreement is available from Vizrt NDI AB
-and is neither reproduced nor modified in this repository:
-
-- NDI SDK license: <https://ndi.link/ndisdk_license>
-- NDI Advanced SDK / embedded license: <https://ndi.link/ndisdk_embedded_license>
-- NDI website: <https://ndi.video/>
-
-## Conditions applicable to the NDI Runtime
-
-The NDI SDK License Agreement imposes conditions on the NDI Runtime that are
-separate from the DivergenceSplitter MIT License. In summary, and without
-replacing the official agreement, they include:
-
-- **Modification restrictions.** The NDI Runtime binaries may not be modified.
-- **Reverse engineering restrictions.** Reverse engineering the NDI Runtime is
-  prohibited, except to the extent applicable law expressly permits it.
-- **Disassembly / recompilation restrictions.** Decompiling, disassembling, or
-  recompiling the NDI Runtime is prohibited, except to the extent applicable
-  law expressly permits it.
-- **Technical limitation circumvention restrictions.** Circumventing technical
-  limitations or protection measures in the NDI Runtime is prohibited.
-- **Proprietary notice preservation.** Copyright, trademark, and other
-  proprietary notices in the NDI Runtime and its notices file must be
-  preserved.
-- **Warranty disclaimer.** The NDI Runtime is provided "AS IS" without
-  warranties of any kind, to the extent permitted by applicable law.
-- **Limitation of liability.** Vizrt NDI AB and its contributors are not liable
-  for damages arising from the NDI Runtime, to the extent permitted by
-  applicable law.
-- **Export-control requirements.** Use, distribution, and re-export of the NDI
-  Runtime must comply with applicable export-control laws and regulations.
-- **NDI copyright notices.** NDI and Vizrt NDI AB copyright notices must be
-  retained as shipped with the NDI Runtime.
-
-This summary is provided for convenience only. The NDI SDK License Agreement
-controls the use and redistribution of the NDI Runtime.
-
-## NDI Runtime third-party notices
-
-`Processing.NDI.Lib.Licenses.txt`, shipped with the NDI Runtime, lists the
-third-party components used by the NDI Runtime and their license terms. It is
-conveyed unmodified with the Windows distribution and is also reproduced in the
-application's Licenses view under "NDI Runtime Third-Party Notices".
-
-NDI® is a registered trademark of Vizrt NDI AB.
+Official agreement: <https://ndi.link/ndisdk_license>.
+NDI Tools are available separately at <https://ndi.video/tools/>.

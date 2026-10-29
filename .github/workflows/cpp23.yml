@@ -3,12 +3,18 @@ name: C++23
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feat/cpp-rewrite]
   workflow_dispatch:
 
 jobs:
   windows:
+    name: Windows (NDI ${{ matrix.ndi }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pull_request (never pull_request_target): fork code gets no SDK Secret.
+        ndi: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["OFF","ON"]' || '["OFF"]') }}
     permissions:
       contents: read
     defaults:
@@ -19,6 +25,13 @@ jobs:
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
     steps:
       - uses: actions/checkout@v5
+
+      - name: Get official pinned NDI SDK (no public cache)
+        if: matrix.ndi == 'ON'
+        shell: pwsh
+        env:
+          NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
+        run: ./tools/get_ndi_sdk.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'ndi-sdk')
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -73,13 +86,16 @@ jobs:
         run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
 
       - name: Configure
-        run: cmake --preset ci
+        shell: pwsh
+        run: |
+          cmake --preset ci -DDIVERGENCESPLITTER_ENABLE_NDI=${{ matrix.ndi }} "-DNDI_SDK_DIR=$env:NDI_SDK_DIR"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake Configure failed' }
 
       - name: Build
         run: cmake --build --preset ci --parallel
 
       - name: Test
-        run: ctest --preset ci --output-on-failure
+        run: ctest --preset ci --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
 
       - name: TestHost integration
         shell: pwsh
@@ -98,7 +114,6 @@ jobs:
           $zip = Get-ChildItem build/ci/*.zip | Select-Object -First 1
           if (-not $zip) { throw 'No ZIP package was produced' }
           $destination = Join-Path $env:RUNNER_TEMP 'divergencesplitter-zip'
-          Remove-Item $destination -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -Path $zip.FullName -DestinationPath $destination
           foreach ($file in @('platforms\qwindows.dll', 'Qt6Core.dll', 'opencv_core4.dll', 'vc_redist.x64.exe', 'LICENSE.txt', 'licenses\qtbase.txt')) {
             if (-not (Test-Path (Join-Path $destination $file))) {
@@ -110,26 +125,51 @@ jobs:
           $env:PATH = "$destination;$env:SystemRoot\System32;$env:SystemRoot"
           & "$destination\divergencesplitter-cli.exe" --help
           if ($LASTEXITCODE -ne 0) { throw "CLI failed from extracted ZIP: $LASTEXITCODE" }
-          $gui = Start-Process -FilePath "$destination\DivergenceSplitter.exe" -WorkingDirectory $destination -PassThru
-          try {
-            $windowReady = $false
-            for ($attempt = 0; $attempt -lt 20; $attempt++) {
-              Start-Sleep -Milliseconds 500
-              $gui.Refresh()
-              if ($gui.HasExited) { throw "GUI exited from extracted ZIP: $($gui.ExitCode)" }
-              if ($gui.MainWindowTitle -eq 'DivergenceSplitter') {
-                $windowReady = $true
-                break
+          if ('${{ matrix.ndi }}' -eq 'ON') {
+            $lock = Get-Content tools/ndi-sdk-lock.json -Raw | ConvertFrom-Json
+            $pinned = @{
+              'Processing.NDI.Lib.x64.dll' = $lock.runtime_sha256
+              'Processing.NDI.Lib.Licenses.txt' = $lock.runtime_licenses_sha256
+              'licenses\ndi-sdk\NDI SDK License Agreement.pdf' = $lock.agreement_sha256
+            }
+            foreach ($entry in $pinned.GetEnumerator()) {
+              $file = Join-Path $destination $entry.Key
+              if (-not (Test-Path $file) -or (Get-FileHash $file).Hash.ToLowerInvariant() -ne $entry.Value) {
+                throw "ZIP is missing or has modified NDI redistribution file: $($entry.Key)"
               }
             }
-            if (-not $windowReady) { throw 'GUI did not create its main window from the extracted ZIP' }
+            if (-not (Test-Path "$destination\licenses\NDI-TERMS.txt")) { throw 'NDI use terms missing' }
+            Remove-Item Env:NDI_RUNTIME_DIR_V6 -ErrorAction SilentlyContinue
+            Remove-Item Env:NDI_RUNTIME_DIR_V5 -ErrorAction SilentlyContinue
+            & "$destination\divergencesplitter-cli.exe" --ndi-check
+            if ($LASTEXITCODE -ne 0) { throw 'Extracted ZIP could not initialize its local NDI runtime' }
+          } elseif (Test-Path "$destination\Processing.NDI.Lib.x64.dll") {
+            throw 'SDK-disabled developer ZIP must not contain an NDI DLL'
+          }
+          $developmentFiles = Get-ChildItem $destination -Recurse -File | Where-Object {
+            $_.Extension -in '.h', '.hpp', '.lib' -or $_.Name -match '(?i)ndi.*(sdk|runtime).*\.exe$'
+          }
+          if ($developmentFiles) { throw 'ZIP contains SDK development files or installers' }
+          $gui = Start-Process -FilePath "$destination\DivergenceSplitter.exe" -ArgumentList '--smoke-test' -WorkingDirectory $destination -WindowStyle Hidden -PassThru
+          try {
+            if (-not $gui.WaitForExit(10000)) { throw 'Extracted ZIP GUI smoke test timed out' }
+            if ($gui.ExitCode -ne 0) { throw "Extracted ZIP GUI / NDI initialization failed: $($gui.ExitCode)" }
           } finally {
             if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force }
           }
 
       - name: Upload distribution
+        if: matrix.ndi == 'ON'
         uses: actions/upload-artifact@v7
         with:
           name: DivergenceSplitter-cpp23-windows-x64
           path: cpp/build/ci/*.zip
           if-no-files-found: error
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cpp23-tests-ndi-${{ matrix.ndi }}
+          path: cpp/build/ci/ctest-results.xml
+          if-no-files-found: warn

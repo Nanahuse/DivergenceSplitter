@@ -17,12 +17,16 @@ This distribution bundles or links the following third-party components:
 - windows-capture-device-list - MIT. Camera enumeration code is adapted from
   this project. See licenses/windows-capture-device-list.txt.
 
-NDI
+NDI®
 ---
-NDI input is an optional integration. The NDI SDK and runtime are not
-distributed in this archive. See licenses/NDI.md for the NDI notice. Builds
-without the NDI SDK report a configuration error instead of silently using a
-different input.
+Official NDI-enabled Windows ZIPs bundle Processing.NDI.Lib.x64.dll and
+Processing.NDI.Lib.Licenses.txt. The runtime is separately licensed by NDI,
+Inc. / Vizrt NDI AB; it is not covered by DivergenceSplitter's MIT License.
+The runtime's use terms are part of this distribution's terms of use:
+see licenses/NDI-TERMS.txt, licenses/NDI.md and the unmodified SDK agreement
+under licenses/ndi-sdk/. SDK-disabled development builds omit NDI binaries.
+NDI website: https://ndi.video/
+NDI® is a registered trademark of Vizrt NDI AB.
 
 Source code and build files for the LGPL-licensed Qt components are available
 from https://github.com/Nanahuse/DivergenceSplitter and from the Qt project.

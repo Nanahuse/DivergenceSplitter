@@ -179,10 +179,96 @@ The ZIP contains the GUI, the headless CLI, Qt/OpenCV runtime DLLs and Qt
 plugins, `LICENSE.txt`, `DISTRIBUTION-NOTICE.txt`, and third-party notices under
 `licenses/`.
 
-## NDI status
+## NDI® input and Windows redistribution
 
-NDI remains an input option in the Profile schema and UI, but the SDK adapter is
-not included in this migration. The NDI SDK is not shipped in this repository
-or distribution. Selecting NDI and pressing Apply reports a clear configuration error; it never
-silently falls back to camera or video. The SDK/runtime licensing review and the
-adapter are tracked as the remaining NDI phase.
+NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
+
+The official Windows ZIP includes the NDI 6.3.2.0 runtime next to the executable.
+Unzip the complete archive and run `DivergenceSplitter.exe`; a separate NDI SDK
+or runtime installation is unnecessary. In Profile, choose NDI, use Search again,
+select a sender and Apply. The editable list preserves saved names when senders
+are offline and refreshes while the page is visible. Discovery runs outside the
+GUI thread. Profiles continue to store `source.type: "ndi"` and `source.name`.
+Crop, Resize and `resize_references` use the same pipeline as Camera / Video.
+
+Receiver reads wait at most 50 ms. An ordinary timeout, status change or paused
+sender keeps the receiver alive; the SDK reconnects when that source returns.
+Fatal SDK / format errors stop capture and appear in diagnostics. The receiver
+requests deinterlaced BGRX/BGRA; conversion also supports UYVY/UYVA and RGBA/RGBX,
+respects row stride, discards alpha and owns the resulting BGR buffer. Camera
+and Video retain their existing error and end-of-file behavior.
+
+### Local builds
+
+SDK-disabled development remains the default (`DIVERGENCESPLITTER_ENABLE_NDI=OFF`).
+To enable input, download the official SDK and extract it with innoextract, then:
+
+```powershell
+cmake --preset full-release -DDIVERGENCESPLITTER_ENABLE_NDI=ON -DNDI_SDK_DIR=C:/private/ndi-sdk/app
+cmake --build --preset full-release --parallel
+ctest --preset full-release --output-on-failure
+build/full-release/divergencesplitter-cli.exe --ndi-check
+build/full-release/divergencesplitter-cli.exe --ndi-list
+```
+
+ON requires Windows x64, the main and dynamic-load headers, runtime DLL,
+runtime notices and the reviewed SDK agreement. Configure fails when any is
+missing or its reviewed binary/license hash differs. The SDK import library is
+not linked. Development SDKs / installers must not be committed to this repo.
+The runtime is copied next to build executables; the loader uses that absolute
+application-local path and does not fall back to the working directory or PATH.
+
+### CI acquisition and release contents
+
+Set repository Secret `NDI_SDK_URL_WINDOWS` to the official Windows SDK URL.
+`tools/ndi-sdk-lock.json` pins the exact 6.3.2.0 installer SHA-256, runtime and
+license hashes, and innoextract 1.9 checksum. The installer version, Authenticode
+publisher, extracted headers, runtime version and hashes are verified before
+Configure. Missing Secrets and mismatched downloads fail the required ON build;
+there is no silent fallback. SDK contents are never put in public Actions caches.
+Fork pull requests run OFF only and receive no Secret. Same-repository PRs and
+trusted branch / manual runs require both ON and OFF builds and tests.
+
+Only the ON job uploads the official Windows ZIP. It contains
+`Processing.NDI.Lib.x64.dll`, `Processing.NDI.Lib.Licenses.txt`, the unmodified
+SDK agreement in `licenses/ndi-sdk/`, and `licenses/NDI-TERMS.txt`. No SDK headers,
+import libraries, SDK installers, test sender or NDI Tools are packaged. CI
+checks these files and their hashes, CLI and GUI startup, and application-local
+runtime initialization from the extracted ZIP with runtime environment variables
+removed and PATH restricted to that ZIP / Windows system directories.
+
+DivergenceSplitter remains MIT. The NDI runtime is proprietary and subject to
+its separate [use terms](licenses/NDI-TERMS.txt), SDK agreement and third-party
+notices. See [the redistribution notice](licenses/NDI.md), the [official licensing
+requirements](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing) and
+[permitted distribution files](https://docs.ndi.video/all/developing-with-ndi/sdk/software-distribution).
+The exact extracted SDK agreement was compared byte-for-byte with the official
+agreement during integration. Updates require review of that agreement, its
+section 3(d) application terms, notices, trademark/link requirements, permitted
+platforms and latest-SDK requirement before publishing another runtime ZIP.
+
+### Reception and stability verification
+
+Fake-API CTest cases cover initialization, resource lifetimes, discovery changes,
+name selection, timeout / resume, buffer ownership, stride, six pixel formats,
+exceptions and prompt pipeline shutdown. Qt tests cover asynchronous discovery,
+offline draft names, selection and profile / transform restoration.
+
+With the real SDK enabled, `ndi_sdk_initialization` tests startup/shutdown and
+`ndi_sdk_loopback` creates an actual SDK sender on Windows. It verifies discovery,
+reception, BGR conversion, Crop/Resize, preview buffer, Scenario start detection,
+sender destruction/recreation, automatic reconnection and shutdown. This is a
+real local network reception test, separate from initialization and fake tests.
+For a longer local run (seconds, up to 3600):
+
+```powershell
+$env:NDI_SOAK_SECONDS = '600'
+build/full-release/divergencesplitter_ndi_loopback_tests.exe
+```
+
+Also validate an independent sender (for example NDI Test Patterns from
+[NDI Tools](https://ndi.video/tools/)) over the target network: discovery, source
+selection, live preview, Scenario detection, stop/restart recovery, saved profile
+reload and a sustained run. Record sender/receiver versions, duration, frame
+counts, errors and network topology. A local loopback or initialization test
+alone does not certify interoperability or long-term stability on another network.

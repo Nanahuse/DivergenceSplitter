@@ -1,5 +1,7 @@
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QLabel>
 #include <QFile>
 #include <QMessageBox>
 #include <QPushButton>
@@ -13,12 +15,22 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include <fstream>
+#include <atomic>
+#include <thread>
 
 #include "divergencesplitter/ui/app_controller.hpp"
 #include "divergencesplitter/ui/image_view.hpp"
 #include "divergencesplitter/ui/main_window.hpp"
 #include "divergencesplitter/ui/profile_page.hpp"
 #include "divergencesplitter/ui/reset_all_button.hpp"
+#include "divergencesplitter/ui/monitor_page.hpp"
+#include "divergencesplitter/capture/ndi.hpp"
+
+#if DIVERGENCESPLITTER_ENABLE_NDI
+#include <windows.h>
+#include <Processing.NDI.Lib.h>
+#include <Processing.NDI.DynamicLoad.h>
+#endif
 
 using namespace divergencesplitter::ui;
 using namespace divergencesplitter;
@@ -63,6 +75,127 @@ class UiTests final : public QObject {
     }
 
 private slots:
+#if DIVERGENCESPLITTER_ENABLE_NDI
+    void ndiRealSenderSelectionAndRenderedPreview() {
+        auto runtime = acquire_ndi_runtime();
+        auto load = reinterpret_cast<const NDIlib_v5* (*)()>(GetProcAddress(
+            GetModuleHandleW(L"Processing.NDI.Lib.x64.dll"), "NDIlib_v5_load"));
+        QVERIFY(load);
+        const auto* api = load();
+        NDIlib_send_create_t settings;
+        settings.p_ndi_name = "DivergenceSplitter UI integration test";
+        auto sender = api->send_create(&settings);
+        QVERIFY(sender);
+        const auto cleanup = std::shared_ptr<void>{sender, [api](void* value) {
+            api->send_destroy(static_cast<NDIlib_send_instance_t>(value));
+        }};
+        const std::string name = api->send_get_source_name(sender)->p_ndi_name;
+        std::jthread sending([&](std::stop_token stop) {
+            cv::Mat image(48, 64, CV_8UC4, cv::Scalar{230, 230, 230, 255});
+            NDIlib_video_frame_v2_t frame;
+            frame.xres = image.cols;
+            frame.yres = image.rows;
+            frame.FourCC = NDIlib_FourCC_video_type_BGRX;
+            frame.frame_rate_N = 30;
+            frame.frame_rate_D = 1;
+            frame.p_data = image.data;
+            frame.line_stride_in_bytes = static_cast<int>(image.step);
+            while (!stop.stop_requested()) api->send_send_video_v2(sender, &frame);
+        });
+        QTemporaryDir directory;
+        auto profile = make_profile(directory, true);
+        profile.source = NdiSourceConfiguration{name, std::get<VideoSourceConfiguration>(profile.source).transform};
+        const auto path = std::filesystem::path{directory.filePath("ndi-live.json").toStdString()};
+        save_profile(path, profile);
+        AppController controller;
+        QString error;
+        QVERIFY2(controller.open_profile(path, &error), qPrintable(error));
+        ProfilePage page(&controller);
+        auto* names = page.findChild<QComboBox*>("ndiSourceName");
+        QTRY_VERIFY_WITH_TIMEOUT(names->findText(QString::fromStdString(name)) >= 0, 20000);
+        names->setCurrentIndex(names->findText(QString::fromStdString(name)));
+        QCOMPARE(std::get<NdiSourceConfiguration>(page.draft_profile().source).name, name);
+        QTRY_VERIFY_WITH_TIMEOUT(controller.session().capture_stats().frames_published > 3, 20000);
+        MonitorPage monitor(&controller);
+        monitor.resize(640, 480);
+        monitor.show();
+        monitor.refresh();
+        auto* preview = monitor.findChild<ImageView*>();
+        QVERIFY(preview);
+        const auto rendered = preview->grab().toImage();
+        const auto color = rendered.pixelColor(rendered.width() / 2, rendered.height() / 2);
+        QVERIFY(color.red() > 200 && color.green() > 200 && color.blue() > 200);
+        const auto image = controller.session().latest_preview();
+        QCOMPARE(image->cols, 3);
+        QCOMPARE(image->rows, 3);
+        controller.stop();
+        QVERIFY2(controller.open_profile(path, &error), qPrintable(error));
+        page.reload_from_controller();
+        QCOMPARE(std::get<NdiSourceConfiguration>(page.draft_profile().source).name, name);
+        controller.stop();
+    }
+#endif
+    void ndiDiscoveryKeepsDraftAndDoesNotBlockGui() {
+        AppController controller;
+        std::atomic_bool release{};
+        ProfilePage page(&controller, nullptr, [&] {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+            while (!release.load() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds{5});
+            return std::vector<std::string>{"sender A", "sender B"};
+        });
+        auto* names = page.findChild<QComboBox*>("ndiSourceName");
+        auto* refresh = page.findChild<QPushButton*>("ndiRefresh");
+        auto* status = page.findChild<QLabel*>("ndiDiscoveryStatus");
+        QVERIFY(names && refresh && status);
+        names->setEditText("offline saved source");
+        refresh->click();
+        QVERIFY(!refresh->isEnabled());
+        // The GUI can edit a draft while the finder waits on another thread.
+        names->setEditText("edited during discovery");
+        bool event_processed = false;
+        QTimer::singleShot(0, &page, [&] { event_processed = true; release = true; });
+        QTRY_VERIFY(event_processed);
+        QTRY_VERIFY(refresh->isEnabled());
+        QCOMPARE(names->count(), 2);
+        QCOMPARE(names->currentText(), QStringLiteral("edited during discovery"));
+        QVERIFY(status->text().contains("offline"));
+        names->setCurrentIndex(1);
+        QCOMPARE(names->currentText(), QStringLiteral("sender B"));
+    }
+
+    void ndiDiscoveryReportsSdkFailure() {
+        AppController controller;
+        ProfilePage page(&controller, nullptr, []() -> std::vector<std::string> {
+            throw std::runtime_error("cannot load NDI test runtime");
+        });
+        auto* refresh = page.findChild<QPushButton*>("ndiRefresh");
+        auto* status = page.findChild<QLabel*>("ndiDiscoveryStatus");
+        refresh->click();
+        QTRY_VERIFY(refresh->isEnabled());
+        QVERIFY(status->text().contains("cannot load NDI test runtime"));
+    }
+
+    void ndiProfileRestoresOfflineNameAndTransform() {
+        QTemporaryDir directory;
+        auto profile = make_profile(directory, true);
+        const auto transform = std::get<VideoSourceConfiguration>(profile.source).transform;
+        profile.source = NdiSourceConfiguration{"offline sender", transform};
+        const auto path = std::filesystem::path{directory.filePath("ndi.json").toStdString()};
+        save_profile(path, profile);
+        AppController controller;
+        QString error;
+        QVERIFY2(controller.open_profile(path, &error), qPrintable(error));
+        ProfilePage page(&controller);
+        const auto draft = page.draft_profile();
+        QVERIFY(std::holds_alternative<NdiSourceConfiguration>(draft.source));
+        const auto& source = std::get<NdiSourceConfiguration>(draft.source);
+        QCOMPARE(source.name, std::string{"offline sender"});
+        QVERIFY(source.transform.resize->resize_references);
+        QCOMPARE(source.transform.resize->width, 3);
+        controller.stop();
+    }
+
     void initTestCase() {
         QVERIFY(settings_directory_.isValid());
         previous_appdata_ = qgetenv("APPDATA");

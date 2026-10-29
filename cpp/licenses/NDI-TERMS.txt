@@ -1,0 +1,61 @@
+Terms for the bundled NDI runtime
+================================
+
+These terms are part of the terms of use of the Windows distribution when it
+includes Processing.NDI.Lib.x64.dll. By using or redistributing that component,
+you agree to these terms. They apply to the NDI SDK/runtime and its protocols,
+not to DivergenceSplitter's own MIT-licensed source code. DivergenceSplitter's
+MIT License and your rights under it remain unchanged.
+
+The NDI runtime is proprietary software of NDI, Inc. / Vizrt NDI AB and its
+licensors, not MIT-licensed software. Copyright NDI, Inc. All rights reserved.
+Retain the copyright notices shipped in Processing.NDI.Lib.Licenses.txt and in
+the SDK License Agreement supplied unmodified in licenses/ndi-sdk/.
+
+You must not modify the NDI SDK, Specific SDK, NDI Products or any part of them.
+You must not reverse engineer, decompile, disassemble or recompile them, or
+attempt to derive their source code, underlying ideas, algorithms, structure
+or protocols, including protocols transmitted over a network or used internally
+or externally to a physical or virtual machine. You must not attempt these acts,
+circumvent technical limitations, or remove, obscure or alter proprietary notices
+or labels. These restrictions apply to the extent permitted by applicable law.
+
+The NDI runtime is provided AS IS and WITH ALL FAULTS. To the fullest extent
+permitted by applicable law, NDI and each of its licensors disclaim all express
+and implied warranties, including merchantability, fitness for a particular
+purpose, non-infringement, title and quiet enjoyment. To the fullest extent
+permitted by applicable law, NDI and its licensors disclaim liability for any
+direct, indirect, incidental, special or consequential damages arising from use
+of this Product or any Bundled Product, including loss of profits or business.
+
+You must comply fully with applicable export controls and trade sanctions,
+including relevant United States export laws and regulations. You must not
+export or re-export the bundled components, directly or indirectly, in violation
+of United States law or to prohibited countries, organizations or individuals.
+
+Third-party developers using this Product to develop Third Party Products
+using the NDI SDK must comply with the NDI SDK License Agreement, maintain
+current and complete NDI compatibility, and include all of the terms required
+by paragraph 3(d) of that agreement in their own end-user license agreements,
+including this downstream developer requirement.
+
+The standard SDK license permits the general-purpose computer Products defined
+in its agreement. Fixed-purpose physical appliances, restricted virtual/cloud
+environments and embedded products excluded by section 1 require a separate
+commercial agreement with NDI. The NDI SDK License Agreement and documentation
+also govern redistribution of the runtime; these terms grant no independent
+license to redistribute SDK development files, installers or NDI Tools. Bundled
+Products must incorporate and be compatible with the latest SDK as required
+by the agreement. Distributors must recheck that condition before a release.
+
+The exact SDK License Agreement and runtime third-party licenses included with
+this distribution remain applicable. Read them before using the NDI runtime.
+The NDI component's restrictions do not extend to DivergenceSplitter's MIT code.
+
+NDI website: https://ndi.video/
+SDK licensing: https://docs.ndi.video/all/developing-with-ndi/sdk/licensing
+Official agreement: https://ndi.link/ndisdk_license
+NDI Tools (download separately): https://ndi.video/tools/
+
+NDI® is a registered trademark of Vizrt NDI AB.
+This application is not sponsored or endorsed by NDI.

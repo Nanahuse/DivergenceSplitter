@@ -230,29 +230,4 @@ std::string VideoFileFrameSource::describe() const {
     return options_.path;
 }
 
-struct NdiFrameSource::Impl {};
-
-NdiFrameSource::NdiFrameSource(NdiSourceOptions options)
-    : options_(std::move(options)), impl_(std::make_unique<Impl>()) {}
-
-NdiFrameSource::~NdiFrameSource() = default;
-
-void NdiFrameSource::open() {
-    throw FrameSourceError(
-        "NDI input requires the NDI SDK and is not part of this build. "
-        "Use camera or video input until the NDI integration is enabled.",
-        false
-    );
-}
-
-cv::Mat NdiFrameSource::read(MonotonicTime&) {
-    throw FrameSourceError("NDI source is not open", false);
-}
-
-void NdiFrameSource::close() noexcept {}
-
-std::string NdiFrameSource::describe() const {
-    return "NDI " + options_.name;
-}
-
 }  // namespace divergencesplitter
