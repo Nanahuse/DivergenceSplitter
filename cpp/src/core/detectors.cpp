@@ -111,6 +111,65 @@ double masked_sum(const cv::Mat& image, const cv::Mat& mask, bool squared) {
     return total;
 }
 
+void require_bgr8(const cv::Mat& image) {
+    if (image.empty() || image.dims != 2 || image.type() != CV_8UC3) {
+        throw std::invalid_argument("image must be a non-empty 8-bit 3-channel BGR image");
+    }
+}
+
+void validate_masked_frame(const cv::Mat& image, const cv::Mat& mask) {
+    require_bgr8(image);
+    if (!mask.empty() && image.size() != mask.size()) {
+        throw std::invalid_argument("frame shape must match reference shape when masked");
+    }
+}
+
+cv::Mat color_histogram(const cv::Mat& image, const cv::Mat& mask) {
+    const int channels[] = {2, 1, 0};
+    const int bins[] = {8, 8, 8};
+    const float range[] = {0.0F, 256.0F};
+    const float* ranges[] = {range, range, range};
+    cv::Mat histogram;
+    cv::calcHist(&image, 1, channels, mask, histogram, 3, bins, ranges);
+    cv::normalize(histogram, histogram);
+    return histogram;
+}
+
+cv::Mat perceptual_hash(const cv::Mat& image, const cv::Mat& mask) {
+    cv::Mat source;
+    if (!mask.empty()) {
+        cv::bitwise_and(image, image, source, mask);
+    } else {
+        source = image;
+    }
+    cv::Mat resized;
+    // The Python detector downsamples before calling OpenCV's PHash.
+    cv::resize(source, resized, cv::Size{8, 8}, 0.0, 0.0, cv::INTER_AREA);
+    // Match opencv_contrib 4.12.0/modules/img_hash/src/phash.cpp, including
+    // uint8 grayscale rounding, a float mean, and least-significant-bit order.
+    cv::Mat expanded;
+    cv::resize(resized, expanded, cv::Size{32, 32}, 0.0, 0.0, cv::INTER_LINEAR_EXACT);
+    cv::Mat gray;
+    cv::cvtColor(expanded, gray, cv::COLOR_BGR2GRAY);
+    gray.convertTo(gray, CV_32F);
+    cv::Mat coefficients;
+    cv::dct(gray, coefficients);
+    cv::Mat low = coefficients(cv::Rect{0, 0, 8, 8}).clone();
+    low.at<float>(0, 0) = 0.0F;
+    const float mean = static_cast<float>(cv::mean(low)[0]);
+    cv::Mat bits;
+    cv::compare(low, mean, bits, cv::CMP_GT);
+    cv::Mat hash = cv::Mat::zeros(1, 8, CV_8U);
+    for (int row = 0; row < 8; ++row) {
+        for (int column = 0; column < 8; ++column) {
+            if (bits.at<std::uint8_t>(row, column) != 0) {
+                hash.at<std::uint8_t>(0, row) |= static_cast<std::uint8_t>(1U << column);
+            }
+        }
+    }
+    return hash;
+}
+
 cv::Mat frame_dhash_cached(
     FrameContext& context,
     int hash_size,
@@ -459,6 +518,68 @@ std::vector<ReferenceImage> RootMeanSquareSimilarityDetector::reference_images()
 
 std::string RootMeanSquareSimilarityDetector::describe() const {
     return "root mean square similarity (" + detail::region_key(roi_) + ")";
+}
+
+HistogramSimilarityDetector::HistogramSimilarityDetector(
+    cv::Mat reference,
+    std::optional<Region> roi
+)
+    : reference_(reference.clone()), roi_(roi) {
+    if (reference_.depth() != CV_8U) {
+        throw std::invalid_argument("reference must be an 8-bit image");
+    }
+    const auto prepared = detail::prepare_reference_alpha(reference_);
+    require_bgr8(prepared.image);
+    mask_ = prepared.mask;
+    histogram_ = color_histogram(prepared.image, mask_);
+    key_ = detail::make_detector_key("histogram_similarity", roi_, "v1", reference_);
+}
+
+DetectionResult HistogramSimilarityDetector::detect(FrameContext& context) const {
+    const cv::Mat frame = detail::frame_region(context.frame().image, roi_);
+    validate_masked_frame(frame, mask_);
+    const double distance = cv::compareHist(
+        histogram_, color_histogram(frame, mask_), cv::HISTCMP_BHATTACHARYYA
+    );
+    return DetectionResult{detail::clamp_unit(1.0 - distance)};
+}
+
+std::vector<ReferenceImage> HistogramSimilarityDetector::reference_images() const {
+    return {ReferenceImage{"reference", reference_.clone()}};
+}
+
+std::string HistogramSimilarityDetector::describe() const {
+    return "histogram similarity (" + detail::region_key(roi_) + ")";
+}
+
+PerceptualHashSimilarityDetector::PerceptualHashSimilarityDetector(
+    cv::Mat reference,
+    std::optional<Region> roi
+)
+    : reference_(reference.clone()), roi_(roi) {
+    if (reference_.depth() != CV_8U) {
+        throw std::invalid_argument("reference must be an 8-bit image");
+    }
+    const auto prepared = detail::prepare_reference_alpha(reference_);
+    require_bgr8(prepared.image);
+    mask_ = prepared.mask;
+    reference_hash_ = perceptual_hash(prepared.image, mask_);
+    key_ = detail::make_detector_key("perceptual_hash_similarity", roi_, "v1", reference_);
+}
+
+DetectionResult PerceptualHashSimilarityDetector::detect(FrameContext& context) const {
+    const cv::Mat frame = detail::frame_region(context.frame().image, roi_);
+    validate_masked_frame(frame, mask_);
+    const double distance = cv::norm(reference_hash_, perceptual_hash(frame, mask_), cv::NORM_HAMMING);
+    return DetectionResult{detail::clamp_unit(1.0 - distance / 64.0)};
+}
+
+std::vector<ReferenceImage> PerceptualHashSimilarityDetector::reference_images() const {
+    return {ReferenceImage{"reference", reference_.clone()}};
+}
+
+std::string PerceptualHashSimilarityDetector::describe() const {
+    return "perceptual hash similarity (" + detail::region_key(roi_) + ")";
 }
 
 DifferenceHashSimilarityDetector::DifferenceHashSimilarityDetector(

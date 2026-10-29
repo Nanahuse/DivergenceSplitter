@@ -111,11 +111,20 @@ Scenarios use the existing declarative YAML format. Supported condition types
 are `detected`, `all`, `any`, `not`, `rising_edge`, `falling_edge`, `once`,
 `elapsed`, `hold`, `nth`, `reset_when`, and `then`. Supported detectors are
 `template_match`, `mean_absolute_similarity`,
-`root_mean_square_similarity`, `difference_hash_similarity`,
+`root_mean_square_similarity`, `histogram_similarity`,
+`perceptual_hash_similarity`, `difference_hash_similarity`,
 `mean_brightness`, `color_range`, and `phase_correlation`.
 
 See `examples/minimal-scenario.yaml`. Unknown fields, unsupported types, and
 `.py` scenario files are rejected with a configuration error.
+
+Histogram and perceptual hash similarity accept 8-bit BGR frames and BGR/BGRA
+references with optional binary alpha masks. A masked reference must match the
+frame (or ROI) dimensions; unmasked images may differ in size. Histogram similarity
+uses 512 normalized color bins and Bhattacharyya distance. Perceptual hash
+similarity matches the Python detector's 8x8 area resize followed by OpenCV 4.12.0
+PHash (32x32 exact linear resize, grayscale, DCT, 64 bits). It uses Core/Imgproc
+without adding opencv_contrib to the C++ dependencies.
 
 ## Runtime behavior
 
