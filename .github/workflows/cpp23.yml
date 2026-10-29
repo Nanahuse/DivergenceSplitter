@@ -125,12 +125,11 @@ jobs:
           $env:PATH = "$destination;$env:SystemRoot\System32;$env:SystemRoot"
           & "$destination\divergencesplitter-cli.exe" --help
           if ($LASTEXITCODE -ne 0) { throw "CLI failed from extracted ZIP: $LASTEXITCODE" }
+          $lock = Get-Content tools/ndi-sdk-lock.json -Raw | ConvertFrom-Json
           if ('${{ matrix.ndi }}' -eq 'ON') {
-            $lock = Get-Content tools/ndi-sdk-lock.json -Raw | ConvertFrom-Json
             $pinned = @{
               'Processing.NDI.Lib.x64.dll' = $lock.runtime_sha256
               'Processing.NDI.Lib.Licenses.txt' = $lock.runtime_licenses_sha256
-              'licenses\ndi-sdk\NDI SDK License Agreement.pdf' = $lock.agreement_sha256
             }
             foreach ($entry in $pinned.GetEnumerator()) {
               $file = Join-Path $destination $entry.Key
@@ -146,6 +145,12 @@ jobs:
           } elseif (Test-Path "$destination\Processing.NDI.Lib.x64.dll") {
             throw 'SDK-disabled developer ZIP must not contain an NDI DLL'
           }
+          if (Test-Path "$destination\licenses\ndi-sdk") { throw 'ZIP must not contain the SDK agreement directory' }
+          $sdkContracts = Get-ChildItem $destination -Recurse -File -Filter '*.pdf' | Where-Object {
+            $_.Name -match '(?i)ndi.*(license|agreement|eula)' -or
+              (Get-FileHash $_.FullName).Hash.ToLowerInvariant() -eq $lock.agreement_sha256
+          }
+          if ($sdkContracts) { throw 'ZIP must not contain an NDI SDK contract PDF' }
           $developmentFiles = Get-ChildItem $destination -Recurse -File | Where-Object {
             $_.Extension -in '.h', '.hpp', '.lib' -or $_.Name -match '(?i)ndi.*(sdk|runtime).*\.exe$'
           }

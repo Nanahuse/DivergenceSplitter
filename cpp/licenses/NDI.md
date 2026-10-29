@@ -7,17 +7,19 @@ ZIPs additionally contain the separately licensed proprietary NDI runtime:
 
 - `Processing.NDI.Lib.x64.dll`, loaded from the executable directory;
 - `Processing.NDI.Lib.Licenses.txt`, the unmodified runtime third-party notices;
-- `licenses/ndi-sdk/`, the unmodified agreement from the selected official SDK;
 - [NDI-TERMS.txt](NDI-TERMS.txt), the applicable bundled component use terms,
   including the requirements of SDK agreement section 3(d).
 
+The SDK agreement PDF is used only for build-time existence and SHA-256 checks;
+it is not bundled. Read the [official NDI SDK License Agreement](https://ndi.link/ndisdk_license).
 SDK headers, import libraries, installers, examples and NDI Tools are excluded.
 An SDK-disabled development build contains these explanatory notices but no
 NDI binaries or SDK agreement. No Python bindings are used by the C++ product.
 
 The SDK/runtime is not relicensed under MIT. Its conditions apply to the SDK,
 runtime and NDI protocols, separately from DivergenceSplitter's own source.
-See the included agreement and [official licensing requirements](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing).
+See the [official agreement](https://ndi.link/ndisdk_license) and
+[official licensing requirements](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing).
 
 The standard SDK license is for its defined general-purpose computer Products;
 excluded appliances, restricted hosted environments and embedded devices need

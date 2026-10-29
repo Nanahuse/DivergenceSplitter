@@ -23,8 +23,9 @@ Official NDI-enabled Windows ZIPs bundle Processing.NDI.Lib.x64.dll and
 Processing.NDI.Lib.Licenses.txt. The runtime is separately licensed by NDI,
 Inc. / Vizrt NDI AB; it is not covered by DivergenceSplitter's MIT License.
 The runtime's use terms are part of this distribution's terms of use:
-see licenses/NDI-TERMS.txt, licenses/NDI.md and the unmodified SDK agreement
-under licenses/ndi-sdk/. SDK-disabled development builds omit NDI binaries.
+see licenses/NDI-TERMS.txt, licenses/NDI.md and the official SDK agreement at
+https://ndi.link/ndisdk_license. The SDK agreement PDF is not bundled.
+SDK-disabled development builds omit NDI binaries.
 NDI website: https://ndi.video/
 NDI® is a registered trademark of Vizrt NDI AB.
 

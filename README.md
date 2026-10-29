@@ -8,6 +8,8 @@ select an NDI sender in Profile and Apply. SDK-disabled local builds remain
 available. See the [C++ build and test instructions](cpp/README.md#ndi-input-and-windows-redistribution).
 DivergenceSplitter remains MIT; the bundled NDI component has separate
 [use terms](cpp/licenses/NDI-TERMS.txt) and [redistribution notices](cpp/licenses/NDI.md).
+Read the [official NDI SDK License Agreement](https://ndi.link/ndisdk_license);
+its PDF is checked at build time and is excluded from the C++ distribution ZIP.
 [NDI official website](https://ndi.video/). NDI® is a registered trademark of Vizrt NDI AB.
 The Python implementation and its documentation below remain available.
 

@@ -9,8 +9,9 @@ MIT License and your rights under it remain unchanged.
 
 The NDI runtime is proprietary software of NDI, Inc. / Vizrt NDI AB and its
 licensors, not MIT-licensed software. Copyright NDI, Inc. All rights reserved.
-Retain the copyright notices shipped in Processing.NDI.Lib.Licenses.txt and in
-the SDK License Agreement supplied unmodified in licenses/ndi-sdk/.
+Retain the copyright notices shipped in Processing.NDI.Lib.Licenses.txt and the
+applicable SDK notices. Read the official NDI SDK License Agreement at
+https://ndi.link/ndisdk_license; its PDF is not bundled with this distribution.
 
 You must not modify the NDI SDK, Specific SDK, NDI Products or any part of them.
 You must not reverse engineer, decompile, disassemble or recompile them, or
@@ -48,8 +49,9 @@ license to redistribute SDK development files, installers or NDI Tools. Bundled
 Products must incorporate and be compatible with the latest SDK as required
 by the agreement. Distributors must recheck that condition before a release.
 
-The exact SDK License Agreement and runtime third-party licenses included with
-this distribution remain applicable. Read them before using the NDI runtime.
+The official SDK License Agreement at https://ndi.link/ndisdk_license and the
+runtime third-party licenses included with this distribution remain applicable.
+Read them before using the NDI runtime.
 The NDI component's restrictions do not extend to DivergenceSplitter's MIT code.
 
 NDI website: https://ndi.video/

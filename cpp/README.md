@@ -230,15 +230,19 @@ Fork pull requests run OFF only and receive no Secret. Same-repository PRs and
 trusted branch / manual runs require both ON and OFF builds and tests.
 
 Only the ON job uploads the official Windows ZIP. It contains
-`Processing.NDI.Lib.x64.dll`, `Processing.NDI.Lib.Licenses.txt`, the unmodified
-SDK agreement in `licenses/ndi-sdk/`, and `licenses/NDI-TERMS.txt`. No SDK headers,
+`Processing.NDI.Lib.x64.dll`, `Processing.NDI.Lib.Licenses.txt`, and the application
+use terms in `licenses/NDI-TERMS.txt`. These DLL and third-party notices are the
+only SDK-derived files redistributed. The SDK agreement PDF is checked at build
+time for existence and SHA-256 only; it is excluded from the ZIP. Read the
+[official NDI SDK License Agreement](https://ndi.link/ndisdk_license). No SDK headers,
 import libraries, SDK installers, test sender or NDI Tools are packaged. CI
 checks these files and their hashes, CLI and GUI startup, and application-local
 runtime initialization from the extracted ZIP with runtime environment variables
 removed and PATH restricted to that ZIP / Windows system directories.
 
 DivergenceSplitter remains MIT. The NDI runtime is proprietary and subject to
-its separate [use terms](licenses/NDI-TERMS.txt), SDK agreement and third-party
+its separate [use terms](licenses/NDI-TERMS.txt),
+[official SDK agreement](https://ndi.link/ndisdk_license) and third-party
 notices. See [the redistribution notice](licenses/NDI.md), the [official licensing
 requirements](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing) and
 [permitted distribution files](https://docs.ndi.video/all/developing-with-ndi/sdk/software-distribution).
