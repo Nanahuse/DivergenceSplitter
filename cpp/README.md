@@ -234,6 +234,9 @@ application-local path and does not fall back to the working directory or PATH.
 Set repository Secret `NDI_SDK_URL_WINDOWS` to the official Windows SDK URL.
 The acquisition and package verification scripts are Python:
 `tools/get_ndi_sdk.py` and `tools/verify_windows_zip.py`.
+The SDK acquisition script invokes `curl.exe` with its default User-Agent for
+downloads. HTTP errors and timeouts fail the download and remove partial files;
+URLs and captured curl output are never printed to the CI log.
 `tools/ndi-sdk-lock.json` pins the exact 6.3.2.0 installer SHA-256, runtime and
 license hashes, and innoextract 1.9 checksum. The installer version, Authenticode
 publisher, extracted headers, runtime version and hashes are verified before

@@ -11,9 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
-import urllib.error
 import urllib.parse
-import urllib.request
 import zipfile
 from ctypes import wintypes
 from pathlib import Path
@@ -25,25 +23,39 @@ def verify_hash(path: Path, expected: str) -> None:
 
 
 def download(url: str, destination: Path) -> None:
-    # Request errors may contain credentials, query strings or redirect URLs.
+    # Capture curl output: its errors can contain the Secret or redirect URLs.
+    # Ignore curlrc so machine settings cannot override the default User-Agent.
     try:
-        request = urllib.request.Request(
-            url, headers={"User-Agent": "DivergenceSplitter-CI/1.0"}
+        result = subprocess.run(
+            [
+                "curl.exe",
+                "--disable",
+                "--fail",
+                "--location",
+                "--silent",
+                "--show-error",
+                "--globoff",
+                "--connect-timeout",
+                "30",
+                "--max-time",
+                "120",
+                "--output",
+                str(destination),
+                "--",
+                url,
+            ],
+            capture_output=True,
+            check=False,
+            timeout=130,
         )
-        with (
-            urllib.request.urlopen(request, timeout=120) as response,
-            destination.open("wb") as output,
-        ):
-            shutil.copyfileobj(response, output)
-    except Exception as error:  # noqa: BLE001 - errors can embed the Secret URL.
-        detail = type(error).__name__
-        if isinstance(error, urllib.error.HTTPError):
-            detail += f", HTTP {error.code}"
-        elif isinstance(error, urllib.error.URLError):
-            detail += f", {type(error.reason).__name__}"
+    except (OSError, subprocess.SubprocessError) as error:
+        destination.unlink(missing_ok=True)
         raise RuntimeError(
-            f"Download failed ({detail}; URL and response suppressed)"
+            f"Download failed (curl {type(error).__name__}; URL and output suppressed)"
         ) from None
+    if result.returncode != 0:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError(f"Download failed (curl exit {result.returncode})")
 
 
 def official_url(value: str) -> str:
@@ -54,7 +66,7 @@ def official_url(value: str) -> str:
         valid = False
     if not valid:
         raise RuntimeError("NDI SDK URL must use the official HTTPS distribution host")
-    # .NET Uri previously escaped spaces; urllib requires an encoded path.
+    # .NET Uri previously escaped spaces; the HTTP client needs an encoded URL.
     path = urllib.parse.quote(url.path, safe="/%:@!$&'()*+,;=-._~")
     query = urllib.parse.quote(url.query, safe="%=&/:?@!$'()*+,;~-._")
     return urllib.parse.urlunsplit(url._replace(path=path, query=query))

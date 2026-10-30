@@ -1,9 +1,12 @@
 """Regression checks for download validation and distribution boundaries."""
 
 import hashlib
+import io
+import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -35,14 +38,71 @@ class SdkTests(unittest.TestCase):
             "https://downloads.ndi.tv/SDK/NDI%206%20SDK.exe",
         )
 
-    def test_request_error_does_not_expose_secret(self):
-        with patch(
-            "urllib.request.urlopen", side_effect=OSError("https://secret.test/token")
+    def test_download_uses_curl_default_user_agent_and_captures_output(self):
+        secret = "https://downloads.ndi.tv/sdk?token=secret&files=[1]"
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "sdk.exe"
+            output = io.StringIO()
+            result = subprocess.CompletedProcess(
+                [], 0, secret.encode(), secret.encode()
+            )
+            with (
+                patch.object(get_ndi_sdk.subprocess, "run", return_value=result) as run,
+                redirect_stdout(output),
+                redirect_stderr(output),
+            ):
+                get_ndi_sdk.download(secret, destination)
+            arguments = run.call_args.args[0]
+            self.assertEqual(arguments[0], "curl.exe")
+            self.assertEqual(arguments[-2:], ["--", secret])
+            for flag in ("--fail", "--location", "--globoff", "--silent"):
+                self.assertIn(flag, arguments)
+            self.assertNotIn("--user-agent", arguments)
+            self.assertNotIn("-A", arguments)
+            self.assertTrue(run.call_args.kwargs["capture_output"])
+            self.assertFalse(run.call_args.kwargs["check"])
+            self.assertEqual(output.getvalue(), "")
+
+    def test_http_failure_removes_partial_file_without_logging_curl_output(self):
+        secret = "https://secret.test/token"
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "sdk.exe"
+            destination.write_bytes(b"partial")
+            result = subprocess.CompletedProcess(
+                [], 22, secret.encode(), secret.encode()
+            )
+            output = io.StringIO()
+            with (
+                patch.object(get_ndi_sdk.subprocess, "run", return_value=result),
+                redirect_stdout(output),
+                redirect_stderr(output),
+                self.assertRaisesRegex(RuntimeError, "curl exit 22") as caught,
+            ):
+                get_ndi_sdk.download(secret, destination)
+            self.assertFalse(destination.exists())
+            self.assertNotIn(secret, str(caught.exception))
+            self.assertEqual(output.getvalue(), "")
+
+    def test_process_errors_remove_partial_file_and_hide_secret_arguments(self):
+        secret = "https://secret.test/token"
+        for error in (
+            OSError(secret),
+            subprocess.TimeoutExpired(["curl.exe", secret], 130),
         ):
-            with self.assertRaises(RuntimeError) as caught:
-                get_ndi_sdk.download("https://secret.test/token", Path("unused"))
-            self.assertNotIn("secret.test", str(caught.exception))
-            self.assertTrue(caught.exception.__suppress_context__)
+            with (
+                self.subTest(error=type(error).__name__),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                destination = Path(temporary) / "sdk.exe"
+                destination.write_bytes(b"partial")
+                with (
+                    patch.object(get_ndi_sdk.subprocess, "run", side_effect=error),
+                    self.assertRaises(RuntimeError) as caught,
+                ):
+                    get_ndi_sdk.download(secret, destination)
+                self.assertFalse(destination.exists())
+                self.assertNotIn(secret, str(caught.exception))
+                self.assertTrue(caught.exception.__suppress_context__)
 
     def test_hash_rejects_modified_file(self):
         with tempfile.TemporaryDirectory() as temporary:
