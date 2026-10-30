@@ -94,7 +94,7 @@ jobs:
 
       - name: TestHost integration
         working-directory: ${{ github.workspace }}
-        run: python cpp/tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin/Release --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
+        run: python cpp/tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
       - name: Package ZIP
         run: cmake --build --preset ci --target package
 
