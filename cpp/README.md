@@ -23,6 +23,7 @@ Prerequisites:
 - CMake 3.25+
 - Ninja
 - vcpkg (`VCPKG_ROOT` set)
+- Python 3.10+ (distribution helpers; `Python3_EXECUTABLE` can select it)
 
 From a Developer PowerShell:
 
@@ -179,6 +180,16 @@ The ZIP contains the GUI, the headless CLI, Qt/OpenCV runtime DLLs and Qt
 plugins, `LICENSE.txt`, `DISTRIBUTION-NOTICE.txt`, and third-party notices under
 `licenses/`.
 
+Third-party license bodies are collected at package time from the installed
+vcpkg dependencies and the fetched Bridge source. The camera adaptation's
+upstream license and external Qt 6.8.3 license files are downloaded from pinned
+upstream commits and checked against `tools/third-party-license-lock.json`.
+Only their URLs and SHA-256 values are tracked in this repository; downloaded
+texts stay in the ignored build directory. Packaging fails if required notices
+are missing or a downloaded notice differs from its pin. Transitive dependency
+notices are also included under `licenses/vcpkg/`. The application-authored
+NDI notices and `NDI-TERMS.txt` remain part of the source tree.
+
 ## NDI® input and Windows redistribution
 
 NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
@@ -221,13 +232,16 @@ application-local path and does not fall back to the working directory or PATH.
 ### CI acquisition and release contents
 
 Set repository Secret `NDI_SDK_URL_WINDOWS` to the official Windows SDK URL.
+The acquisition and package verification scripts are Python:
+`tools/get_ndi_sdk.py` and `tools/verify_windows_zip.py`.
 `tools/ndi-sdk-lock.json` pins the exact 6.3.2.0 installer SHA-256, runtime and
 license hashes, and innoextract 1.9 checksum. The installer version, Authenticode
 publisher, extracted headers, runtime version and hashes are verified before
 Configure. Missing Secrets and mismatched downloads fail the required ON build;
 there is no silent fallback. SDK contents are never put in public Actions caches.
 Fork pull requests run OFF only and receive no Secret. Same-repository PRs and
-trusted branch / manual runs require both ON and OFF builds and tests.
+`main` push / manual runs require both ON and OFF builds and tests. Push
+triggers do not list temporary work branches.
 
 Only the ON job uploads the official Windows ZIP. It contains
 `Processing.NDI.Lib.x64.dll`, `Processing.NDI.Lib.Licenses.txt`, and the application

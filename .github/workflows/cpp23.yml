@@ -3,7 +3,7 @@ name: C++23
 on:
   pull_request:
   push:
-    branches: [main, feat/cpp-rewrite]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -26,12 +26,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Test distribution scripts
+        run: python -m unittest discover -s tools/tests -v
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Get official pinned NDI SDK (no public cache)
         if: matrix.ndi == 'ON'
-        shell: pwsh
         env:
           NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
-        run: ./tools/get_ndi_sdk.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'ndi-sdk')
+        run: python tools/get_ndi_sdk.py
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -43,15 +53,8 @@ jobs:
           archives: qtbase
           cache: true
 
-      - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: |
-          if (-not (Test-Path C:\vcpkg\vcpkg.exe)) {
-            & C:\vcpkg\bootstrap-vcpkg.bat
-          }
+        run: C:\vcpkg\bootstrap-vcpkg.bat
 
       - name: Cache vcpkg
         uses: actions/cache@v4
@@ -76,20 +79,12 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Set up Python for TestHost runner
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
       - name: Build TestHost
         working-directory: ${{ github.workspace }}
         run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
 
       - name: Configure
-        shell: pwsh
-        run: |
-          cmake --preset ci -DDIVERGENCESPLITTER_ENABLE_NDI=${{ matrix.ndi }} "-DNDI_SDK_DIR=$env:NDI_SDK_DIR"
-          if ($LASTEXITCODE -ne 0) { throw 'CMake Configure failed' }
+        run: cmake --preset ci -DDIVERGENCESPLITTER_ENABLE_NDI=${{ matrix.ndi }} "-DNDI_SDK_DIR=${{ env.NDI_SDK_DIR }}"
 
       - name: Build
         run: cmake --build --preset ci --parallel
@@ -98,70 +93,13 @@ jobs:
         run: ctest --preset ci --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
 
       - name: TestHost integration
-        shell: pwsh
         working-directory: ${{ github.workspace }}
-        run: |
-          $testhost = Get-ChildItem '.testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin' -Recurse -Filter 'LiveSplit.Bridge.TestHost.exe' | Select-Object -First 1
-          if (-not $testhost) { throw 'TestHost executable was not found' }
-          python cpp/tools/run_testhost.py --testhost $testhost.FullName --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
-          if ($LASTEXITCODE -ne 0) { throw "TestHost integration failed: $LASTEXITCODE" }
+        run: python cpp/tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin/Release --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
       - name: Package ZIP
         run: cmake --build --preset ci --target package
 
       - name: Verify extracted ZIP
-        shell: pwsh
-        run: |
-          $zip = Get-ChildItem build/ci/*.zip | Select-Object -First 1
-          if (-not $zip) { throw 'No ZIP package was produced' }
-          $destination = Join-Path $env:RUNNER_TEMP 'divergencesplitter-zip'
-          Expand-Archive -Path $zip.FullName -DestinationPath $destination
-          foreach ($file in @('platforms\qwindows.dll', 'Qt6Core.dll', 'opencv_core4.dll', 'vc_redist.x64.exe', 'LICENSE.txt', 'licenses\qtbase.txt')) {
-            if (-not (Test-Path (Join-Path $destination $file))) {
-              throw "Extracted ZIP is missing $file"
-            }
-          }
-          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
-          Remove-Item Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
-          $env:PATH = "$destination;$env:SystemRoot\System32;$env:SystemRoot"
-          & "$destination\divergencesplitter-cli.exe" --help
-          if ($LASTEXITCODE -ne 0) { throw "CLI failed from extracted ZIP: $LASTEXITCODE" }
-          $lock = Get-Content tools/ndi-sdk-lock.json -Raw | ConvertFrom-Json
-          if ('${{ matrix.ndi }}' -eq 'ON') {
-            $pinned = @{
-              'Processing.NDI.Lib.x64.dll' = $lock.runtime_sha256
-              'Processing.NDI.Lib.Licenses.txt' = $lock.runtime_licenses_sha256
-            }
-            foreach ($entry in $pinned.GetEnumerator()) {
-              $file = Join-Path $destination $entry.Key
-              if (-not (Test-Path $file) -or (Get-FileHash $file).Hash.ToLowerInvariant() -ne $entry.Value) {
-                throw "ZIP is missing or has modified NDI redistribution file: $($entry.Key)"
-              }
-            }
-            if (-not (Test-Path "$destination\licenses\NDI-TERMS.txt")) { throw 'NDI use terms missing' }
-            Remove-Item Env:NDI_RUNTIME_DIR_V6 -ErrorAction SilentlyContinue
-            Remove-Item Env:NDI_RUNTIME_DIR_V5 -ErrorAction SilentlyContinue
-            & "$destination\divergencesplitter-cli.exe" --ndi-check
-            if ($LASTEXITCODE -ne 0) { throw 'Extracted ZIP could not initialize its local NDI runtime' }
-          } elseif (Test-Path "$destination\Processing.NDI.Lib.x64.dll") {
-            throw 'SDK-disabled developer ZIP must not contain an NDI DLL'
-          }
-          if (Test-Path "$destination\licenses\ndi-sdk") { throw 'ZIP must not contain the SDK agreement directory' }
-          $sdkContracts = Get-ChildItem $destination -Recurse -File -Filter '*.pdf' | Where-Object {
-            $_.Name -match '(?i)ndi.*(license|agreement|eula)' -or
-              (Get-FileHash $_.FullName).Hash.ToLowerInvariant() -eq $lock.agreement_sha256
-          }
-          if ($sdkContracts) { throw 'ZIP must not contain an NDI SDK contract PDF' }
-          $developmentFiles = Get-ChildItem $destination -Recurse -File | Where-Object {
-            $_.Extension -in '.h', '.hpp', '.lib' -or $_.Name -match '(?i)ndi.*(sdk|runtime).*\.exe$'
-          }
-          if ($developmentFiles) { throw 'ZIP contains SDK development files or installers' }
-          $gui = Start-Process -FilePath "$destination\DivergenceSplitter.exe" -ArgumentList '--smoke-test' -WorkingDirectory $destination -WindowStyle Hidden -PassThru
-          try {
-            if (-not $gui.WaitForExit(10000)) { throw 'Extracted ZIP GUI smoke test timed out' }
-            if ($gui.ExitCode -ne 0) { throw "Extracted ZIP GUI / NDI initialization failed: $($gui.ExitCode)" }
-          } finally {
-            if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force }
-          }
+        run: python tools/verify_windows_zip.py --ndi ${{ matrix.ndi }}
 
       - name: Upload distribution
         if: matrix.ndi == 'ON'

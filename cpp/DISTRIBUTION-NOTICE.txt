@@ -5,6 +5,10 @@ Copyright (c) Nanahuse. Distributed under the MIT License. See LICENSE.txt.
 
 This distribution bundles or links the following third-party components:
 
+The license texts below are collected from dependency build inputs or verified
+upstream sources when this ZIP is produced. Additional transitive dependency
+notices are included under licenses/vcpkg/.
+
 - Qt 6 (Widgets, Core, Gui, Test) - LGPL-3.0 / GPL-3.0 / commercial.
   The full Qt licensing text is in licenses/qtbase.txt.
 - OpenCV 4 - Apache-2.0. See licenses/opencv.txt.

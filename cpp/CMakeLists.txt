@@ -358,6 +358,26 @@ install(TARGETS divergencesplitter_cli RUNTIME DESTINATION .)
 install(FILES LICENSE DESTINATION . RENAME LICENSE.txt)
 install(FILES DISTRIBUTION-NOTICE.txt DESTINATION .)
 install(DIRECTORY licenses/ DESTINATION licenses)
+# Third-party license bodies belong to the dependencies, not this repository.
+# Collect the actual installed notices only when producing a distribution.
+find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" _license_python)
+set(_license_qt_args)
+if(DIVERGENCESPLITTER_BUILD_UI)
+    file(TO_CMAKE_PATH "${Qt6_DIR}" _license_qt_dir)
+    set(_license_qt_args "--qt-dir \"${_license_qt_dir}\" --qt-version \"${Qt6_VERSION}\"")
+endif()
+install(CODE "
+    execute_process(
+        COMMAND \"${_license_python}\" \"${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_licenses.py\"
+            --destination \"\${CMAKE_INSTALL_PREFIX}/licenses\"
+            --vcpkg-share \"${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share\"
+            --bridge-source \"${livesplit_bridge_SOURCE_DIR}\"
+            --cache \"${CMAKE_BINARY_DIR}/license-cache\"
+            ${_license_qt_args}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+")
 if(DIVERGENCESPLITTER_ENABLE_NDI)
     install(FILES "${NDI_RUNTIME_DLL}" "${NDI_RUNTIME_LICENSE}" DESTINATION .)
 endif()
