@@ -2,12 +2,15 @@
 
 import hashlib
 import io
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -59,6 +62,17 @@ class SdkTests(unittest.TestCase):
                 self.assertIn(flag, arguments)
             self.assertNotIn("--user-agent", arguments)
             self.assertNotIn("-A", arguments)
+            for option, value in (
+                ("--connect-timeout", "30"),
+                ("--max-time", "600"),
+                ("--retry", "2"),
+                ("--retry-max-time", "900"),
+            ):
+                self.assertEqual(arguments[arguments.index(option) + 1], value)
+            self.assertNotIn("--retry-all-errors", arguments)
+            self.assertNotIn("--retry-connrefused", arguments)
+            self.assertEqual(run.call_args.kwargs["timeout"], 1530)
+            self.assertGreater(run.call_args.kwargs["timeout"], 900 + 600)
             self.assertTrue(run.call_args.kwargs["capture_output"])
             self.assertFalse(run.call_args.kwargs["check"])
             self.assertEqual(output.getvalue(), "")
@@ -87,7 +101,9 @@ class SdkTests(unittest.TestCase):
         secret = "https://secret.test/token"
         for error in (
             OSError(secret),
-            subprocess.TimeoutExpired(["curl.exe", secret], 130),
+            subprocess.TimeoutExpired(
+                ["curl.exe", secret], get_ndi_sdk.DOWNLOAD_PROCESS_TIMEOUT
+            ),
         ):
             with (
                 self.subTest(error=type(error).__name__),
@@ -110,6 +126,79 @@ class SdkTests(unittest.TestCase):
             file.write_bytes(b"modified")
             with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
                 get_ndi_sdk.verify_hash(file, hashlib.sha256(b"original").hexdigest())
+
+
+@contextmanager
+def download_server(statuses):
+    requests = []
+    payload = b"complete SDK download"
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            status = statuses[min(len(requests), len(statuses) - 1)]
+            requests.append(self.headers.get("User-Agent"))
+            body = payload if status == 200 else b"temporary failure"
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield (
+                f"http://127.0.0.1:{server.server_port}/sdk?secret=hidden",
+                requests,
+                payload,
+            )
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+
+
+@unittest.skipUnless(shutil.which("curl.exe"), "Windows curl.exe required")
+class CurlRetryTests(unittest.TestCase):
+    def test_transient_http_failures_recover_with_default_user_agent(self):
+        for statuses in ([503, 503, 200], [429, 200]):
+            with (
+                self.subTest(statuses=statuses),
+                tempfile.TemporaryDirectory() as temporary,
+                download_server(statuses) as (url, requests, payload),
+            ):
+                destination = Path(temporary) / "sdk.exe"
+                get_ndi_sdk.download(url, destination)
+                self.assertEqual(destination.read_bytes(), payload)
+                self.assertEqual(len(requests), len(statuses))
+                self.assertTrue(all(agent.startswith("curl/") for agent in requests))
+
+    def test_retry_exhaustion_stops_after_three_attempts_and_removes_output(self):
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            download_server([503]) as (url, requests, _),
+        ):
+            destination = Path(temporary) / "sdk.exe"
+            with self.assertRaisesRegex(RuntimeError, "curl exit 22") as caught:
+                get_ndi_sdk.download(url, destination)
+            self.assertEqual(len(requests), 3)
+            self.assertFalse(destination.exists())
+            self.assertNotIn(url, str(caught.exception))
+
+    def test_permanent_http_errors_are_not_retried(self):
+        for status in (403, 404):
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as temporary,
+                download_server([status, 200]) as (url, requests, _),
+            ):
+                destination = Path(temporary) / "sdk.exe"
+                with self.assertRaisesRegex(RuntimeError, "curl exit 22"):
+                    get_ndi_sdk.download(url, destination)
+                self.assertEqual(len(requests), 1)
+                self.assertFalse(destination.exists())
 
 
 class LicenseTests(unittest.TestCase):

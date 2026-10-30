@@ -16,6 +16,12 @@ import zipfile
 from ctypes import wintypes
 from pathlib import Path
 
+DOWNLOAD_TRANSFER_TIMEOUT = 600
+DOWNLOAD_RETRY_WINDOW = 900
+# curl may start its final attempt just before the retry window expires.
+# Allow that transfer to finish, plus 30 seconds for process startup/cleanup.
+DOWNLOAD_PROCESS_TIMEOUT = DOWNLOAD_RETRY_WINDOW + DOWNLOAD_TRANSFER_TIMEOUT + 30
+
 
 def verify_hash(path: Path, expected: str) -> None:
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
@@ -38,7 +44,11 @@ def download(url: str, destination: Path) -> None:
                 "--connect-timeout",
                 "30",
                 "--max-time",
-                "120",
+                str(DOWNLOAD_TRANSFER_TIMEOUT),
+                "--retry",
+                "2",
+                "--retry-max-time",
+                str(DOWNLOAD_RETRY_WINDOW),
                 "--output",
                 str(destination),
                 "--",
@@ -46,7 +56,7 @@ def download(url: str, destination: Path) -> None:
             ],
             capture_output=True,
             check=False,
-            timeout=130,
+            timeout=DOWNLOAD_PROCESS_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError) as error:
         destination.unlink(missing_ok=True)
