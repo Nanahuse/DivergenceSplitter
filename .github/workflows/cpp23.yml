@@ -8,7 +8,13 @@ on:
 
 jobs:
   windows:
+    name: Windows (NDI ${{ matrix.ndi }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pull_request (never pull_request_target): fork code gets no SDK Secret.
+        ndi: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["OFF","ON"]' || '["OFF"]') }}
     permissions:
       contents: read
     defaults:
@@ -20,6 +26,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Test distribution scripts
+        run: python -m unittest discover -s tools/tests -v
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Get official pinned NDI SDK (no public cache)
+        if: matrix.ndi == 'ON'
+        env:
+          NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
+        run: python tools/get_ndi_sdk.py
+
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
@@ -30,15 +53,8 @@ jobs:
           archives: qtbase
           cache: true
 
-      - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: |
-          if (-not (Test-Path C:\vcpkg\vcpkg.exe)) {
-            & C:\vcpkg\bootstrap-vcpkg.bat
-          }
+        run: C:\vcpkg\bootstrap-vcpkg.bat
 
       - name: Cache vcpkg
         uses: actions/cache@v4
@@ -63,73 +79,40 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Set up Python for TestHost runner
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
       - name: Build TestHost
         working-directory: ${{ github.workspace }}
         run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
 
       - name: Configure
-        run: cmake --preset ci
+        run: cmake --preset ci -DDIVERGENCESPLITTER_ENABLE_NDI=${{ matrix.ndi }} "-DNDI_SDK_DIR=${{ env.NDI_SDK_DIR }}"
 
       - name: Build
         run: cmake --build --preset ci --parallel
 
       - name: Test
-        run: ctest --preset ci --output-on-failure
+        run: ctest --preset ci --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
 
       - name: TestHost integration
-        shell: pwsh
         working-directory: ${{ github.workspace }}
-        run: |
-          $testhost = Get-ChildItem '.testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin' -Recurse -Filter 'LiveSplit.Bridge.TestHost.exe' | Select-Object -First 1
-          if (-not $testhost) { throw 'TestHost executable was not found' }
-          python cpp/tools/run_testhost.py --testhost $testhost.FullName --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
-          if ($LASTEXITCODE -ne 0) { throw "TestHost integration failed: $LASTEXITCODE" }
+        run: python cpp/tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
       - name: Package ZIP
         run: cmake --build --preset ci --target package
 
       - name: Verify extracted ZIP
-        shell: pwsh
-        run: |
-          $zip = Get-ChildItem build/ci/*.zip | Select-Object -First 1
-          if (-not $zip) { throw 'No ZIP package was produced' }
-          $destination = Join-Path $env:RUNNER_TEMP 'divergencesplitter-zip'
-          Remove-Item $destination -Recurse -Force -ErrorAction SilentlyContinue
-          Expand-Archive -Path $zip.FullName -DestinationPath $destination
-          foreach ($file in @('platforms\qwindows.dll', 'Qt6Core.dll', 'opencv_core4.dll', 'vc_redist.x64.exe', 'LICENSE.txt', 'licenses\qtbase.txt')) {
-            if (-not (Test-Path (Join-Path $destination $file))) {
-              throw "Extracted ZIP is missing $file"
-            }
-          }
-          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
-          Remove-Item Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
-          $env:PATH = "$destination;$env:SystemRoot\System32;$env:SystemRoot"
-          & "$destination\divergencesplitter-cli.exe" --help
-          if ($LASTEXITCODE -ne 0) { throw "CLI failed from extracted ZIP: $LASTEXITCODE" }
-          $gui = Start-Process -FilePath "$destination\DivergenceSplitter.exe" -WorkingDirectory $destination -PassThru
-          try {
-            $windowReady = $false
-            for ($attempt = 0; $attempt -lt 20; $attempt++) {
-              Start-Sleep -Milliseconds 500
-              $gui.Refresh()
-              if ($gui.HasExited) { throw "GUI exited from extracted ZIP: $($gui.ExitCode)" }
-              if ($gui.MainWindowTitle -eq 'DivergenceSplitter') {
-                $windowReady = $true
-                break
-              }
-            }
-            if (-not $windowReady) { throw 'GUI did not create its main window from the extracted ZIP' }
-          } finally {
-            if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force }
-          }
+        run: python tools/verify_windows_zip.py --ndi ${{ matrix.ndi }}
 
       - name: Upload distribution
+        if: matrix.ndi == 'ON'
         uses: actions/upload-artifact@v7
         with:
           name: DivergenceSplitter-cpp23-windows-x64
           path: cpp/build/ci/*.zip
           if-no-files-found: error
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cpp23-tests-ndi-${{ matrix.ndi }}
+          path: cpp/build/ci/ctest-results.xml
+          if-no-files-found: warn

@@ -57,6 +57,22 @@ TEST(Profile, RoundTripsVersion2) {
     EXPECT_EQ(loaded.profile.instances[1].connection.port, 54001);
 }
 
+TEST(Profile, NdiOfflineNameAndTransformsRoundTrip) {
+    TemporaryDirectory directory;
+    Profile profile;
+    TransformConfiguration transform;
+    transform.crop = CropConfiguration{1, 2, 3, 4};
+    transform.resize = ResizeConfiguration{640, 360, ResizeInterpolation::linear, true};
+    profile.source = NdiSourceConfiguration{"PC (saved offline source)", transform};
+    profile.instances.push_back({{54000}, (directory.path() / "scenario.yaml").string()});
+    const auto file = directory.path() / "ndi.json";
+    save_profile(file, profile);
+    const auto loaded = load_profile(file).profile;
+    const auto& source = std::get<NdiSourceConfiguration>(loaded.source);
+    EXPECT_EQ(source.name, "PC (saved offline source)");
+    EXPECT_EQ(source.transform, transform);
+}
+
 TEST(Profile, MigratesVersion1Ports) {
     TemporaryDirectory directory;
     const auto scenario_path = (directory.path() / "scenario.yaml").generic_string();

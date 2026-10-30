@@ -11,6 +11,8 @@
 
 namespace divergencesplitter {
 
+class NdiRuntime;
+
 class FrameSourceError : public std::runtime_error {
 public:
     FrameSourceError(std::string message, bool retryable)
@@ -27,6 +29,8 @@ public:
     virtual ~FrameSource() = default;
 
     virtual void open() = 0;
+    // Nonempty: frame. Empty: no frame this time, keep the source open.
+    // FrameSourceError: input failure (retryable only for recoverable inputs).
     [[nodiscard]] virtual cv::Mat read(MonotonicTime& captured_at) = 0;
     virtual void close() noexcept = 0;
     [[nodiscard]] virtual std::string describe() const = 0;
@@ -85,7 +89,7 @@ struct NdiSourceOptions {
 
 class NdiFrameSource final : public FrameSource {
 public:
-    explicit NdiFrameSource(NdiSourceOptions options);
+    explicit NdiFrameSource(NdiSourceOptions options, std::shared_ptr<NdiRuntime> runtime = nullptr);
     ~NdiFrameSource() override;
 
     void open() override;

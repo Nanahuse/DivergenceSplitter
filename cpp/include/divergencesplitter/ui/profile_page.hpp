@@ -3,6 +3,7 @@
 #include <QWidget>
 
 #include <vector>
+#include <functional>
 
 #include "divergencesplitter/capture/camera_devices.hpp"
 #include "divergencesplitter/configuration/configuration.hpp"
@@ -16,6 +17,7 @@ class QPushButton;
 class QSpinBox;
 class QStackedWidget;
 class QTableWidget;
+class QThread;
 
 namespace divergencesplitter::ui {
 
@@ -25,7 +27,9 @@ class ProfilePage final : public QWidget {
     Q_OBJECT
 
 public:
-    explicit ProfilePage(AppController* controller, QWidget* parent = nullptr);
+    using NdiDiscovery = std::function<std::vector<std::string>()>;
+    explicit ProfilePage(AppController* controller, QWidget* parent = nullptr, NdiDiscovery ndi_discovery = {});
+    ~ProfilePage() override;
 
     void reload_from_controller();
     [[nodiscard]] Profile draft_profile() const;
@@ -43,6 +47,7 @@ private:
     void browse_video();
     void source_type_changed(int index);
     void update_source_stack();
+    void refresh_ndi_sources();
     void refresh_camera_devices();
     void populate_camera_devices(
         const std::optional<CameraDeviceConfiguration>& device,
@@ -77,8 +82,12 @@ private:
 
     QLineEdit* video_path_;
 
-    QLineEdit* ndi_name_;
+    QComboBox* ndi_name_;
     QLabel* ndi_notice_;
+    QPushButton* ndi_refresh_;
+    QThread* ndi_worker_{};
+    NdiDiscovery ndi_discovery_;
+    bool ndi_discovery_available_{};
 
     QCheckBox* crop_enabled_;
     QSpinBox* crop_left_;

@@ -101,7 +101,8 @@ void CapturePipeline::run() {
                         }
                     }
                     if (source_error.retryable()) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+                        std::unique_lock lock{mutex_};
+                        cv_.wait_for(lock, std::chrono::milliseconds{100}, [this] { return stop_requested_; });
                         continue;
                     }
                     throw;
@@ -111,7 +112,9 @@ void CapturePipeline::run() {
                 MonotonicTime captured_at;
                 cv::Mat image = source_->read(captured_at);
                 if (image.empty()) {
-                    throw FrameSourceError("frame source returned an empty frame", true);
+                    // A bounded read timeout is normal for live network sources.
+                    // Keep the receiver and let the SDK reconnect automatically.
+                    continue;
                 }
                 cv::Mat normalized = normalizer_.normalize(image);
                 auto now = time_provider_->now();
@@ -142,6 +145,7 @@ void CapturePipeline::run() {
                 }
             } catch (const FrameSourceError& source_error) {
                 source_open = false;
+                source_->close();
                 {
                     std::scoped_lock lock{mutex_};
                     if (stop_requested_) {
@@ -149,7 +153,8 @@ void CapturePipeline::run() {
                     }
                 }
                 if (source_error.retryable()) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+                    std::unique_lock lock{mutex_};
+                    cv_.wait_for(lock, std::chrono::milliseconds{100}, [this] { return stop_requested_; });
                     continue;
                 }
                 throw;

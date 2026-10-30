@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "divergencesplitter/configuration/configuration.hpp"
+#include "divergencesplitter/capture/ndi.hpp"
 #include "divergencesplitter/runtime/session.hpp"
 
 namespace {
@@ -21,7 +22,8 @@ void handle_signal(int) {
 void print_usage() {
     std::cerr
         << "usage: divergencesplitter --profile <profile.json> [--settings <settings.json>]\n"
-        << "                         [--seconds <n>] [--check]\n";
+        << "                         [--seconds <n>] [--check]\n"
+        << "       divergencesplitter --ndi-check | --ndi-list\n";
 }
 
 std::string describe_state(divergencesplitter::InstanceState state) {
@@ -42,6 +44,20 @@ std::string describe_state(divergencesplitter::InstanceState state) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    if (argc == 2 && (std::string{argv[1]} == "--ndi-check" || std::string{argv[1]} == "--ndi-list")) {
+        try {
+            auto runtime = divergencesplitter::acquire_ndi_runtime();
+            std::cout << "NDI runtime: " << runtime->api().version() << '\n';
+            if (std::string{argv[1]} == "--ndi-list") {
+                for (const auto& name : divergencesplitter::discover_ndi_sources(std::chrono::milliseconds{1500}, runtime))
+                    std::cout << name << '\n';
+            }
+            return 0;
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return 3;
+        }
+    }
     std::filesystem::path profile_path;
     std::filesystem::path settings_path;
     int seconds = 0;

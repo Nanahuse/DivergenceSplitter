@@ -12,6 +12,43 @@ option(DIVERGENCESPLITTER_BUILD_UI "Build the Qt Widgets desktop UI" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTS "Build the CTest suite" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS "Build the optional LiveSplit.Bridge TestHost smoke test" OFF)
 option(DIVERGENCESPLITTER_FETCH_BRIDGE "Fetch the LiveSplit Bridge C++ client" ON)
+option(DIVERGENCESPLITTER_ENABLE_NDI "Build NDI input (requires the official Windows x64 SDK)" OFF)
+set(NDI_SDK_DIR "" CACHE PATH "Extracted official NDI SDK root")
+
+if(DIVERGENCESPLITTER_ENABLE_NDI)
+    if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "NDI integration currently requires Windows x64")
+    endif()
+    foreach(_header Processing.NDI.Lib.h Processing.NDI.DynamicLoad.h)
+        if(NOT EXISTS "${NDI_SDK_DIR}/Include/${_header}")
+            message(FATAL_ERROR "NDI SDK missing Include/${_header}; set NDI_SDK_DIR")
+        endif()
+    endforeach()
+    find_file(NDI_RUNTIME_DLL Processing.NDI.Lib.x64.dll
+        PATHS "${NDI_SDK_DIR}/Bin/x64" "${NDI_SDK_DIR}/Redist/x64" NO_DEFAULT_PATH REQUIRED NO_CACHE)
+    find_file(NDI_RUNTIME_LICENSE Processing.NDI.Lib.Licenses.txt
+        PATHS "${NDI_SDK_DIR}/Bin/x64" "${NDI_SDK_DIR}/Redist/x64" "${NDI_SDK_DIR}/Licenses"
+              "${NDI_SDK_DIR}" NO_DEFAULT_PATH REQUIRED NO_CACHE)
+    set(NDI_SDK_AGREEMENT "${NDI_SDK_DIR}/NDI SDK License Agreement.pdf")
+    if(NOT EXISTS "${NDI_SDK_AGREEMENT}")
+        message(FATAL_ERROR "NDI SDK license agreement missing from NDI_SDK_DIR")
+    endif()
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/tools/ndi-sdk-lock.json" _ndi_lock)
+    foreach(_entry runtime runtime_licenses agreement)
+        if(_entry STREQUAL "runtime")
+            set(_file "${NDI_RUNTIME_DLL}")
+        elseif(_entry STREQUAL "runtime_licenses")
+            set(_file "${NDI_RUNTIME_LICENSE}")
+        else()
+            set(_file "${NDI_SDK_AGREEMENT}")
+        endif()
+        string(JSON _expected GET "${_ndi_lock}" "${_entry}_sha256")
+        file(SHA256 "${_file}" _actual)
+        if(NOT _actual STREQUAL _expected)
+            message(FATAL_ERROR "NDI SDK ${_entry} SHA-256 differs from the reviewed SDK pin")
+        endif()
+    endforeach()
+endif()
 
 set(
     DIVERGENCESPLITTER_BRIDGE_TAG
@@ -95,11 +132,20 @@ add_library(divergencesplitter_runtime STATIC
     src/capture/frame_sources.cpp
     src/capture/camera_devices.cpp
     src/capture/capture_pipeline.cpp
+    src/capture/ndi.cpp
+    src/capture/ndi_sdk.cpp
 )
 
 add_library(divergencesplitter::runtime ALIAS divergencesplitter_runtime)
 
 target_compile_features(divergencesplitter_runtime PUBLIC cxx_std_23)
+target_compile_definitions(divergencesplitter_runtime PUBLIC
+    DIVERGENCESPLITTER_ENABLE_NDI=$<BOOL:${DIVERGENCESPLITTER_ENABLE_NDI}>)
+if(DIVERGENCESPLITTER_ENABLE_NDI)
+    target_include_directories(divergencesplitter_runtime SYSTEM PRIVATE "${NDI_SDK_DIR}/Include")
+    # Dynamic-load function table only; no NDI import library is linked.
+    configure_file("${NDI_RUNTIME_DLL}" "${CMAKE_BINARY_DIR}/Processing.NDI.Lib.x64.dll" COPYONLY)
+endif()
 target_link_libraries(divergencesplitter_runtime
     PUBLIC
         divergencesplitter::core
@@ -219,6 +265,7 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
         tests/instance_runtime_tests.cpp
         tests/logging_tests.cpp
         tests/normalizer_tests.cpp
+        tests/ndi_tests.cpp
         tests/profile_tests.cpp
         tests/scenario_loader_tests.cpp
         tests/scenario_runtime_tests.cpp
@@ -232,6 +279,15 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
     )
     target_include_directories(divergencesplitter_tests PRIVATE tests)
     gtest_discover_tests(divergencesplitter_tests)
+    if(DIVERGENCESPLITTER_ENABLE_NDI)
+        add_test(NAME ndi_sdk_initialization COMMAND divergencesplitter_cli --ndi-check)
+        add_executable(divergencesplitter_ndi_loopback_tests tests/ndi_loopback_tests.cpp)
+        target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE "${NDI_SDK_DIR}/Include")
+        target_compile_definitions(divergencesplitter_ndi_loopback_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+        target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::runtime GTest::gtest_main)
+        add_test(NAME ndi_sdk_loopback COMMAND divergencesplitter_ndi_loopback_tests)
+        set_tests_properties(ndi_sdk_loopback PROPERTIES TIMEOUT 90 LABELS "ndi;integration")
+    endif()
 
     if(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS)
         add_executable(divergencesplitter_testhost_tests tests/testhost_tests.cpp)
@@ -253,6 +309,10 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
                 Qt6::Test
         )
         set_target_properties(divergencesplitter_ui_tests PROPERTIES AUTOMOC ON)
+        if(DIVERGENCESPLITTER_ENABLE_NDI)
+            target_include_directories(divergencesplitter_ui_tests SYSTEM PRIVATE "${NDI_SDK_DIR}/Include")
+            target_compile_definitions(divergencesplitter_ui_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+        endif()
         add_test(NAME divergencesplitter_ui_tests COMMAND divergencesplitter_ui_tests)
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             set(_qt_test_plugin_path "${VCPKG_INSTALLED_DIR}/x64-windows/debug/Qt6/plugins")
@@ -260,6 +320,13 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
             set(_qt_test_plugin_path "${VCPKG_INSTALLED_DIR}/x64-windows/Qt6/plugins")
         endif()
         set(_ui_test_environment "QT_QPA_PLATFORM=offscreen")
+        if(TARGET Qt6::QOffscreenIntegrationPlugin)
+            get_target_property(_offscreen_plugin Qt6::QOffscreenIntegrationPlugin IMPORTED_LOCATION_RELEASE)
+            if(_offscreen_plugin)
+                get_filename_component(_platforms "${_offscreen_plugin}" DIRECTORY)
+                get_filename_component(_qt_test_plugin_path "${_platforms}" DIRECTORY)
+            endif()
+        endif()
         if(EXISTS "${_qt_test_plugin_path}")
             string(APPEND _ui_test_environment ";QT_PLUGIN_PATH=${_qt_test_plugin_path}")
         endif()
@@ -267,6 +334,12 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
             ENVIRONMENT "${_ui_test_environment}"
             TIMEOUT 120
         )
+        if(WIN32)
+            get_target_property(_qt_core_dll Qt6::Core IMPORTED_LOCATION_RELEASE)
+            get_filename_component(_qt_test_bin "${_qt_core_dll}" DIRECTORY)
+            set_tests_properties(divergencesplitter_ui_tests PROPERTIES
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_test_bin}")
+        endif()
     endif()
 endif()
 
@@ -285,12 +358,36 @@ install(TARGETS divergencesplitter_cli RUNTIME DESTINATION .)
 install(FILES LICENSE DESTINATION . RENAME LICENSE.txt)
 install(FILES DISTRIBUTION-NOTICE.txt DESTINATION .)
 install(DIRECTORY licenses/ DESTINATION licenses)
+# Third-party license bodies belong to the dependencies, not this repository.
+# Collect the actual installed notices only when producing a distribution.
+find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" _license_python)
+set(_license_qt_args)
+if(DIVERGENCESPLITTER_BUILD_UI)
+    file(TO_CMAKE_PATH "${Qt6_DIR}" _license_qt_dir)
+    set(_license_qt_args "--qt-dir \"${_license_qt_dir}\" --qt-version \"${Qt6_VERSION}\"")
+endif()
+install(CODE "
+    execute_process(
+        COMMAND \"${_license_python}\" \"${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_licenses.py\"
+            --destination \"\${CMAKE_INSTALL_PREFIX}/licenses\"
+            --vcpkg-share \"${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share\"
+            --bridge-source \"${livesplit_bridge_SOURCE_DIR}\"
+            --cache \"${CMAKE_BINARY_DIR}/license-cache\"
+            ${_license_qt_args}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+")
+if(DIVERGENCESPLITTER_ENABLE_NDI)
+    install(FILES "${NDI_RUNTIME_DLL}" "${NDI_RUNTIME_LICENSE}" DESTINATION .)
+endif()
 
 if(WIN32)
     install(CODE "
         file(GLOB _app_dlls \"${CMAKE_BINARY_DIR}/*.dll\")
         list(FILTER _app_dlls EXCLUDE REGEX \"gtest\")
         list(FILTER _app_dlls EXCLUDE REGEX \"Qt6Test\")
+        list(FILTER _app_dlls EXCLUDE REGEX \"Processing[.]NDI[.]\")
         if(_app_dlls)
             file(COPY \${_app_dlls} DESTINATION \"\${CMAKE_INSTALL_PREFIX}\")
         endif()

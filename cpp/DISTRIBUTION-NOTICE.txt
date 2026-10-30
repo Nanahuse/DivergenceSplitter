@@ -5,6 +5,10 @@ Copyright (c) Nanahuse. Distributed under the MIT License. See LICENSE.txt.
 
 This distribution bundles or links the following third-party components:
 
+The license texts below are collected from dependency build inputs or verified
+upstream sources when this ZIP is produced. Additional transitive dependency
+notices are included under licenses/vcpkg/.
+
 - Qt 6 (Widgets, Core, Gui, Test) - LGPL-3.0 / GPL-3.0 / commercial.
   The full Qt licensing text is in licenses/qtbase.txt.
 - OpenCV 4 - Apache-2.0. See licenses/opencv.txt.
@@ -17,12 +21,17 @@ This distribution bundles or links the following third-party components:
 - windows-capture-device-list - MIT. Camera enumeration code is adapted from
   this project. See licenses/windows-capture-device-list.txt.
 
-NDI
+NDI®
 ---
-NDI input is an optional integration. The NDI SDK and runtime are not
-distributed in this archive. See licenses/NDI.md for the NDI notice. Builds
-without the NDI SDK report a configuration error instead of silently using a
-different input.
+Official NDI-enabled Windows ZIPs bundle Processing.NDI.Lib.x64.dll and
+Processing.NDI.Lib.Licenses.txt. The runtime is separately licensed by NDI,
+Inc. / Vizrt NDI AB; it is not covered by DivergenceSplitter's MIT License.
+The runtime's use terms are part of this distribution's terms of use:
+see licenses/NDI-TERMS.txt, licenses/NDI.md and the official SDK agreement at
+https://ndi.link/ndisdk_license. The SDK agreement PDF is not bundled.
+SDK-disabled development builds omit NDI binaries.
+NDI website: https://ndi.video/
+NDI® is a registered trademark of Vizrt NDI AB.
 
 Source code and build files for the LGPL-licensed Qt components are available
 from https://github.com/Nanahuse/DivergenceSplitter and from the Qt project.

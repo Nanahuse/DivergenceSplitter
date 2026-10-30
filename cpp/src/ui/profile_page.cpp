@@ -19,6 +19,8 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+#include <QThread>
+#include <QTimer>
 
 #include <algorithm>
 
@@ -26,6 +28,7 @@
 #include <variant>
 
 #include "divergencesplitter/scenario/scenario.hpp"
+#include "divergencesplitter/capture/ndi.hpp"
 #include "divergencesplitter/ui/app_controller.hpp"
 
 namespace divergencesplitter::ui {
@@ -41,8 +44,10 @@ std::string to_std(const QString& text) {
 
 }  // namespace
 
-ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
-    : QWidget(parent), controller_(controller) {
+ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscovery ndi_discovery)
+    : QWidget(parent), controller_(controller), ndi_discovery_(std::move(ndi_discovery)) {
+    ndi_discovery_available_ = ndi_enabled() || static_cast<bool>(ndi_discovery_);
+    if (!ndi_discovery_) ndi_discovery_ = [] { return discover_ndi_sources(); };
     auto* outer = new QVBoxLayout(this);
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
@@ -68,7 +73,7 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
     auto* source_group = new QGroupBox(tr("Input source"), content);
     auto* source_layout = new QVBoxLayout(source_group);
     source_type_ = new QComboBox(source_group);
-    source_type_->addItems({tr("Camera"), tr("Video file"), tr("NDI")});
+    source_type_->addItems({tr("Camera"), tr("Video file"), tr("NDI®")});
     source_layout->addWidget(source_type_);
 
     source_stack_ = new QStackedWidget(source_group);
@@ -124,16 +129,35 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent)
 
     auto* ndi_page = new QWidget(source_stack_);
     auto* ndi_layout = new QVBoxLayout(ndi_page);
-    ndi_name_ = new QLineEdit(ndi_page);
-    ndi_name_->setPlaceholderText(tr("NDI source name"));
-    ndi_notice_ = new QLabel(
-        tr("NDI input requires a build with the NDI SDK. Name matching is used instead of a "
-           "discovery index."),
-        ndi_page
-    );
+    ndi_name_ = new QComboBox(ndi_page);
+    ndi_name_->setEditable(true);
+    ndi_name_->setObjectName(QStringLiteral("ndiSourceName"));
+    ndi_name_->lineEdit()->setPlaceholderText(tr("Advertised source name (kept when offline)"));
+    ndi_refresh_ = new QPushButton(tr("Search again"), ndi_page);
+    ndi_refresh_->setObjectName(QStringLiteral("ndiRefresh"));
+    ndi_refresh_->setEnabled(ndi_discovery_available_);
+    ndi_notice_ = new QLabel(ndi_enabled() ? tr("Select a source or enter its saved name.") :
+        tr("NDI input is not available in this build."), ndi_page);
+    ndi_notice_->setObjectName(QStringLiteral("ndiDiscoveryStatus"));
     ndi_notice_->setWordWrap(true);
     ndi_layout->addWidget(ndi_name_);
+    ndi_layout->addWidget(ndi_refresh_);
     ndi_layout->addWidget(ndi_notice_);
+    auto* ndi_link = new QLabel(tr(
+        "<a href=\"https://ndi.video/\">NDI® — ndi.video</a><br>"
+        "NDI® is a registered trademark of Vizrt NDI AB.<br>"
+        "The bundled NDI runtime is separately licensed. "
+        "See licenses/NDI-TERMS.txt in the distribution for its use terms."), ndi_page);
+    ndi_link->setOpenExternalLinks(true);
+    ndi_link->setWordWrap(true);
+    ndi_layout->addWidget(ndi_link);
+    connect(ndi_refresh_, &QPushButton::clicked, this, &ProfilePage::refresh_ndi_sources);
+    auto* ndi_timer = new QTimer(this);
+    ndi_timer->setInterval(5000);
+    connect(ndi_timer, &QTimer::timeout, this, [this] {
+        if (isVisible() && source_type_->currentIndex() == 2) refresh_ndi_sources();
+    });
+    ndi_timer->start();
     source_stack_->addWidget(ndi_page);
 
     source_layout->addWidget(source_stack_);
@@ -271,7 +295,7 @@ void ProfilePage::load_profile(const Profile& profile) {
                 video_path_->setText(path_text(source.path));
             } else {
                 source_type_->setCurrentIndex(2);
-                ndi_name_->setText(path_text(source.name));
+                ndi_name_->setEditText(path_text(source.name));
             }
             const auto& transform = source.transform;
             crop_enabled_->setChecked(transform.crop.has_value());
@@ -354,7 +378,7 @@ Profile ProfilePage::draft_profile() const {
             };
             break;
         default:
-            result.source = NdiSourceConfiguration{to_std(ndi_name_->text()), transform};
+            result.source = NdiSourceConfiguration{to_std(ndi_name_->currentText()), transform};
             break;
     }
 
@@ -396,8 +420,14 @@ void ProfilePage::apply() {
         }
     }
     if (std::holds_alternative<NdiSourceConfiguration>(profile.source)) {
-        fail(tr("NDI input is not available in this build. Use camera or video input."));
-        return;
+        if (!ndi_enabled()) {
+            fail(tr("NDI input is not available in this build."));
+            return;
+        }
+        if (std::get<NdiSourceConfiguration>(profile.source).name.empty()) {
+            fail(tr("An NDI source name is required."));
+            return;
+        }
     }
     if (std::holds_alternative<VideoSourceConfiguration>(profile.source)) {
         const auto& video = std::get<VideoSourceConfiguration>(profile.source);
@@ -495,10 +525,55 @@ void ProfilePage::browse_video() {
 
 void ProfilePage::source_type_changed(int) {
     update_source_stack();
+    if (source_type_->currentIndex() == 2) refresh_ndi_sources();
 }
 
 void ProfilePage::update_source_stack() {
     source_stack_->setCurrentIndex(source_type_->currentIndex());
+}
+
+ProfilePage::~ProfilePage() {
+    // The worker performs bounded discovery and never accesses widgets. Waiting
+    // here makes queued delivery safe even if the profile page is closed early.
+    if (ndi_worker_) {
+        ndi_worker_->wait();
+        delete ndi_worker_;
+    }
+}
+
+void ProfilePage::refresh_ndi_sources() {
+    if (!ndi_discovery_available_ || (ndi_worker_ && ndi_worker_->isRunning())) return;
+    if (ndi_worker_) {
+        ndi_worker_->wait();
+        delete ndi_worker_;
+    }
+    ndi_refresh_->setEnabled(false);
+    ndi_notice_->setText(tr("Searching for NDI sources…"));
+    ndi_worker_ = QThread::create([this] {
+        QStringList names;
+        QString error;
+        try {
+            for (const auto& name : ndi_discovery_()) names.append(QString::fromStdString(name));
+        } catch (const std::exception& failure) {
+            error = QString::fromUtf8(failure.what());
+        }
+        QMetaObject::invokeMethod(this, [this, names, error] {
+            // Read the current draft now, so typing / loading a different profile
+            // during discovery cannot be overwritten by an old saved value.
+            const auto selected = ndi_name_->currentText();
+            const QSignalBlocker blocker{ndi_name_};
+            ndi_name_->clear();
+            ndi_name_->addItems(names);
+            ndi_name_->setEditText(selected);
+            ndi_refresh_->setEnabled(true);
+            if (!error.isEmpty()) ndi_notice_->setText(tr("NDI discovery failed: %1").arg(error));
+            else if (names.isEmpty()) ndi_notice_->setText(tr("No NDI sources found. The saved name is retained."));
+            else if (!selected.isEmpty() && !names.contains(selected))
+                ndi_notice_->setText(tr("Saved source is currently offline: %1").arg(selected));
+            else ndi_notice_->setText(tr("%1 NDI source(s) found.").arg(names.size()));
+        }, Qt::QueuedConnection);
+    });
+    ndi_worker_->start();
 }
 
 void ProfilePage::refresh_camera_devices() {

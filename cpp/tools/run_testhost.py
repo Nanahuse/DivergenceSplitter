@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 
 def _read_output(process: subprocess.Popen[str], output: queue.Queue[str]) -> None:
@@ -29,6 +30,17 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
 
+    # CI can pass the build output directory without depending on the target
+    # framework's version-specific path.
+    if Path(args.testhost).is_dir():
+        candidates = sorted(Path(args.testhost).rglob("LiveSplit.Bridge.TestHost.exe"))
+        if len(candidates) != 1:
+            print(
+                "Expected exactly one TestHost executable in the build directory",
+                file=sys.stderr,
+            )
+            return 2
+        args.testhost = str(candidates[0].resolve())
     if not os.path.isfile(args.testhost):
         print(f"TestHost not found: {args.testhost}", file=sys.stderr)
         return 2
