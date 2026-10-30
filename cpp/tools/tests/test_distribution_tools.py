@@ -30,6 +30,10 @@ class SdkTests(unittest.TestCase):
             get_ndi_sdk.official_url(" https://downloads.ndi.tv/sdk "),
             "https://downloads.ndi.tv/sdk",
         )
+        self.assertEqual(
+            get_ndi_sdk.official_url("https://downloads.ndi.tv/SDK/NDI 6 SDK.exe"),
+            "https://downloads.ndi.tv/SDK/NDI%206%20SDK.exe",
+        )
 
     def test_request_error_does_not_expose_secret(self):
         with patch(

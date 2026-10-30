@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -26,13 +27,23 @@ def verify_hash(path: Path, expected: str) -> None:
 def download(url: str, destination: Path) -> None:
     # Request errors may contain credentials, query strings or redirect URLs.
     try:
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "DivergenceSplitter-CI/1.0"}
+        )
         with (
-            urllib.request.urlopen(url, timeout=120) as response,
+            urllib.request.urlopen(request, timeout=120) as response,
             destination.open("wb") as output,
         ):
             shutil.copyfileobj(response, output)
-    except Exception:  # noqa: BLE001 - request errors can embed the Secret URL.
-        raise RuntimeError("Download failed (URL and response suppressed)") from None
+    except Exception as error:  # noqa: BLE001 - errors can embed the Secret URL.
+        detail = type(error).__name__
+        if isinstance(error, urllib.error.HTTPError):
+            detail += f", HTTP {error.code}"
+        elif isinstance(error, urllib.error.URLError):
+            detail += f", {type(error.reason).__name__}"
+        raise RuntimeError(
+            f"Download failed ({detail}; URL and response suppressed)"
+        ) from None
 
 
 def official_url(value: str) -> str:
@@ -43,11 +54,16 @@ def official_url(value: str) -> str:
         valid = False
     if not valid:
         raise RuntimeError("NDI SDK URL must use the official HTTPS distribution host")
-    return value.strip()
+    # .NET Uri previously escaped spaces; urllib requires an encoded path.
+    path = urllib.parse.quote(url.path, safe="/%:@!$&'()*+,;=-._~")
+    query = urllib.parse.quote(url.query, safe="%=&/:?@!$'()*+,;~-._")
+    return urllib.parse.urlunsplit(url._replace(path=path, query=query))
 
 
 def product_version(path: Path) -> str:
     """Read ProductVersion from Windows version resources, as the SDK pin does."""
+    if sys.platform != "win32":
+        raise RuntimeError("Windows version resources require Windows")
     version = ctypes.WinDLL("version", use_last_error=True)
     version.GetFileVersionInfoSizeW.argtypes = [
         wintypes.LPCWSTR,
