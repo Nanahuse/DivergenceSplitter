@@ -19,6 +19,13 @@ public:
     void apply_update(const LiveSplitUpdate& update);
     [[nodiscard]] std::optional<Action> evaluate(FrameContext context);
     void action_not_dispatched(const Action& action);
+    // A decision has no confirmation deadline until its RPC succeeds.
+    void action_accepted(const Action& action, MonotonicTime accepted_at);
+    [[nodiscard]] std::optional<Action> request_reset();
+    [[nodiscard]] bool action_pending(const Action& action) const;
+    [[nodiscard]] std::optional<MonotonicTime> state_wait_deadline() const;
+    // The instance queries authoritative state before expiring a wait.
+    void state_wait_timed_out(MonotonicTime now);
 
     [[nodiscard]] std::optional<LiveSplitSnapshot> current_snapshot() const;
     [[nodiscard]] ScenarioDiagnosticsSnapshot diagnostics() const;
@@ -29,14 +36,15 @@ private:
         FrameContext& context,
         const LiveSplitSnapshot& snapshot
     );
-    void start_action(const Action& action, const FrameContext& context);
+    void start_action(const Action& action);
     void clear_pending_action();
+    void clear_reset_pending();
+    void clear_all_pending();
     void reset_pending_action(const LiveSplitSnapshot& snapshot);
     void apply_transition_resets(
         const LiveSplitSnapshot& current,
         const LiveSplitSnapshot& snapshot
     );
-    void apply_resync(const LiveSplitSnapshot& snapshot, const LiveSplitSnapshot& current);
     void establish_baseline(const LiveSplitSnapshot& snapshot);
     [[nodiscard]] bool validate_split_count(const LiveSplitSnapshot& snapshot);
     void reset_all_rules();
@@ -55,7 +63,9 @@ private:
     std::optional<LiveSplitSnapshot> snapshot_;
     bool configuration_valid_{true};
     std::optional<Action> pending_action_;
-    std::optional<MonotonicTime> action_started_at_;
+    std::optional<MonotonicTime> state_wait_started_at_;
+    std::optional<Action> reset_pending_;
+    std::optional<MonotonicTime> reset_state_wait_started_at_;
     std::uint64_t evaluation_count_{};
     double last_evaluation_ms_{};
     std::uint64_t rule_errors_{};

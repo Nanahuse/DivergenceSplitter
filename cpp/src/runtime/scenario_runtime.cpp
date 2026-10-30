@@ -131,14 +131,6 @@ void ScenarioRuntime::apply_update(const LiveSplitUpdate& update) {
         return;
     }
 
-    if (update.kind == UpdateKind::resync) {
-        if (snapshot.state_revision < current.state_revision) {
-            return;
-        }
-        apply_resync(snapshot, current);
-        return;
-    }
-
     if (update.kind == UpdateKind::initial) {
         return;
     }
@@ -156,9 +148,24 @@ void ScenarioRuntime::apply_update(const LiveSplitUpdate& update) {
 
     snapshot_ = snapshot;
     configuration_valid_ = validate_split_count(snapshot);
-    if (update.kind == UpdateKind::transition || run_changed) {
+    if (run_changed) {
+        reset_all_rules();
+        clear_all_pending();
+    } else if (snapshot.phase != current.phase || snapshot.split_index != current.split_index) {
         apply_transition_resets(current, snapshot);
-        clear_pending_action();
+        // Pause/Resume cannot confirm Split/Skip, and a late Split cannot
+        // confirm Reset. Revision-only updates confirm neither operation.
+        if (snapshot.phase == TimerPhase::not_running) {
+            clear_all_pending();
+        } else if (snapshot.split_index != current.split_index ||
+                   current.phase == TimerPhase::not_running ||
+                   current.phase == TimerPhase::ended || snapshot.phase == TimerPhase::ended) {
+            clear_pending_action();
+        } else if (pending_action_.has_value() &&
+                   (pending_action_->operation == ActionOperation::pause ||
+                    pending_action_->operation == ActionOperation::resume)) {
+            clear_pending_action();
+        }
     }
 }
 
@@ -178,29 +185,25 @@ std::optional<Action> ScenarioRuntime::evaluate(FrameContext context) {
     }
     const auto snapshot = *snapshot_;
 
+    if (reset_pending_.has_value()) {
+        finish();
+        return std::nullopt;
+    }
+
     if (pending_action_.has_value() &&
-        (pending_action_->operation == ActionOperation::split ||
+        (snapshot.phase == TimerPhase::running || snapshot.phase == TimerPhase::paused) &&
+        (!state_wait_started_at_.has_value() ||
+         pending_action_->operation == ActionOperation::split ||
          pending_action_->operation == ActionOperation::skip)) {
         auto reset_action = evaluate_rules(reset_rules_, context, snapshot);
         if (reset_action.has_value()) {
-            start_action(*reset_action, context);
+            start_action(*reset_action);
             finish();
             return reset_action;
         }
     }
 
     if (pending_action_.has_value()) {
-        if (!action_started_at_.has_value()) {
-            finish();
-            return std::nullopt;
-        }
-        const auto elapsed = context.now() - *action_started_at_;
-        if (elapsed < std::chrono::duration_cast<std::chrono::nanoseconds>(kSplitTransitionTimeout)) {
-            finish();
-            return std::nullopt;
-        }
-        reset_pending_action(snapshot);
-        clear_pending_action();
         finish();
         return std::nullopt;
     }
@@ -213,7 +216,7 @@ std::optional<Action> ScenarioRuntime::evaluate(FrameContext context) {
     } else if (snapshot.phase == TimerPhase::running || snapshot.phase == TimerPhase::paused) {
         auto reset_action = evaluate_rules(reset_rules_, context, snapshot);
         if (reset_action.has_value()) {
-            start_action(*reset_action, context);
+            start_action(*reset_action);
             finish();
             return reset_action;
         }
@@ -231,7 +234,7 @@ std::optional<Action> ScenarioRuntime::evaluate(FrameContext context) {
     }
 
     if (action.has_value()) {
-        start_action(*action, context);
+        start_action(*action);
     }
     finish();
     return action;
@@ -239,14 +242,75 @@ std::optional<Action> ScenarioRuntime::evaluate(FrameContext context) {
 
 void ScenarioRuntime::action_not_dispatched(const Action& action) {
     std::scoped_lock lock{mutex_};
-    if (!pending_action_.has_value()) {
+    if (action.operation == ActionOperation::reset) {
+        if (reset_pending_ == action) {
+            reset_rule_group(reset_rules_);
+            clear_reset_pending();
+        }
+        return;
+    }
+    if (pending_action_ != action) {
         return;
     }
     if (snapshot_.has_value()) {
         reset_pending_action(*snapshot_);
     }
     clear_pending_action();
-    (void)action;
+}
+
+void ScenarioRuntime::action_accepted(const Action& action, MonotonicTime accepted_at) {
+    std::scoped_lock lock{mutex_};
+    if (action.operation == ActionOperation::reset) {
+        if (reset_pending_ == action) {
+            reset_state_wait_started_at_ = accepted_at;
+            clear_pending_action();
+        }
+    } else if (pending_action_ == action) {
+        state_wait_started_at_ = accepted_at;
+    }
+}
+
+std::optional<Action> ScenarioRuntime::request_reset() {
+    std::scoped_lock lock{mutex_};
+    if (!snapshot_.has_value() || reset_pending_.has_value() ||
+        (snapshot_->phase != TimerPhase::running && snapshot_->phase != TimerPhase::paused &&
+         snapshot_->phase != TimerPhase::ended)) {
+        return std::nullopt;
+    }
+    const Action action{ActionOperation::reset};
+    start_action(action);
+    return action;
+}
+
+bool ScenarioRuntime::action_pending(const Action& action) const {
+    std::scoped_lock lock{mutex_};
+    return action.operation == ActionOperation::reset
+        ? reset_pending_ == action : pending_action_ == action;
+}
+
+std::optional<MonotonicTime> ScenarioRuntime::state_wait_deadline() const {
+    std::scoped_lock lock{mutex_};
+    auto started = state_wait_started_at_;
+    if (reset_state_wait_started_at_.has_value() &&
+        (!started.has_value() || *reset_state_wait_started_at_ < *started)) {
+        started = reset_state_wait_started_at_;
+    }
+    return started.has_value() ? std::optional{*started + kSplitTransitionTimeout} : std::nullopt;
+}
+
+void ScenarioRuntime::state_wait_timed_out(MonotonicTime now) {
+    std::scoped_lock lock{mutex_};
+    if (state_wait_started_at_.has_value() && now >= *state_wait_started_at_ + kSplitTransitionTimeout) {
+        if (snapshot_.has_value()) {
+            reset_pending_action(*snapshot_);
+        }
+        clear_pending_action();
+    }
+    if (reset_state_wait_started_at_.has_value() &&
+        now >= *reset_state_wait_started_at_ + kSplitTransitionTimeout) {
+        reset_rule_group(reset_rules_);
+        clear_reset_pending();
+    }
 }
 
 std::optional<LiveSplitSnapshot> ScenarioRuntime::current_snapshot() const {
@@ -261,6 +325,9 @@ ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics() const {
     result.configuration_valid = configuration_valid_;
     if (pending_action_.has_value()) {
         result.pending_action = pending_action_->operation;
+    }
+    if (reset_pending_.has_value()) {
+        result.reset_pending = reset_pending_->operation;
     }
     result.start.push_back(RuleGroupDiagnostics{"start", make_rule_nodes(start_rules_, "start")});
     result.reset.push_back(RuleGroupDiagnostics{"reset", make_rule_nodes(reset_rules_, "reset")});
@@ -306,14 +373,37 @@ std::optional<Action> ScenarioRuntime::evaluate_rules(
     return std::nullopt;
 }
 
-void ScenarioRuntime::start_action(const Action& action, const FrameContext& context) {
+void ScenarioRuntime::start_action(const Action& action) {
+    if (action.operation == ActionOperation::reset) {
+        // Cancel an unsent normal action, but retain a sent action's wait until
+        // Reset succeeds. Rejecting Reset must not release a pending Split.
+        if (pending_action_.has_value() && !state_wait_started_at_.has_value()) {
+            if (snapshot_.has_value()) {
+                reset_pending_action(*snapshot_);
+            }
+            clear_pending_action();
+        }
+        reset_pending_ = action;
+        reset_state_wait_started_at_.reset();
+        return;
+    }
     pending_action_ = action;
-    action_started_at_ = context.now();
+    state_wait_started_at_.reset();
 }
 
 void ScenarioRuntime::clear_pending_action() {
     pending_action_.reset();
-    action_started_at_.reset();
+    state_wait_started_at_.reset();
+}
+
+void ScenarioRuntime::clear_reset_pending() {
+    reset_pending_.reset();
+    reset_state_wait_started_at_.reset();
+}
+
+void ScenarioRuntime::clear_all_pending() {
+    clear_pending_action();
+    clear_reset_pending();
 }
 
 void ScenarioRuntime::reset_pending_action(const LiveSplitSnapshot& snapshot) {
@@ -364,29 +454,10 @@ void ScenarioRuntime::apply_transition_resets(
     }
 }
 
-void ScenarioRuntime::apply_resync(
-    const LiveSplitSnapshot& snapshot,
-    const LiveSplitSnapshot& current
-) {
-    if (snapshot.state_revision < current.state_revision) {
-        return;
-    }
-    const bool revision_advanced = snapshot.state_revision > current.state_revision;
-    const bool run_changed =
-        snapshot.run_revision != current.run_revision ||
-        snapshot.split_count != current.split_count;
-    snapshot_ = snapshot;
-    configuration_valid_ = validate_split_count(snapshot);
-    clear_pending_action();
-    if (revision_advanced || run_changed) {
-        reset_all_rules();
-    }
-}
-
 void ScenarioRuntime::establish_baseline(const LiveSplitSnapshot& snapshot) {
     snapshot_ = snapshot;
     configuration_valid_ = validate_split_count(snapshot);
-    clear_pending_action();
+    clear_all_pending();
     reset_all_rules();
 }
 

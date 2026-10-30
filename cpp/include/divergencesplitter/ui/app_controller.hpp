@@ -29,6 +29,11 @@ public:
     void request_reset_all();
     [[nodiscard]] QString last_error() const;
 
+signals:
+    // Direct delivery releases independent previews before Session opens input.
+    void sessionStarting();
+    void sessionChanged();
+
 private:
     [[nodiscard]] QString load_initial_profile();
 

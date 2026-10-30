@@ -49,6 +49,7 @@ struct ScenarioDiagnosticsSnapshot {
     std::optional<LiveSplitSnapshot> snapshot;
     bool configuration_valid{true};
     std::optional<ActionOperation> pending_action;
+    std::optional<ActionOperation> reset_pending;
     std::vector<RuleGroupDiagnostics> start;
     std::vector<RuleGroupDiagnostics> reset;
     std::vector<RuleGroupDiagnostics> incomplete;

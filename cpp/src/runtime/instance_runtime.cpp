@@ -67,6 +67,12 @@ bool transient_bridge_error(BridgeErrorKind kind) {
            kind == BridgeErrorKind::control_result_unknown;
 }
 
+bool same_control_state(const LiveSplitSnapshot& left, const LiveSplitSnapshot& right) {
+    return left.session_id == right.session_id && left.run_revision == right.run_revision &&
+           left.phase == right.phase && left.split_index == right.split_index &&
+           left.split_count == right.split_count;
+}
+
 }  // namespace
 
 InstanceRuntime::InstanceRuntime(
@@ -157,7 +163,7 @@ std::shared_ptr<SharedFrameEvaluation> InstanceRuntime::take_frame() {
 bool InstanceRuntime::wait_for_frame(std::chrono::milliseconds timeout) {
     std::unique_lock lock{frame_mutex_};
     frame_cv_.wait_for(lock, timeout, [this]() {
-        return pending_frame_ != nullptr || stop_requested_;
+        return pending_frame_ != nullptr || manual_reset_requested_ || stop_requested_;
     });
     return pending_frame_ != nullptr;
 }
@@ -252,15 +258,15 @@ void InstanceRuntime::run() {
                     ++generation_;
                 }
                 last_dropped_count_ = client_->dropped_event_count();
-                pending_event_.reset();
+                scheduled_action_.reset();
                 {
                     std::scoped_lock lock{frame_mutex_};
                     manual_reset_requested_ = false;
                 }
                 if (options_.logger) {
-        options_.logger->log(LogLevel::info, "instance.ready", "instance[" + std::to_string(index_) + "]");
-    }
-    set_state(InstanceState::ready);
+                    options_.logger->log(LogLevel::info, "instance.ready", "instance[" + std::to_string(index_) + "]");
+                }
+                set_state(InstanceState::ready);
                 run_connected();
             } catch (const BridgeError& error) {
                 set_runtime(nullptr);
@@ -293,6 +299,7 @@ void InstanceRuntime::run() {
         set_state(InstanceState::failed, error.what());
     }
 
+    scheduled_action_.reset();
     set_runtime(nullptr);
     adapter_.reset();
     {
@@ -312,19 +319,25 @@ void InstanceRuntime::run_connected() {
     }
 
     while (!stop_requested() && client_->is_ready()) {
-        if (pending_event_.has_value()) {
-            const auto event = *pending_event_;
-            pending_event_.reset();
-            if (auto update = adapter_->apply_event(event); update.has_value()) {
-                apply_update(*update);
+        // Process queued state before controls; unrelated events leave the
+        // reaction wait intact. Bound each batch so Stop/Reset stay responsive.
+        bool events_drained = false;
+        for (int count = 0; count < 64 && !stop_requested(); ++count) {
+            const auto event = client_->next_event(std::chrono::milliseconds{0});
+            if (!event.has_value()) {
+                events_drained = true;
+                break;
             }
-        }
-
-        const auto event = client_->next_event(std::chrono::milliseconds{0});
-        if (event.has_value()) {
             if (auto update = adapter_->apply_event(*event); update.has_value()) {
                 apply_update(*update);
             }
+        }
+        if (!events_drained) {
+            if (take_manual_reset_request()) {
+                handle_manual_reset();
+            }
+            // Do not Query or send a normal control ahead of queued Events.
+            continue;
         }
 
         const auto dropped = client_->dropped_event_count();
@@ -334,37 +347,58 @@ void InstanceRuntime::run_connected() {
             apply_update(update);
         }
 
-        bool manual_reset = false;
-        {
-            std::scoped_lock lock{frame_mutex_};
-            manual_reset = manual_reset_requested_;
-            manual_reset_requested_ = false;
+        const auto deadline = scenario_runtime->state_wait_deadline();
+        if (deadline.has_value() && monotonic_now() >= *deadline) {
+            // Query only on an expired confirmation wait, including when no
+            // frames arrive. A missing event must not cause a duplicate control.
+            apply_update(adapter_->synchronize(BridgeEventKind::other));
+            scenario_runtime->state_wait_timed_out(monotonic_now());
         }
-        if (manual_reset) {
+
+        if (scheduled_action_.has_value()) {
+            const auto current = scenario_runtime->current_snapshot();
+            if (!scenario_runtime->action_pending(scheduled_action_->action) ||
+                !current.has_value() || !same_control_state(*current, scheduled_action_->expected)) {
+                cancel_scheduled_action("cancelled (state changed)");
+            }
+        }
+
+        if (take_manual_reset_request()) {
             handle_manual_reset();
         }
 
-        if (stop_requested()) {
-            return;
-        }
-        if (!wait_for_frame(options_.idle_wait)) {
-            continue;
+        if (stop_requested() || !client_->is_ready()) {
+            break;
         }
         auto shared = take_frame();
-        if (!shared) {
-            continue;
+        if (shared) {
+            FrameContext context{std::move(shared)};
+            auto action = scenario_runtime->evaluate(context);
+            if (action.has_value()) {
+                if (scheduled_action_.has_value()) {
+                    cancel_scheduled_action("cancelled (reset priority)");
+                }
+                scheduled_action_ = ScheduledAction{
+                    *action, *scenario_runtime->current_snapshot(),
+                    context.frame().captured_at + options_.reaction_time,
+                };
+                // Revisit Events and manual Reset before sending a newly
+                // decided action, even when evaluation used the entire delay.
+                continue;
+            }
         }
-        auto current_runtime = runtime();
-        if (!current_runtime) {
-            continue;
+        if (take_manual_reset_request()) {
+            handle_manual_reset();
         }
-        FrameContext context{std::move(shared)};
-        auto action = current_runtime->evaluate(context);
-        if (action.has_value()) {
-            dispatch_action(*action, context);
+        if (scheduled_action_.has_value() && monotonic_now() >= scheduled_action_->due) {
+            const auto action = scheduled_action_->action;
+            scheduled_action_.reset();
+            dispatch_action(action);
         }
+        (void)wait_for_frame(options_.idle_wait);
     }
 
+    cancel_scheduled_action("cancelled (stop or disconnect)");
     if (!stop_requested() && !client_->is_ready()) {
         set_runtime(nullptr);
         adapter_.reset();
@@ -385,47 +419,36 @@ void InstanceRuntime::apply_update(const LiveSplitUpdate& update) {
     }
 }
 
-void InstanceRuntime::dispatch_action(const Action& action, const FrameContext& context) {
+void InstanceRuntime::cancel_scheduled_action(std::string reason) {
+    if (!scheduled_action_.has_value()) {
+        return;
+    }
+    const auto action = scheduled_action_->action;
+    scheduled_action_.reset();
+    if (auto current_runtime = runtime()) {
+        current_runtime->action_not_dispatched(action);
+    }
+    record_action(action, std::move(reason));
+}
+
+void InstanceRuntime::dispatch_action(const Action& action) {
     auto current_runtime = runtime();
     if (!current_runtime) {
         return;
     }
     const auto expected = current_runtime->current_snapshot();
-    if (!expected.has_value()) {
+    if (!expected.has_value() || !current_runtime->action_pending(action)) {
         return;
     }
 
-    if (options_.reaction_time.count() > 0) {
-        const auto due = context.frame().captured_at + options_.reaction_time;
-        while (true) {
-            if (stop_requested()) {
-                current_runtime->action_not_dispatched(action);
-                record_action(action, "cancelled (stop)");
-                return;
-            }
-            if (monotonic_now() >= due) {
-                break;
-            }
-            if (auto pending = client_->next_event(std::chrono::milliseconds{0});
-                pending.has_value()) {
-                pending_event_ = *pending;
-                current_runtime->action_not_dispatched(action);
-                record_action(action, "cancelled (event)");
-                return;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds{1});
-        }
-    }
-
-    const auto current = current_runtime->current_snapshot();
-    if (!current.has_value() || !(*current == *expected)) {
+    if (stop_requested() || !client_->is_ready()) {
         current_runtime->action_not_dispatched(action);
-        record_action(action, "not dispatched (state changed)");
+        record_action(action, "cancelled (stop or disconnect)");
         return;
     }
     if (unknown_guard_.has_value()) {
         if (unknown_guard_->operation != action.operation ||
-            unknown_guard_->snapshot != *current) {
+            !same_control_state(unknown_guard_->snapshot, *expected)) {
             unknown_guard_.reset();
         } else {
             current_runtime->action_not_dispatched(action);
@@ -437,9 +460,8 @@ void InstanceRuntime::dispatch_action(const Action& action, const FrameContext& 
     const auto result = client_->execute(action.operation);
     switch (result.status) {
         case BridgeControlStatus::ok: {
+            current_runtime->action_accepted(action, monotonic_now());
             record_action(action, "ok");
-            auto update = adapter_->synchronize_after_control();
-            apply_update(update);
             return;
         }
         case BridgeControlStatus::unknown:
@@ -468,37 +490,18 @@ void InstanceRuntime::handle_manual_reset() {
     if (!current_runtime) {
         return;
     }
-    const auto expected = current_runtime->current_snapshot();
-    if (!expected.has_value()) {
-        return;
+    // An explicit Reset also cancels an automatic Reset's reaction wait.
+    cancel_scheduled_action("cancelled (manual reset)");
+    if (auto action = current_runtime->request_reset()) {
+        dispatch_action(*action);
     }
-    if (expected->phase != TimerPhase::running &&
-        expected->phase != TimerPhase::paused &&
-        expected->phase != TimerPhase::ended) {
-        return;
-    }
-    const auto result = client_->execute(ActionOperation::reset);
-    if (result.status == BridgeControlStatus::ok) {
-        record_action(Action{ActionOperation::reset}, "ok (manual)");
-        auto update = adapter_->synchronize_after_control();
-        apply_update(update);
-        return;
-    }
-    if (result.status == BridgeControlStatus::unknown) {
-        record_action(Action{ActionOperation::reset}, "unknown (manual)");
-        throw BridgeError(
-            BridgeErrorKind::control_result_unknown,
-            result.message.empty() ? "manual reset result unknown" : result.message
-        );
-    }
-    if (result.status == BridgeControlStatus::connection_lost) {
-        record_action(Action{ActionOperation::reset}, "connection lost (manual)");
-        throw BridgeError(
-            BridgeErrorKind::connection_lost,
-            result.message.empty() ? "connection lost" : result.message
-        );
-    }
-    record_action(Action{ActionOperation::reset}, result.message.empty() ? "error (manual)" : result.message);
+}
+
+bool InstanceRuntime::take_manual_reset_request() {
+    std::scoped_lock lock{frame_mutex_};
+    const bool requested = manual_reset_requested_;
+    manual_reset_requested_ = false;
+    return requested;
 }
 
 void InstanceRuntime::record_action(const Action& action, std::string result) {

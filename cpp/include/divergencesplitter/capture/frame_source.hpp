@@ -34,6 +34,9 @@ public:
     [[nodiscard]] virtual cv::Mat read(MonotonicTime& captured_at) = 0;
     virtual void close() noexcept = 0;
     [[nodiscard]] virtual std::string describe() const = 0;
+    // Reported by the opened backend, before Crop/Resize. Zero means unknown.
+    struct Format { int width{}; int height{}; double fps{}; };
+    [[nodiscard]] virtual Format opened_format() const { return {}; }
 };
 
 struct CameraSourceOptions {
@@ -56,6 +59,7 @@ public:
     [[nodiscard]] cv::Mat read(MonotonicTime& captured_at) override;
     void close() noexcept override;
     [[nodiscard]] std::string describe() const override;
+    [[nodiscard]] Format opened_format() const override;
 
 private:
     CameraSourceOptions options_;

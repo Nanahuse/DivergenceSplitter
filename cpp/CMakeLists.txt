@@ -130,6 +130,7 @@ add_library(divergencesplitter_runtime STATIC
     src/runtime/configuration.cpp
     src/runtime/logging.cpp
     src/capture/frame_sources.cpp
+    src/capture/configured_source.cpp
     src/capture/camera_devices.cpp
     src/capture/capture_pipeline.cpp
     src/capture/ndi.cpp
@@ -194,6 +195,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         src/ui/monitor_page.cpp
         src/ui/diagnostics_page.cpp
         src/ui/profile_page.cpp
+        src/ui/profile_preview.cpp
         src/ui/settings_page.cpp
         src/ui/about_page.cpp
         src/ui/reset_all_button.cpp
@@ -267,6 +269,7 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
         tests/normalizer_tests.cpp
         tests/ndi_tests.cpp
         tests/profile_tests.cpp
+        tests/recorded_pipeline_tests.cpp
         tests/scenario_loader_tests.cpp
         tests/scenario_runtime_tests.cpp
         tests/test_support.cpp

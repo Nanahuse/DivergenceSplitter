@@ -160,6 +160,15 @@ std::string CameraFrameSource::describe() const {
     return "camera #" + std::to_string(options_.device_index);
 }
 
+FrameSource::Format CameraFrameSource::opened_format() const {
+    if (!impl_->opened) return {};
+    return {
+        static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_WIDTH)),
+        static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_HEIGHT)),
+        impl_->capture.get(cv::CAP_PROP_FPS),
+    };
+}
+
 struct VideoFileFrameSource::Impl {
     cv::VideoCapture capture;
     bool opened{false};
@@ -200,7 +209,10 @@ cv::Mat VideoFileFrameSource::read(MonotonicTime& captured_at) {
         );
     const auto now = std::chrono::steady_clock::now();
     if (target > now) {
-        std::this_thread::sleep_for(target - now);
+        // Keep low-FPS recordings interruptible by CapturePipeline/preview Stop.
+        std::this_thread::sleep_for(std::min(target - now,
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::milliseconds{50})));
+        if (std::chrono::steady_clock::now() < target) return {};
     }
 
     cv::Mat image;
