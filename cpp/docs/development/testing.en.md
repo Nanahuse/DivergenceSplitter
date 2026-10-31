@@ -27,11 +27,32 @@ the configured plugin/DLL paths; `ctest` sets these automatically.
 | YAML | [`scenario_loader_tests.cpp`](../../tests/scenario_loader_tests.cpp): schema failures, nested conditions, paths, ROI, reference transformations. |
 | Profile | [`profile_tests.cpp`](../../tests/profile_tests.cpp): JSON fields, source types, settings and serialization. |
 | Capture | [`camera_tests.cpp`](../../tests/camera_tests.cpp), [`normalizer_tests.cpp`](../../tests/normalizer_tests.cpp), [`ndi_tests.cpp`](../../tests/ndi_tests.cpp): device resolution, transforms, fake NDI lifetimes/formats/timeouts/recovery. |
-| Cache/runtime | [`frame_cache_tests.cpp`](../../tests/frame_cache_tests.cpp), [`scenario_runtime_tests.cpp`](../../tests/scenario_runtime_tests.cpp), [`instance_runtime_tests.cpp`](../../tests/instance_runtime_tests.cpp): shared evaluation, phase routing, resets, pending controls, fake-Bridge dispatch, event/reconnect/unknown-outcome handling. |
-| UI/logging | [`ui_tests.cpp`](../../tests/ui_tests.cpp), [`logging_tests.cpp`](../../tests/logging_tests.cpp): draft transforms, reference validation, discovery responsiveness, Reset All hold/cancel, widgets, log rotation. |
+| Cache/runtime | [`frame_cache_tests.cpp`](../../tests/frame_cache_tests.cpp), [`scenario_runtime_tests.cpp`](../../tests/scenario_runtime_tests.cpp), [`instance_runtime_tests.cpp`](../../tests/instance_runtime_tests.cpp): shared evaluation, phase routing, resets, fake-Bridge dispatch, automatic/manual Reset during reaction waits, separate normal/Reset confirmation, delayed events, expiry without input frames, query after Reset rejection, reconnect/unknown-outcome handling. |
+| UI/logging | [`ui_tests.cpp`](../../tests/ui_tests.cpp), [`logging_tests.cpp`](../../tests/logging_tests.cpp): draft-preview input exclusion, release when hidden, paused-input transforms, error recovery, reference validation, discovery/preview responsiveness, Monitor condition summaries, Reset All hold/cancel, widgets, log rotation. |
 
 Fake tests are deterministic checks of application behavior. They do not establish
 that a physical camera, external sender, or user's LiveSplit installation works.
+
+## Recorded-video E2E tests
+
+[`recorded_pipeline_tests.cpp`](../../tests/recorded_pipeline_tests.cpp) generates
+MJPEG AVI recordings, JSON Profiles, and YAML, then checks fake-Bridge operation
+history through real decoding, Crop/Resize, CapturePipeline, scenario evaluation,
+and InstanceRuntime. It covers Start/Split, re-evaluation after external Undo, and
+independent scenarios on shared frames. Per-frame completion barriers compare
+input order and operation history; this does not reproduce unrestricted capture
+throughput.
+
+VideoFileSource tests verify built-in MJPEG decoder priority and Windows H.264
+fallback. RecordedPipeline also covers prompt stopping of low-FPS video. CTest's
+`recorded_pipeline_repeat` runs recording/decoder cases in 20 fresh processes to
+check startup stability.
+
+```powershell
+ctest --preset full -R 'RecordedPipeline|VideoFileSource|recorded_pipeline_repeat' --output-on-failure
+```
+
+Use the TestHost setup below for recording tests that send actual Bridge controls.
 
 ## Real LiveSplit.Bridge TestHost integration
 
@@ -62,8 +83,14 @@ python tools/run_testhost.py --testhost C:/src/LiveSplit.Bridge-TestHost/tests/L
 The helper starts the TestHost, keeps stdin open, waits for READY, sets
 `DIVERGENCESPLITTER_TESTHOST_PORT` and
 `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1`, runs the tests, and stops the host.
-The current tests exercise Query/events and Pause/Resume controls, starting and
-resetting the TestHost timer as needed. Use an isolated TestHost, not a live run.
+Tests cover Query/events, Pause/Resume, and recorded video → YAML → real Bridge
+Start/Split in `TestHost.RecordedVideoThroughYamlToRealBridgeControls`. The recording
+test verifies action count, successful final Split, actual timer split index 1,
+and video end-of-file.
+
+Control tests require the TestHost's default two-segment run and issue Start,
+Split, and Reset. Use an isolated TestHost; do not connect to a production
+LiveSplit port.
 
 For a host you started yourself, set `DIVERGENCESPLITTER_TESTHOST_PORT` before
 CTest. Without it, these tests **skip**; a green CTest summary alone does not mean

@@ -108,12 +108,35 @@ The timer phase does not pause the application's monotonic clock. Inactive group
 are not called. Within an active condition, Boolean short-circuit handling has
 specific state-update rules; see [condition evaluation](conditions.en.md#evaluation-and-short-circuiting).
 
-While an action is pending, other normal actions are suppressed. Reset conditions
-can interrupt pending Split/Skip. In the current runtime, a pending action without
-a transition is cleared after a one-second evaluation-time timeout; its relevant
-group is reset and evaluation resumes on a later frame. Bridge rejection,
-disconnect, and unknown-result handling also affect retries; see
-[architecture](../development/architecture.en.md#bridge-and-controls).
+### Pending actions and confirmation
+
+Selecting an action makes it pending before dispatch and suppresses other normal
+actions. Normal actions and Reset have separate pending state. While Running or
+Paused, `reset_condition` can be evaluated during a normal action's reaction delay
+or while a sent Split/Skip awaits confirmation. A pending Reset blocks new actions.
+
+Reaction waits still process Bridge events and fresh frames. Manual Reset and an
+automatic Reset interrupting a normal reaction wait bypass additional reaction
+delay and cancel the unsent normal action. Other automatic actions use the
+configured delay. Unrelated events and unchanged queries do not cancel that wait.
+
+A successful RPC starts a wait of at most one second for the corresponding state
+change. It does not always trigger an immediate query. Pause/Resume cannot confirm
+Split/Skip, and a late Split cannot confirm Reset. Revision-only updates and
+unchanged queries do not release confirmation waits.
+
+The deadline uses monotonic time from RPC success and is processed even without
+new input frames. At expiry, a query checks authoritative state before releasing
+unconfirmed pending state and resetting its rule group. A later frame can decide
+a fresh action. This second is separate from RPC response timeouts and condition
+`elapsed` timing.
+
+A rejected Reset RPC also triggers a query, clears both old waits, and resets the
+Reset group and the group for the current phase/split index. Locally cancelling
+an unsent Reset preserves a previously sent normal action's confirmation wait.
+A failed query stops evaluation and enters connection recovery. See
+[architecture](../development/architecture.en.md#bridge-and-controls) for
+disconnect and unknown-result handling.
 
 ## State and reset lifecycle
 
@@ -127,14 +150,15 @@ The current runtime applies these resets:
 | Event | Reset behavior |
 | --- | --- |
 | New session / initial Bridge baseline / reconnect | All groups start fresh. |
-| Transition to Not running, or a change to LiveSplit segment count | All groups reset. |
+| Transition to Not running, or a change to run revision / LiveSplit segment count | All groups reset. |
 | Move to another running/paused segment, including Undo | The destination segment's rules reset. |
 | Transition to Ended | The Incomplete group resets. |
 | Return from Ended to Running/Paused | Incomplete and Reset groups reset, and the destination segment resets. |
 | Pause ↔ Resume at the same index | The split group normally retains its condition/sequence state. |
-| A transition update at the same phase and index | The current split group resets. A control followed by an unchanged queried state can take this path. |
-| Resynchronization with an advanced state/run revision | All groups reset; a resync without an advanced revision retains group state and clears pending action. |
-| Action not dispatched, rejected, or pending timeout | The relevant action group resets: Start for `start`, Incomplete for `undo`, Reset for `reset`, otherwise the current split group. |
+| Query/event within the same session | Resets follow the run/phase/index changes above. Unchanged queries and revision-only updates preserve groups and pending state. |
+| Normal action not dispatched/rejected, or still unconfirmed after the expiry query | Start for `start`, Incomplete for `undo`, otherwise the current split group. |
+| Reset not dispatched, or still unconfirmed after the expiry query | The Reset group resets. |
+| Successful query after a rejected Reset RPC | Reset group plus Start if Not running, Incomplete if Ended, or the current split group if Running/Paused. Both old waits clear. |
 
 Explicit [`reset_when`](conditions.en.md#reset_when) resets its own two child trees
 when its reset condition is true. A `then.within` timeout is different: it restarts

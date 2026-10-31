@@ -85,6 +85,12 @@ reported. File extensions alone do not guarantee decoder support: playback uses
 the OpenCV video backends included in the build. End-of-file stops capture and
 reports an error; there is no automatic looping. Apply reopens the file.
 
+Opening a video first tries OpenCV's built-in AVI/MJPEG decoder
+(`CAP_OPENCV_MJPEG`), then falls back to normal backend selection (`CAP_ANY`)
+if it cannot open the file. There is no Profile option to choose the decoder.
+MJPEG AVI through the built-in decoder needs no OS codec or GPU initialization.
+Other formats depend on the OpenCV build and available backends.
+
 ## NDI®
 
 ```json

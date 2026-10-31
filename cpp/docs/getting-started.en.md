@@ -48,13 +48,19 @@ the test.
      select an enumerated mode. Leave **Request 60 fps** off for this test.
    - **Video file**: browse to a playable local recording longer than ten seconds.
      Codec support depends on the build. An AVI recording with MJPEG is useful for
-     a first check. Playback begins when the profile is applied.
+     a first check. It also plays in the draft preview; Apply restarts playback
+     from the beginning.
    - **NDI®**: start your sender, click **Search again**, and select its advertised
      name. This requires an NDI-enabled build.
 3. Leave **Crop margins** and **Resize** unchecked. Click **Add instance**, enter
    Bridge port `54000`, select the row, and use **Browse scenario...** to choose the
    saved YAML. Remove extra rows for this test.
-4. Click **Apply**. Input and scenario evaluation start immediately; Apply does
+4. Enable **Preview input** under **Draft input preview**. Check the image,
+   input dimensions, received FPS, and output dimensions. If a Session is active,
+   click **Stop Session and preview draft** first. This preview does not evaluate
+   scenarios or control LiveSplit. Fix input errors before continuing; see
+   [draft preview](user-guide.en.md#draft-input-preview).
+5. Click **Apply**. Input and scenario evaluation start immediately; Apply does
    not require a separate Start command in the application.
 
 ## Observe the first automatic split

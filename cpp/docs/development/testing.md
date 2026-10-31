@@ -24,10 +24,22 @@ ctest --preset full -R 'Conditions|ScenarioLoader|ScenarioRuntime' --output-on-f
 | YAML | [scenario_loader_tests.cpp](../../tests/scenario_loader_tests.cpp)：スキーマエラー、入れ子の条件、パス、ROI、参照変換。 |
 | Profile | [profile_tests.cpp](../../tests/profile_tests.cpp)：JSON項目、入力型、設定、保存形式。 |
 | Capture | [camera_tests.cpp](../../tests/camera_tests.cpp)、[normalizer_tests.cpp](../../tests/normalizer_tests.cpp)、[ndi_tests.cpp](../../tests/ndi_tests.cpp)：機器の特定、画像変換、fake NDIの寿命・形式・タイムアウト・復帰。 |
-| キャッシュ・Runtime | [frame_cache_tests.cpp](../../tests/frame_cache_tests.cpp)、[scenario_runtime_tests.cpp](../../tests/scenario_runtime_tests.cpp)、[instance_runtime_tests.cpp](../../tests/instance_runtime_tests.cpp)：共有評価、Phase選択、リセット、保留操作、fake Bridge送信、イベント・再接続・結果不明時の処理。 |
-| UI・ログ | [ui_tests.cpp](../../tests/ui_tests.cpp)、[logging_tests.cpp](../../tests/logging_tests.cpp)：下書きの変換、参照検証、検索中の応答性、Reset Allの長押し・中断、Widget、ログのローテーション。 |
+| キャッシュ・Runtime | [frame_cache_tests.cpp](../../tests/frame_cache_tests.cpp)、[scenario_runtime_tests.cpp](../../tests/scenario_runtime_tests.cpp)、[instance_runtime_tests.cpp](../../tests/instance_runtime_tests.cpp)：共有評価、Phase選択、リセット、fake Bridge送信、反応時間中の自動・手動Reset、通常ActionとResetの別々の確定待ち、遅延イベント、入力停止中の期限切れ、Reset拒否後のQuery、再接続・結果不明時の処理。 |
+| UI・ログ | [ui_tests.cpp](../../tests/ui_tests.cpp)、[logging_tests.cpp](../../tests/logging_tests.cpp)：下書きプレビューの入力排他・非表示時の解放・一時停止入力の変換・エラー復旧、参照検証、検索・プレビュー中の応答性、MonitorのCondition概要、Reset Allの長押し・中断、Widget、ログのローテーション。 |
 
 fakeのテストはアプリの動作を決定的な条件で検査します。物理カメラ、外部送信元、利用者のLiveSplit環境の動作確認とは別です。
+
+## 録画を使うE2Eテスト
+
+[recorded_pipeline_tests.cpp](../../tests/recorded_pipeline_tests.cpp)はMJPEG AVI、JSON Profile、YAMLを生成し、実際のデコード、Crop／Resize、CapturePipeline、Scenario評価、InstanceRuntimeを通してfake Bridgeの操作履歴を確認します。Start／Split、外部Undo後の再判定、共有フレーム上の複数シナリオの独立性を検証します。フレームごとの完了待ちで入力順と操作履歴を比較するため、実際の無制限な取得速度を再現する試験ではありません。
+
+VideoFileSourceのテストは内蔵MJPEGデコーダーの優先使用とWindowsのH.264フォールバックを確認し、RecordedPipelineには低FPS動画の停止応答も含みます。CTestの `recorded_pipeline_repeat` は録画・デコーダーのケースを新しいプロセスで20回実行し、起動時の不安定さも検査します。
+
+```powershell
+ctest --preset full -R 'RecordedPipeline|VideoFileSource|recorded_pipeline_repeat' --output-on-failure
+```
+
+実Bridgeへの送信まで含む録画テストは次のTestHost構成で実行します。
 
 ## 実LiveSplit.Bridge TestHostとの結合
 
@@ -53,7 +65,9 @@ dotnet build C:/src/LiveSplit.Bridge-TestHost/tests/LiveSplit.Bridge.TestHost/Li
 python tools/run_testhost.py --testhost C:/src/LiveSplit.Bridge-TestHost/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/full/divergencesplitter_testhost_tests.exe --port 54157
 ```
 
-ヘルパーはTestHostを起動し、標準入力を開いたままREADYを待ちます。`DIVERGENCESPLITTER_TESTHOST_PORT` と `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` を設定してテストを行い、最後にTestHostを止めます。現行テストはQuery・EventとPause／Resumeを確認し、必要に応じてタイマーを開始・Resetします。本番Runではなく、隔離したTestHostを使ってください。
+ヘルパーはTestHostを起動し、標準入力を開いたままREADYを待ちます。`DIVERGENCESPLITTER_TESTHOST_PORT` と `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` を設定してテストを行い、最後にTestHostを止めます。テストはQuery・Event、Pause／Resumeと、`TestHost.RecordedVideoThroughYamlToRealBridgeControls` による録画→YAML→実BridgeへのStart／Split送信を確認します。録画テストは操作数、最後のSplitの成功、実タイマーのSplit位置1、動画の終端を検証します。
+
+制御テストはTestHostの既定の2区間Runを必要とし、タイマーの開始・Split・Resetも行います。隔離したTestHostを使い、本番LiveSplitのポートには接続しないでください。
 
 自分で起動したHostには、CTest前に `DIVERGENCESPLITTER_TESTHOST_PORT` を設定します。未設定ならテストをスキップするため、CTest成功だけでは実Bridgeの制御確認になりません。制御には `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` も必要です。`--testhost` にディレクトリを指定する場合、その中のTestHost実行ファイルは1つである必要があります。
 

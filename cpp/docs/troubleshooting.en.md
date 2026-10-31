@@ -42,6 +42,27 @@ LiveSplit. The runtime resynchronizes and suppresses the same automatic operatio
 against the same authoritative state. Inspect LiveSplit before manually repeating
 an action. Connection recovery is not proof that a previous control failed.
 
+## Control confirmation and Reset failures
+
+If Monitor's Current evaluation shows Pending or Waiting for Reset confirmation,
+check the last action and LiveSplit's actual phase/split index. An action result
+of ok means RPC success; confirmation of the corresponding state change is
+separate. Normal actions and Reset have separate pending state: Pause/Resume
+cannot confirm Split/Skip, and a late Split cannot confirm Reset.
+
+After RPC success, confirmation waits at most one second before querying state.
+The deadline is processed even if input frames stop. If still unconfirmed after
+the query, pending state clears and the relevant rules reset, but deciding the
+next automatic action requires a fresh frame. Check both input and connection.
+See the [YAML reference](scenarios/yaml-reference.en.md#pending-actions-and-confirmation)
+for confirmation, reaction delay, and rule behavior.
+
+If a Reset RPC is rejected, check the displayed error. The application queries
+current state, clears both old normal/Reset waits, and resets the Reset group and
+the group for the current phase/index. If the query fails, evaluation stops for
+connection recovery. For persistent Connecting or Failed states, check Bridge
+Status, ports, and logs. After Reset All, check every instance's result separately.
+
 ## Detection does not fire, or fires unexpectedly
 
 1. Verify the normalized image in Monitor. ROI coordinates refer to the image

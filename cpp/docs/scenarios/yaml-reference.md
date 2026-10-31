@@ -78,7 +78,17 @@ sequence:
 
 Pausedでも経過時間とSplitのRuleを評価します。タイマーの一時停止でアプリの単調増加時計は止まりません。無効なグループは呼び出しません。有効なCondition内の短絡評価については[Conditionの評価](conditions.md#評価と短絡処理)を参照してください。
 
-Actionの確定待ち中は通常の別Actionを抑止します。Reset条件は待機中のSplit／Skipに割り込めます。現行Runtimeでは、遷移がないまま1秒の評価時刻上のタイムアウトに達すると、保留を消して対応するグループをリセットし、後のフレームで評価を再開します。Bridgeの拒否、切断、結果不明時の再試行は[アーキテクチャ](../development/architecture.md#bridgeとタイマー制御)も参照してください。
+### Actionの保留と確定待ち
+
+Actionを選ぶと送信前から保留し、通常の別Actionを抑止します。通常ActionとResetの保留は別です。Running／Pausedでは、通常Actionの送信前の反応時間中、または送信したSplit／Skipの確定待ち中に `reset_condition` を評価できます。Resetが保留中は新しいActionを抑止します。
+
+反応時間中もBridgeイベントと新しいフレームを処理します。手動Resetと、通常Actionの反応時間に割り込む自動Resetは追加の反応時間なしで送信し、未送信の通常Actionを取り消します。それ以外の自動Actionは設定された反応時間を使います。無関係なイベントや状態の変わらないQueryだけでは反応待ちを取り消しません。
+
+RPC成功後に対応する状態変化を最大1秒待ちます。成功直後に必ずQueryするわけではありません。Pause／ResumeはSplit／Skipの完了確認にならず、遅れたSplitもResetの完了確認にはなりません。状態リビジョンだけの更新や、変化のないQueryも確定待ちを解除しません。
+
+期限はRPC成功時の単調増加時刻から数え、入力フレームが止まっていても処理します。期限に達するとQueryで状態を再確認し、未確定の保留を解除して対応するRuleグループをリセットします。新しいActionは後のフレームで判定します。この1秒はRPC応答のタイムアウトやConditionの `elapsed` とは別です。
+
+ResetのRPCが拒否された場合もQueryし、両方の旧保留を解除してResetグループと現在のPhase・Split位置のグループを初期化します。Resetを送る前にローカルで取り消しただけなら、すでに送信した通常Actionの確定待ちは残します。Queryに失敗すると評価を止めて接続を回復します。切断や結果不明時の処理は[アーキテクチャ](../development/architecture.md#bridgeとタイマー制御)も参照してください。
 
 ## 状態とリセット
 
@@ -89,14 +99,15 @@ ProfileのインスタンスごとにConditionツリーを読み込み直しま�
 | イベント | リセット対象 |
 | --- | --- |
 | 新しいSession、Bridgeの初期同期、再接続 | すべてのグループ。 |
-| Not runningへの遷移、またはLiveSplitの区間数変更 | すべてのグループ。 |
+| Not runningへの遷移、RunリビジョンまたはLiveSplitの区間数変更 | すべてのグループ。 |
 | Undoを含む、Running／Pausedの別区間への移動 | 移動先の区間のRule。 |
 | Endedへの遷移 | Incompleteグループ。 |
 | EndedからRunning／Pausedへの復帰 | Incomplete、Reset、移動先の区間。 |
 | 同じ位置でPauseとResumeを切り替え | 通常は区間のConditionとsequenceの状態を保持。 |
-| 同じPhase・位置の遷移更新 | 現在の区間。操作後のQueryで状態が変わらなかった場合も該当することがあります。 |
-| 状態またはRunのリビジョンが進んだ再同期 | すべてのグループ。進んでいなければグループの状態を保ち、保留Actionだけを消します。 |
-| Actionの未送信、拒否、確定待ちのタイムアウト | `start` ならStart、`undo` ならIncomplete、`reset` ならReset、それ以外は現在の区間。 |
+| 同じSessionでのQuery・イベント | 上記のRun・Phase・位置の変化に応じてリセット。変化のないQueryや状態リビジョンだけの更新ではグループと保留を保持。 |
+| 通常Actionの未送信・拒否、Query後も未確定の期限切れ | `start` ならStart、`undo` ならIncomplete、それ以外は現在の区間。 |
+| Resetの未送信、Query後も未確定の期限切れ | Resetグループ。 |
+| Reset RPCの拒否後にQueryが成功 | Resetグループと、Not runningならStart、EndedならIncomplete、Running／Pausedなら現在の区間。両方の旧保留を解除。 |
 
 [`reset_when`](conditions.md#reset_when) はReset条件がtrueのときに自身の2つの子ツリーをリセットします。`then.within` のタイムアウトは異なり、子の状態はリセットせずステップの進行だけをやり直します。
 

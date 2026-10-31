@@ -23,10 +23,11 @@
 1. このリビジョンの [minimal-scenario.yaml](../examples/minimal-scenario.yaml) をダウンロードし、分かる場所に保存します。例は `C:/DivergenceSplitter/minimal-scenario.yaml` です。
 2. Profileを開き、次のいずれかの入力を選びます。
    - Camera：Detect camerasを押し、カメラまたはキャプチャーカードと列挙されたモードを選びます。このテストではRequest 60 fpsをオフにします。
-   - Video file：10秒より長い再生可能なローカル録画を選びます。対応コーデックはビルドによります。最初の確認にはMJPEGのAVI録画を使えます。Profileを適用すると再生が始まります。
+   - Video file：10秒より長い再生可能なローカル録画を選びます。対応コーデックはビルドによります。最初の確認にはMJPEGのAVI録画を使えます。下書きプレビューでも再生し、Applyすると先頭から再生し直します。
    - NDI®：送信元を起動し、Search againで公開名を選びます。NDI対応ビルドが必要です。
 3. Crop marginsとResizeはオフにします。Add instanceで行を追加し、Bridge portを `54000` にします。行を選択してBrowse scenario...から保存したYAMLを指定してください。このテストでは余分な行を削除します。
-4. Applyを押します。入力とシナリオの評価が始まります。アプリ内で別のStart操作をする必要はありません。
+4. Draft input previewのPreview inputを有効にし、画像、入力寸法、受信FPS、出力寸法を確認します。Sessionが実行中ならStop Session and preview draftで停止してください。このプレビューではシナリオを評価せず、LiveSplitも操作しません。入力エラーがあれば修正してから進めます。[下書きプレビュー](user-guide.md#入力の下書きプレビュー)も参照してください。
+5. Applyを押します。入力とシナリオの評価が始まります。アプリ内で別のStart操作をする必要はありません。
 
 ## 最初の自動Splitの確認
 

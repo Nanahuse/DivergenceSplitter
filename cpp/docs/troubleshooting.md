@@ -31,6 +31,14 @@
 
 操作結果がunknownの場合、要求がすでにLiveSplitへ届いた可能性があります。Runtimeは再同期し、同じ確定状態に対する同じ自動操作を抑止します。手動で繰り返す前にLiveSplitの状態を確認してください。再接続したことは前の操作の失敗を示すものではありません。
 
+## 操作の確定待ちとResetの失敗
+
+MonitorのCurrent evaluationにPendingやWaiting for Reset confirmationが出たら、最後のActionとLiveSplitの実際のPhase・Split位置を確認してください。操作結果のokはRPC成功を示し、対応する状態変化の確認とは別です。通常ActionとResetは別々に保留し、Pause／ResumeだけでSplit／Skipの待機が解除されたり、遅れたSplitでResetが確認されたりはしません。
+
+RPC成功後は対応する状態変化を最大1秒待ち、期限に達するとQueryで再確認します。入力映像が停止しても期限は処理します。Query後も未確定なら保留を解除して対応するRuleを初期化しますが、次の自動Actionの判定には新しいフレームが必要です。映像と接続の両方を確認してください。確定待ち・反応時間・Ruleの関係は[YAMLリファレンス](scenarios/yaml-reference.md#actionの保留と確定待ち)にまとめています。
+
+ResetのRPCが拒否された場合は表示されたエラーを確認します。アプリはQueryで現在の状態を取り直し、通常ActionとResetの旧保留を解除してResetグループと現在のPhase・位置のグループを初期化します。Queryに失敗した場合は評価を止めて接続を回復します。ConnectingやFailedが続く場合はBridgeのStatus・ポートとログを調べてください。Reset Allの後も各インスタンスの結果を個別に確認します。
+
 ## 判定が成立しない・意図せず成立する
 
 1. Monitorで正規化後の画像を確認します。ROIは元の映像ではなくCrop／Resize後の座標です。

@@ -12,6 +12,14 @@ and whether capture is running. The table shows each scenario's connection state
 timer phase, split index, last requested action, and error or action result.
 Scenario and split indexes in diagnostics are zero-based.
 
+**Processing FPS** measures each instance's evaluation rate. It differs from
+input FPS and can vary between instances sharing the same input. **Current
+evaluation** summarizes current conditions, their status, and evaluated detector
+thresholds and latest scores. Hover over the summary for additional lines. Diagnostics
+retains the complete condition tree and maximum scores. See
+[control confirmation](troubleshooting.en.md#control-confirmation-and-reset-failures)
+for Pending and Waiting for Reset confirmation.
+
 **Ready** means that the instance has synchronized with Bridge. Check input and
 Diagnostics as well; Ready alone does not mean that a condition is true or that
 the configured split count is valid. While disconnected, that instance cannot
@@ -44,13 +52,32 @@ defined in the [configuration reference](configuration.en.md).
 | File > Save Profile As... | Writes the current draft to JSON and remembers its path. It does not apply or fully validate that draft. |
 
 Saving a draft before Apply can therefore save settings that are not yet active
-or valid. For a repeatable workflow, edit, Apply, check Monitor, then save. Capture
+or valid. Edit, check the draft preview, Apply, check Monitor, then save. Capture
 opens asynchronously, so an input error may appear after Apply succeeds. Check
 Monitor afterwards, correct any reported error, and Apply again.
 
 YAML and image edits on disk are not watched. Reapply or reopen the profile to
 reload them. The last opened or saved profile path is remembered; if that file
 exists at the next startup, the application attempts to open and apply it.
+
+### Draft input preview
+
+Enable **Preview input** under **Draft input preview** to inspect the draft
+Camera, Video, or NDI input while no Session is active. The status shows opened
+input dimensions, backend-reported FPS when available, measured received FPS,
+and transformed output dimensions. Crop/Resize edits update without reopening
+the same source, including transforms of the last image while a sender is paused.
+
+This preview checks input and image transforms. It does not evaluate scenarios or
+send Bridge controls. It also does not preview reference-image conversion by
+**Resize reference images**; check detection in Diagnostics after Apply.
+
+The draft preview does not open an input while a Session is running. Click
+**Stop Session and preview draft** to stop it and inspect edits, then Apply to
+resume scenario execution. Leaving Profile, disabling Preview input, or starting
+a Session releases the preview source. Videos also play in preview; Apply reopens
+them from the beginning. After a preview error, edit the source or toggle Preview
+input to retry.
 
 ## Diagnostics
 
@@ -76,8 +103,10 @@ status; a displayed score is not necessarily from the newest frame. The
 - **Log level**: `OFF`, `DEBUG`, `INFO` (default), `WARNING`, or `ERROR`. This filters
   existing log events; DEBUG does not add per-frame detector score logging.
 - **Reaction time**: non-negative milliseconds, `0` by default; the UI permits up
-  to `5000`. Automatic actions wait until the triggering frame's capture time plus
-  this delay. Time already spent processing counts toward the delay. This is not a
+  to `5000`. Automatic actions normally wait until the triggering frame's capture
+  time plus this delay. Time already spent processing counts toward the delay.
+  See [pending actions and confirmation](scenarios/yaml-reference.en.md#pending-actions-and-confirmation)
+  for Reset interruption and delay exceptions. This is not a
   detector threshold or a guarantee of exact timer timing.
 - **Theme**: Light or Dark; saved changes update the theme immediately.
 
