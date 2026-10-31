@@ -1,0 +1,118 @@
+name: C++23
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (NDI ${{ matrix.ndi }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pull_request (never pull_request_target): fork code gets no SDK Secret.
+        ndi: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["OFF","ON"]' || '["OFF"]') }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: cpp
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Test distribution scripts
+        run: python -m unittest discover -s tools/tests -v
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Get official pinned NDI SDK (no public cache)
+        if: matrix.ndi == 'ON'
+        env:
+          NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
+        run: python tools/get_ndi_sdk.py
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          archives: qtbase
+          cache: true
+
+      - name: Bootstrap vcpkg
+        run: C:\vcpkg\bootstrap-vcpkg.bat
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\downloads
+            C:\vcpkg-cache
+          key: cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('cpp/vcpkg.json') }}
+          restore-keys: |
+            cpp23-vcpkg-${{ runner.os }}-
+
+      - name: Check out LiveSplit.Bridge TestHost
+        uses: actions/checkout@v5
+        with:
+          repository: Nanahuse/LiveSplit.Bridge
+          ref: 4c14c0161eacd50b05411c0d20f5eff523e9c155
+          submodules: recursive
+          path: .testhost/LiveSplit.Bridge
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build TestHost
+        working-directory: ${{ github.workspace }}
+        run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
+
+      - name: Configure
+        run: cmake --preset ci -DDIVERGENCESPLITTER_ENABLE_NDI=${{ matrix.ndi }} "-DNDI_SDK_DIR=${{ env.NDI_SDK_DIR }}"
+
+      - name: Build
+        run: cmake --build --preset ci --parallel
+
+      - name: Test
+        run: ctest --preset ci --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
+
+      - name: TestHost integration
+        working-directory: ${{ github.workspace }}
+        run: python cpp/tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
+      - name: Package ZIP
+        run: cmake --build --preset ci --target package
+
+      - name: Verify extracted ZIP
+        run: python tools/verify_windows_zip.py --ndi ${{ matrix.ndi }}
+
+      - name: Upload distribution
+        if: matrix.ndi == 'ON'
+        uses: actions/upload-artifact@v7
+        with:
+          name: DivergenceSplitter-cpp23-windows-x64
+          path: cpp/build/ci/*.zip
+          if-no-files-found: error
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cpp23-tests-ndi-${{ matrix.ndi }}
+          path: cpp/build/ci/ctest-results.xml
+          if-no-files-found: warn

@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "source": {
+    "type": "video",
+    "path": "C:/DivergenceSplitter/run.avi",
+    "transform": {
+      "crop": null,
+      "resize": null
+    }
+  },
+  "instances": [
+    {
+      "connection": {
+        "port": 54000
+      },
+      "scenario": "C:/DivergenceSplitter/minimal-scenario.yaml"
+    }
+  ]
+}
