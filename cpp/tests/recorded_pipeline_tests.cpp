@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include <opencv2/videoio.hpp>
-#include <opencv2/imgcodecs.hpp>
 #include <filesystem>
 #include <fstream>
 #include <atomic>
@@ -280,14 +279,16 @@ TEST(VideoFileSource, MjpegUsesBuiltinDecoderBeforePlatformBackends) {
 }
 
 TEST(VideoFileSource, NonMjpegInputFallsBackToOtherBackends) {
-    Recording recording;
-    const auto image = recording.root / "frame00.png";
-    ASSERT_TRUE(cv::imwrite(image.string(), cv::Mat(32, 32, CV_8UC3, cv::Scalar::all(123))));
-    VideoFileFrameSource source{{(recording.root / "frame%02d.png").string()}};
+#ifndef _WIN32
+    GTEST_SKIP() << "H.264 fallback requires the Windows Media Foundation build";
+#endif
+    const auto video = std::filesystem::path{__FILE__}.parent_path() / "data" / "fallback-h264.mp4";
+    VideoFileFrameSource source{{video.string()}};
     source.open();
     EXPECT_NE(source.opened_format().backend, "CV_MJPEG");
     MonotonicTime at;
     const auto decoded = source.read(at);
     ASSERT_FALSE(decoded.empty());
-    EXPECT_EQ(decoded.at<cv::Vec3b>(0, 0), (cv::Vec3b{123, 123, 123}));
+    EXPECT_EQ(decoded.size(), (cv::Size{128, 128}));
+    EXPECT_NEAR(cv::mean(decoded)[0], 128.0, 3.0);
 }
