@@ -313,6 +313,23 @@ void ScenarioRuntime::state_wait_timed_out(MonotonicTime now) {
     }
 }
 
+void ScenarioRuntime::settle_rejected_reset(const LiveSplitUpdate& update) {
+    apply_update(update);
+    std::scoped_lock lock{mutex_};
+    if (!snapshot_.has_value() || *snapshot_ != update.snapshot) {
+        return;
+    }
+    clear_all_pending();
+    reset_rule_group(reset_rules_);
+    if (snapshot_->phase == TimerPhase::not_running) {
+        reset_rule_group(start_rules_);
+    } else if (snapshot_->phase == TimerPhase::ended) {
+        reset_rule_group(incomplete_rules_);
+    } else if (const auto index = evaluation_index(*snapshot_)) {
+        reset_split_group(*index);
+    }
+}
+
 std::optional<LiveSplitSnapshot> ScenarioRuntime::current_snapshot() const {
     std::scoped_lock lock{mutex_};
     return snapshot_;
@@ -376,7 +393,7 @@ std::optional<Action> ScenarioRuntime::evaluate_rules(
 void ScenarioRuntime::start_action(const Action& action) {
     if (action.operation == ActionOperation::reset) {
         // Cancel an unsent normal action, but retain a sent action's wait until
-        // Reset succeeds. Rejecting Reset must not release a pending Split.
+        // Reset succeeds or its rejection is reconciled from a Query.
         if (pending_action_.has_value() && !state_wait_started_at_.has_value()) {
             if (snapshot_.has_value()) {
                 reset_pending_action(*snapshot_);

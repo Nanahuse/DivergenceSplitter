@@ -26,6 +26,9 @@ public:
     [[nodiscard]] std::optional<MonotonicTime> state_wait_deadline() const;
     // The instance queries authoritative state before expiring a wait.
     void state_wait_timed_out(MonotonicTime now);
+    // Reconcile a rejected Reset from a successful authoritative Query. A later
+    // frame may decide a fresh action; no old normal/Reset wait survives.
+    void settle_rejected_reset(const LiveSplitUpdate& update);
 
     [[nodiscard]] std::optional<LiveSplitSnapshot> current_snapshot() const;
     [[nodiscard]] ScenarioDiagnosticsSnapshot diagnostics() const;

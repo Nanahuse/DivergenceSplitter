@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <thread>
@@ -353,12 +354,13 @@ TEST(InstanceRuntime, AutomaticResetIsEvaluatedDuringReactionWait) {
         test::make_snapshot(TimerPhase::running, 0, 2)
     );
     auto* bridge = fake.get();
-    InstanceRuntime runtime{0, split_scenario(true), std::move(fake), {300ms}};
+    InstanceRuntime runtime{0, split_scenario(true), std::move(fake), {10s}};
     runtime.start();
     runtime.publish_frame(white_frame());
     ASSERT_TRUE(test::wait_until([&]() { return pending(runtime, ActionOperation::split); }));
     runtime.publish_frame(frame_with_gray(0));
-    ASSERT_TRUE(test::wait_until([&]() { return !bridge->actions().empty(); }));
+    // Reset must arrive well before either the original or a restarted 10s delay.
+    ASSERT_TRUE(test::wait_until([&]() { return !bridge->actions().empty(); }, 1s));
     runtime.stop();
     EXPECT_EQ(bridge->actions(), std::vector{ActionOperation::reset});
 }
@@ -473,7 +475,7 @@ TEST(InstanceRuntime, TimerTransitionCancelsUnsentSplit) {
     EXPECT_TRUE(bridge->actions().empty());
 }
 
-TEST(InstanceRuntime, RejectedManualResetDoesNotReleaseSentSplit) {
+TEST(InstanceRuntime, RejectedManualResetQueriesAndRearmsTheSameSplit) {
     auto fake = std::make_unique<test::FakeBridgeClient>(
         test::make_snapshot(TimerPhase::running, 0, 2)
     );
@@ -483,18 +485,117 @@ TEST(InstanceRuntime, RejectedManualResetDoesNotReleaseSentSplit) {
             ? BridgeControlResult{BridgeControlStatus::error, "reset rejected"}
             : BridgeControlResult{BridgeControlStatus::ok, {}};
     };
-    InstanceRuntime runtime{0, split_scenario(), std::move(fake)};
+    auto scenario = split_scenario();
+    scenario.splits[0] = std::vector<ScenarioRulePtr>{std::make_shared<RuleSequence>(
+        std::vector<std::shared_ptr<Rule>>{
+            std::make_shared<Rule>(std::make_shared<OnceCondition>(visible()), Action{ActionOperation::split}),
+            std::make_shared<Rule>(visible(), Action{ActionOperation::pause}),
+        }
+    )};
+    InstanceRuntime runtime{0, std::move(scenario), std::move(fake)};
     runtime.start();
-    pump(runtime, [&]() { return runtime.diagnostics().action_count == 1; });
+    runtime.publish_frame(white_frame());
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.diagnostics().action_count == 1; }));
     runtime.request_manual_reset();
     ASSERT_TRUE(test::wait_until([&]() {
-        return runtime.diagnostics().last_action_result == "reset rejected";
+        return bridge->sync_count() == 2 && !pending(runtime, ActionOperation::split) &&
+            !pending(runtime, ActionOperation::reset);
     }));
-    EXPECT_TRUE(pending(runtime, ActionOperation::split));
-    EXPECT_FALSE(pending(runtime, ActionOperation::reset));
-    pump(runtime, []() { return false; }, 50ms);
-    runtime.stop();
     EXPECT_EQ(bridge->actions(), (std::vector{ActionOperation::split, ActionOperation::reset}));
+    EXPECT_EQ(runtime.diagnostics().scenario->snapshot->split_index, 0);
+    runtime.publish_frame(white_frame());
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.diagnostics().action_count == 3; }));
+    runtime.stop();
+    EXPECT_EQ(bridge->actions(), (std::vector{ActionOperation::split, ActionOperation::reset, ActionOperation::split}));
+}
+
+TEST(InstanceRuntime, RejectedManualResetAdoptsTheQueriedSplitIndex) {
+    auto fake = std::make_unique<test::FakeBridgeClient>(test::make_snapshot(TimerPhase::running, 0, 2));
+    auto* bridge = fake.get();
+    bridge->on_execute = [bridge](ActionOperation operation) {
+        if (operation == ActionOperation::reset) {
+            bridge->set_snapshot(test::make_snapshot(TimerPhase::running, 1, 2));
+            return BridgeControlResult{BridgeControlStatus::error, "reset rejected"};
+        }
+        return BridgeControlResult{BridgeControlStatus::ok, {}};
+    };
+    auto scenario = split_scenario();
+    scenario.splits[1] = std::vector<ScenarioRulePtr>{std::make_shared<Rule>(
+        std::make_shared<OnceCondition>(visible()), Action{ActionOperation::skip})};
+    InstanceRuntime runtime{0, std::move(scenario), std::move(fake)};
+    runtime.start();
+    runtime.publish_frame(white_frame());
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.diagnostics().action_count == 1; }));
+    runtime.request_manual_reset();
+    ASSERT_TRUE(test::wait_until([&]() {
+        const auto value = runtime.diagnostics();
+        return value.scenario && value.scenario->snapshot->split_index == 1 &&
+            !value.scenario->pending_action && !value.scenario->reset_pending;
+    }));
+    EXPECT_EQ(bridge->sync_count(), 2U);
+    EXPECT_EQ(bridge->actions(), (std::vector{ActionOperation::split, ActionOperation::reset}));
+    runtime.publish_frame(white_frame());
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.diagnostics().action_count == 3; }));
+    runtime.stop();
+    EXPECT_EQ(bridge->actions(), (std::vector{ActionOperation::split, ActionOperation::reset, ActionOperation::skip}));
+}
+
+TEST(InstanceRuntime, RejectedAutomaticResetReconcilesWithoutReusingItsFrame) {
+    auto fake = std::make_unique<test::FakeBridgeClient>(test::make_snapshot(TimerPhase::running, 0, 2));
+    auto* bridge = fake.get();
+    bridge->on_execute = [bridge](ActionOperation operation) {
+        if (operation == ActionOperation::reset) {
+            bridge->set_snapshot(test::make_snapshot(TimerPhase::not_running, -1, 2));
+            return BridgeControlResult{BridgeControlStatus::error, "already reset"};
+        }
+        return BridgeControlResult{BridgeControlStatus::ok, {}};
+    };
+    InstanceRuntime runtime{0, split_scenario(true), std::move(fake)};
+    runtime.start();
+    runtime.publish_frame(frame_with_gray(0));
+    ASSERT_TRUE(test::wait_until([&]() {
+        const auto value = runtime.diagnostics();
+        return value.scenario && value.scenario->snapshot->phase == TimerPhase::not_running &&
+            !value.scenario->reset_pending;
+    }));
+    EXPECT_EQ(bridge->sync_count(), 2U);
+    EXPECT_EQ(bridge->actions(), std::vector{ActionOperation::reset});
+    runtime.publish_frame(frame_with_gray(0));
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.diagnostics().action_count == 2; }));
+    runtime.stop();
+    EXPECT_EQ(bridge->actions(), (std::vector{ActionOperation::reset, ActionOperation::start}));
+}
+
+TEST(InstanceRuntime, FailedRejectedResetQuerySuspendsEvaluationUntilReconnect) {
+    auto fake = std::make_unique<test::FakeBridgeClient>(test::make_snapshot(TimerPhase::running, 0, 2));
+    auto* bridge = fake.get();
+    std::atomic_bool fail_query{};
+    bridge->on_synchronize = [bridge, &fail_query] {
+        if (fail_query.load()) {
+            bridge->set_ready(false);
+            throw BridgeError(BridgeErrorKind::connection_lost, "rejected Reset Query failed");
+        }
+        return bridge->snapshot();
+    };
+    bridge->on_execute = [&fail_query](ActionOperation) {
+        fail_query = true;
+        return BridgeControlResult{BridgeControlStatus::error, "reset rejected"};
+    };
+    InstanceRuntime runtime{0, split_scenario(), std::move(fake)};
+    runtime.start();
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.state() == InstanceState::ready; }));
+    runtime.request_manual_reset();
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.state() == InstanceState::connecting; }));
+    EXPECT_FALSE(runtime.diagnostics().scenario.has_value());
+    pump(runtime, []() { return false; }, 50ms);
+    EXPECT_EQ(bridge->actions(), std::vector{ActionOperation::reset});
+    bridge->set_snapshot(test::make_snapshot(TimerPhase::running, 1, 2));
+    fail_query = false;
+    bridge->set_ready(true);
+    ASSERT_TRUE(test::wait_until([&]() { return runtime.state() == InstanceState::ready; }));
+    EXPECT_EQ(runtime.diagnostics().scenario->snapshot->split_index, 1);
+    runtime.stop();
+    EXPECT_EQ(bridge->actions(), std::vector{ActionOperation::reset});
 }
 
 TEST(InstanceRuntime, UnknownManualResetIsNotResentAfterResync) {

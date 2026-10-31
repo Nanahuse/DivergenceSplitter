@@ -294,7 +294,7 @@ TEST(ScenarioRuntime, PauseResumeAndUnchangedResyncDoNotReleaseSplitWait) {
     EXPECT_FALSE(runtime.state_wait_deadline().has_value());
 }
 
-TEST(ScenarioRuntime, RejectedResetPreservesAcceptedSplitWait) {
+TEST(ScenarioRuntime, CancelledResetPreservesAcceptedSplitWait) {
     Scenario scenario;
     scenario.start_condition = invisible();
     scenario.splits.push_back(std::vector<ScenarioRulePtr>{rule(visible(), ActionOperation::split)});
@@ -387,4 +387,55 @@ TEST(ScenarioRuntime, PauseResumePreservesRuleSequenceProgress) {
     action = runtime.evaluate(white_frame(clock));
     ASSERT_TRUE(action.has_value());
     EXPECT_EQ(action->operation, ActionOperation::split);
+}
+
+TEST(ScenarioRuntime, RejectedResetQueryRestartsTheCurrentPhaseRulesEvenWithoutAStateChange) {
+    for (const auto phase : {TimerPhase::running, TimerPhase::paused, TimerPhase::ended}) {
+        SCOPED_TRACE(to_string(phase));
+        Scenario scenario;
+        scenario.start_condition = invisible();
+        scenario.incomplete_condition = std::make_shared<OnceCondition>(visible());
+        scenario.splits.push_back(std::vector<ScenarioRulePtr>{std::make_shared<RuleSequence>(
+            std::vector<std::shared_ptr<Rule>>{
+                std::make_shared<Rule>(std::make_shared<OnceCondition>(visible()), Action{ActionOperation::split}),
+                std::make_shared<Rule>(visible(), Action{ActionOperation::pause}),
+            }
+        )});
+        ScenarioRuntime runtime{std::move(scenario)};
+        const auto baseline = update(UpdateKind::initial, phase, phase == TimerPhase::ended ? 2 : 0, 2);
+        runtime.apply_update(baseline);
+        test::ManualTimeProvider clock;
+        const auto normal = runtime.evaluate(white_frame(clock));
+        ASSERT_TRUE(normal.has_value());
+        runtime.action_accepted(*normal, clock.now());
+        const auto reset = runtime.request_reset();
+        ASSERT_TRUE(reset.has_value());
+        auto queried = baseline;
+        queried.kind = UpdateKind::periodic;
+        runtime.settle_rejected_reset(queried);
+        EXPECT_FALSE(runtime.action_pending(*reset));
+        EXPECT_FALSE(runtime.action_pending(*normal));
+        EXPECT_FALSE(runtime.state_wait_deadline().has_value());
+        EXPECT_EQ(runtime.current_snapshot(), std::optional{baseline.snapshot});
+        const auto fresh = runtime.evaluate(white_frame(clock));
+        ASSERT_TRUE(fresh.has_value());
+        EXPECT_EQ(fresh->operation, normal->operation);
+    }
+}
+
+TEST(ScenarioRuntime, RejectedResetQueryRearmsAutomaticResetCondition) {
+    Scenario scenario;
+    scenario.start_condition = invisible();
+    scenario.reset_condition = std::make_shared<OnceCondition>(visible());
+    ScenarioRuntime runtime{std::move(scenario)};
+    runtime.apply_update(update(UpdateKind::initial, TimerPhase::running, 0, 2));
+    test::ManualTimeProvider clock;
+    const auto reset = runtime.evaluate(white_frame(clock));
+    ASSERT_TRUE(reset.has_value());
+    ASSERT_EQ(reset->operation, ActionOperation::reset);
+    runtime.settle_rejected_reset(update(UpdateKind::periodic, TimerPhase::running, 0, 2));
+    EXPECT_FALSE(runtime.action_pending(*reset));
+    const auto fresh = runtime.evaluate(white_frame(clock));
+    ASSERT_TRUE(fresh.has_value());
+    EXPECT_EQ(fresh->operation, ActionOperation::reset);
 }

@@ -142,13 +142,17 @@ without adding opencv_contrib to the C++ dependencies.
 - A growing `dropped_event_count()` triggers a query resynchronization.
 - Manual Reset is queued to the instance thread and uses the current snapshot.
 - Reaction waits keep processing Events and fresh frames for automatic Reset.
-  Manual Reset bypasses the delay, and either Reset cancels an unsent normal
+  Manual Reset and automatic Reset interrupting a normal reaction wait bypass
+  the delay, and either Reset cancels an unsent normal
   action. Unrelated Events and unchanged Queries do not cancel the delay.
 - Normal actions and Reset have separate confirmation waits. A successful RPC
   starts a one-second wait for the corresponding state change; Pause/Resume
   cannot confirm Split/Skip, and a late Split cannot confirm Reset. While Reset
-  is pending, new controls are blocked. A rejected Reset preserves a previously
-  sent normal action's confirmation wait.
+  is pending, new controls are blocked. A locally cancelled Reset preserves a
+  previously sent normal action's wait. A rejected Reset RPC Queries authoritative
+  state, drops both old waits, and restarts Reset and the current phase/index's
+  rules. Only a later frame may decide a fresh action. A failed Query enters
+  recovery before evaluation resumes.
 - Successful RPCs do not immediately Query state. If confirmation times out, the
   instance Queries before releasing the wait and restarting the affected rules.
   This deadline is processed even when the input supplies no new frames.

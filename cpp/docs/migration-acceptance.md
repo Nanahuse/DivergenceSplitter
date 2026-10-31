@@ -11,9 +11,10 @@ unavailable external device or a private scenario that was not supplied.
 | --- | --- |
 | Start/Split exactly once from dark → bright input | `RecordedPipeline.*` decodes generated MJPEG recordings through the production source, normalizer, YAML loader, instance worker, and fake Bridge operation history. `TestHost.RecordedVideoThroughYamlToRealBridgeControls` repeats Start/Split against the actual v4 Bridge component. |
 | Split → external Undo → same-index reentry | `RecordedPipeline.ProfileYamlDecodeTransformStartSplitUndoAndReentry` checks the full recording's expected operation history. |
-| Automatic Reset wins over Split | `ScenarioRuntime.ResetHasPriorityOverSplit` and `InstanceRuntime.AutomaticResetIsEvaluatedDuringReactionWait`. |
+| Automatic Reset wins over Split without another reaction delay | `ScenarioRuntime.ResetHasPriorityOverSplit` and `InstanceRuntime.AutomaticResetIsEvaluatedDuringReactionWait` (Reset must arrive before a configured ten-second reaction delay). |
 | Manual Reset during reaction time cancels the unsent Split | `InstanceRuntime.ManualResetCancelsUnsentSplitWithoutAnotherFrame`. |
 | Independent normal/Reset confirmation and RPC-success deadlines | `ScenarioRuntime.ConfirmationTimeoutStartsAfterRpcSuccess`, rejected Reset, late Split, and Reset timeout cases; matching instance regressions. |
+| Rejected Reset reconciles authoritative state | Instance tests cover unchanged and advanced split indices, automatic Reset to Not Running, fresh-frame reentry, and Query failure/reconnect. Scenario tests check current-phase sequence/Once progress and automatic Reset rearming. |
 | Pause/Resume preserves pending Split and sequence progress | Scenario/instance regression cases plus actual TestHost pause/resume Events. |
 | Bridge disconnection, recovery, and unknown results | Existing reconnect regression and normal/manual Reset unknown-result suppression tests. |
 | Crop/Resize before detection | Recorded pipeline crops a permanently bright border, resizes the remaining image, and checks the expected dark/bright operation sequence; existing loader/detector tests retain Python OpenCV golden comparisons. |

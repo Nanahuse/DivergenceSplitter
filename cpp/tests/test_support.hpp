@@ -44,9 +44,11 @@ public:
         return current_.session_id;
     }
     [[nodiscard]] BridgeSnapshot synchronize() override {
-        std::scoped_lock lock{mutex_};
-        ++sync_count_;
-        return current_;
+        {
+            std::scoped_lock lock{mutex_};
+            ++sync_count_;
+        }
+        return on_synchronize ? on_synchronize() : snapshot();
     }
     [[nodiscard]] std::optional<BridgeEvent> next_event(std::chrono::milliseconds) override {
         std::scoped_lock lock{mutex_};
@@ -106,6 +108,7 @@ public:
     }
 
     std::function<BridgeControlResult(ActionOperation)> on_execute;
+    std::function<BridgeSnapshot()> on_synchronize;
 
 private:
     mutable std::mutex mutex_;

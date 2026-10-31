@@ -375,12 +375,16 @@ void InstanceRuntime::run_connected() {
             FrameContext context{std::move(shared)};
             auto action = scenario_runtime->evaluate(context);
             if (action.has_value()) {
+                const bool reset_interrupts_reaction = action->operation == ActionOperation::reset &&
+                    scheduled_action_.has_value() &&
+                    scheduled_action_->action.operation != ActionOperation::reset;
                 if (scheduled_action_.has_value()) {
                     cancel_scheduled_action("cancelled (reset priority)");
                 }
                 scheduled_action_ = ScheduledAction{
                     *action, *scenario_runtime->current_snapshot(),
-                    context.frame().captured_at + options_.reaction_time,
+                    reset_interrupts_reaction ? monotonic_now()
+                                              : context.frame().captured_at + options_.reaction_time,
                 };
                 // Revisit Events and manual Reset before sending a newly
                 // decided action, even when evaluation used the entire delay.
@@ -479,8 +483,19 @@ void InstanceRuntime::dispatch_action(const Action& action) {
                 result.message.empty() ? "connection lost" : result.message
             );
         case BridgeControlStatus::error:
-            current_runtime->action_not_dispatched(action);
+            if (action.operation != ActionOperation::reset) {
+                current_runtime->action_not_dispatched(action);
+            }
             record_action(action, result.message.empty() ? "error" : result.message);
+            if (action.operation == ActionOperation::reset) {
+                // A rejected Reset can race a completed Split or an external
+                // timer change. Query before releasing either confirmation wait.
+                // Query failure follows the normal reconnect path without
+                // evaluating another frame against an unconfirmed snapshot.
+                const auto update = adapter_->synchronize(BridgeEventKind::other);
+                current_runtime->settle_rejected_reset(update);
+                apply_update(update);
+            }
             return;
     }
 }
