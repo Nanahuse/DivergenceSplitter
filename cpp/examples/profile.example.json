@@ -2,7 +2,7 @@
   "version": 2,
   "source": {
     "type": "video",
-    "path": "C:/path/to/run.mp4",
+    "path": "C:/DivergenceSplitter/run.avi",
     "transform": {
       "crop": null,
       "resize": null
@@ -13,7 +13,7 @@
       "connection": {
         "port": 54000
       },
-      "scenario": "C:/path/to/DivergenceSplitter/cpp/examples/minimal-scenario.yaml"
+      "scenario": "C:/DivergenceSplitter/minimal-scenario.yaml"
     }
   ]
 }

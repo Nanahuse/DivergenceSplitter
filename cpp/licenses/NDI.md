@@ -1,35 +1,21 @@
-# NDI® runtime notices
+# NDI®ランタイムの通知
 
-NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
+[日本語（正本）](NDI.md) | [English](NDI.en.md)
 
-DivergenceSplitter's own code remains under its MIT License. NDI-enabled Windows
-ZIPs additionally contain the separately licensed proprietary NDI runtime:
+NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。
 
-- `Processing.NDI.Lib.x64.dll`, loaded from the executable directory;
-- `Processing.NDI.Lib.Licenses.txt`, the unmodified runtime third-party notices;
-- [NDI-TERMS.txt](NDI-TERMS.txt), the applicable bundled component use terms,
-  including the requirements of SDK agreement section 3(d).
+DivergenceSplitter自身のコードはMITライセンスです。NDI対応Windows ZIPには、個別のライセンスが適用されるプロプライエタリなNDIランタイムを追加で含みます。
 
-The SDK agreement PDF is used only for build-time existence and SHA-256 checks;
-it is not bundled. Read the [official NDI SDK License Agreement](https://ndi.link/ndisdk_license).
-SDK headers, import libraries, installers, examples and NDI Tools are excluded.
-An SDK-disabled development build contains these explanatory notices but no
-NDI binaries or SDK agreement. No Python bindings are used by the C++ product.
+- `Processing.NDI.Lib.x64.dll`：実行ファイルのディレクトリから読み込みます。
+- `Processing.NDI.Lib.Licenses.txt`：変更せず同梱する、ランタイムの第三者通知です。
+- [NDI-TERMS.txt](NDI-TERMS.txt)：SDK契約書3(d)項の要件を含む、同梱コンポーネントの利用条件です。
 
-The SDK/runtime is not relicensed under MIT. Its conditions apply to the SDK,
-runtime and NDI protocols, separately from DivergenceSplitter's own source.
-See the [official agreement](https://ndi.link/ndisdk_license) and
-[official licensing requirements](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing).
+SDK契約書PDFはビルド時の存在・SHA-256検査にだけ使い、同梱しません。[公式NDI SDK License Agreement](https://ndi.link/ndisdk_license)を参照してください。SDKヘッダー、インポートライブラリ、インストーラー、サンプル、NDI Toolsは除外します。SDK無効の開発ビルドには説明用の通知は含みますが、NDIバイナリとSDK契約書は含みません。
 
-The standard SDK license is for its defined general-purpose computer Products;
-excluded appliances, restricted hosted environments and embedded devices need
-a separate commercial agreement. Distributors must check the latest-SDK
-requirement before a release. Review the actual downloaded agreement when
-updating the pin; do not publish a runtime ZIP with unresolved obligations.
+SDKとランタイムをMITとして再ライセンスするものではありません。SDK、ランタイム、NDIプロトコルの条件は、DivergenceSplitterのソースとは別に適用されます。[公式契約書](https://ndi.link/ndisdk_license)と[公式ライセンス要件](https://docs.ndi.video/all/developing-with-ndi/sdk/licensing)を参照してください。
 
-SDK installers and development files are confidential under the agreement.
-CI downloads directly from the official source on every trusted run and never
-stores the SDK in a public Actions cache or uploads development materials.
+標準SDKライセンスの対象は契約で定義される汎用コンピューター製品です。対象外の専用機器、制限されたホスト環境、組み込み機器には別の商用契約が必要です。配布時はリリース前に最新版SDKの要件を確認してください。固定値の更新時は実際に取得した契約書を確認し、未解決の義務があるままランタイムZIPを公開しないでください。
 
-Official agreement: <https://ndi.link/ndisdk_license>.
-NDI Tools are available separately at <https://ndi.video/tools/>.
+SDKのインストーラーと開発用ファイルは契約上の機密情報です。CIは信頼できる実行ごとに公式配布元から取得し、公開Actionsキャッシュへの保存や開発素材のアップロードを行いません。
+
+[公式契約書](https://ndi.link/ndisdk_license)。[NDI Tools](https://ndi.video/tools/)は別途取得できます。
