@@ -82,6 +82,7 @@ MainWindow::MainWindow(AppController* controller, QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+    profile_->hide();
     controller_->stop();
 }
 

@@ -141,8 +141,43 @@ without adding opencv_contrib to the C++ dependencies.
   action until the authoritative state changes.
 - A growing `dropped_event_count()` triggers a query resynchronization.
 - Manual Reset is queued to the instance thread and uses the current snapshot.
+- Reaction waits keep processing Events and fresh frames for automatic Reset.
+  Manual Reset and automatic Reset interrupting a normal reaction wait bypass
+  the delay, and either Reset cancels an unsent normal
+  action. Unrelated Events and unchanged Queries do not cancel the delay.
+- Normal actions and Reset have separate confirmation waits. A successful RPC
+  starts a one-second wait for the corresponding state change; Pause/Resume
+  cannot confirm Split/Skip, and a late Split cannot confirm Reset. While Reset
+  is pending, new controls are blocked. A locally cancelled Reset preserves a
+  previously sent normal action's wait. A rejected Reset RPC Queries authoritative
+  state, drops both old waits, and restarts Reset and the current phase/index's
+  rules. Only a later frame may decide a fresh action. A failed Query enters
+  recovery before evaluation resumes.
+- Successful RPCs do not immediately Query state. If confirmation times out, the
+  instance Queries before releasing the wait and restarting the affected rules.
+  This deadline is processed even when the input supplies no new frames.
 - Reset All in the Monitor page requires a two-second hold and cancels on
   release or pointer leave.
+
+## Draft preview and Monitor
+
+Profile's **Draft input preview** opens Camera, NDI, or Video on an independent
+worker while the page is visible and no Session is active. Crop/Resize changes
+update the preview before Apply, without reopening the same input, including
+when the sender is paused. Normalization and QImage conversion run on the worker;
+the GUI presents the latest image at about 10 Hz. The status shows the opened
+input dimensions, backend-reported FPS when available, received FPS, and output
+dimensions. Changing the source closes the previous input first. Hiding the page,
+disabling preview, or starting a Session releases the input. Use **Stop Session
+and preview draft** to inspect edits while a profile was running.
+
+Monitor shows input FPS and each instance's processing FPS, timer phase, split,
+last action, and a compact current-condition summary with thresholds and scores.
+Hover over the summary for additional lines. Diagnostics retains the complete
+condition tree and historical maxima.
+
+See [migration acceptance coverage](docs/migration-acceptance.md) for automated
+coverage and the remaining checks against the user's actual devices and assets.
 
 ## Tests
 
@@ -156,6 +191,10 @@ verify:
 - no automatic resend after an unknown control result
 - timer Events update the snapshot without a full Query synchronization
 - reconnect/resynchronize
+- automatic/manual Reset priority during reaction waits, including cancellation
+  without another frame
+- separate normal/Reset confirmation, delayed Events, Pause/Resume, unchanged
+  Queries, and confirmation timeout recovery without input frames
 
 An optional real TestHost smoke test can be built with:
 
@@ -164,7 +203,10 @@ cmake --preset full -DDIVERGENCESPLITTER_BUILD_TESTHOST_TESTS=ON
 ```
 
 and run with `DIVERGENCESPLITTER_TESTHOST_PORT=54000`. Set
-`DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` to include pause/resume control.
+`DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` to include pause/resume control and
+recorded-video → YAML → actual Bridge Start/Split verification. These controls
+expect an isolated TestHost with its default two-segment run. The CI helper
+`tools/run_testhost.py` starts and stops that host on a dedicated port.
 
 ## Distribution
 

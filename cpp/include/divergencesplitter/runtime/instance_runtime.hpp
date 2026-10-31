@@ -52,8 +52,10 @@ private:
     void run_connected();
     void set_state(InstanceState state, std::string error = {});
     void apply_update(const LiveSplitUpdate& update);
-    void dispatch_action(const Action& action, const FrameContext& context);
+    void dispatch_action(const Action& action);
+    void cancel_scheduled_action(std::string reason);
     void handle_manual_reset();
+    [[nodiscard]] bool take_manual_reset_request();
     [[nodiscard]] std::shared_ptr<SharedFrameEvaluation> take_frame();
     [[nodiscard]] bool wait_for_frame(std::chrono::milliseconds timeout);
     void set_runtime(std::shared_ptr<ScenarioRuntime> runtime);
@@ -86,7 +88,12 @@ private:
     bool stop_requested_{false};
     bool running_{false};
     std::uint64_t last_dropped_count_{};
-    std::optional<BridgeEvent> pending_event_;
+    struct ScheduledAction {
+        Action action;
+        LiveSplitSnapshot expected;
+        MonotonicTime due;
+    };
+    std::optional<ScheduledAction> scheduled_action_;
     struct UnknownControlGuard {
         ActionOperation operation;
         LiveSplitSnapshot snapshot;

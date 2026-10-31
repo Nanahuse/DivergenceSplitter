@@ -130,6 +130,7 @@ add_library(divergencesplitter_runtime STATIC
     src/runtime/configuration.cpp
     src/runtime/logging.cpp
     src/capture/frame_sources.cpp
+    src/capture/configured_source.cpp
     src/capture/camera_devices.cpp
     src/capture/capture_pipeline.cpp
     src/capture/ndi.cpp
@@ -194,6 +195,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         src/ui/monitor_page.cpp
         src/ui/diagnostics_page.cpp
         src/ui/profile_page.cpp
+        src/ui/profile_preview.cpp
         src/ui/settings_page.cpp
         src/ui/about_page.cpp
         src/ui/reset_all_button.cpp
@@ -267,6 +269,7 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
         tests/normalizer_tests.cpp
         tests/ndi_tests.cpp
         tests/profile_tests.cpp
+        tests/recorded_pipeline_tests.cpp
         tests/scenario_loader_tests.cpp
         tests/scenario_runtime_tests.cpp
         tests/test_support.cpp
@@ -279,6 +282,12 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
     )
     target_include_directories(divergencesplitter_tests PRIVATE tests)
     gtest_discover_tests(divergencesplitter_tests)
+    # Each iteration starts a fresh process so decoder startup is covered too.
+    add_test(NAME recorded_pipeline_repeat COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_EXECUTABLE=$<TARGET_FILE:divergencesplitter_tests>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/repeat_recorded_pipeline.cmake")
+    set_tests_properties(recorded_pipeline_repeat PROPERTIES
+        TIMEOUT 180 LABELS "recording;regression")
     if(DIVERGENCESPLITTER_ENABLE_NDI)
         add_test(NAME ndi_sdk_initialization COMMAND divergencesplitter_cli --ndi-check)
         add_executable(divergencesplitter_ndi_loopback_tests tests/ndi_loopback_tests.cpp)
@@ -313,7 +322,7 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
             target_include_directories(divergencesplitter_ui_tests SYSTEM PRIVATE "${NDI_SDK_DIR}/Include")
             target_compile_definitions(divergencesplitter_ui_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
         endif()
-        add_test(NAME divergencesplitter_ui_tests COMMAND divergencesplitter_ui_tests)
+        add_test(NAME divergencesplitter_ui_tests COMMAND divergencesplitter_ui_tests -o -,txt)
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             set(_qt_test_plugin_path "${VCPKG_INSTALLED_DIR}/x64-windows/debug/Qt6/plugins")
         else()

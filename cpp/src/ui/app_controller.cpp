@@ -34,6 +34,7 @@ Profile AppController::profile() const {
 }
 
 bool AppController::apply_profile(const Profile& profile, QString* error) {
+    emit sessionStarting();
     try {
         session_.apply_profile(profile, settings_);
         profile_ = profile;
@@ -41,11 +42,13 @@ bool AppController::apply_profile(const Profile& profile, QString* error) {
             settings_.last_profile = profile_path_->string();
             save_app_settings(default_settings_path(), settings_);
         }
+        emit sessionChanged();
         return true;
     } catch (const std::exception& failure) {
         if (error != nullptr) {
             *error = QString::fromUtf8(failure.what());
         }
+        emit sessionChanged();
         return false;
     }
 }
@@ -53,16 +56,19 @@ bool AppController::apply_profile(const Profile& profile, QString* error) {
 bool AppController::open_profile(const std::filesystem::path& path, QString* error) {
     try {
         auto loaded = load_profile(path);
+        emit sessionStarting();
         session_.apply_profile(loaded.profile, settings_);
         profile_ = loaded.profile;
         profile_path_ = path;
         settings_.last_profile = path.string();
         save_app_settings(default_settings_path(), settings_);
+        emit sessionChanged();
         return true;
     } catch (const std::exception& failure) {
         if (error != nullptr) {
             *error = QString::fromUtf8(failure.what());
         }
+        emit sessionChanged();
         return false;
     }
 }
@@ -107,6 +113,7 @@ std::optional<std::filesystem::path> AppController::profile_path() const {
 
 void AppController::stop() {
     session_.stop();
+    emit sessionChanged();
 }
 
 void AppController::request_reset_all() {

@@ -5,9 +5,16 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <filesystem>
+#include <fstream>
+#include <thread>
+#include <opencv2/videoio.hpp>
 
 #include "divergencesplitter/livesplit/adapter.hpp"
 #include "divergencesplitter/livesplit/client.hpp"
+#include "divergencesplitter/capture/configured_source.hpp"
+#include "divergencesplitter/runtime/instance_runtime.hpp"
+#include "divergencesplitter/runtime/session.hpp"
 
 using namespace divergencesplitter;
 using namespace std::chrono_literals;
@@ -173,4 +180,74 @@ TEST(TestHost, ControlPauseResume) {
     EXPECT_EQ(client.synchronize().phase, TimerPhase::running);
 
     (void)client.execute(ActionOperation::reset);
+}
+
+TEST(TestHost, RecordedVideoThroughYamlToRealBridgeControls) {
+    const auto port = testhost_port();
+    if (port == 0 || !allow_control()) GTEST_SKIP() << "TestHost control opt-in is not set";
+    LiveSplitClientOptions options;
+    options.port = port;
+    LiveSplitBridgeClient observer{options};
+    observer.wait_until_ready(10s);
+    ASSERT_TRUE(observer.is_ready());
+    ASSERT_EQ(observer.synchronize().split_count, 2) << "Requires the isolated two-segment TestHost run";
+    ASSERT_TRUE(observer.execute(ActionOperation::reset).ok());
+    const auto root = std::filesystem::temp_directory_path() /
+        ("divergencesplitter-bridge-recorded-" + std::to_string(monotonic_now().nanoseconds));
+    std::filesystem::create_directories(root);
+    const auto cleanup = std::shared_ptr<void>{nullptr, [root](void*) {
+        std::error_code error; std::filesystem::remove_all(root, error);
+    }};
+    const auto video = root / "input.avi";
+    cv::VideoWriter writer(video.string(), cv::CAP_OPENCV_MJPEG,
+        cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 30.0, {32, 32});
+    ASSERT_TRUE(writer.isOpened());
+    for (int gray : {10, 240, 10, 240, 10}) {
+        for (int count = 0; count < 12; ++count)
+            writer.write(cv::Mat(32, 32, CV_8UC3, cv::Scalar::all(gray)));
+    }
+    writer.release();
+    const auto yaml = root / "scenario.yaml";
+    {
+        std::ofstream out(yaml);
+        out << R"(start_condition: &edge
+  type: then
+  conditions:
+    - type: not
+      condition: {type: detected, minimum_score: 0.5, detector: {type: mean_brightness}}
+    - {type: detected, minimum_score: 0.5, detector: {type: mean_brightness}}
+splits:
+  - rules:
+      - {condition: *edge, action: split}
+  - null
+)";
+    }
+    const SourceConfiguration source = VideoSourceConfiguration{video.string(), {}};
+    InstanceRuntime runtime{0, load_profile_scenario(yaml, source).scenario,
+        std::make_unique<LiveSplitBridgeClient>(options)};
+    runtime.start();
+    const auto wait = [](const auto& predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + 10s;
+        while (!predicate() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(10ms);
+        return predicate();
+    };
+    ASSERT_TRUE(wait([&] { return runtime.state() == InstanceState::ready; }));
+    CapturePipeline capture(create_frame_source(source), create_frame_normalizer({}),
+        [&](auto frame) { runtime.publish_frame(std::move(frame)); }, [](auto) {});
+    capture.start();
+    ASSERT_TRUE(wait([&] { return !capture.stats().running; }));
+    capture.stop();
+    ASSERT_TRUE(wait([&] {
+        const auto value = runtime.diagnostics();
+        return value.scenario && value.scenario->snapshot && value.scenario->snapshot->split_index == 1 &&
+            !value.scenario->pending_action;
+    }));
+    const auto diagnostics = runtime.diagnostics();
+    EXPECT_EQ(diagnostics.action_count, 2U);
+    EXPECT_EQ(diagnostics.last_action, ActionOperation::split);
+    EXPECT_EQ(diagnostics.last_action_result, "ok");
+    EXPECT_EQ(observer.synchronize().split_index, 1);
+    EXPECT_EQ(capture.stats().last_error, "reached the end of the video file");
+    runtime.stop();
+    EXPECT_TRUE(observer.execute(ActionOperation::reset).ok());
 }

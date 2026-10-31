@@ -61,6 +61,7 @@ def main() -> int:
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     output: queue.Queue[str] = queue.Queue()
     reader = threading.Thread(

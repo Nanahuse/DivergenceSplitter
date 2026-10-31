@@ -7,6 +7,7 @@
 
 #include "divergencesplitter/capture/camera_devices.hpp"
 #include "divergencesplitter/configuration/configuration.hpp"
+#include "divergencesplitter/ui/profile_preview.hpp"
 
 class QCheckBox;
 class QComboBox;
@@ -22,13 +23,16 @@ class QThread;
 namespace divergencesplitter::ui {
 
 class AppController;
+class ImageView;
 
 class ProfilePage final : public QWidget {
     Q_OBJECT
 
 public:
     using NdiDiscovery = std::function<std::vector<std::string>()>;
-    explicit ProfilePage(AppController* controller, QWidget* parent = nullptr, NdiDiscovery ndi_discovery = {});
+    explicit ProfilePage(AppController* controller, QWidget* parent = nullptr,
+                         NdiDiscovery ndi_discovery = {},
+                         ProfilePreview::SourceFactory preview_factory = create_frame_source);
     ~ProfilePage() override;
 
     void reload_from_controller();
@@ -37,6 +41,10 @@ public:
 signals:
     void profileApplied();
     void statusMessage(const QString& message);
+
+protected:
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 private:
     void load_profile(const Profile& profile);
@@ -59,8 +67,16 @@ private:
     );
     void camera_device_changed(int index);
     void camera_mode_changed(int index);
+    void refresh_preview();
+    void stop_preview();
 
     AppController* controller_;
+    ProfilePreview preview_worker_;
+    ImageView* preview_view_;
+    QCheckBox* preview_enabled_;
+    QLabel* preview_status_;
+    QPushButton* preview_stop_session_;
+    bool preview_suspended_{};
 
     QComboBox* source_type_;
     QStackedWidget* source_stack_;

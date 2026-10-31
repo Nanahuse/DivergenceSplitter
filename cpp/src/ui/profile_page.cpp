@@ -21,6 +21,8 @@
 #include <QVBoxLayout>
 #include <QThread>
 #include <QTimer>
+#include <QShowEvent>
+#include <QHideEvent>
 
 #include <algorithm>
 
@@ -30,6 +32,7 @@
 #include "divergencesplitter/scenario/scenario.hpp"
 #include "divergencesplitter/capture/ndi.hpp"
 #include "divergencesplitter/ui/app_controller.hpp"
+#include "divergencesplitter/ui/image_view.hpp"
 
 namespace divergencesplitter::ui {
 namespace {
@@ -44,8 +47,10 @@ std::string to_std(const QString& text) {
 
 }  // namespace
 
-ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscovery ndi_discovery)
-    : QWidget(parent), controller_(controller), ndi_discovery_(std::move(ndi_discovery)) {
+ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscovery ndi_discovery,
+                         ProfilePreview::SourceFactory preview_factory)
+    : QWidget(parent), controller_(controller), preview_worker_(std::move(preview_factory)),
+      ndi_discovery_(std::move(ndi_discovery)) {
     ndi_discovery_available_ = ndi_enabled() || static_cast<bool>(ndi_discovery_);
     if (!ndi_discovery_) ndi_discovery_ = [] { return discover_ndi_sources(); };
     auto* outer = new QVBoxLayout(this);
@@ -73,6 +78,7 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     auto* source_group = new QGroupBox(tr("Input source"), content);
     auto* source_layout = new QVBoxLayout(source_group);
     source_type_ = new QComboBox(source_group);
+    source_type_->setObjectName(QStringLiteral("sourceType"));
     source_type_->addItems({tr("Camera"), tr("Video file"), tr("NDI®")});
     source_layout->addWidget(source_type_);
 
@@ -167,10 +173,15 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     auto* transform_layout = new QVBoxLayout(transform_group);
     auto* crop_row = new QHBoxLayout;
     crop_enabled_ = new QCheckBox(tr("Crop margins"), transform_group);
+    crop_enabled_->setObjectName(QStringLiteral("cropEnabled"));
     crop_left_ = new QSpinBox(transform_group);
     crop_right_ = new QSpinBox(transform_group);
     crop_top_ = new QSpinBox(transform_group);
     crop_bottom_ = new QSpinBox(transform_group);
+    crop_left_->setObjectName(QStringLiteral("cropLeft"));
+    crop_right_->setObjectName(QStringLiteral("cropRight"));
+    crop_top_->setObjectName(QStringLiteral("cropTop"));
+    crop_bottom_->setObjectName(QStringLiteral("cropBottom"));
     for (auto* spin : {crop_left_, crop_right_, crop_top_, crop_bottom_}) {
         spin->setRange(0, 16384);
         spin->setPrefix(tr("px "));
@@ -191,9 +202,11 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     resize_enabled_ = new QCheckBox(tr("Resize"), transform_group);
     resize_enabled_->setObjectName(QStringLiteral("resizeEnabled"));
     resize_width_ = new QSpinBox(transform_group);
+    resize_width_->setObjectName(QStringLiteral("resizeWidth"));
     resize_width_->setRange(1, 16384);
     resize_width_->setValue(1280);
     resize_height_ = new QSpinBox(transform_group);
+    resize_height_->setObjectName(QStringLiteral("resizeHeight"));
     resize_height_->setRange(1, 16384);
     resize_height_->setValue(720);
     resize_interpolation_ = new QComboBox(transform_group);
@@ -216,6 +229,39 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     connect(resize_enabled_, &QCheckBox::toggled, resize_references_, &QWidget::setEnabled);
     transform_layout->addWidget(resize_references_);
     layout->addWidget(transform_group);
+
+    auto* preview_group = new QGroupBox(tr("Draft input preview"), content);
+    auto* preview_layout = new QVBoxLayout(preview_group);
+    preview_enabled_ = new QCheckBox(tr("Preview input"), preview_group);
+    preview_enabled_->setObjectName(QStringLiteral("previewEnabled"));
+    preview_enabled_->setChecked(true);
+    preview_view_ = new ImageView(preview_group);
+    preview_view_->setObjectName(QStringLiteral("draftPreview"));
+    preview_view_->setMaximumHeight(270);
+    preview_status_ = new QLabel(preview_group);
+    preview_status_->setObjectName(QStringLiteral("draftPreviewStatus"));
+    preview_status_->setWordWrap(true);
+    preview_layout->addWidget(preview_enabled_);
+    preview_layout->addWidget(preview_view_);
+    preview_layout->addWidget(preview_status_);
+    preview_stop_session_ = new QPushButton(tr("Stop Session and preview draft"), preview_group);
+    preview_stop_session_->setObjectName(QStringLiteral("previewStopSession"));
+    preview_layout->addWidget(preview_stop_session_);
+    connect(preview_stop_session_, &QPushButton::clicked, controller_, &AppController::stop);
+    layout->addWidget(preview_group);
+    connect(preview_enabled_, &QCheckBox::toggled, this, &ProfilePage::refresh_preview);
+    connect(controller_, &AppController::sessionStarting, this, [this] {
+        preview_suspended_ = true;
+        stop_preview();
+    });
+    connect(controller_, &AppController::sessionChanged, this, [this] {
+        preview_suspended_ = false;
+        refresh_preview();
+    });
+    auto* preview_timer = new QTimer(this);
+    preview_timer->setInterval(100);
+    connect(preview_timer, &QTimer::timeout, this, &ProfilePage::refresh_preview);
+    preview_timer->start();
 
     auto* instances_group = new QGroupBox(tr("LiveSplit instances"), content);
     auto* instances_layout = new QVBoxLayout(instances_group);
@@ -533,11 +579,58 @@ void ProfilePage::update_source_stack() {
 }
 
 ProfilePage::~ProfilePage() {
+    stop_preview();
     // The worker performs bounded discovery and never accesses widgets. Waiting
     // here makes queued delivery safe even if the profile page is closed early.
     if (ndi_worker_) {
         ndi_worker_->wait();
         delete ndi_worker_;
+    }
+}
+
+void ProfilePage::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    refresh_preview();
+}
+
+void ProfilePage::hideEvent(QHideEvent* event) {
+    stop_preview();
+    QWidget::hideEvent(event);
+}
+
+void ProfilePage::stop_preview() {
+    preview_worker_.stop();
+    preview_view_->clear();
+}
+
+void ProfilePage::refresh_preview() {
+    preview_stop_session_->setVisible(controller_->session().running());
+    if (!isVisible() || !preview_enabled_->isChecked() || preview_suspended_ ||
+        controller_->session().running()) {
+        stop_preview();
+        preview_status_->setText(controller_->session().running() || preview_suspended_
+            ? tr("Preview stopped while a Session is active. Stop the Session to preview draft settings.")
+            : tr("Preview stopped."));
+        return;
+    }
+    preview_worker_.configure(draft_profile().source);
+    const auto preview = preview_worker_.snapshot();
+    if (!preview.error.empty()) {
+        preview_view_->clear();
+        preview_status_->setText(tr("Preview: %1. Edit the source or toggle Preview input to retry.")
+            .arg(QString::fromStdString(preview.error)));
+    } else if (preview.image.isNull()) {
+        preview_view_->clear();
+        preview_status_->setText(tr("Opening input / waiting for a frame…"));
+    } else {
+        preview_view_->set_image(preview.image);
+        const QString reported_fps = preview.input.fps > 0
+            ? tr("%1 fps reported").arg(preview.input.fps, 0, 'f', 2)
+            : tr("backend FPS unavailable");
+        preview_status_->setText(tr("Opened input: %1 × %2, %3 | %4 fps received | Output: %5 × %6")
+            .arg(preview.input.width).arg(preview.input.height).arg(reported_fps)
+            .arg(preview.measured_fps, 0, 'f', 1)
+            .arg(preview.image.width()).arg(preview.image.height()));
     }
 }
 
