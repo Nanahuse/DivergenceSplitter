@@ -17,7 +17,6 @@ public:
     [[nodiscard]] LiveSplitUpdate attach();
     [[nodiscard]] std::optional<LiveSplitUpdate> apply_event(const BridgeEvent& event);
     [[nodiscard]] LiveSplitUpdate synchronize(BridgeEventKind event);
-    [[nodiscard]] LiveSplitUpdate synchronize_after_control();
 
     [[nodiscard]] BridgeClient& client() noexcept { return client_; }
 

@@ -56,11 +56,6 @@ LiveSplitUpdate LiveSplitBridgeAdapter::synchronize(BridgeEventKind event) {
     return make_update(kind, snapshot);
 }
 
-LiveSplitUpdate LiveSplitBridgeAdapter::synchronize_after_control() {
-    auto snapshot = client_.synchronize();
-    return make_update(UpdateKind::transition, snapshot);
-}
-
 void LiveSplitBridgeAdapter::reset_revisions() {
     state_revision_ = 0;
     run_revision_ = 0;
@@ -84,13 +79,10 @@ LiveSplitUpdate LiveSplitBridgeAdapter::make_update(
         last_segments_ != snapshot.segment_names ||
         session_changed;
 
-    if (kind == UpdateKind::initial || kind == UpdateKind::resync ||
-        kind == UpdateKind::transition) {
-        ++state_revision_;
-    } else if (run_changed || !last_.has_value() ||
-               last_->phase != snapshot.phase ||
-               last_->split_index != snapshot.split_index ||
-               last_->split_count != snapshot.split_count) {
+    if (run_changed || !last_.has_value() ||
+        last_->phase != snapshot.phase ||
+        last_->split_index != snapshot.split_index ||
+        last_->split_count != snapshot.split_count) {
         ++state_revision_;
     }
     if (run_changed) {

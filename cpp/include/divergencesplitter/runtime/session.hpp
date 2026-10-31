@@ -44,8 +44,6 @@ public:
 
 private:
     void stop_locked();
-    [[nodiscard]] std::unique_ptr<FrameSource> create_source(const SourceConfiguration& source) const;
-    [[nodiscard]] static FrameNormalizer create_normalizer(const TransformConfiguration& transform);
 
     std::shared_ptr<TimeProvider> time_provider_;
     mutable std::mutex mutex_;

@@ -160,6 +160,16 @@ std::string CameraFrameSource::describe() const {
     return "camera #" + std::to_string(options_.device_index);
 }
 
+FrameSource::Format CameraFrameSource::opened_format() const {
+    if (!impl_->opened) return {};
+    return {
+        static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_WIDTH)),
+        static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_HEIGHT)),
+        impl_->capture.get(cv::CAP_PROP_FPS),
+        impl_->capture.getBackendName(),
+    };
+}
+
 struct VideoFileFrameSource::Impl {
     cv::VideoCapture capture;
     bool opened{false};
@@ -179,7 +189,12 @@ void VideoFileFrameSource::open() {
     if (impl_->opened) {
         return;
     }
-    if (!impl_->capture.open(options_.path)) {
+    // The built-in AVI/MJPEG reader needs no OS codec or GPU initialization.
+    // CAP_ANY tries MSMF first on Windows; even tiny local MJPEG recordings can
+    // then block in hardware/codec discovery before the first frame or Stop.
+    // Let other video formats retain the normal platform backend fallback.
+    if (!impl_->capture.open(options_.path, cv::CAP_OPENCV_MJPEG) &&
+        !impl_->capture.open(options_.path, cv::CAP_ANY)) {
         impl_->capture.release();
         throw FrameSourceError("cannot open video file: " + options_.path, false);
     }
@@ -200,7 +215,10 @@ cv::Mat VideoFileFrameSource::read(MonotonicTime& captured_at) {
         );
     const auto now = std::chrono::steady_clock::now();
     if (target > now) {
-        std::this_thread::sleep_for(target - now);
+        // Keep low-FPS recordings interruptible by CapturePipeline/preview Stop.
+        std::this_thread::sleep_for(std::min(target - now,
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::milliseconds{50})));
+        if (std::chrono::steady_clock::now() < target) return {};
     }
 
     cv::Mat image;
@@ -228,6 +246,16 @@ void VideoFileFrameSource::close() noexcept {
 
 std::string VideoFileFrameSource::describe() const {
     return options_.path;
+}
+
+FrameSource::Format VideoFileFrameSource::opened_format() const {
+    if (!impl_->opened) return {};
+    return {
+        static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_WIDTH)),
+        static_cast<int>(impl_->capture.get(cv::CAP_PROP_FRAME_HEIGHT)),
+        impl_->fps,
+        impl_->capture.getBackendName(),
+    };
 }
 
 }  // namespace divergencesplitter

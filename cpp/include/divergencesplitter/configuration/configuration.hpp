@@ -54,6 +54,8 @@ struct CameraDeviceConfiguration {
     CameraBackend backend{CameraBackend::media_foundation};
     std::string name;
     int index{};
+
+    friend bool operator==(const CameraDeviceConfiguration&, const CameraDeviceConfiguration&) = default;
 };
 
 struct CameraModeConfiguration {
@@ -61,6 +63,8 @@ struct CameraModeConfiguration {
     int height{};
     double fps{};
     std::string subtype_guid;
+
+    friend bool operator==(const CameraModeConfiguration&, const CameraModeConfiguration&) = default;
 };
 
 struct CameraSourceConfiguration {
@@ -68,16 +72,22 @@ struct CameraSourceConfiguration {
     CameraModeConfiguration mode;
     bool request_60_fps{false};
     TransformConfiguration transform;
+
+    friend bool operator==(const CameraSourceConfiguration&, const CameraSourceConfiguration&) = default;
 };
 
 struct VideoSourceConfiguration {
     std::string path;
     TransformConfiguration transform;
+
+    friend bool operator==(const VideoSourceConfiguration&, const VideoSourceConfiguration&) = default;
 };
 
 struct NdiSourceConfiguration {
     std::string name;
     TransformConfiguration transform;
+
+    friend bool operator==(const NdiSourceConfiguration&, const NdiSourceConfiguration&) = default;
 };
 
 using SourceConfiguration =

@@ -10,6 +10,10 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QSpinBox>
+#include <QTableWidget>
+#include <QDir>
+#include <QFontDatabase>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -24,6 +28,9 @@
 #include "divergencesplitter/ui/profile_page.hpp"
 #include "divergencesplitter/ui/reset_all_button.hpp"
 #include "divergencesplitter/ui/monitor_page.hpp"
+#include "divergencesplitter/condition/conditions.hpp"
+#include "divergencesplitter/detector/detectors.hpp"
+#include "divergencesplitter/runtime/scenario_runtime.hpp"
 #include "divergencesplitter/capture/ndi.hpp"
 
 #if DIVERGENCESPLITTER_ENABLE_NDI
@@ -34,6 +41,37 @@
 
 using namespace divergencesplitter::ui;
 using namespace divergencesplitter;
+
+namespace {
+struct PreviewProbe {
+    std::atomic_int opens{}, closes{};
+    std::atomic_bool active{}, wrong_thread{}, paused{};
+    std::thread::id gui_thread{std::this_thread::get_id()};
+};
+class PreviewSource final : public FrameSource {
+public:
+    explicit PreviewSource(std::shared_ptr<PreviewProbe> probe) : probe_(std::move(probe)) {}
+    void open() override { check_thread(); ++probe_->opens; probe_->active = true; }
+    cv::Mat read(MonotonicTime& at) override {
+        check_thread();
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+        at = monotonic_now();
+        if (probe_->paused.load()) return {};
+        cv::Mat image(4, 8, CV_8UC3, cv::Scalar::all(10));
+        image.colRange(4, 8).setTo(cv::Scalar::all(240));
+        return image;
+    }
+    void close() noexcept override {
+        check_thread();
+        if (probe_->active.exchange(false)) ++probe_->closes;
+    }
+    std::string describe() const override { return "preview fixture"; }
+    Format opened_format() const override { return {8, 4, 60.0}; }
+private:
+    void check_thread() const { if (std::this_thread::get_id() == probe_->gui_thread) probe_->wrong_thread = true; }
+    std::shared_ptr<PreviewProbe> probe_;
+};
+}
 
 class UiTests final : public QObject {
     Q_OBJECT
@@ -75,6 +113,144 @@ class UiTests final : public QObject {
     }
 
 private slots:
+    void previewTransformsRunOnWorkerWithoutReopeningInput() {
+        auto probe = std::make_shared<PreviewProbe>();
+        ProfilePreview preview([probe](const auto&) { return std::make_unique<PreviewSource>(probe); });
+        SourceConfiguration source = NdiSourceConfiguration{"sender", {}};
+        preview.configure(source);
+        QTRY_VERIFY(!preview.snapshot().image.isNull());
+        QCOMPARE(preview.snapshot().image.size(), QSize(8, 4));
+        probe->paused = true;  // Draft transforms also update a paused input.
+        auto& transform = std::get<NdiSourceConfiguration>(source).transform;
+        transform.crop = CropConfiguration{0, 4, 0, 0};
+        transform.resize = ResizeConfiguration{3, 2};
+        preview.configure(source);
+        QTRY_COMPARE(preview.snapshot().image.size(), QSize(3, 2));
+        QCOMPARE(preview.snapshot().image.pixelColor(1, 1), QColor(10, 10, 10));
+        QCOMPARE(probe->opens.load(), 1);
+        probe->paused = false;
+        QCOMPARE(preview.snapshot().input.width, 8);
+        QCOMPARE(preview.snapshot().input.fps, 60.0);
+        transform.crop->right = 8;
+        preview.configure(source);
+        QTRY_VERIFY(!preview.snapshot().error.empty());
+        QVERIFY(preview.snapshot().image.isNull());
+        transform.crop->right = 4;
+        preview.configure(source);
+        QTRY_COMPARE(preview.snapshot().image.size(), QSize(3, 2));
+        QCOMPARE(probe->opens.load(), 1);
+        std::get<NdiSourceConfiguration>(source).name = "different sender";
+        preview.configure(source);
+        QTRY_COMPARE(probe->opens.load(), 2);
+        preview.stop();
+        QCOMPARE(probe->closes.load(), 2);
+        QVERIFY(!probe->wrong_thread.load());
+    }
+
+    void profilePreviewTracksDraftVisibilityAndSessionOwnership() {
+        AppController controller;
+        auto probe = std::make_shared<PreviewProbe>();
+        ProfilePage page(&controller, nullptr, {}, [probe](const auto&) {
+            if (std::this_thread::get_id() == probe->gui_thread) probe->wrong_thread = true;
+            return std::make_unique<PreviewSource>(probe);
+        });
+        page.resize(1100, 1100);
+        page.show();
+        auto* status = page.findChild<QLabel*>("draftPreviewStatus");
+        QTRY_VERIFY(status->text().contains("8 × 4"));
+        page.findChild<QCheckBox*>("cropEnabled")->setChecked(true);
+        page.findChild<QSpinBox*>("cropRight")->setValue(4);
+        page.findChild<QCheckBox*>("resizeEnabled")->setChecked(true);
+        page.findChild<QSpinBox*>("resizeWidth")->setValue(3);
+        page.findChild<QSpinBox*>("resizeHeight")->setValue(2);
+        QTRY_VERIFY(status->text().contains("Output: 3 × 2"));
+        QVERIFY(status->text().contains("60.00 fps reported"));
+        QCOMPARE(probe->opens.load(), 1);
+        QVERIFY(!controller.session().running());  // The draft was never applied.
+        const auto captures = qEnvironmentVariable("DIVERGENCESPLITTER_UI_CAPTURE_DIR");
+        if (!captures.isEmpty()) {
+            QDir().mkpath(captures);
+            QVERIFY(page.grab().save(captures + "/profile-preview.png"));
+        }
+        page.hide();
+        QVERIFY(!probe->active.load());
+        page.show();
+        QTRY_COMPARE(probe->opens.load(), 2);
+        QTemporaryDir directory;
+        bool released_before_session = false;
+        connect(&controller, &AppController::sessionStarting, &page, [&] {
+            released_before_session = !probe->active.load();
+        });
+        QString error;
+        QVERIFY2(controller.apply_profile(make_profile(directory, true), &error), qPrintable(error));
+        QVERIFY(released_before_session);
+        QTRY_VERIFY(status->text().contains("Session is active"));
+        QCOMPARE(probe->opens.load(), 2);
+        page.findChild<QPushButton*>("previewStopSession")->click();
+        QTRY_COMPARE(probe->opens.load(), 3);
+        page.findChild<QCheckBox*>("previewEnabled")->setChecked(false);
+        QVERIFY(!probe->active.load());
+        QVERIFY(!probe->wrong_thread.load());
+    }
+
+    void previewFailureCanBeRetriedWithoutApplying() {
+        AppController controller;
+        std::atomic_int attempts{};
+        auto probe = std::make_shared<PreviewProbe>();
+        ProfilePage page(&controller, nullptr, {}, [&](const auto&) -> std::unique_ptr<FrameSource> {
+            if (++attempts == 1) throw FrameSourceError("offline sender", true);
+            return std::make_unique<PreviewSource>(probe);
+        });
+        page.show();
+        auto* status = page.findChild<QLabel*>("draftPreviewStatus");
+        QTRY_VERIFY(status->text().contains("offline sender"));
+        auto* enabled = page.findChild<QCheckBox*>("previewEnabled");
+        enabled->setChecked(false);
+        enabled->setChecked(true);
+        QTRY_VERIFY(status->text().contains("Opened input"));
+        QVERIFY(!controller.session().running());
+    }
+
+    void openingPreviewDoesNotBlockGuiEvents() {
+        AppController controller;
+        auto probe = std::make_shared<PreviewProbe>();
+        std::atomic_bool release{};
+        ProfilePage page(&controller, nullptr, {}, [&](const auto&) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+            while (!release.load() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds{5});
+            return std::make_unique<PreviewSource>(probe);
+        });
+        page.show();
+        bool gui_event_processed = false;
+        QTimer::singleShot(0, &page, [&] { gui_event_processed = true; release = true; });
+        QTRY_VERIFY(gui_event_processed);
+        QTRY_VERIFY(probe->active.load());
+        QVERIFY(!probe->wrong_thread.load());
+    }
+
+    void monitorSummarizesActiveConditionScoresAndThresholds() {
+        Scenario scenario;
+        scenario.start_condition = std::make_shared<DetectedCondition>(
+            std::make_shared<MeanBrightnessDetector>(), 0.9);
+        ScenarioRuntime runtime{std::move(scenario)};
+        runtime.apply_update({UpdateKind::initial, {1, 1, 1, TimerPhase::not_running, -1, 2}, {}});
+        (void)runtime.evaluate(FrameContext{Frame{cv::Mat(2, 2, CV_8UC1, cv::Scalar{128}), {}}, {}});
+        const auto overview = scenario_overview(runtime.diagnostics());
+        QVERIFY(overview.contains("mean_brightness"));
+        QVERIFY(overview.contains("score 0.502"));
+        QVERIFY(overview.contains("≥ 0.900"));
+        QVERIFY(!overview.contains("max"));
+        auto diagnostics = runtime.diagnostics();
+        diagnostics.reset_pending = ActionOperation::reset;
+        QVERIFY(scenario_overview(diagnostics).contains("Reset confirmation"));
+        AppController controller;
+        MonitorPage monitor(&controller);
+        auto* table = monitor.findChild<QTableWidget*>("monitorInstances");
+        QCOMPARE(table->horizontalHeaderItem(6)->text(), QStringLiteral("Processing FPS"));
+        QCOMPARE(table->horizontalHeaderItem(7)->text(), QStringLiteral("Current evaluation"));
+    }
+
 #if DIVERGENCESPLITTER_ENABLE_NDI
     void ndiRealSenderSelectionAndRenderedPreview() {
         auto runtime = acquire_ndi_runtime();
@@ -129,9 +305,16 @@ private slots:
         QCOMPARE(image->cols, 3);
         QCOMPARE(image->rows, 3);
         controller.stop();
+        page.show();
+        auto* draft_status = page.findChild<QLabel*>("draftPreviewStatus");
+        QTRY_VERIFY_WITH_TIMEOUT(draft_status->text().contains("Output: 3 × 3"), 20000);
+        const auto draft_rendered = page.findChild<ImageView*>("draftPreview")->grab().toImage();
+        QVERIFY(draft_rendered.pixelColor(draft_rendered.width() / 2, draft_rendered.height() / 2).red() > 200);
         QVERIFY2(controller.open_profile(path, &error), qPrintable(error));
         page.reload_from_controller();
         QCOMPARE(std::get<NdiSourceConfiguration>(page.draft_profile().source).name, name);
+        QTRY_VERIFY_WITH_TIMEOUT(controller.session().capture_stats().frames_published > 3, 20000);
+        page.hide();
         controller.stop();
     }
 #endif
@@ -202,6 +385,10 @@ private slots:
         previous_xdg_config_ = qgetenv("XDG_CONFIG_HOME");
         qputenv("APPDATA", settings_directory_.path().toUtf8());
         qputenv("XDG_CONFIG_HOME", settings_directory_.path().toUtf8());
+#ifdef _WIN32
+        QFontDatabase::addApplicationFont(QDir(qEnvironmentVariable("WINDIR")).filePath("Fonts/segoeui.ttf"));
+        QApplication::setFont(QFont(QStringLiteral("Segoe UI"), 9));
+#endif
     }
 
     void init() {
