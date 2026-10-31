@@ -29,6 +29,21 @@ operation history/state rather than requiring identical thread timing. Reset
 races and recovery properties already covered by runtime tests are reused rather
 than duplicated in every recording.
 
+MJPEG recordings use OpenCV's built-in AVI/MJPEG reader before trying platform
+backends. On Windows, CAP_ANY otherwise tries Media Foundation (including GPU
+codec discovery) first, which can delay open/Stop or fail to decode small test
+recordings. Other formats still fall back to CAP_ANY. Decoder selection and
+non-MJPEG fallback have separate source regressions; CI repeats these and the
+recorded pipeline cases twenty times in each NDI configuration without extending
+the five-second recording or two-second frame-barrier deadlines.
+
+Recording failures report source open/read/close versus frame-sink progress,
+decoder backend, captured/published frame counts, Bridge operation history and
+queries, instance error, Scenario evaluation count, timer position, both pending
+operations, rule errors, and CapturePipeline errors. The test joins capture before
+checking its final error and stopping instance workers, so a barrier exception is
+not hidden by an early fatal assertion or by teardown.
+
 ## Running the checks
 
 From Developer PowerShell with the documented build dependencies:

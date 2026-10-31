@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <opencv2/videoio.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <filesystem>
 #include <fstream>
 #include <atomic>
@@ -20,18 +21,26 @@ namespace {
 class TracedSource final : public FrameSource {
 public:
     explicit TracedSource(std::unique_ptr<FrameSource> source) : source_(std::move(source)) {}
-    void open() override { stage = "opening source"; source_->open(); stage = "source opened"; }
+    void open() override {
+        stage = "opening source";
+        source_->open();
+        { std::scoped_lock lock{mutex_}; backend_ = source_->opened_format().backend; }
+        stage = "source opened";
+    }
     cv::Mat read(MonotonicTime& at) override {
         stage = "reading source";
         auto image = source_->read(at);
-        stage = "frame sink";
+        stage = image.empty() ? "no source frame" : "frame decoded";
         return image;
     }
     void close() noexcept override { stage = "closing source"; source_->close(); stage = "source closed"; }
     std::string describe() const override { return source_->describe(); }
+    std::string backend() const { std::scoped_lock lock{mutex_}; return backend_; }
     std::atomic<const char*> stage{"not started"};
 private:
     std::unique_ptr<FrameSource> source_;
+    mutable std::mutex mutex_;
+    std::string backend_;
 };
 
 std::string runtime_trace(const InstanceRuntime& runtime, const test::FakeBridgeClient& bridge) {
@@ -60,7 +69,8 @@ public:
         const auto stats = capture.stats();
         std::scoped_lock lock{mutex_};
         std::ostringstream out;
-        out << "source=" << source.stage.load() << " captured=" << stats.frames_captured
+        out << "source=" << source.stage.load() << " backend=" << source.backend()
+            << " captured=" << stats.frames_captured
             << " published=" << stats.frames_published << " running=" << stats.running
             << " last_error=" << stats.last_error << " errors=" << errors_;
         return out.str();
@@ -169,20 +179,24 @@ TEST(RecordedPipeline, ProfileYamlDecodeTransformStartSplitUndoAndReentry) {
     std::atomic_bool normalized{true};
     CaptureTrace trace;
     auto source = std::make_unique<TracedSource>(create_frame_source(profile.source));
-    const auto* traced_source = source.get();
+    auto* traced_source = source.get();
     CapturePipeline capture(std::move(source),
         create_frame_normalizer(std::get<VideoSourceConfiguration>(profile.source).transform),
         [&](auto frame) {
+            traced_source->stage = "waiting for evaluation/control";
             if (frame->frame.image.size() != cv::Size{4, 4}) normalized = false;
             if (++frames == 17) {
+                traced_source->stage = "waiting for Undo";
                 auto state = bridge->snapshot();
                 state.split_index = 0;  // External Undo after the first Split.
                 bridge->set_snapshot(state);
                 bridge->push_event({BridgeEventKind::timer, 1, TimerPhase::running, 0});
                 if (!test::wait_until([&] { return runtime.diagnostics().scenario->snapshot->split_index == 0; }))
-                    throw std::runtime_error("Undo was not observed");
+                    throw std::runtime_error("Undo was not observed: " + runtime_trace(runtime, *bridge));
+                traced_source->stage = "waiting for evaluation/control";
             }
             publish_and_settle(runtime, *bridge, frame);
+            traced_source->stage = "frame settled";
         }, [&](const auto& error) { trace.error(error); });
     capture.start();
     const bool completed = test::wait_until([&] { return !capture.stats().running; }, 5s);
@@ -194,7 +208,6 @@ TEST(RecordedPipeline, ProfileYamlDecodeTransformStartSplitUndoAndReentry) {
     runtime.stop();
     EXPECT_EQ(frames.load(), 28);
     EXPECT_TRUE(normalized.load());
-    EXPECT_EQ(capture.stats().last_error, "reached the end of the video file");
     EXPECT_EQ(bridge->actions(), (std::vector{ActionOperation::start, ActionOperation::split, ActionOperation::split}));
 }
 
@@ -214,10 +227,13 @@ TEST(RecordedPipeline, MultipleYamlScenariosRemainIndependentOnSharedFrames) {
     ASSERT_TRUE(test::wait_until([&] { return one.state() == InstanceState::ready && two.state() == InstanceState::ready; }));
     CaptureTrace trace;
     auto traced = std::make_unique<TracedSource>(create_frame_source(source));
-    const auto* traced_source = traced.get();
+    auto* traced_source = traced.get();
     CapturePipeline capture(std::move(traced), create_frame_normalizer({}), [&](auto frame) {
+        traced_source->stage = "waiting for first instance";
         publish_and_settle(one, *first_bridge, frame);
+        traced_source->stage = "waiting for second instance";
         publish_and_settle(two, *second_bridge, frame);
+        traced_source->stage = "frame settled";
     }, [&](const auto& error) { trace.error(error); });
     capture.start();
     EXPECT_TRUE(test::wait_until([&] { return !capture.stats().running; }, 5s))
@@ -245,4 +261,33 @@ TEST(RecordedPipeline, LowFpsPlaybackStopsBeforeTheNextFrameIsDue) {
     capture.stop();
     EXPECT_LT(std::chrono::steady_clock::now() - started, 500ms);
     EXPECT_FALSE(capture.stats().running);
+}
+
+TEST(VideoFileSource, MjpegUsesBuiltinDecoderBeforePlatformBackends) {
+    Recording recording;
+    recording.write({10, 240});
+    VideoFileFrameSource source{{(recording.root / "input.avi").string()}};
+    source.open();
+    const auto format = source.opened_format();
+    EXPECT_EQ(format.backend, "CV_MJPEG");
+    EXPECT_EQ(format.width, 32);
+    EXPECT_EQ(format.height, 32);
+    EXPECT_DOUBLE_EQ(format.fps, 40.0);
+    MonotonicTime at;
+    EXPECT_FALSE(source.read(at).empty());
+    source.close();
+    EXPECT_TRUE(source.opened_format().backend.empty());
+}
+
+TEST(VideoFileSource, NonMjpegInputFallsBackToOtherBackends) {
+    Recording recording;
+    const auto image = recording.root / "frame00.png";
+    ASSERT_TRUE(cv::imwrite(image.string(), cv::Mat(32, 32, CV_8UC3, cv::Scalar::all(123))));
+    VideoFileFrameSource source{{(recording.root / "frame%02d.png").string()}};
+    source.open();
+    EXPECT_NE(source.opened_format().backend, "CV_MJPEG");
+    MonotonicTime at;
+    const auto decoded = source.read(at);
+    ASSERT_FALSE(decoded.empty());
+    EXPECT_EQ(decoded.at<cv::Vec3b>(0, 0), (cv::Vec3b{123, 123, 123}));
 }

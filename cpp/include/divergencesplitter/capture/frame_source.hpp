@@ -35,7 +35,7 @@ public:
     virtual void close() noexcept = 0;
     [[nodiscard]] virtual std::string describe() const = 0;
     // Reported by the opened backend, before Crop/Resize. Zero means unknown.
-    struct Format { int width{}; int height{}; double fps{}; };
+    struct Format { int width{}; int height{}; double fps{}; std::string backend; };
     [[nodiscard]] virtual Format opened_format() const { return {}; }
 };
 
@@ -80,6 +80,7 @@ public:
     [[nodiscard]] cv::Mat read(MonotonicTime& captured_at) override;
     void close() noexcept override;
     [[nodiscard]] std::string describe() const override;
+    [[nodiscard]] Format opened_format() const override;
 
 private:
     VideoFileSourceOptions options_;

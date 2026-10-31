@@ -282,6 +282,12 @@ if(DIVERGENCESPLITTER_BUILD_TESTS)
     )
     target_include_directories(divergencesplitter_tests PRIVATE tests)
     gtest_discover_tests(divergencesplitter_tests)
+    # Each iteration starts a fresh process so decoder startup is covered too.
+    add_test(NAME recorded_pipeline_repeat COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_EXECUTABLE=$<TARGET_FILE:divergencesplitter_tests>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/repeat_recorded_pipeline.cmake")
+    set_tests_properties(recorded_pipeline_repeat PROPERTIES
+        TIMEOUT 180 LABELS "recording;regression")
     if(DIVERGENCESPLITTER_ENABLE_NDI)
         add_test(NAME ndi_sdk_initialization COMMAND divergencesplitter_cli --ndi-check)
         add_executable(divergencesplitter_ndi_loopback_tests tests/ndi_loopback_tests.cpp)
