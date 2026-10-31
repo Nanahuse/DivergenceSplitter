@@ -1,28 +1,15 @@
-# A minimal declarative scenario. It does not need Python.
-# Replace the detector/threshold values with values that match your game.
+# Connection check: use a test LiveSplit run with one segment.
+# Requires incoming frames and a ready Bridge; no reference image is needed.
+# Times begin at each condition's first evaluation, not at Apply.
+# Resetting the timer allows this scenario to start it again.
 
 start_condition:
-  type: detected
-  minimum_score: 0.1
-  detector:
-    type: mean_brightness
-
-reset_condition:
-  type: not
-  condition:
-    type: detected
-    minimum_score: 0.05
-    detector:
-      type: mean_brightness
+  type: elapsed
+  duration: 2s
 
 splits:
   - rules:
       - condition:
-          type: falling_edge
-          condition:
-            type: detected
-            minimum_score: 0.8
-            detector:
-              type: mean_brightness
+          type: elapsed
+          duration: 3s
         action: split
-  - null

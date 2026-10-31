@@ -1,0 +1,17 @@
+# Demo reference: an 8x8 pattern, not a game-specific image.
+# Replace reference.ppm and tune minimum_score for your input.
+# Keep resize_references false when searching for this small template.
+visible: &visible
+  type: detected
+  minimum_score: 0.95
+  detector:
+    type: template_match
+    reference: reference.ppm
+
+start_condition: *visible
+splits:
+  - rules:
+      - condition:
+          type: falling_edge
+          condition: *visible
+        action: split

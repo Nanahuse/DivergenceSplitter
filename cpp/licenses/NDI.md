@@ -14,7 +14,7 @@ The SDK agreement PDF is used only for build-time existence and SHA-256 checks;
 it is not bundled. Read the [official NDI SDK License Agreement](https://ndi.link/ndisdk_license).
 SDK headers, import libraries, installers, examples and NDI Tools are excluded.
 An SDK-disabled development build contains these explanatory notices but no
-NDI binaries or SDK agreement. No Python bindings are used by the C++ product.
+NDI binaries or SDK agreement.
 
 The SDK/runtime is not relicensed under MIT. Its conditions apply to the SDK,
 runtime and NDI protocols, separately from DivergenceSplitter's own source.
