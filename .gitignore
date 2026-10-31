@@ -225,6 +225,7 @@ __marimo__/
 # AI
 AGENTS.md
 .agents/
+/skills-lock.json
 .docs
 
 # C++/vcpkg
