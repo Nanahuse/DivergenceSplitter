@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <fstream>
 #include <atomic>
+#include <mutex>
+#include <sstream>
 
 #include "divergencesplitter/capture/configured_source.hpp"
 #include "divergencesplitter/runtime/instance_runtime.hpp"
@@ -13,6 +15,61 @@ using namespace divergencesplitter;
 using namespace std::chrono_literals;
 
 namespace {
+// Keep source I/O separate from the frame sink's evaluation/confirmation wait.
+// In particular, Stop must join an in-flight backend open/read before returning.
+class TracedSource final : public FrameSource {
+public:
+    explicit TracedSource(std::unique_ptr<FrameSource> source) : source_(std::move(source)) {}
+    void open() override { stage = "opening source"; source_->open(); stage = "source opened"; }
+    cv::Mat read(MonotonicTime& at) override {
+        stage = "reading source";
+        auto image = source_->read(at);
+        stage = "frame sink";
+        return image;
+    }
+    void close() noexcept override { stage = "closing source"; source_->close(); stage = "source closed"; }
+    std::string describe() const override { return source_->describe(); }
+    std::atomic<const char*> stage{"not started"};
+private:
+    std::unique_ptr<FrameSource> source_;
+};
+
+std::string runtime_trace(const InstanceRuntime& runtime, const test::FakeBridgeClient& bridge) {
+    const auto value = runtime.diagnostics();
+    std::ostringstream out;
+    out << "instance=" << to_string(value.state) << " error=" << value.error
+        << " actions=";
+    for (auto action : bridge.actions()) out << to_string(action) << ',';
+    out << " result=" << value.last_action_result << " queries=" << bridge.sync_count();
+    if (value.scenario) {
+        const auto& scenario = *value.scenario;
+        out << " evaluations=" << scenario.evaluation_count
+            << " pending=" << (scenario.pending_action ? to_string(*scenario.pending_action) : "none")
+            << " reset_pending=" << (scenario.reset_pending ? to_string(*scenario.reset_pending) : "none")
+            << " rule_errors=" << scenario.rule_errors;
+        if (scenario.snapshot) out << " phase=" << to_string(scenario.snapshot->phase)
+                                   << " split=" << scenario.snapshot->split_index;
+    }
+    return out.str();
+}
+
+class CaptureTrace {
+public:
+    void error(const std::string& message) { std::scoped_lock lock{mutex_}; errors_ += message + '\n'; }
+    std::string describe(const CapturePipeline& capture, const TracedSource& source) const {
+        const auto stats = capture.stats();
+        std::scoped_lock lock{mutex_};
+        std::ostringstream out;
+        out << "source=" << source.stage.load() << " captured=" << stats.frames_captured
+            << " published=" << stats.frames_published << " running=" << stats.running
+            << " last_error=" << stats.last_error << " errors=" << errors_;
+        return out.str();
+    }
+private:
+    mutable std::mutex mutex_;
+    std::string errors_;
+};
+
 class Recording {
 public:
     Recording() {
@@ -78,14 +135,16 @@ void follow_controls(test::FakeBridgeClient* bridge) {
 // Frame barriers compare input order and operation history, not wall-clock
 // scheduling. Decoding, normalization, evaluation, and control still use the
 // production VideoFileFrameSource / CapturePipeline / InstanceRuntime threads.
-void publish_and_settle(InstanceRuntime& runtime, const std::shared_ptr<SharedFrameEvaluation>& frame) {
+void publish_and_settle(InstanceRuntime& runtime, const test::FakeBridgeClient& bridge,
+                        const std::shared_ptr<SharedFrameEvaluation>& frame) {
     const auto before = runtime.diagnostics().scenario->evaluation_count;
     runtime.publish_frame(frame);
     if (!test::wait_until([&] {
         const auto value = runtime.diagnostics();
         return value.scenario && value.scenario->evaluation_count > before &&
             !value.scenario->pending_action && !value.scenario->reset_pending;
-    }, 2s)) throw std::runtime_error("recorded frame evaluation/control did not settle");
+    }, 2s)) throw std::runtime_error("recorded frame evaluation/control did not settle: " +
+                                    runtime_trace(runtime, bridge));
 }
 }
 
@@ -108,7 +167,10 @@ TEST(RecordedPipeline, ProfileYamlDecodeTransformStartSplitUndoAndReentry) {
     ASSERT_TRUE(test::wait_until([&] { return runtime.state() == InstanceState::ready; }));
     std::atomic_int frames{};
     std::atomic_bool normalized{true};
-    CapturePipeline capture(create_frame_source(profile.source),
+    CaptureTrace trace;
+    auto source = std::make_unique<TracedSource>(create_frame_source(profile.source));
+    const auto* traced_source = source.get();
+    CapturePipeline capture(std::move(source),
         create_frame_normalizer(std::get<VideoSourceConfiguration>(profile.source).transform),
         [&](auto frame) {
             if (frame->frame.image.size() != cv::Size{4, 4}) normalized = false;
@@ -120,11 +182,15 @@ TEST(RecordedPipeline, ProfileYamlDecodeTransformStartSplitUndoAndReentry) {
                 if (!test::wait_until([&] { return runtime.diagnostics().scenario->snapshot->split_index == 0; }))
                     throw std::runtime_error("Undo was not observed");
             }
-            publish_and_settle(runtime, frame);
-        }, [](auto) {});
+            publish_and_settle(runtime, *bridge, frame);
+        }, [&](const auto& error) { trace.error(error); });
     capture.start();
-    ASSERT_TRUE(test::wait_until([&] { return !capture.stats().running; }, 5s));
+    const bool completed = test::wait_until([&] { return !capture.stats().running; }, 5s);
+    EXPECT_TRUE(completed) << "frames=" << frames.load() << ' ' << trace.describe(capture, *traced_source)
+                           << '\n' << runtime_trace(runtime, *bridge);
     capture.stop();
+    EXPECT_EQ(capture.stats().last_error, "reached the end of the video file")
+        << trace.describe(capture, *traced_source) << '\n' << runtime_trace(runtime, *bridge);
     runtime.stop();
     EXPECT_EQ(frames.load(), 28);
     EXPECT_TRUE(normalized.load());
@@ -146,14 +212,22 @@ TEST(RecordedPipeline, MultipleYamlScenariosRemainIndependentOnSharedFrames) {
     InstanceRuntime two{1, load_profile_scenario(recording.scenario(false), source).scenario, std::move(second)};
     one.start(); two.start();
     ASSERT_TRUE(test::wait_until([&] { return one.state() == InstanceState::ready && two.state() == InstanceState::ready; }));
-    CapturePipeline capture(create_frame_source(source), create_frame_normalizer({}), [&](auto frame) {
-        publish_and_settle(one, frame);
-        publish_and_settle(two, frame);
-    }, [](auto) {});
+    CaptureTrace trace;
+    auto traced = std::make_unique<TracedSource>(create_frame_source(source));
+    const auto* traced_source = traced.get();
+    CapturePipeline capture(std::move(traced), create_frame_normalizer({}), [&](auto frame) {
+        publish_and_settle(one, *first_bridge, frame);
+        publish_and_settle(two, *second_bridge, frame);
+    }, [&](const auto& error) { trace.error(error); });
     capture.start();
-    ASSERT_TRUE(test::wait_until([&] { return !capture.stats().running; }, 5s));
-    capture.stop(); one.stop(); two.stop();
-    EXPECT_EQ(capture.stats().last_error, "reached the end of the video file");
+    EXPECT_TRUE(test::wait_until([&] { return !capture.stats().running; }, 5s))
+        << trace.describe(capture, *traced_source) << '\n' << runtime_trace(one, *first_bridge)
+        << '\n' << runtime_trace(two, *second_bridge);
+    capture.stop();
+    EXPECT_EQ(capture.stats().last_error, "reached the end of the video file")
+        << trace.describe(capture, *traced_source) << '\n' << runtime_trace(one, *first_bridge)
+        << '\n' << runtime_trace(two, *second_bridge);
+    one.stop(); two.stop();
     EXPECT_EQ(first_bridge->actions(), (std::vector{ActionOperation::start, ActionOperation::split}));
     EXPECT_EQ(second_bridge->actions(), std::vector{ActionOperation::start});
 }
