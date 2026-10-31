@@ -1,6 +1,6 @@
 # DivergenceSplitter C++23
 
-DivergenceSplitter is a Windows desktop application that watches video and
+DivergenceSplitter is a Windows desktop application that analyzes video and
 automatically controls LiveSplit through LiveSplit.Bridge. YAML scenarios define
 when to start, split, reset, and perform other timer actions.
 

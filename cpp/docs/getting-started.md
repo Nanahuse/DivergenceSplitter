@@ -3,9 +3,10 @@
 [Documentation home](../README.md)
 
 This walkthrough uses a time-based scenario so that you can check the connection
-before tuning image detection. It automatically starts LiveSplit after two
-seconds of evaluation and completes its first segment three seconds after that
-segment begins evaluation. Keep a working video input active throughout the test.
+before tuning image detection. With this scenario, LiveSplit starts after two
+seconds of start-condition evaluation. Its first segment completes three seconds
+after that segment begins evaluation. Keep a working video input active throughout
+the test.
 
 ## Download and launch
 
@@ -17,9 +18,11 @@ segment begins evaluation. Keep a working video input active throughout the test
 2. Extract the artifact, then extract the application ZIP inside it into a writable
    local directory. Keep the DLLs, plugin directories, and license files together.
    The official ZIP includes the NDI runtime; installing the SDK is unnecessary.
-3. Run `DivergenceSplitter.exe`. A fresh installation has no active input. If a
-   saved last profile exists, startup opens and applies it automatically, so its
-   scenario may start controlling LiveSplit as soon as input and Bridge are ready.
+3. Run `DivergenceSplitter.exe`. A fresh installation has no active input. If the
+   profile remembered from the previous session still exists, the application
+   opens and applies it at startup.
+   That profile's scenario may start controlling LiveSplit as soon as input and
+   Bridge are ready.
 
 ## Connect LiveSplit.Bridge
 

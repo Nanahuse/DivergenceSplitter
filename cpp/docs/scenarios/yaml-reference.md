@@ -41,8 +41,9 @@ Required fields must still be present with the right structure.
 
 A rule has exactly `condition` (one condition mapping) and `action` (one scalar
 operation name). A true condition requests that action. Rules in a split are
-tried in list order: the first action wins, and later rules are not evaluated on
-that frame. Rule evaluation exceptions are counted and the next rule is tried.
+tried in list order. Evaluation stops at the first rule that returns an action;
+later rules are not evaluated on that frame. Rule evaluation exceptions are
+counted and the next rule is tried.
 A plain rule is not automatically one-shot.
 
 For multiple ordered actions, use a `sequence` containing a non-empty list of

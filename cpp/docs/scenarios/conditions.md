@@ -23,8 +23,9 @@ not calling an inactive rule group at all:
 | `then` | Normally evaluates only its active child and advances progress/completion; other children are marked skipped without evaluation. |
 
 The node's displayed status is `skipped`, but its descendants can show a normal
-result. A skipped `nth` can consume its only firing, and a skipped edge can consume
-a transition. Put stateful conditions deliberately in the list; do not assume
+result. A skipped `nth` can reach its count without returning true to its parent.
+A skipped edge can likewise record a transition without returning true to its
+parent. Put stateful conditions deliberately in the list; do not assume
 that a preceding false `all` child freezes later clocks or counters.
 
 By contrast, `mark_skipped` (used for inactive `then` steps or completed wrappers)

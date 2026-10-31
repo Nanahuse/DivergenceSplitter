@@ -42,9 +42,9 @@ defined in the [configuration reference](configuration.md).
 | File > Save Profile As... | Writes the current draft to JSON and remembers its path. It does not apply or fully validate that draft. |
 
 Saving a draft before Apply can therefore save settings that are not yet active
-or valid. For a repeatable workflow, edit, Apply, check Monitor, then save. Apply
-may succeed before an asynchronous capture-open error appears; check Monitor
-afterwards. Correct a reported error and Apply again.
+or valid. For a repeatable workflow, edit, Apply, check Monitor, then save. Capture
+opens asynchronously, so an input error may appear after Apply succeeds. Check
+Monitor afterwards, correct any reported error, and Apply again.
 
 YAML and image edits on disk are not watched. Reapply or reopen the profile to
 reload them. The last opened or saved profile path is remembered; if that file

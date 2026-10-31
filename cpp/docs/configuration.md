@@ -139,9 +139,9 @@ images. When enabled, the selected interpolation resizes every reference to:
 - the profile's output width/height when its detector has no ROI;
 - the detector ROI's width/height when it has an ROI.
 
-It does not crop reference images, scale ROI coordinates, or modify YAML/image
-files. With resizing disabled or `resize_references: false`, references retain
-their original dimensions. Keep it off for a small template that should be
+Reference resizing does not crop reference images, scale ROI coordinates, or
+modify YAML/image files. With resizing disabled or `resize_references: false`,
+references retain their original dimensions. Keep it off for a small template that should be
 searched inside a larger frame; enabling it enlarges that template to the whole
 output or ROI. Interpolating transparent images may create partial alpha values
 that fail binary-mask validation; use `nearest` or prepare a suitable reference.
