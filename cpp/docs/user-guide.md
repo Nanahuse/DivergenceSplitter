@@ -1,91 +1,58 @@
-# User guide
+# 利用ガイド
 
-[Documentation home](../README.md) · [First run](getting-started.md)
+[日本語（正本）](user-guide.md) | [English](user-guide.en.md)
+
+[ドキュメント一覧](../README.md) · [初回の手順](getting-started.md)
 
 ## Monitor
 
-Monitor shows the normalized input image: the same Crop/Resize output used by all
-scenario instances. The input line shows published frames, measured capture FPS,
-and whether capture is running. The table shows each scenario's connection state,
-timer phase, split index, last requested action, and error or action result.
-Scenario and split indexes in diagnostics are zero-based.
+Monitorには、全シナリオが使うCrop／Resize後の入力画像を表示します。入力欄には公開したフレーム数、計測した取得FPS、取得が動作中かを表示します。表には各シナリオの接続状態、タイマーのPhase、Splitの位置、最後のAction、エラーまたは操作結果を表示します。シナリオとSplitのインデックスは0から始まります。
 
-**Ready** means that the instance has synchronized with Bridge. Check input and
-Diagnostics as well; Ready alone does not mean that a condition is true or that
-the configured split count is valid. While disconnected, that instance cannot
-evaluate actions. Other instances have independent connections.
+ReadyはBridgeとの同期が済んだ状態です。入力とDiagnosticsも確認してください。Readyでも条件の成立や区間数の整合性を示すわけではありません。切断中のインスタンスはActionを評価できません。他のインスタンスの接続は独立しています。
 
 ### Reset All
 
-Hold **Reset All** for two seconds. Releasing early or moving the pointer outside
-the button cancels the hold. On completion, the application queues a manual Reset
-for each instance. It sends Reset for running, paused, or ended timers once the
-instance can process the request. A stopped timer needs no reset. Check each
-instance's result; this is not an atomic operation across LiveSplit processes.
+Reset Allを2秒間押し続けます。途中で離すか、ポインターをボタンの外へ動かすとキャンセルします。押し続けると各インスタンスに手動Resetを要求します。各インスタンスが要求を処理できるとき、Running、Paused、EndedのタイマーにResetを送ります。停止中のタイマーには不要です。複数のLiveSplitに対して一括で成功する操作ではないため、インスタンスごとの結果を確認してください。
 
-Reset All resets timers, rather than clearing a draft or deleting a profile.
-After a reset, a start condition that becomes true can start the run again.
+Reset Allはタイマーをリセットする操作です。下書きやProfileファイルを削除しません。リセット後に開始条件が成立すると、Runが再び始まることがあります。
 
-## Profile: draft, active configuration, and file
+## Profileの下書き・適用済み設定・ファイル
 
-Profile selects one input, optional transforms, and a table of Bridge ports and
-scenario paths. Use **Add instance**, **Remove instance**, and
-**Browse scenario...** to edit that table. Input options and the JSON schema are
-defined in the [configuration reference](configuration.md).
+Profileでは入力1つ、任意の画像変換、Bridgeポートとシナリオパスの一覧を設定します。Add instance、Remove instance、Browse scenario...で行を編集します。入力の設定項目とJSONの仕様は[設定リファレンス](configuration.md)にまとめています。
 
-| Operation | Effect |
+| 操作 | 動作 |
 | --- | --- |
-| Edit fields | Changes the draft; the active runtime continues with its applied values. |
-| Apply | Validates scenario/reference loading and source selection, then replaces the session with the draft. Capture and instance state restart; video files reopen from the beginning. It does not save the profile JSON. |
-| Revert draft | Replaces the draft with the active profile. It does not reload the file or undo actions already sent to LiveSplit. |
-| File > Open Profile... | Loads a JSON file and immediately applies it, then replaces the draft. |
-| File > Save Profile As... | Writes the current draft to JSON and remembers its path. It does not apply or fully validate that draft. |
+| 項目を編集 | 下書きだけを変更します。実行中のRuntimeは適用済みの値を使い続けます。 |
+| Apply | シナリオ・参照画像の読み込みと入力の選択を検証し、下書きでSessionを置き換えます。映像取得とインスタンスの状態を初期化し、動画は先頭から開き直します。Profile JSONは保存しません。 |
+| Revert draft | 適用済みのProfileで下書きを置き換えます。ファイルを読み直したり、送信済みのタイマー操作を取り消したりはしません。 |
+| File > Open Profile... | JSONを読み込んですぐに適用し、下書きも置き換えます。 |
+| File > Save Profile As... | 現在の下書きをJSONに書き、パスを記憶します。下書きの適用や完全な検証は行いません。 |
 
-Saving a draft before Apply can therefore save settings that are not yet active
-or valid. For a repeatable workflow, edit, Apply, check Monitor, then save. Capture
-opens asynchronously, so an input error may appear after Apply succeeds. Check
-Monitor afterwards, correct any reported error, and Apply again.
+Applyの前に保存すると、未適用または無効な設定を保存する場合があります。編集、Apply、Monitorでの確認、保存の順で進めてください。映像入力を開く処理は非同期なので、Applyの成功後に入力エラーが出る場合があります。Monitorでエラーを確認し、修正して再びApplyしてください。
 
-YAML and image edits on disk are not watched. Reapply or reopen the profile to
-reload them. The last opened or saved profile path is remembered; if that file
-exists at the next startup, the application attempts to open and apply it.
+YAMLや画像の変更は自動監視しません。編集後はProfileを再適用するか開き直してください。最後に開いた、または保存したProfileのパスを記憶します。次回の起動時にそのファイルが存在すれば、読み込みと適用を試みます。
 
 ## Diagnostics
 
-Expand the scenario tree to inspect Run, Start, Reset, Incomplete, and each Split.
-Rules show their action; a sequence shows its active step. Condition rows show
-status and, for `detected`, the latest score, maximum score since reset, and
-threshold. Evaluation details include evaluation count, last evaluation time in
-milliseconds, and rule error count.
+シナリオのツリーを展開するとRun、Start、Reset、Incomplete、各Splitを確認できます。RuleにはAction、sequenceには現在のステップを表示します。Conditionには状態を表示し、`detected` には最新スコア、リセット後の最大スコア、しきい値も表示します。評価回数、直近の評価時間（ミリ秒）、Ruleのエラー回数も確認できます。
 
-| Status | Meaning |
+| 状態 | 意味 |
 | --- | --- |
-| `not_evaluated` | Newly loaded or reset; no evaluation since then. |
-| `true` / `false` | Most recent normal evaluation result. |
-| `skipped` | Result not used at that point in evaluation. Stateful nodes can still update during short-circuit evaluation; see [conditions](scenarios/conditions.md). |
-| `error` | Evaluation threw an error, such as an incompatible reference shape. |
+| `not_evaluated` | 読み込み直後またはリセット後で、まだ評価していません。 |
+| `true`／`false` | 直近の通常評価の結果です。 |
+| `skipped` | その位置では結果を使っていません。短絡評価中も状態を更新するConditionがあります。[Condition](scenarios/conditions.md)を参照してください。 |
+| `error` | 参照画像の形状不一致など、評価中に例外が発生しました。 |
 
-Only the active rule groups are evaluated. Inactive groups may retain their last
-status; a displayed score is not necessarily from the newest frame. The
-[YAML reference](scenarios/yaml-reference.md) explains phase selection and resets.
+有効なRuleグループだけを評価します。無効なグループには以前の状態が残るため、表示スコアが最新フレームの値とは限りません。Phaseごとの選択とリセットは[YAMLリファレンス](scenarios/yaml-reference.md)で説明します。
 
 ## Settings
 
-- **Log level**: `OFF`, `DEBUG`, `INFO` (default), `WARNING`, or `ERROR`. This filters
-  existing log events; DEBUG does not add per-frame detector score logging.
-- **Reaction time**: non-negative milliseconds, `0` by default; the UI permits up
-  to `5000`. Automatic actions wait until the triggering frame's capture time plus
-  this delay. Time already spent processing counts toward the delay. This is not a
-  detector threshold or a guarantee of exact timer timing.
-- **Theme**: Light or Dark; saved changes update the theme immediately.
+- Log level：`OFF`、`DEBUG`、`INFO`、`WARNING`、`ERROR`から選びます。既定値は `INFO` です。既存のログイベントを絞り込む設定であり、DEBUGでも全フレームのDetectorスコアは記録しません。
+- Reaction time：0以上のミリ秒値です。既定値は `0`、画面上の上限は `5000` です。自動Actionは判定の原因となったフレームの取得時刻にこの時間を足した時刻まで待ちます。処理に使った時間も待ち時間に含みます。判定のしきい値や、正確なタイマー操作時刻の保証ではありません。
+- Theme：LightまたはDarkを選びます。保存すると表示に反映します。
 
-Click **Save** to persist settings. **Reload** restores the controller's saved
-values into the Settings fields. Reapply the profile for runtime settings
-(reaction time and logging level) to take effect. Settings are stored separately
-from profiles in `%APPDATA%/DivergenceSplitter/settings.json`; the complete schema
-is in [configuration](configuration.md#application-settings).
+Saveで設定を保存します。ReloadはControllerが持つ保存済みの値をSettingsの項目に戻します。Reaction timeとログレベルをRuntimeに反映するにはProfileを再適用してください。設定はProfileと別に `%APPDATA%/DivergenceSplitter/settings.json` に保存します。全項目は[設定リファレンス](configuration.md#アプリケーション設定)を参照してください。
 
-## About and command line
+## AboutとCLI
 
-About shows the application version and project/license links. For headless
-validation and execution, see [troubleshooting](troubleshooting.md#command-line-checks).
+Aboutにはアプリのバージョンとプロジェクト・ライセンスへのリンクを表示します。画面を使わない設定の検証と実行は[CLIでの確認](troubleshooting.md#cliでの確認)を参照してください。

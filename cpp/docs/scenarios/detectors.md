@@ -1,19 +1,14 @@
-# Detector reference
+# Detectorリファレンス
 
-[Scenario authoring](README.md) · [Conditions](conditions.md#detected) · [Examples](examples.md)
+[日本語（正本）](detectors.md) | [English](detectors.en.md)
 
-Detectors return a numeric score; a [`detected`](conditions.md#detected) condition
-compares it with `minimum_score` using `>=`. All nine supported detectors return
-scores clamped to `[0, 1]`. Larger means a stronger match, greater brightness, or
-more color coverage, depending on the detector. Scores are not probabilities and
-thresholds are not interchangeable across methods. Inspect desired and undesired
-frames in Diagnostics before choosing a threshold.
+[シナリオ作成](README.md) · [detected](conditions.md#detected) · [例](examples.md)
 
-## Common settings and ROI
+Detectorは数値のスコアを返し、[`detected`](conditions.md#detected) が `>=` で `minimum_score` と比較します。9種類すべての出力を `[0, 1]` に制限します。方式に応じ、一致度、明るさ、指定色の割合が高いほどスコアが大きくなります。確率ではなく、方式間でしきい値を共用できるわけでもありません。成立させたい画面と、それ以外の画面をDiagnosticsで比較して調整してください。
 
-Every detector requires `type` and accepts optional `roi`. Reference-based types
-also require `reference`. Only `difference_hash_similarity` accepts `hash_size`;
-only `color_range` accepts `lower`/`upper`. There are no other detector settings.
+## 共通設定とROI
+
+全Detectorに `type` が必要で、任意の `roi` を指定できます。参照画像を使う型は `reference` も必須です。`hash_size` は `difference_hash_similarity`、`lower`／`upper` は `color_range` だけの項目です。他の設定項目はありません。
 
 ```yaml
 type: template_match
@@ -21,64 +16,44 @@ reference: images/title.png
 roi: {x: 100, y: 50, width: 320, height: 180}
 ```
 
-`roi` can be omitted or `null` for the full normalized frame. If provided, all four
-fields are required integers: non-negative `x`/`y` and positive `width`/`height`.
-The origin is the top-left of the image **after** input Crop/Resize. The rectangle
-must fit inside each incoming frame; it is not clipped automatically. The ROI
-selects the input region, not a region in the reference image. All dimensional
-constraints below compare the reference with this selected input region.
+`roi` の省略または `null` は正規化した画像全体を使います。指定時は4項目すべてが整数で必要です。`x`／`y` は0以上、`width`／`height` は正の値です。原点は入力のCrop／Resize後の画像の左上です。矩形は実フレーム内に収まる必要があり、自動では切り詰めません。
 
-## Reference images and channels
+ROIは入力から調べる領域を選びます。参照画像を切り取る指定ではありません。以下の寸法制約は参照画像とこの入力領域の間で比較します。
 
-Reference paths resolve [relative to the YAML file](yaml-reference.md#paths).
-Images are decoded without forcing channels or bit depth. PNG with 8-bit BGR or
-BGRA data is a practical format. A grayscale PNG remains single-channel; it is
-not automatically converted to BGR for color/pixel detectors.
+## 参照画像とチャンネル
 
-The shared reference preparation accepts 1-channel grayscale, 3-channel BGR, or
-4-channel BGRA. For BGRA it extracts BGR and validates alpha: every value must be
-0 or 255, with at least one opaque pixel. Partial alpha and fully transparent
-images are rejected. Fully opaque alpha is removed and treated as unmasked.
-Mask application depends on the detector:
+参照パスは[YAMLの保存場所](yaml-reference.md#パス)を基準にします。チャンネルとビット深度を強制変換せず読み込みます。通常は8ビットBGR／BGRAのPNGを使えます。グレースケールPNGは1チャンネルのままで、色・画素比較向けに自動でBGRへ変換しません。
 
-| Detector | Input/reference shape and channels | Transparent reference pixels |
+共通の前処理は1チャンネルのグレースケール、3チャンネルのBGR、4チャンネルのBGRAを受理します。BGRAはBGRとalphaに分け、alphaが0または255だけで、少なくとも1ピクセルが不透明であることを検査します。中間alphaと全透過画像は拒否します。全ピクセルが不透明ならalphaを除き、マスクなしとして扱います。マスクの使い方は方式ごとに異なります。
+
+| Detector | 入力と参照画像の寸法・チャンネル | 透過ピクセルの扱い |
 | --- | --- | --- |
-| `template_match` | Reference width/height must not exceed region; channel count must match after alpha removal. | Binary mask used in template correlation. |
-| `mean_absolute_similarity`, `root_mean_square_similarity` | Exact width/height and channel-count match after alpha removal. | Excluded from error and component count. |
-| `histogram_similarity`, `perceptual_hash_similarity` | 8-bit BGR input and 8-bit BGR/BGRA reference. Unmasked sizes may differ; masked reference requires exact region dimensions. | Histogram excludes them; perceptual hash blacks them out in both images. |
-| `difference_hash_similarity` | Reference and input can differ in size and use grayscale/BGR/BGRA layouts converted to grayscale. | Alpha is validated and removed, but the resulting mask is **not used**. |
-| `phase_correlation` | Exact width/height match; grayscale/BGR/BGRA converted to float grayscale. | Alpha is validated and removed, but the mask is **not used**. |
+| `template_match` | 参照の幅・高さは領域以下。alpha除去後のチャンネル数が一致すること。 | 二値マスクで相関を計算。 |
+| `mean_absolute_similarity`、`root_mean_square_similarity` | 幅・高さと、alpha除去後のチャンネル数が完全一致。 | 誤差と成分数から除外。 |
+| `histogram_similarity`、`perceptual_hash_similarity` | 入力は8ビットBGR、参照は8ビットBGR／BGRA。マスクなしなら寸法が異なってもよく、ありなら領域と完全一致。 | histogramは除外し、perceptual hashは両画像の同じ位置を黒にする。 |
+| `difference_hash_similarity` | 寸法の違いとグレースケール／BGR／BGRAを許容し、グレースケールへ変換。 | alphaを検証して除くが、マスクは使わない。 |
+| `phase_correlation` | 幅・高さが完全一致。グレースケール／BGR／BGRAを浮動小数点グレースケールへ変換。 | alphaを検証して除くが、マスクは使わない。 |
 
-Template and pixel-error detectors do not implicitly convert grayscale references
-to match a normal BGR capture. For those methods, use a BGR reference for BGR
-input. Pixel-error arithmetic converts values to floating point but still uses
-255 for normalization, so 8-bit references are the appropriate scale. Template
-matching converts reference and frame to compatible 8-bit or float data; it does
-not normalize 16-bit intensity ranges to 0–255. Histogram and perceptual hash
-explicitly reject non-8-bit references. Grayscale hash/phase processing uses float
-conversion internally. Empty images and incompatible layouts fail validation or
-evaluation rather than producing a successful detection.
+templateと画素誤差の方式は、通常のBGR入力に合わせてグレースケール参照を自動変換しません。BGR入力にはBGR参照を使ってください。画素誤差は浮動小数点で計算しますが、正規化の基準は255なので8ビット参照が適切です。templateは画像を互換な8ビットまたは浮動小数点に変換しますが、16ビットの輝度範囲を0～255へ正規化しません。
 
-Profile's [`resize_references`](../configuration.md#crop-resize-and-reference-images)
-can alter these dimensions at load time. Apply validates reference construction;
-actual region bounds and frame shape/channel compatibility require a frame.
+histogramとperceptual hashは8ビット以外の参照を明示的に拒否します。グレースケールを使うhashとphaseは内部で浮動小数点へ変換します。空画像や不適合な構造は読み込み・評価のエラーになり、検出成功としては扱いません。
 
-## Choosing a method
+Profileの [`resize_references`](../configuration.md#cropresize参照画像) は読み込み時に参照寸法を変える場合があります。Applyでは参照を構築しますが、領域の範囲や実フレームの形状・チャンネルとの互換性にはフレームが必要です。
 
-| Need | Starting point |
+## 方式の選び方
+
+| 用途 | 最初に試す方式 |
 | --- | --- |
-| Find a distinctive small image at different positions inside a region | `template_match` |
-| Compare a fixed screen/ROI pixel by pixel | `mean_absolute_similarity` |
-| Penalize large pixel errors more strongly | `root_mean_square_similarity` |
-| Compare color distributions with little concern for position | `histogram_similarity` |
-| Compare coarse visual structure at different image sizes | `perceptual_hash_similarity` or `difference_hash_similarity` |
-| Detect a bright/dark transition without a reference | `mean_brightness` |
-| Detect how much of an area has a chosen color | `color_range` |
-| Measure correlation of same-size images despite translation | `phase_correlation` |
+| 領域内の異なる位置から特徴的な小画像を探す | `template_match` |
+| 固定した画面・ROIを画素単位で比べる | `mean_absolute_similarity` |
+| 大きな画素誤差を強く減点する | `root_mean_square_similarity` |
+| 配置より色の分布を比べる | `histogram_similarity` |
+| 寸法が違う画像のおおまかな構造を比べる | `perceptual_hash_similarity`、`difference_hash_similarity` |
+| 参照なしで明暗の変化を調べる | `mean_brightness` |
+| 領域内の指定色の割合を調べる | `color_range` |
+| 同寸法の画像を平行移動に対応した相関で比べる | `phase_correlation` |
 
-These are starting points, not accuracy guarantees. Hashes and histograms can
-give high scores to unrelated scenes. Use a meaningful ROI, additional conditions,
-and representative test frames.
+この表は選択の目安であり、精度の保証ではありません。hashやhistogramは無関係な画面にも高スコアを返す場合があります。意味のあるROI、追加のCondition、代表的なテスト画像を組み合わせてください。
 
 ## template_match
 
@@ -87,20 +62,12 @@ type: template_match
 reference: images/title.png
 ```
 
-Required: `reference`; optional: `roi`. Searches every position where the template
-fits inside the region, then takes the highest normalized correlation.
+`reference` は必須、`roi` は任意です。テンプレートが収まる領域内の全位置で正規化相関を調べ、最大値を使います。
 
-- Unmasked: OpenCV `TM_CCOEFF_NORMED`, which subtracts per-channel means. If the
-  maximum correlation is `r` in `[-1, 1]`, the score is `clamp((r + 1) / 2)`.
-  Zero correlation therefore scores about `0.5`, not zero.
-- Masked: OpenCV `TM_CCORR_NORMED` over opaque template pixels, without the same
-  mean subtraction. The maximum correlation is directly clamped to `[0, 1]`.
+- マスクなし：OpenCVの `TM_CCOEFF_NORMED` でチャンネルごとの平均を差し引きます。最大相関 `r` の範囲は `[-1, 1]` で、スコアは `clamp((r + 1) / 2)` です。相関0のスコアは約 `0.5` であり、0ではありません。
+- マスクあり：不透明ピクセルで `TM_CCORR_NORMED` を計算します。同じ平均除去は行わず、最大相関を直接 `[0, 1]` に制限します。
 
-The reference must have spatial variation in at least one channel; a constant
-template is rejected. A reference larger than the region or with mismatched
-channels fails evaluation. Non-finite correlation is an error. Use this for
-distinctive symbols or text with stable scale; it does not search arbitrary scales
-or rotations and does not expose the matched location to conditions.
+少なくとも1チャンネルに位置による値の変化が必要で、一様な参照は拒否します。領域より大きい参照やチャンネル数の不一致は評価エラーです。相関が非有限値でもエラーです。スケールが安定した記号・文字に向きますが、任意の拡大縮小・回転は探索せず、一致位置をConditionへ返す機能もありません。
 
 ## mean_absolute_similarity
 
@@ -109,13 +76,9 @@ type: mean_absolute_similarity
 reference: images/screen.png
 ```
 
-Required: `reference`; optional: `roi`. Let `N` be the number of selected pixel
-components (opaque pixels × channels), and `d_i` each input minus reference
-component. Score: `clamp(1 - (sum(abs(d_i)) / N) / 255)`.
+`reference` は必須、`roi` は任意です。選択した画素成分数を `N`（不透明ピクセル数×チャンネル数）、入力と参照の成分差を `d_i` とすると、スコアは `clamp(1 - (sum(abs(d_i)) / N) / 255)` です。
 
-Identical images score 1; large average pixel error lowers the score. Requires
-exact dimensions and matching channel counts. Use for fixed-position UI regions
-or screens; movement, compression noise, and brightness changes affect the result.
+同一画像は1になり、平均画素誤差が大きいほど下がります。寸法とチャンネル数の完全一致が必要です。固定位置のUIや画面に向きますが、移動、圧縮ノイズ、明るさの変化に影響されます。
 
 ## root_mean_square_similarity
 
@@ -124,12 +87,9 @@ type: root_mean_square_similarity
 reference: images/screen.png
 ```
 
-Required: `reference`; optional: `roi`. With the same component selection as above,
-score: `clamp(1 - sqrt(sum(d_i * d_i) / N) / 255)`.
+`reference` は必須、`roi` は任意です。成分の選択は前項と同じで、スコアは `clamp(1 - sqrt(sum(d_i * d_i) / N) / 255)` です。
 
-Requires exact dimensions/channels. Squaring emphasizes a few large errors more
-than mean absolute error does. Use when localized mismatches should reduce the
-score strongly.
+寸法とチャンネル数の完全一致が必要です。二乗するため、一部の大きな誤差をmean absolute方式より強く反映します。局所的な不一致でスコアを大きく下げたい場合に使います。
 
 ## histogram_similarity
 
@@ -138,17 +98,9 @@ type: histogram_similarity
 reference: images/screen.png
 ```
 
-Required: `reference`; optional: `roi`. Builds an RGB color histogram with 8 bins
-per channel (512 joint bins, intensities `[0, 256)`) and L2-normalizes it. Score:
-`clamp(1 - D)`, where `D` is OpenCV's Bhattacharyya histogram distance. The distance
-normalizes the histogram coefficient by histogram totals before its square-root
-distance calculation. Matching color distributions score 1.
+`reference` は必須、`roi` は任意です。各色8ビン、合計512ビンのRGB結合ヒストグラムを、各色の値の範囲 `[0, 256)` で作成してL2正規化します。OpenCVのBhattacharyya距離を `D` とし、スコアは `clamp(1 - D)` です。距離計算はヒストグラム総量で係数を正規化した後に平方根を使います。色分布が一致すると1です。
 
-Requires 8-bit BGR; an 8-bit BGRA reference supplies a binary mask. With no mask,
-image sizes may differ. With a mask, the input region must match its dimensions
-so the same selected locations can be used. Spatial arrangement is discarded:
-reordered pixels with the same distribution can score 1. Useful for broad scene
-color changes; unsuitable alone for distinguishing similar-colored layouts.
+入力は8ビットBGRが必要です。8ビットBGRA参照は二値マスクを供給します。マスクなしなら寸法が異なってもよく、ありなら同じ位置を選べるよう領域と寸法を一致させます。空間配置は使わないため、画素を並べ替えても分布が同じなら1になる場合があります。画面全体の色変化には使えますが、似た配色のレイアウトを単独で区別する用途には向きません。
 
 ## perceptual_hash_similarity
 
@@ -157,16 +109,9 @@ type: perceptual_hash_similarity
 reference: images/screen.png
 ```
 
-Required: `reference`; optional: `roi`. For each image, black out masked locations
-when a mask exists, resize to 8×8 with area interpolation, then expand to 32×32
-with exact linear interpolation. Convert to 8-bit grayscale, then float, perform
-a DCT, take the top-left 8×8 coefficients, set its DC coefficient to zero, and
-compare each coefficient to the mean of that block to form 64 bits.
+`reference` は必須、`roi` は任意です。マスクがあれば各画像の該当位置を黒にし、area補間で8×8に縮小した後、exact linear補間で32×32へ拡大します。8ビットグレースケール、次に浮動小数点へ変換してDCTを行います。左上8×8の係数を取り、DC成分を0にし、そのブロックの平均より大きいかで64ビットを作ります。
 
-Score: `clamp(1 - HammingDistance / 64)`. Identical hashes score 1, even if the
-original images differ. Input/reference must be 8-bit BGR (reference may include
-validated alpha). Unmasked sizes may differ; masked dimensions must match. Useful
-for coarse structure with size changes; a small hash can miss fine differences.
+スコアは `clamp(1 - HammingDistance / 64)` です。元画像が異なってもhashが同じなら1です。入力・参照は8ビットBGRが必要で、参照には検証済みalphaを付けられます。マスクなしなら寸法差を許容し、ありなら寸法一致が必要です。寸法が変わるおおまかな構造の比較に使えますが、小さなhashでは細部の違いを見落とす場合があります。
 
 ## difference_hash_similarity
 
@@ -176,16 +121,9 @@ reference: images/screen.png
 hash_size: 8
 ```
 
-Required: `reference`; optional: `roi`, `hash_size` (positive integer, default 8).
-Converts each image to float grayscale, area-resizes to
-`(hash_size + 1) × hash_size`, and sets a bit for each horizontal pair whose right
-value exceeds its left value. There are `hash_size²` bits. Score:
-`clamp(1 - differing_bits / hash_size²)`.
+`reference` は必須、`roi` と `hash_size` は任意です。`hash_size` は正の整数で、既定値は8です。浮動小数点グレースケールへ変換し、area補間で `(hash_size + 1) × hash_size` にResizeします。横に隣り合う値で右が左より大きい場合にビットを立て、`hash_size²` ビットを作ります。スコアは `clamp(1 - differing_bits / hash_size²)` です。
 
-Different source sizes and grayscale/color layouts are allowed. Reference alpha
-is validated, but its mask is ignored. This measures horizontal intensity
-structure rather than color or exact pixels. Increasing `hash_size` retains more
-detail and increases work; it does not eliminate hash collisions.
+元画像の寸法差とグレースケール・カラーの違いを許容します。参照alphaは検証しますが、マスクは使いません。色や正確な画素値ではなく、横方向の強度変化を比べます。`hash_size` を増やすと細部と計算量が増えますが、hashの衝突をなくすものではありません。
 
 ## mean_brightness
 
@@ -194,13 +132,9 @@ type: mean_brightness
 roi: {x: 0, y: 0, width: 100, height: 100}
 ```
 
-No required fields beyond `type`; optional: `roi`. No reference image. Score:
-`clamp(mean_of_all_pixel_components / 255)`. This is the equal average of channel
-means, not perceptually weighted grayscale luminance. Black scores 0, white 1
-for normal 8-bit input. Grayscale and BGR work; if supplied with BGRA data its
-alpha channel also contributes. Normal NDI capture discards alpha before detection.
-Useful for fades and bright/dark transitions; it does not identify a particular
-screen. Wrap `detected` in `not` to test brightness below a threshold.
+`type` 以外に必須項目はなく、`roi` は任意です。参照画像は不要です。スコアは `clamp(mean_of_all_pixel_components / 255)` です。チャンネル平均を等しく平均し、知覚重み付きのグレースケール輝度は使いません。通常の8ビット入力では黒が0、白が1です。
+
+グレースケールとBGRを使えます。BGRAを与えるとalphaも平均に含みますが、通常のNDI入力は検出前にalphaを除去します。フェードなどの明暗判定に使え、特定の画面を識別する方式ではありません。しきい値未満の暗さを判定するには `detected` を `not` で包みます。
 
 ## color_range
 
@@ -210,16 +144,9 @@ lower: [0, 0, 180]
 upper: [80, 80, 255]
 ```
 
-Required: `lower`, `upper`; optional: `roi`. Bounds are equally sized lists of
-either one component (grayscale) or three components (**B, G, R**, not RGB or HSV).
-Each bound must be finite and each lower value must be at most its upper value.
-They must match input channel count. The loader does not impose a 0–255 bound,
-though that is the scale for normal input.
+`lower` と `upper` は必須、`roi` は任意です。上下限は同じ長さのリストで、グレースケールなら1成分、カラーなら3成分です。3成分の順序はB、G、Rであり、RGBやHSVではありません。各値は有限数とし、下限を上限以下に指定してください。リストの長さは入力チャンネル数と一致させます。通常の入力は0～255ですが、ローダーは値をこの範囲に制限しません。
 
-A pixel matches only when every channel lies within its inclusive interval.
-Score: `matching_pixels / total_pixels` in the region. The example measures the
-fraction of predominantly red pixels. No color-space conversion or reference
-image is involved. Useful for solid indicators or overlays.
+全チャンネルが上下限の範囲内にある画素を一致とし、境界値も含みます。スコアは領域の `matching_pixels / total_pixels` です。例は主に赤いピクセルの割合を調べます。色空間変換と参照画像は使いません。単色の表示やオーバーレイに使えます。
 
 ## phase_correlation
 
@@ -228,13 +155,6 @@ type: phase_correlation
 reference: images/screen.png
 ```
 
-Required: `reference`; optional: `roi`. Converts both same-size images to float
-grayscale and uses OpenCV `phaseCorrelate` without a window. Score is its response
-(the normalized correlation peak response), clamped to `[0, 1]`. The returned
-translation vector is discarded; the score is not a displacement or a direct
-pixel-error similarity.
+`reference` は必須、`roi` は任意です。同寸法の画像を浮動小数点グレースケールに変換し、窓を指定せずOpenCVの `phaseCorrelate` を使います。スコアは返されたresponse（正規化した相関ピークの応答）を `[0, 1]` に制限した値です。平行移動量は破棄するため、スコアは移動量や直接の画素誤差による類似度ではありません。
 
-Reference/input channel counts can differ if both support grayscale conversion.
-Alpha masks are validated but ignored. Requires equal dimensions. Use textured
-images with a distinct correlation peak; flat or ambiguous patterns are poor
-references. A non-finite response is an evaluation error.
+グレースケールに変換できれば入力と参照のチャンネル数は異なっても構いません。alphaを検証しますがマスクは使いません。寸法は完全一致が必要です。明確な相関ピークを持つ模様を使ってください。一様・曖昧なパターンは参照に向きません。responseが非有限値の場合は評価エラーです。

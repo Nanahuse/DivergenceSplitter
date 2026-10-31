@@ -1,10 +1,12 @@
-# Windows distribution
+# Windows向け配布
 
-[Developer guide](README.md) · [Build setup](building.md) · [Testing](testing.md)
+[日本語（正本）](distribution.md) | [English](distribution.en.md)
 
-## Build and verify a ZIP
+[開発ガイド](README.md) · [ビルド環境](building.md) · [テスト](testing.md)
 
-From `cpp/` in x64 Developer PowerShell with the prerequisites installed:
+## ZIPの作成と検証
+
+必要な環境を用意し、x64 Developer PowerShellで `cpp/` から実行します。
 
 ```powershell
 cmake --preset full-release
@@ -14,84 +16,34 @@ cmake --build build/full-release --target package
 python tools/verify_windows_zip.py --build-dir build/full-release --ndi OFF
 ```
 
-This default development build has NDI disabled. For an NDI-enabled distribution,
-configure with the [NDI options](building.md#ndi-enabled-builds), build/test/package
-the same preset, and pass `--ndi ON` to verification. Use a separate build directory
-when switching SDK/dependency configurations. The verifier expects exactly one
-ZIP in that directory.
+この既定の開発ビルドはNDI無効です。NDIを同梱する場合は[NDIのオプション](building.md#ndi対応ビルド)で設定し、同じプリセットでビルド・テスト・パッケージ化して、検証時に `--ndi ON` を渡します。SDKや依存構成を切り替える場合は別ディレクトリを使ってください。検証対象ディレクトリのZIPは1つである必要があります。
 
-CPack writes `DivergenceSplitter-<version>-windows-x64.zip` without an enclosing
-top-level directory. Extract the entire ZIP to run it. The GUI distribution
-contains `DivergenceSplitter.exe`, `divergencesplitter-cli.exe`, runtime DLLs,
-Qt plugins, `LICENSE.txt`, `DISTRIBUTION-NOTICE.txt`, and `licenses/`.
-The current install rules do not bundle documentation or sample scenarios; users
-obtain those from the matching source revision.
+CPackは `DivergenceSplitter-<version>-windows-x64.zip` を作成し、外側のトップレベルディレクトリは付けません。全体を展開して使ってください。GUI配布物には `DivergenceSplitter.exe`、`divergencesplitter-cli.exe`、ランタイムDLL、Qtプラグイン、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/` を含みます。現行のinstall設定は文書・サンプルを同梱しないため、対応するソースのリビジョンから取得します。
 
-The verifier extracts the ZIP and checks required executables/notices, SDK
-exclusions, CLI `--help`, and GUI `--smoke-test`. It removes Qt/NDI lookup
-environment variables and restricts PATH to the ZIP and Windows system directories.
-For ON it also checks pinned runtime/notice hashes and initializes the local NDI
-DLL with `--ndi-check`. Startup verification does not prove live input reception.
+検証ヘルパーはZIPを展開し、実行ファイル・通知・SDK除外、CLIの `--help`、GUIの `--smoke-test` を確認します。Qt／NDIの探索用環境変数を外し、PATHをZIPとWindowsのシステムディレクトリに限定して起動します。ONではランタイム・通知の固定ハッシュと、`--ndi-check` によるローカルDLLの初期化も確認します。起動確認は実入力の受信確認とは別です。
 
 ## CI workflow
 
-[`C++23`](../../../.github/workflows/cpp23.yml) runs on pull requests, `main` pushes,
-and manual dispatch. It uses Windows, MSVC, Ninja, vcpkg, externally installed
-Qt 6.8.3, and the `ci` preset. It builds the pinned Bridge TestHost, runs CTest and
-real TestHost integration, packages the ZIP, and verifies the extracted result.
+[C++23](../../../.github/workflows/cpp23.yml) はPR、`main` へのpush、手動実行で動きます。Windows、MSVC、Ninja、vcpkg、外部Qt 6.8.3、`ci` プリセットを使います。固定Bridge TestHostをビルドし、CTestと実TestHost結合、ZIP作成、展開後の検証を行います。
 
-- Fork PRs build NDI OFF and do not receive the SDK Secret.
-- Same-repository PRs, main pushes, and manual runs require both OFF and ON jobs.
-  An unavailable SDK does not silently fall back to OFF.
-- The ON job requires repository Secret `NDI_SDK_URL_WINDOWS` containing the
-  official Windows SDK download URL. It invokes
-  [`get_ndi_sdk.py`](../../tools/get_ndi_sdk.py), which downloads using `curl.exe`,
-  checks the pinned installer SHA-256, version, Authenticode publisher, extracted
-  headers/runtime/notices/agreement, and writes `NDI_SDK_DIR` to the job environment.
-  Download errors/timeouts fail and remove partial downloads; URL/captured curl
-  output is not printed in the job log.
-- [`ndi-sdk-lock.json`](../../tools/ndi-sdk-lock.json) records the reviewed SDK
-  6.3.2.0 and innoextract 1.9 hashes. SDK files are never stored in public Actions
-  caches. The vcpkg cache contains dependency downloads/binaries, not the SDK.
-- Only ON uploads `DivergenceSplitter-cpp23-windows-x64`. Both variants upload
-  their JUnit CTest results. Pushes to temporary work branches are not a workflow
-  trigger; PRs and manual dispatch provide the checks.
+- forkのPRはNDI OFFだけをビルドし、SDKのSecretは渡しません。
+- 同じリポジトリのPR、mainへのpush、手動実行はOFFとONの両方が必須です。SDKを取得できなくてもOFFへ黙って切り替えません。
+- ONには公式Windows SDKのURLを持つリポジトリSecret `NDI_SDK_URL_WINDOWS` が必要です。[get_ndi_sdk.py](../../tools/get_ndi_sdk.py) が `curl.exe` で取得し、インストーラーのSHA-256、バージョン、Authenticode発行者、展開したヘッダー・ランタイム・通知・契約書を検証します。`NDI_SDK_DIR` をジョブ環境へ書き込みます。HTTPエラーやタイムアウトでは失敗して部分ファイルを消し、URLと捕捉したcurl出力はログに出しません。
+- [ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) はSDK 6.3.2.0とinnoextract 1.9の確認済みハッシュを保持します。SDKを公開Actionsキャッシュへ保存しません。vcpkgのキャッシュは依存ダウンロード・バイナリだけです。
+- ONだけが `DivergenceSplitter-cpp23-windows-x64` をアップロードし、両構成がJUnit形式のCTest結果をアップロードします。一時作業ブランチへのpushは起動条件ではありません。PRまたは手動実行で検証します。
 
-## Third-party notices
+## 第三者ライセンスの通知
 
-Application source is [MIT](../../LICENSE). The package's
-[`DISTRIBUTION-NOTICE.txt`](../../DISTRIBUTION-NOTICE.txt) identifies bundled/linked
-dependencies, including Qt, OpenCV, Boost, yaml-cpp, nlohmann/json, the Bridge
-client, and the camera-enumeration adaptation. Their licenses remain separate.
+アプリのソースは[MIT](../../LICENSE)です。[DISTRIBUTION-NOTICE.txt](../../DISTRIBUTION-NOTICE.txt) にQt、OpenCV、Boost、yaml-cpp、nlohmann/json、Bridgeクライアント、カメラ列挙の移植部分などを記載します。それぞれ別のライセンスが適用されます。
 
-At install/package time,
-[`collect_licenses.py`](../../tools/collect_licenses.py) gathers actual installed
-vcpkg notices and the fetched Bridge license. It also retrieves the camera
-adaptation's upstream license and external Qt 6.8.3 license texts from pinned
-upstream commits using
-[`third-party-license-lock.json`](../../tools/third-party-license-lock.json).
-Downloaded texts remain in the ignored build cache. Missing notices, unsupported
-external Qt versions, or changed pinned contents fail packaging. Transitive
-dependency notices are included under `licenses/vcpkg/`.
+install・package時に [collect_licenses.py](../../tools/collect_licenses.py) が実際にインストールしたvcpkgの通知と、取得したBridgeのライセンスを集めます。カメラ列挙の元ライセンスと外部Qt 6.8.3の本文も、[third-party-license-lock.json](../../tools/third-party-license-lock.json) にある固定コミットから取得します。取得した本文はGit管理外のビルドキャッシュに保存します。通知の不足、対応しない外部Qtバージョン、固定内容の変化ではパッケージ化を失敗させます。推移的な依存の通知は `licenses/vcpkg/` に含めます。
 
-Do not replace license bodies with short summaries. When updating dependencies,
-verify the collected package notices as well as the build. The distribution's
-license files are the authoritative notices for that ZIP.
+ライセンス本文を短い要約で置き換えないでください。依存を更新するときはビルドだけでなく、パッケージ内の通知も確認します。そのZIPに適用する通知は配布物内のライセンスファイルです。
 
-## NDI runtime contents
+## NDIランタイムの同梱物
 
-NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
-An ON ZIP additionally carries `Processing.NDI.Lib.x64.dll`, its unmodified
-`Processing.NDI.Lib.Licenses.txt`, and application-maintained
-[`licenses/NDI-TERMS.txt`](../../licenses/NDI-TERMS.txt).
+NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。ONのZIPには `Processing.NDI.Lib.x64.dll`、変更しない `Processing.NDI.Lib.Licenses.txt`、アプリ側で管理する [licenses/NDI-TERMS.txt](../../licenses/NDI-TERMS.txt) も含みます。
 
-The SDK agreement PDF is checked during configuration/acquisition but is not
-packaged. SDK headers, import libraries, installers, sample senders, and NDI Tools
-are excluded; the verifier rejects SDK development materials. OFF packages contain
-explanatory notices but no NDI DLL.
+SDK契約書PDFは取得・configureで検査しますが同梱しません。ヘッダー、インポートライブラリ、インストーラー、送信サンプル、NDI Toolsも除外し、検証ヘルパーが開発用ファイルの混入を拒否します。OFFには説明用の通知だけを含み、NDI DLLは含みません。
 
-For the runtime's separate terms and official licensing/distribution references,
-read [`licenses/NDI.md`](../../licenses/NDI.md). Keep the trademark notice, website
-link, runtime notices, and use terms with an NDI-enabled package. Updating the SDK
-pin requires review of the actual agreement and redistribution requirements,
-including the latest-SDK requirement, before publishing another runtime ZIP.
+ランタイムの個別条件と公式のライセンス・配布規定へのリンクは [licenses/NDI.md](../../licenses/NDI.md) を参照してください。NDI対応パッケージには商標表記、公式サイトへのリンク、ランタイム通知、利用条件を保ちます。固定SDKを更新して別のZIPを公開する前に、実際の契約書、最新版SDKの要件を含む再配布要件を確認してください。

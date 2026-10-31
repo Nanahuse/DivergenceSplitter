@@ -1,41 +1,29 @@
-# Condition reference
+# Conditionリファレンス
 
-[Scenario authoring](README.md) · [YAML lifecycle](yaml-reference.md#state-and-reset-lifecycle)
+[日本語（正本）](conditions.md) | [English](conditions.en.md)
 
-Every condition is a mapping with a required `type`. The following twelve types
-are the complete public set. Fields listed below are required unless described as
-optional. `condition` is a single child mapping; `conditions` is an ordered list
-of child mappings. Unknown fields are rejected.
+[シナリオ作成](README.md) · [YAMLのリセット](yaml-reference.md#状態とリセット)
 
-## Evaluation and short-circuiting
+Conditionは必須の `type` を持つマッピングです。次の12種類が公開設定のすべてです。任意と明記した項目以外は必須です。`condition` は子1つのマッピング、`conditions` は子の順序付きリストです。未知の項目は拒否します。
 
-`all` and `any` visit children in YAML order. Once their Boolean result is known,
-they call remaining children in **short-circuit mode**. This is different from
-not calling an inactive rule group at all:
+## 評価と短絡処理
 
-| Type called in short-circuit mode | State behavior |
+`all` と `any` はYAMLの順に子を処理します。結果が決まった後も、残りの子を短絡モードで呼び出します。無効なRuleグループを呼ばない場合とは異なります。
+
+| 短絡モードで呼ばれる型 | 状態の更新 |
 | --- | --- |
-| `detected` | Does not run its detector or update latest/max scores. |
-| `all`, `any`, `not` | Pass short-circuit mode to children. |
-| `rising_edge`, `falling_edge`, `once`, `hold`, `nth` | Normally evaluate their child and update their own state, even though their own Boolean result is discarded. Completed `once`/`nth` mark the child skipped instead. |
-| `elapsed` | Starts/advances its clock and completion state. |
-| `reset_when` | Normally evaluates its reset condition, resets if needed, then short-circuits its main child. |
-| `then` | Normally evaluates only its active child and advances progress/completion; other children are marked skipped without evaluation. |
+| `detected` | Detectorを実行せず、最新・最大スコアも更新しません。 |
+| `all`、`any`、`not` | 子へ短絡モードを渡します。 |
+| `rising_edge`、`falling_edge`、`once`、`hold`、`nth` | 自身の結果が使われなくても、子を通常評価して内部状態を更新します。完了済みの `once` と `nth` は子をskippedにするだけです。 |
+| `elapsed` | 時計の開始・進行と完了状態を更新します。 |
+| `reset_when` | Reset条件を通常評価し、必要ならリセットした後、主条件を短絡評価します。 |
+| `then` | 現在の子だけを通常評価して進行・完了を更新します。他の子は評価せずskippedにします。 |
 
-The node's displayed status is `skipped`, but its descendants can show a normal
-result. A skipped `nth` can reach its count without returning true to its parent.
-A skipped edge can likewise record a transition without returning true to its
-parent. Put stateful conditions deliberately in the list; do not assume
-that a preceding false `all` child freezes later clocks or counters.
+ノード自身は `skipped` と表示されても、子は通常評価の結果を表示する場合があります。短絡中の `nth` は指定回数に達しても親へtrueを返さず、edgeも遷移を記録しても親へtrueを返さない場合があります。状態付きConditionの配置に注意してください。先行する `all` の子がfalseでも、後ろの時計やカウンターは停止するとは限りません。
 
-By contrast, `mark_skipped` (used for inactive `then` steps or completed wrappers)
-only changes diagnostic statuses recursively and does not run children. Later
-rules after the first action and inactive phase/split groups are not evaluated.
+一方、`then` の無効なステップや完了済みのラッパーが使う `mark_skipped` は、子を実行せず診断状態だけを再帰的に変更します。最初のActionより後のRuleや、無効なPhase・区間のグループは評価しません。
 
-All time comparisons use monotonic application time sampled for the frame, not
-LiveSplit time or a frame count. No new evaluation means no new result. A pause
-or gap in frames does not freeze time; the next sample can satisfy an elapsed
-duration. `hold` can only observe false values on evaluated frames.
+時間の比較にはフレームごとに取得したアプリの単調増加時刻を使います。LiveSplitの時間やフレーム数ではありません。評価がなければ結果も変わりません。タイマーのPauseや映像の途切れで時計は止まらず、次の評価で時間条件が成立する場合があります。`hold` がfalseを観測できるのは評価したフレームだけです。
 
 ## detected
 
@@ -45,14 +33,9 @@ minimum_score: 0.9
 detector: {type: mean_brightness}
 ```
 
-Required: `minimum_score` (finite number), `detector` (one detector mapping).
-True when `score >= minimum_score`, including equality. The loader does not
-restrict thresholds to `[0, 1]`, but every supported detector returns a score in
-that range. A threshold above 1 cannot match; 0 matches every valid score.
+`minimum_score`（有限数）と `detector`（Detectorのマッピング）が必須です。`score >= minimum_score` でtrueになり、等しい場合も成立します。しきい値を `[0, 1]` に制限する検証はありませんが、全Detectorの出力範囲は `[0, 1]` です。1より大きい値では成立せず、0なら有効な全スコアで成立します。
 
-Tracks latest and maximum score since reset. Reset clears both. Short-circuit
-evaluation leaves them unchanged. Detector exceptions make the condition `error`
-and the runtime counts a rule error rather than treating it as false.
+リセット後の最新・最大スコアを保持します。リセットすると両方を消し、短絡中は更新しません。Detectorの例外はfalseではなく `error` となり、RuntimeはRuleエラーとして数えます。
 
 ## all
 
@@ -63,9 +46,7 @@ conditions:
   - {type: detected, minimum_score: 0.8, detector: {type: mean_brightness}}
 ```
 
-Required: `conditions`. True if every child is true. Evaluation is left to right;
-after the first false, remaining children use short-circuit mode. An empty list
-is true. No private state; reset recursively resets every child.
+`conditions` が必須です。すべての子がtrueならtrueです。左から評価し、最初のfalse以降は短絡モードにします。空リストはtrueです。独自の内部状態はなく、リセットで全子を再帰的にリセットします。
 
 ## any
 
@@ -76,9 +57,7 @@ conditions:
   - {type: elapsed, duration: 10s}
 ```
 
-Required: `conditions`. True if at least one child is true. After the first true,
-remaining children use short-circuit mode. An empty list is false. No private
-state; reset recursively resets every child.
+`conditions` が必須です。どれかの子がtrueならtrueです。最初のtrue以降は短絡モードにします。空リストはfalseです。独自の内部状態はなく、リセットで全子を再帰的にリセットします。
 
 ## not
 
@@ -87,23 +66,18 @@ type: not
 condition: {type: detected, minimum_score: 0.1, detector: {type: mean_brightness}}
 ```
 
-Required: `condition`. Negates its child's normal result. In short-circuit mode,
-passes that mode to the child. No private state; reset resets its child.
+`condition` が必須です。子の通常評価の結果を反転します。短絡モードでは子にもそのモードを渡します。独自の内部状態はなく、リセットで子をリセットします。
 
-## rising_edge and falling_edge
+## rising_edgeとfalling_edge
 
 ```yaml
 type: rising_edge
 condition: {type: detected, minimum_score: 0.8, detector: {type: mean_brightness}}
 ```
 
-Both require `condition`. `rising_edge` is true for a false → true transition;
-`falling_edge` is true for true → false. The first evaluation only establishes a
-baseline and returns false, even if the child is already true for a rising edge
-or false for a falling edge. Each later evaluation records the child's current
-value, including short-circuit evaluation. The result is a single evaluation
-pulse, not a latch. Reset clears the previous-value baseline and resets the child.
-To configure the falling variant, use `type: falling_edge` with the same fields.
+どちらも `condition` が必須です。`rising_edge` はfalseからtrue、`falling_edge` はtrueからfalseへの変化でtrueになります。初回は基準値を記録するだけでfalseです。初回の子がすでにtrueでもrising edgeにはならず、すでにfalseでもfalling edgeにはなりません。
+
+以降は短絡モードを含めて子の現在値を記録します。結果は1回の評価だけtrueになるパルスであり、trueを維持しません。リセットでは前回値を消して子もリセットします。falling側は同じ項目で `type: falling_edge` と指定します。
 
 ## once
 
@@ -112,10 +86,7 @@ type: once
 condition: {type: detected, minimum_score: 0.8, detector: {type: mean_brightness}}
 ```
 
-Required: `condition`. Latches the first true child result and stays **true on
-every subsequent evaluation** until reset. It does not produce a one-frame pulse.
-After completion, the child is marked skipped and stops updating. Short-circuit
-evaluation can complete the latch. Reset clears completion and resets the child.
+`condition` が必須です。子が初めてtrueになると完了を記録し、リセットまで毎回trueを返します。1フレームだけのパルスではありません。完了後は子をskippedにし、子の状態を更新しません。短絡中にも完了する場合があります。リセットでは完了状態を消し、子もリセットします。
 
 ## elapsed
 
@@ -124,12 +95,9 @@ type: elapsed
 duration: 3s
 ```
 
-Required: `duration` ([duration syntax](yaml-reference.md#durations)). The clock
-starts on its first evaluation after reset, including a short-circuit call. It
-does not start at file load, Apply, timer start, or entry into a segment unless
-that is also when this node is first evaluated. True once elapsed time is at
-least the duration; it remains true until reset. `0s` is true on the first call.
-Reset clears start time, completion, and elapsed progress.
+`duration` が必須です。[時間表現](yaml-reference.md#時間表現)に従って指定します。リセット後の最初の評価から計測し、短絡モードでの初回呼び出しも開始に含みます。ファイルの読み込み、Apply、タイマー開始、区間への移動が、それだけでこの時計の開始になるわけではありません。その時点でこのノードが初めて評価される場合に限り一致します。
+
+経過がduration以上になるとtrueとなり、リセットまで維持します。`0s` は初回でtrueです。リセットでは開始時刻、完了状態、経過時間の表示値を消します。
 
 ## hold
 
@@ -139,12 +107,9 @@ duration: 500ms
 condition: {type: detected, minimum_score: 0.8, detector: {type: mean_brightness}}
 ```
 
-Required: `duration`, `condition`. Starts timing at the first true child sample.
-True when all subsequent observed samples stay true for at least the duration.
-Any false sample clears the start time and returns false; the next true sample
-begins a new interval. A completed hold is not latched: a later false makes it
-false again. `0ms` follows the child immediately. Updates also occur in
-short-circuit mode. Reset clears timing/progress and resets the child.
+`duration` と `condition` が必須です。子の最初のtrueで計測を始め、以降に観測した値が連続してtrueのままduration以上続くとtrueです。falseを1回でも観測すると開始時刻を消してfalseを返し、次のtrueで新しい計測を始めます。
+
+完了は固定しません。成立後も子がfalseならfalseに戻ります。`0ms` は子の結果に即座に従います。短絡中も更新します。リセットでは計測・経過時間の表示値を消し、子もリセットします。
 
 ## nth
 
@@ -156,12 +121,9 @@ condition:
   condition: {type: detected, minimum_score: 0.8, detector: {type: mean_brightness}}
 ```
 
-Required: `count` (integer at least 1), `condition`. Counts every true child
-evaluation, including consecutive true frames and short-circuit calls. False
-does not clear the count. It returns true only on the `count`-th true evaluation;
-then it returns false and marks the child skipped until reset. Wrap a detection
-in `rising_edge` as above to count appearances rather than frames. Reset clears
-the observed count and completion flag and resets the child.
+`count`（1以上の整数）と `condition` が必須です。子がtrueになった評価を毎回数えます。連続したtrueフレームや短絡中の呼び出しも含み、falseでは回数を消しません。count回目だけtrueを返し、その後はリセットまでfalseを返して子をskippedにします。
+
+フレーム数ではなく出現回数を数えるには、例のように検出を `rising_edge` で包みます。リセットでは回数と完了状態を消し、子もリセットします。
 
 ## reset_when
 
@@ -175,12 +137,9 @@ reset_condition:
   condition: {type: detected, minimum_score: 0.1, detector: {type: mean_brightness}}
 ```
 
-Required: `condition`, `reset_condition`. Evaluates the reset child **first** on
-every call. If true, resets both children, including the reset condition itself.
-Then evaluates the main condition on that same frame and returns its result.
-Reset does not force a false result or skip a frame. In short-circuit mode the
-reset child is still normal, then the main child uses short-circuit mode.
-External reset also resets both children; there is no additional private state.
+`condition` と `reset_condition` が必須です。毎回Reset条件を先に通常評価します。trueならReset条件自身を含む両方の子をリセットし、その同じフレームで主条件を評価して結果を返します。リセットによってfalseを強制したり、1フレーム待ったりはしません。
+
+短絡モードでもReset条件は通常評価し、主条件だけを短絡評価します。外部からのリセットも両方の子をリセットします。独自の追加状態はありません。
 
 ## then
 
@@ -192,24 +151,12 @@ conditions:
   - {type: elapsed, duration: 1s}
 ```
 
-Required: a non-empty `conditions` list. Optional: `within` (duration); omitted
-means no deadline. Only the active step is evaluated. A true result advances
-**one** step; the next step is first evaluated on a later frame. Previous and
-future steps are marked skipped without running them. A false active step waits
-at that step. A one-element list completes when that element first returns true.
+空でない `conditions` が必須です。`within` は任意の時間で、省略時は期限がありません。有効なステップだけを評価し、trueなら1段だけ進みます。次のステップは後のフレームから評価します。前後のステップは実行せずskippedにします。falseなら同じステップで待ちます。1要素ならその子の最初のtrueで完了します。
 
-For multiple steps, `within` starts when step 0 succeeds. It is a window for the
-whole remaining sequence, not a separate timeout per step. Before each later
-evaluation, elapsed time **greater than** the window restarts at step 0, which
-can run again on that same frame. Equality is still within the window. A timeout
-clears only step progress and the window start; it **does not reset child
-state**, so a child's old `elapsed`, `once`, or `nth` state can affect a retry.
+複数ステップの場合、`within` はステップ0の成立時に始まります。後続全体の制限時間であり、各ステップ別の制限ではありません。後の評価の前に経過が窓を厳密に超えるとステップ0へ戻り、同じフレームで再び評価できます。等しい時刻は期限内です。
 
-The last step makes `then` true, and it stays true on all later evaluations until
-reset. Short-circuit calls can advance/complete it. Full reset clears position,
-deadline start, completion, and every child. In the example, the 1s elapsed clock
-starts when step 1 is first evaluated, not on step 0's success frame.
+期限切れで消すのは位置と窓の開始時刻だけです。子の状態は消さないため、以前の `elapsed`、`once`、`nth` の状態が次の試行に影響する場合があります。
 
-`then` combines observations into one condition for one action. A
-[RuleSequence](yaml-reference.md#rules-and-sequences) instead emits one action per
-rule and advances through those actions.
+最後のステップが成立するとtrueになり、リセットまで維持します。短絡モードでも進行・完了します。完全なリセットでは位置、窓の開始時刻、完了状態を消し、すべての子の状態もリセットします。例の1秒の時計はステップ0の成立時ではなく、ステップ1を初めて評価したときに始まります。
+
+`then` は複数の観測を1つのConditionにまとめ、Actionを1つ実行します。[RuleSequence](yaml-reference.md#ruleとsequence) はRuleごとにActionを出して順に進む機能です。

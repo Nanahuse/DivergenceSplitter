@@ -1,29 +1,24 @@
-# Building
+# ビルド
 
-[Developer guide](README.md) · [Testing](testing.md) · [Distribution](distribution.md)
+[日本語（正本）](building.md) | [English](building.en.md)
 
-## Prerequisites
+[開発ガイド](README.md) · [テスト](testing.md) · [配布](distribution.md)
 
-For Windows x64 builds, install:
+## 必要な環境
 
-- Visual Studio 2022 or 2026 with the Desktop development with C++ workload and
-  Windows SDK; use an x64 Developer PowerShell with a C++23-capable MSVC toolset.
-- CMake 3.25 or later and Ninja, both on PATH.
-- A bootstrapped [vcpkg](https://github.com/microsoft/vcpkg) checkout; set
-  `VCPKG_ROOT` to its absolute directory.
-- Python 3.10 or later for build/distribution helpers. CMake requires the
-  interpreter even when only building core. Select it with
-  `-DPython3_EXECUTABLE=C:/tools/python/python.exe` if needed.
-- Git and network access for initial dependency and Bridge downloads.
+Windows x64向けに次を用意してください。
 
-The manifest [`vcpkg.json`](../../vcpkg.json) pins a builtin baseline and supplies
-OpenCV 4 (Core, Imgproc, Imgcodecs, Videoio and selected codec/camera features),
-yaml-cpp, nlohmann/json, and Boost.Asio/Beast. Its `tests` feature adds GoogleTest;
-`ui` adds Qt 6 qtbase. No opencv_contrib dependency is needed for hash detectors.
+- Visual Studio 2022または2026のC++デスクトップ開発ワークロードとWindows SDK。C++23対応のMSVCを使い、x64 Developer PowerShellで実行します。
+- PATHから呼び出せるCMake 3.25以上とNinja。
+- bootstrap済みの [vcpkg](https://github.com/microsoft/vcpkg)。`VCPKG_ROOT` に絶対パスを設定します。
+- ビルド・配布用ヘルパー向けのPython 3.10以上。coreだけでもCMakeが必要とします。必要なら `-DPython3_EXECUTABLE=C:/tools/python/python.exe` で指定してください。
+- 初回の依存関係・Bridge取得に使うGitとネットワーク接続。
 
-## Configure, build, run
+[vcpkg.json](../../vcpkg.json) でbuiltin baselineを固定し、OpenCV 4のCore・Imgproc・Imgcodecs・Videoioと選択した画像・カメラ機能、yaml-cpp、nlohmann/json、Boost.Asio／Beastを取得します。`tests` featureはGoogleTest、`ui` はQt 6 qtbaseを追加します。hash Detectorにopencv_contribは不要です。
 
-From the repository root in Developer PowerShell:
+## 設定・ビルド・起動
+
+リポジトリのルートからDeveloper PowerShellで実行します。
 
 ```powershell
 $env:VCPKG_ROOT = 'C:/vcpkg'
@@ -34,13 +29,9 @@ ctest --preset full --output-on-failure
 .\build\full\DivergenceSplitter.exe
 ```
 
-The first configure can take substantial time to build dependencies, especially
-Qt. Keep the DLLs and deployed Qt plugins alongside the build executable. CMake
-copies debug Qt plugins for Debug; Release uses `windeployqt` when available.
-The CLI is `build/full/divergencesplitter-cli.exe`; see
-[CLI usage](../troubleshooting.md#command-line-checks).
+初回は依存関係、とくにQtのビルドに時間がかかります。DLLと配置されたQtプラグインは実行ファイルの隣に保ってください。DebugではCMakeがdebug用プラグインをコピーします。Releaseでは利用可能なら `windeployqt` を使います。CLIは `build/full/divergencesplitter-cli.exe` です。[使用方法](../troubleshooting.md#cliでの確認)を参照してください。
 
-For core/runtime work without Qt:
+Qtなしでcore／runtimeを開発する場合は次を使います。
 
 ```powershell
 cmake --preset core
@@ -48,48 +39,35 @@ cmake --build --preset core --parallel
 ctest --preset core --output-on-failure
 ```
 
-## Presets and options
+## プリセットとオプション
 
-All presets use Ninja, the `VCPKG_ROOT` toolchain, and separate
-`cpp/build/<preset>` directories. Run preset commands from `cpp/`.
+全プリセットはNinjaと `VCPKG_ROOT` のtoolchainを使い、`cpp/build/<preset>` に分けて生成します。プリセットのコマンドは `cpp/` で実行してください。
 
-| Preset | Configuration | UI | vcpkg features |
+| プリセット | 構成 | UI | vcpkg feature |
 | --- | --- | --- | --- |
-| `core` | Debug | Off | `tests` |
-| `core-release` | Release | Off | `tests` |
-| `full` | Debug | On | `tests;ui` |
-| `full-release` | Release | On | `tests;ui` |
-| `ci` | Release | On, externally supplied Qt | `tests`; TestHost tests enabled |
+| `core` | Debug | 無効 | `tests` |
+| `core-release` | Release | 無効 | `tests` |
+| `full` | Debug | 有効 | `tests;ui` |
+| `full-release` | Release | 有効 | `tests;ui` |
+| `ci` | Release | 外部Qtを使用 | `tests`。TestHostテストも有効。 |
 
-`ci` expects Qt discoverable through `CMAKE_PREFIX_PATH` or `Qt6_DIR`. The workflow
-installs Qt 6.8.3 MSVC 2022 x64 externally to avoid building Qt in vcpkg. For a local
-equivalent, set `-DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64` at configure time and
-use the matching toolchain architecture. Both Qt Widgets and Qt Test are required
-when the UI option is on.
+`ci` では `CMAKE_PREFIX_PATH` または `Qt6_DIR` からQtを見つけられる必要があります。workflowはvcpkgでQtをビルドせず、外部のQt 6.8.3 MSVC 2022 x64を使います。ローカルでも同じ構成にするなら、configure時に `-DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64` を指定し、アーキテクチャをそろえてください。UI有効時はQt WidgetsとQt Testの両方が必要です。
 
-| CMake option | Default | Meaning |
+| CMakeオプション | 既定値 | 動作 |
 | --- | --- | --- |
-| `DIVERGENCESPLITTER_BUILD_UI` | `ON` | Build Qt UI and GUI executable. |
-| `DIVERGENCESPLITTER_BUILD_TESTS` | `ON` | Build/register tests; GoogleTest required. |
-| `DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS` | `OFF` | Add the optional real Bridge integration executable when tests are enabled. |
-| `DIVERGENCESPLITTER_FETCH_BRIDGE` | `ON` | Fetch/build the required Bridge client target. OFF requires the parent build to provide `livesplit_bridge::livesplit_bridge`. |
-| `DIVERGENCESPLITTER_BRIDGE_TAG` | `v0.1.0` | Tag/commit used by FetchContent. |
-| `DIVERGENCESPLITTER_ENABLE_NDI` | `OFF` | Enable official SDK receiver on Windows x64. |
-| `NDI_SDK_DIR` | Empty | Extracted SDK root used with NDI enabled. |
+| `DIVERGENCESPLITTER_BUILD_UI` | `ON` | Qt UIとGUI実行ファイルをビルド。 |
+| `DIVERGENCESPLITTER_BUILD_TESTS` | `ON` | GoogleTestを使ってテストをビルド・登録。 |
+| `DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS` | `OFF` | テスト有効時に実Bridge用の任意の結合テスト実行ファイルを追加。 |
+| `DIVERGENCESPLITTER_FETCH_BRIDGE` | `ON` | Bridgeクライアントを取得・ビルド。OFFでは親ビルドが `livesplit_bridge::livesplit_bridge` を用意する必要があります。 |
+| `DIVERGENCESPLITTER_BRIDGE_TAG` | `v0.1.0` | FetchContentで取得するタグ・コミット。 |
+| `DIVERGENCESPLITTER_ENABLE_NDI` | `OFF` | Windows x64で公式SDKの受信機を有効化。 |
+| `NDI_SDK_DIR` | 空 | NDI有効時の展開済みSDKルート。 |
 
-To use an existing client checkout without downloading another copy, configure
-with `-DFETCHCONTENT_SOURCE_DIR_LIVESPLIT_BRIDGE=C:/src/livesplit-bridge-client-cpp`.
-Keep it at the intended pinned version when verifying reproducibility. Application
-targets are `divergencesplitter_core`, `divergencesplitter_runtime`,
-`divergencesplitter_cli`, and (with UI) `divergencesplitter_ui` / `DivergenceSplitter`.
+既存クライアントを使う場合は `-DFETCHCONTENT_SOURCE_DIR_LIVESPLIT_BRIDGE=C:/src/livesplit-bridge-client-cpp` を指定できます。再現確認では所定の固定バージョンに合わせてください。アプリのターゲットは `divergencesplitter_core`、`divergencesplitter_runtime`、`divergencesplitter_cli` と、UI有効時の `divergencesplitter_ui`／`DivergenceSplitter` です。
 
-## NDI-enabled builds
+## NDI対応ビルド
 
-NDI defaults to OFF so ordinary development needs no SDK. To build ON, obtain the
-official SDK matching [`ndi-sdk-lock.json`](../../tools/ndi-sdk-lock.json)
-(currently 6.3.2.0), extract its Windows payload with innoextract, and point
-`NDI_SDK_DIR` at the directory containing `Include`, `Bin/x64`, and
-`NDI SDK License Agreement.pdf`. Do not commit SDK development files or installers.
+通常の開発でSDKを必要としないよう、NDIの既定値はOFFです。ONでは [ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) に一致する公式SDKを取得します。現在の固定値は6.3.2.0です。Windowsの内容をinnoextractで展開し、`Include`、`Bin/x64`、`NDI SDK License Agreement.pdf` があるディレクトリを `NDI_SDK_DIR` に指定してください。SDK開発用ファイルとインストーラーはコミットしません。
 
 ```powershell
 cmake --preset full-release -DDIVERGENCESPLITTER_ENABLE_NDI=ON -DNDI_SDK_DIR=C:/private/ndi-sdk/app
@@ -99,22 +77,13 @@ ctest --preset full-release --output-on-failure
 .\build\full-release\divergencesplitter-cli.exe --ndi-list
 ```
 
-Configuration requires Windows x64, `Processing.NDI.Lib.h`,
-`Processing.NDI.DynamicLoad.h`, the runtime DLL, runtime notices, and the reviewed
-agreement. Missing files or pinned runtime/notice/agreement hash mismatches fail
-configuration. The runtime DLL is copied beside the build executables and loaded
-there by absolute path. Runtime installation elsewhere does not replace it.
-For controlled download/verification in CI, see [distribution](distribution.md#ci-workflow).
+Windows x64、`Processing.NDI.Lib.h`、`Processing.NDI.DynamicLoad.h`、ランタイムDLL、ランタイム通知、確認済みの契約書が必要です。ファイル不足、DLL・通知・契約書の固定ハッシュとの不一致ではconfigureを失敗させます。DLLはビルドした実行ファイルの隣へコピーし、そこから絶対パスで読みます。別の場所にインストールしたランタイムでは代替しません。CIでの取得・検証は[配布](distribution.md#ci-workflow)を参照してください。
 
-## Build failures
+## ビルドの問題
 
-- Missing compiler/Windows SDK: reopen an x64 Developer PowerShell.
-- Missing toolchain: check `VCPKG_ROOT` and bootstrap vcpkg before configuring.
-- Missing Qt: use `full` to build it through vcpkg, or supply the external Qt path
-  for `ci`. Avoid mixing debug/release plugins and DLLs.
-- NDI hash mismatch: use the pinned SDK; changing the pin requires a deliberate
-  SDK/notice review, not bypassing verification.
+- コンパイラーやWindows SDKがない場合は、x64 Developer PowerShellを開き直してください。
+- toolchainがない場合は `VCPKG_ROOT` とbootstrapを確認してからconfigureします。
+- Qtがない場合は `full` でvcpkgからビルドするか、`ci` に外部Qtのパスを渡します。DebugとReleaseのDLL・プラグインを混在させないでください。
+- NDIのハッシュが合わない場合は固定SDKを使ってください。検証を無効化するのではなく、固定値を更新する際にSDKと通知を確認します。
 
-For dependency, compiler, or SDK changes, use a separate build directory or preset
-to avoid stale cache settings. Packaging has additional notice requirements in
-the [distribution guide](distribution.md).
+依存関係、コンパイラー、SDKを変える場合は別のビルドディレクトリやプリセットを使い、古いキャッシュの混入を避けてください。パッケージ化に必要な追加の通知は[配布ガイド](distribution.md)を参照してください。

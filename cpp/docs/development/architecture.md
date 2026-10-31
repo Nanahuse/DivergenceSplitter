@@ -1,8 +1,10 @@
-# Architecture
+# アーキテクチャ
 
-[Developer guide](README.md)
+[日本語（正本）](architecture.md) | [English](architecture.en.md)
 
-## Component boundaries
+[開発ガイド](README.md)
+
+## コンポーネントの構成
 
 ```text
 Camera / Video / NDI
@@ -19,79 +21,40 @@ Camera / Video / NDI
                     +------ diagnostics --+----> Qt GUI
 ```
 
-| Component | Responsibility / source |
+| コンポーネント | 役割・実装 |
 | --- | --- |
-| Capture | [`src/capture/`](../../src/capture): device/mode enumeration, frame-source ownership, paced video reading, NDI conversion/discovery, capture thread. |
-| Normalizer | [`frame_normalizer.cpp`](../../src/core/frame_normalizer.cpp): validates Crop/Resize and produces the normalized frame used by every instance. |
-| Scenario/core | [`src/core/`](../../src/core): YAML loading, references, detector scores, condition trees, plain rules, RuleSequence. No GUI or network RPCs. |
-| ScenarioRuntime | [`scenario_runtime.cpp`](../../src/runtime/scenario_runtime.cpp): selects rule groups from authoritative timer state, applies reset policies, tracks pending actions and diagnostic trees. |
-| InstanceRuntime | [`instance_runtime.cpp`](../../src/runtime/instance_runtime.cpp): one worker per scenario/Bridge connection, frame delivery, events, reaction delay, control dispatch, reconnect, diagnostics. |
-| Session/configuration | [`session.cpp`](../../src/runtime/session.cpp), [`configuration.cpp`](../../src/runtime/configuration.cpp): JSON loading, source creation, optional reference resize, session replacement and shutdown. |
-| Bridge | [`livesplit_client.cpp`](../../src/runtime/livesplit_client.cpp), [`livesplit_adapter.cpp`](../../src/runtime/livesplit_adapter.cpp): client-library translation, query/event synchronization, local state/run revisions. |
-| GUI | [`src/ui/`](../../src/ui): Qt Widgets pages and AppController; draft editing and snapshots, without doing timer control RPCs on the UI thread. |
-| CLI | [`src/cli/main.cpp`](../../src/cli/main.cpp): profile/scenario validation, timed headless sessions, NDI initialization/discovery checks. |
+| Capture | [src/capture/](../../src/capture)：デバイス・モードの列挙、入力の所有、動画の再生間隔、NDIの変換・検索、取得スレッド。 |
+| Normalizer | [frame_normalizer.cpp](../../src/core/frame_normalizer.cpp)：Crop／Resizeを検証し、全インスタンス向けの正規化フレームを生成。 |
+| Scenario／core | [src/core/](../../src/core)：YAML、参照画像、Detectorスコア、Conditionツリー、Rule、RuleSequence。GUIやネットワークRPCは含まない。 |
+| ScenarioRuntime | [scenario_runtime.cpp](../../src/runtime/scenario_runtime.cpp)：確定したタイマー状態からのRule選択、リセット、保留Action、診断ツリー。 |
+| InstanceRuntime | [instance_runtime.cpp](../../src/runtime/instance_runtime.cpp)：シナリオ・Bridge接続ごとのワーカー、フレーム受信、イベント、反応待ち、操作送信、再接続、診断。 |
+| Session／configuration | [session.cpp](../../src/runtime/session.cpp)、[configuration.cpp](../../src/runtime/configuration.cpp)：JSON、入力の作成、任意の参照Resize、Sessionの置き換えと停止。 |
+| Bridge | [livesplit_client.cpp](../../src/runtime/livesplit_client.cpp)、[livesplit_adapter.cpp](../../src/runtime/livesplit_adapter.cpp)：クライアントとの型変換、Query・Eventによる同期、ローカルの状態・Runリビジョン。 |
+| GUI | [src/ui/](../../src/ui)：Qt Widgetsの画面とAppController。下書きとスナップショットを扱い、タイマーRPCはGUIスレッドで待たない。 |
+| CLI | [src/cli/main.cpp](../../src/cli/main.cpp)：Profile・シナリオの検証、時間指定のSession、NDIの初期化・検索確認。 |
 
-## Frames and ownership
+## フレームと所有関係
 
-Capture publishes `shared_ptr<SharedFrameEvaluation>` with an owned normalized
-frame, capture timestamp, sampled monotonic evaluation time, and shared per-frame
-cache. An instance retains only the newest pending frame: stale frames are
-replaced, not accumulated in an unbounded queue. Slow evaluation can miss transient
-visual states. Capture FPS and evaluation count therefore need not be equal.
+Captureは正規化した画像、取得時刻、評価用の単調増加時刻、フレーム単位の共有キャッシュを `shared_ptr<SharedFrameEvaluation>` として公開します。各インスタンスは最新の待機フレームだけを保持します。古いフレームを置き換えるため、処理待ちのフレームは無制限には蓄積しません。評価が遅いと短時間の表示を見落とす場合があり、取得FPSと評価回数は一致するとは限りません。
 
-The per-frame cache shares equivalent detector results and grayscale/hash
-preprocessing across instances. Keys include detector type, ROI, options, and
-reference contents. Condition state is independent of that cache: each scenario
-load constructs its own clocks, edge history, counters, and sequence position.
-Preview owns a copy so UI rendering does not depend on a source's temporary
-capture buffer.
+同じフレームのキャッシュで、同等のDetector結果とグレースケール・hashの前処理を共有します。キーには型、ROI、オプション、参照内容を含みます。Conditionの状態は別で、シナリオを読み込むたびに時計、edgeの履歴、カウンター、sequenceの位置を個別に作ります。プレビューはコピーを保持するため、入力の一時バッファーの寿命には依存しません。
 
-NDI requests deinterlaced BGRX/BGRA. Conversion also handles UYVY/UYVA and RGBA/RGBX,
-respects row stride, discards alpha, and owns the final BGR buffer. Reads wait at
-most 50ms; ordinary timeouts keep the receiver alive. The SDK is dynamically loaded
-from the executable directory, with no working-directory/PATH fallback and no
-NDI import-library linkage. SDK-disabled builds use the same public capture API.
+NDIはデインターレースしたBGRX／BGRAを要求します。変換はUYVY／UYVAとRGBA／RGBXにも対応し、行ストライドを守り、alphaを除き、BGRバッファーを所有します。readの待機は最大50msで、通常のタイムアウトなら受信機を保持します。SDKは実行ファイルのディレクトリから動的に読み、作業ディレクトリやPATHへはフォールバックしません。NDIのインポートライブラリにはリンクしません。SDK無効ビルドも同じ公開Capture APIを使います。
 
-## Bridge and controls
+## Bridgeとタイマー制御
 
-The pinned `livesplit-bridge-client-cpp` library manages Protocol v4 transport and
-its worker. The application wraps it with `LiveSplitBridgeClient` and maps its
-snapshots/errors into application models. Control calls use the library's async
-APIs and wait on the instance thread. GUI and capture threads never wait for those
-RPCs. Reaction delay is measured from the captured frame timestamp.
+固定した `livesplit-bridge-client-cpp` がProtocol v4の通信とワーカーを管理します。`LiveSplitBridgeClient` はそのスナップショットとエラーをアプリの型へ変換します。操作はライブラリの非同期APIを使い、インスタンスのスレッドで完了を待ちます。GUIと取得スレッドはRPCを待ちません。Reaction timeの基準はフレーム取得時刻です。
 
-`LiveSplitBridgeAdapter` attaches with a query, tracks session/state/run revisions,
-and applies complete timer/reset events without querying the entire run each time.
-Missing event state, session changes, run changes, or increased dropped-event
-counts trigger synchronization. ScenarioRuntime rejects stale revisions and
-requires resynchronization before accepting a different session baseline.
+`LiveSplitBridgeAdapter` はQueryで初期接続し、Session・状態・Runのリビジョンを追跡します。情報がそろったタイマー・Resetイベントは毎回Run全体をQueryせず反映します。状態情報が不足したイベント、SessionやRunの変更、破棄されたイベント数の増加では同期します。ScenarioRuntimeは古いリビジョンを拒否し、異なるSessionを受け入れる前に再同期を必要とします。
 
-After successful control the instance queries authoritative state and feeds a
-transition update back to ScenarioRuntime. A rejected/not-dispatched action can
-reset its group for another evaluation. A `control_result_unknown` is never
-blindly resent: the instance discards its scenario runtime, reconnects/resyncs,
-and guards the same automatic operation against an unchanged authoritative
-snapshot. This avoids duplicate controls when a response was lost.
+操作成功後は確定状態をQueryし、遷移更新をScenarioRuntimeへ渡します。拒否・未送信時は対応グループをリセットして再評価できます。`control_result_unknown` は無条件には再送しません。ScenarioRuntimeを破棄して再接続・再同期し、同じ確定スナップショットに対する同じ自動操作を抑止します。応答喪失時の二重操作を防ぐための動作です。
 
-ScenarioRuntime also has a one-second frame-evaluation timeout for pending actions;
-this differs from transport response timeouts. Public rule selection/reset
-semantics are centralized in the [YAML reference](../scenarios/yaml-reference.md).
-Manual Reset is queued and processed on the instance thread using current state;
-it is not a direct UI-thread RPC.
+ScenarioRuntimeの保留Actionには、フレーム評価で確認する1秒のタイムアウトもあります。通信応答のタイムアウトとは別です。公開Ruleの選択とリセットは[YAMLリファレンス](../scenarios/yaml-reference.md)に集約しています。手動ResetもGUIから直接RPCを送らず、要求をキューに入れてインスタンスのスレッドで現在の状態を使って処理します。
 
-## Session and GUI lifecycle
+## SessionとGUIの寿命
 
-Apply constructs new scenarios, sources, and instances before replacing the old
-session. Starting capture opens input asynchronously, so success at Apply does
-not guarantee later frame delivery. Session shutdown stops capture before
-destroying the instance sinks, then stops instances and closes clients. Reference
-resize happens during scenario loading, separately from input normalization.
+Applyは新しいシナリオ、入力、インスタンスを構築してから旧Sessionを置き換えます。入力のopenは取得開始後に非同期で行うため、Apply成功だけではフレーム到着を保証しません。終了時は入力取得を止めた後、各インスタンスを停止してクライアントを閉じ、受信先のインスタンスを破棄します。参照Resizeは入力正規化とは別に、シナリオの読み込み時に行います。
 
-AppController distinguishes the active Profile, a file path, and Settings;
-ProfilePage owns the editable draft. Monitor refreshes on a 100ms timer;
-Diagnostics refreshes every 300ms while visible. NDI discovery runs outside the
-GUI thread and preserves offline draft names. Monitor displays the preview from
-the active runtime.
+AppControllerは適用済みProfile、ファイルパス、Settingsを区別し、ProfilePageが下書きを持ちます。Monitorは100ms周期で更新し、Diagnosticsは表示中に300ms周期で更新します。NDI検索はGUIスレッド外で行い、オフラインの下書き名を保ちます。Monitorのプレビューは実行中のRuntimeから取得します。
 
-See [testing](testing.md) for fake and real integration coverage and
-[building](building.md) for target/dependency boundaries.
+fakeと実接続の検証範囲は[テスト](testing.md)、ターゲットと依存関係は[ビルド](building.md)を参照してください。

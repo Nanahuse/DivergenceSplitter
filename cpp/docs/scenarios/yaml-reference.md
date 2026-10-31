@@ -1,8 +1,10 @@
-# YAML reference
+# YAMLリファレンス
 
-[Scenario authoring](README.md) · [Conditions](conditions.md) · [Detectors](detectors.md) · [Examples](examples.md)
+[日本語（正本）](yaml-reference.md) | [English](yaml-reference.en.md)
 
-## Scenario structure
+[シナリオ作成](README.md) · [Condition](conditions.md) · [Detector](detectors.md) · [例](examples.md)
+
+## シナリオの構造
 
 ```yaml
 start_condition:
@@ -17,37 +19,22 @@ splits:
   - null
 ```
 
-| Root field | Required | Meaning |
+| ルート項目 | 必須 | 意味 |
 | --- | --- | --- |
-| `start_condition` | Yes | Condition that requests `start` while the timer is not running. |
-| `splits` | Yes | Ordered list. Item 0 configures LiveSplit segment index 0, item 1 index 1, and so on. An empty list is accepted. |
-| `reset_condition` | No | Condition that requests `reset` while running or paused. Omitted or `null` disables it. |
-| `incomplete_condition` | No | Condition that requests `undo` after the run has ended, for example to undo an incorrect final split. Omitted or `null` disables it. |
+| `start_condition` | はい | タイマーがNot runningのときに `start` を要求するCondition。 |
+| `splits` | はい | 順序付きのリスト。0番目はLiveSplitの区間0、1番目は区間1に対応します。空リストも受理します。 |
+| `reset_condition` | いいえ | Running／Pausedのときに `reset` を要求するCondition。省略または `null` で無効にします。 |
+| `incomplete_condition` | いいえ | 終了後に `undo` を要求するCondition。誤った最終Splitを戻す用途などに使います。省略または `null` で無効にします。 |
 
-Each split item is either `null` (manual segment, no automatic rule) or a mapping
-containing only `rules`, an ordered list of rules/sequences. `rules: []` also has
-no automatic rule. A null item does not automatically send Skip. A shorter list
-leaves later LiveSplit segments without configured rules; a longer list disables
-scenario evaluation. An empty stopped LiveSplit run is temporarily allowed, but
-the count is validated again when its state changes.
+各区間は `null`、または `rules` だけを持つマッピングです。`rules` はRuleとsequenceの順序付きリストです。`null` は自動Ruleのない手動区間であり、自動でSkipを送りません。`rules: []` でも自動Ruleはありません。リストがLiveSplitの区間数より短ければ後続区間にはRuleがなく、長ければシナリオの評価を無効にします。空の停止中Runは一時的に許容しますが、状態が変わると区間数を再検証します。
 
-Condition and detector `type` values and action names are case-sensitive. Unknown
-fields are rejected in split, rule, condition, detector, and ROI mappings. The
-root mapping allows extra keys so that you can define anchors or metadata; those
-keys do not add behavior. A typo in an optional root key can therefore be ignored.
-Required fields must still be present with the right structure.
+Condition・Detectorの `type` とAction名は大文字・小文字を区別します。区間、Rule、Condition、Detector、ROI内の未知の項目は拒否します。ルートだけはアンカー定義やメタデータ用に追加キーを許容し、それ自体は動作を追加しません。任意のルート項目のタイプミスは無視される場合があります。必須項目には正しい構造が必要です。
 
-## Rules and sequences
+## Ruleとsequence
 
-A rule has exactly `condition` (one condition mapping) and `action` (one scalar
-operation name). A true condition requests that action. Rules in a split are
-tried in list order. Evaluation stops at the first rule that returns an action;
-later rules are not evaluated on that frame. Rule evaluation exceptions are
-counted and the next rule is tried.
-A plain rule is not automatically one-shot.
+Ruleは `condition` と `action` だけを持ちます。`condition` はConditionのマッピング、`action` は操作名のスカラーです。ConditionがtrueならActionを要求します。区間のRuleをリスト順に試し、最初にActionを返したRuleで評価を止めます。そのフレームでは後続Ruleを評価しません。Rule評価で例外が出るとエラーを数え、次のRuleを試します。通常のRuleは自動で一度限りになるわけではありません。
 
-For multiple ordered actions, use a `sequence` containing a non-empty list of
-plain rules. Nested sequences and action arrays are not supported:
+複数の操作を順に行うには、空でない通常Ruleのリストを `sequence` に指定します。sequenceの入れ子とAction配列は使えません。
 
 ```yaml
 sequence:
@@ -59,112 +46,73 @@ sequence:
     action: split
 ```
 
-This mapping occupies one item of a split's `rules` list. It is a **RuleSequence**:
-only its active rule is evaluated, and returning an action advances it by one
-step. The next rule starts on a later evaluation, not on the same frame. Completed
-sequences return no action until reset. Advancement occurs when the rule produces
-an action, not as a transaction after Bridge confirms all steps. Dispatch failure,
-resynchronization, and segment changes can reset the containing group.
+このマッピングを区間の `rules` の1項目に置きます。これがRuleSequenceです。有効なRuleだけを評価し、Actionを返すと1段進みます。次のRuleは同じフレームではなく、後の評価から始まります。完了後はリセットまでActionを返しません。進行はRuleがActionを生成した時点で行い、すべての操作をBridgeが確認してから一括確定するものではありません。送信の失敗、再同期、区間変更によって、そのグループがリセットされる場合があります。
 
-Put actions that leave the current segment (Split, Skip, Undo, Reset) last if later
-steps depend on staying in that segment. Pause/Resume transitions at the same
-segment normally preserve sequence position. For sequential observations followed
-by **one** action, use [`then`](conditions.md#then); it is a condition, not a
-RuleSequence.
+後続ステップも現在の区間で動く必要がある場合、区間を離れるSplit、Skip、Undo、Resetは最後に置いてください。同じ区間でのPause／Resumeの遷移では、通常はsequenceの位置を保ちます。複数の観測を順に確認して1つのActionを実行する場合は [`then`](conditions.md#then) を使います。`then` はConditionであり、RuleSequenceとは別です。
 
-## Actions
+## Action
 
-These are the complete action names. They send the corresponding Bridge timer
-control; whether a control is valid depends on LiveSplit's current state.
+使用できる操作名は次の7種類です。対応するBridgeのタイマー操作を送ります。実行できるかはLiveSplitの状態によります。
 
-| `action` | Effect |
+| `action` | 動作 |
 | --- | --- |
-| `start` | Start a stopped timer. This is also the implicit action for `start_condition`. |
-| `split` | Complete the current segment; completing the final segment ends the run. |
-| `skip` | Skip the current segment. |
-| `undo` | Undo the previous split; after the run ends, return to its last segment. This is the implicit action for `incomplete_condition`. |
-| `reset` | Reset the timer to not running. This is the implicit action for `reset_condition`. |
-| `pause` | Pause the timer. |
-| `resume` | Resume a paused timer. |
+| `start` | 停止中のタイマーを開始します。`start_condition` の暗黙のActionでもあります。 |
+| `split` | 現在の区間を完了します。最終区間の完了でRunが終了します。 |
+| `skip` | 現在の区間をスキップします。 |
+| `undo` | 前のSplitを取り消します。終了後は最後の区間へ戻ります。`incomplete_condition` の暗黙のActionです。 |
+| `reset` | タイマーをNot runningに戻します。`reset_condition` の暗黙のActionです。 |
+| `pause` | タイマーを一時停止します。 |
+| `resume` | 一時停止したタイマーを再開します。 |
 
-There are no action arguments, delays, scripts, or game-time operations in this
-schema. Express waits using conditions; the application-wide Reaction time is
-described in [Settings](../user-guide.md#settings).
+このスキーマにActionの引数、遅延、スクリプト、ゲーム内時間の操作はありません。待ち時間はConditionで表現します。アプリ共通のReaction timeは[Settings](../user-guide.md#settings)を参照してください。
 
-## Evaluation order
+## 評価順序
 
-For each frame with a valid synchronized timer snapshot:
+有効な同期済みスナップショットがあるフレームでは、次のグループを評価します。
 
-| Timer phase | Evaluated group |
+| タイマーのPhase | 評価するグループ |
 | --- | --- |
-| Not running | `start_condition` only. |
-| Running or paused | `reset_condition` first, then rules for the current split index if Reset did not fire. |
-| Ended | `incomplete_condition` only. |
+| Not running | `start_condition` だけ。 |
+| Running／Paused | `reset_condition` を先に評価し、Resetが成立しなければ現在の区間のRule。 |
+| Ended | `incomplete_condition` だけ。 |
 
-Paused timers still evaluate conditions, including elapsed time and split rules.
-The timer phase does not pause the application's monotonic clock. Inactive groups
-are not called. Within an active condition, Boolean short-circuit handling has
-specific state-update rules; see [condition evaluation](conditions.md#evaluation-and-short-circuiting).
+Pausedでも経過時間とSplitのRuleを評価します。タイマーの一時停止でアプリの単調増加時計は止まりません。無効なグループは呼び出しません。有効なCondition内の短絡評価については[Conditionの評価](conditions.md#評価と短絡処理)を参照してください。
 
-While an action is pending, other normal actions are suppressed. Reset conditions
-can interrupt pending Split/Skip. In the current runtime, a pending action without
-a transition is cleared after a one-second evaluation-time timeout; its relevant
-group is reset and evaluation resumes on a later frame. Bridge rejection,
-disconnect, and unknown-result handling also affect retries; see
-[architecture](../development/architecture.md#bridge-and-controls).
+Actionの確定待ち中は通常の別Actionを抑止します。Reset条件は待機中のSplit／Skipに割り込めます。現行Runtimeでは、遷移がないまま1秒の評価時刻上のタイムアウトに達すると、保留を消して対応するグループをリセットし、後のフレームで評価を再開します。Bridgeの拒否、切断、結果不明時の再試行は[アーキテクチャ](../development/architecture.md#bridgeとタイマー制御)も参照してください。
 
-## State and reset lifecycle
+## 状態とリセット
 
-Each Profile instance loads a fresh condition tree. Reusing an anchor creates
-independent condition objects at each occurrence, not shared counters or clocks.
-Every condition reset clears its status to `not_evaluated` and recursively resets
-its children; each type's own cleared state is listed in [conditions](conditions.md).
+ProfileのインスタンスごとにConditionツリーを読み込み直します。アンカーを再利用しても、使用箇所ごとに独立したオブジェクトを作るため、時計やカウンターは共有しません。Conditionのリセットは状態を `not_evaluated` に戻し、子も再帰的にリセットします。各型が消す内部状態は[Condition](conditions.md)に記載しています。
 
-The current runtime applies these resets:
+現行Runtimeは次のタイミングでリセットします。
 
-| Event | Reset behavior |
+| イベント | リセット対象 |
 | --- | --- |
-| New session / initial Bridge baseline / reconnect | All groups start fresh. |
-| Transition to Not running, or a change to LiveSplit segment count | All groups reset. |
-| Move to another running/paused segment, including Undo | The destination segment's rules reset. |
-| Transition to Ended | The Incomplete group resets. |
-| Return from Ended to Running/Paused | Incomplete and Reset groups reset, and the destination segment resets. |
-| Pause ↔ Resume at the same index | The split group normally retains its condition/sequence state. |
-| A transition update at the same phase and index | The current split group resets. A control followed by an unchanged queried state can take this path. |
-| Resynchronization with an advanced state/run revision | All groups reset; a resync without an advanced revision retains group state and clears pending action. |
-| Action not dispatched, rejected, or pending timeout | The relevant action group resets: Start for `start`, Incomplete for `undo`, Reset for `reset`, otherwise the current split group. |
+| 新しいSession、Bridgeの初期同期、再接続 | すべてのグループ。 |
+| Not runningへの遷移、またはLiveSplitの区間数変更 | すべてのグループ。 |
+| Undoを含む、Running／Pausedの別区間への移動 | 移動先の区間のRule。 |
+| Endedへの遷移 | Incompleteグループ。 |
+| EndedからRunning／Pausedへの復帰 | Incomplete、Reset、移動先の区間。 |
+| 同じ位置でPauseとResumeを切り替え | 通常は区間のConditionとsequenceの状態を保持。 |
+| 同じPhase・位置の遷移更新 | 現在の区間。操作後のQueryで状態が変わらなかった場合も該当することがあります。 |
+| 状態またはRunのリビジョンが進んだ再同期 | すべてのグループ。進んでいなければグループの状態を保ち、保留Actionだけを消します。 |
+| Actionの未送信、拒否、確定待ちのタイムアウト | `start` ならStart、`undo` ならIncomplete、`reset` ならReset、それ以外は現在の区間。 |
 
-Explicit [`reset_when`](conditions.md#reset_when) resets its own two child trees
-when its reset condition is true. A `then.within` timeout is different: it restarts
-step progress without resetting child condition state.
+[`reset_when`](conditions.md#reset_when) はReset条件がtrueのときに自身の2つの子ツリーをリセットします。`then.within` のタイムアウトは異なり、子の状態はリセットせずステップの進行だけをやり直します。
 
-## Durations
+## 時間表現
 
-`elapsed.duration`, `hold.duration`, and `then.within` accept a non-negative
-decimal immediately followed by `ms` or `s`, for example `0ms`, `500ms`, `1.5s`.
-Use a leading digit (`0.5s`, not `.5s`). Plain numbers, negatives, signs, spaces,
-exponents, minutes, and compound durations such as `1m30s` are rejected. Quoting
-is optional; these scalars are parsed as strings. Duration comparisons are
-inclusive (`>=`), except that `then.within` expires only when elapsed time is
-strictly greater than its window.
+`elapsed.duration`、`hold.duration`、`then.within` は、0以上の小数に `ms` または `s` を直結した文字列です。例は `0ms`、`500ms`、`1.5s` です。`.5s` ではなく `0.5s` のように先頭の数字を書いてください。単位なしの数値、負数、符号、空白、指数表記、分、`1m30s` のような複合表記は拒否します。引用符は任意です。比較は原則 `>=` ですが、`then.within` の期限切れは窓の時間を厳密に超えた場合です。
 
-## Paths
+## パス
 
-Scenario files must end in `.yaml` or `.yml` (extension matching ignores case).
-The Profile stores their absolute paths. Detector `reference` paths can be
-absolute or relative; relative paths resolve against the YAML file's directory,
-not the profile directory or process working directory. There is no include,
-glob, environment-variable, or home-directory expansion.
+シナリオの拡張子は `.yaml` または `.yml` です。拡張子の判定では大文字・小文字を区別しません。Profileには絶対パスを記録します。Detectorの `reference` は絶対パスか相対パスです。相対パスの基準はYAMLの保存フォルダーであり、Profileや作業フォルダーではありません。include、glob、環境変数、ホームディレクトリの展開は行いません。
 
-Use forward slashes on Windows (`images/title.png`, `C:/game/title.png`). If using
-backslashes, YAML single quotes keep them literal. Reference images are decoded
-with their original channels/depth; see [image constraints](detectors.md#reference-images-and-channels).
+Windowsでも `images/title.png`、`C:/game/title.png` のようにスラッシュを使えます。バックスラッシュを使うならYAMLの単一引用符で囲むと文字どおりに保持します。画像は元のチャンネル数・深度のまま読みます。[画像の制約](detectors.md#参照画像とチャンネル)を参照してください。
 
-## YAML anchors and aliases
+## YAMLのアンカーとエイリアス
 
-Anchors (`&name`) and aliases (`*name`) are YAML features provided by yaml-cpp,
-not a DivergenceSplitter reference registry. Store reusable definitions at the
-root and alias complete condition/detector mappings:
+`&name` と `*name` はyaml-cppが扱うYAMLの標準機能であり、アプリ独自の参照登録機能ではありません。ルートで共通定義を作り、ConditionやDetectorのマッピング全体をエイリアスで再利用できます。
 
 ```yaml
 bright: &bright
@@ -180,8 +128,4 @@ splits:
         action: split
 ```
 
-The unused `bright` root key only holds the anchor definition. Aliases are parsed
-into independent runtime objects at their use sites. YAML merge keys (`<<`) are
-not expanded by the application; in checked mappings they are unknown fields.
-Alias a complete mapping rather than relying on merge-key inheritance. Avoid
-cyclic aliases; the loader has no supported recursive-definition mechanism.
+ルートの `bright` はアンカー定義を置くだけの項目です。参照した各箇所で独立したRuntimeオブジェクトを作ります。アプリはマージキー `<<` を展開しません。キーを検査するマッピングでは未知の項目として拒否します。マージによる継承ではなく、マッピング全体を再利用してください。循環エイリアスを使った再帰定義には対応していません。

@@ -1,74 +1,38 @@
-# Getting started
+# はじめに
 
-[Documentation home](../README.md)
+[日本語（正本）](getting-started.md) | [English](getting-started.en.md)
 
-This walkthrough uses a time-based scenario so that you can check the connection
-before tuning image detection. With this scenario, LiveSplit starts after two
-seconds of start-condition evaluation. Its first segment completes three seconds
-after that segment begins evaluation. Keep a working video input active throughout
-the test.
+[ドキュメント一覧](../README.md)
 
-## Download and launch
+まず時間だけで動作するシナリオを使い、画像判定の調整前に接続を確認します。このサンプルは開始条件の評価を始めて2秒後にLiveSplitを開始し、最初の区間の評価を始めて3秒後にSplitします。テスト中は映像が届く状態を保ってください。
 
-1. Open the repository's [C++23 Actions workflow](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml).
-   Select a successful trusted run for the revision you intend to use and download
-   the `DivergenceSplitter-cpp23-windows-x64` artifact. GitHub artifact downloads
-   require sign-in. Availability depends on a successful NDI-enabled job and
-   artifact retention; if no artifact is available, [build from source](development/building.md).
-2. Extract the artifact, then extract the application ZIP inside it into a writable
-   local directory. Keep the DLLs, plugin directories, and license files together.
-   The official ZIP includes the NDI runtime; installing the SDK is unnecessary.
-3. Run `DivergenceSplitter.exe`. A fresh installation has no active input. If the
-   profile remembered from the previous session still exists, the application
-   opens and applies it at startup.
-   That profile's scenario may start controlling LiveSplit as soon as input and
-   Bridge are ready.
+## ダウンロードと起動
 
-## Connect LiveSplit.Bridge
+1. [C++23のActions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開きます。使いたいリビジョンの信頼できる実行を選び、成功した実行から `DivergenceSplitter-cpp23-windows-x64` アーティファクトをダウンロードしてください。GitHubへのサインインが必要です。アーティファクトの有無はNDI有効ジョブの成功と保存期間によります。利用できるものがなければ[ソースからビルド](development/building.md)してください。
+2. アーティファクトを展開し、その中のアプリケーションZIPも書き込み可能なローカルフォルダーに展開します。DLL、プラグインのフォルダー、ライセンスを同じ構成で保ってください。公式ZIPにはNDIランタイムを同梱しているため、SDKのインストールは不要です。
+3. `DivergenceSplitter.exe` を起動します。初回は有効な入力がありません。前回のProfileとして記憶されたファイルが存在する場合、起動時に自動で開いて適用します。そのProfileのシナリオは入力とBridgeの準備が整うとLiveSplitを操作し始めることがあります。
 
-1. Install LiveSplit and a LiveSplit.Bridge release supporting Protocol v4.
-   Follow the [Bridge installation instructions](https://github.com/Nanahuse/LiveSplit.Bridge#インストール):
-   close LiveSplit, copy `LiveSplit.Bridge.dll` from its release ZIP into LiveSplit's
-   `Components` directory, reopen LiveSplit, then add **Control > LiveSplit Bridge**
-   in **Edit Layout...** and save the layout.
-2. Open the Bridge component's settings. Leave its WebSocket port at `54000` and
-   check that its status is **Running**. DivergenceSplitter connects on the same PC.
-3. In LiveSplit, create a test run with **one segment**, save it, and leave the timer
-   stopped. Use a test run because the next steps send real timer controls.
+## LiveSplit.Bridgeへの接続
 
-## Configure a working input and scenario
+1. LiveSplitと、Protocol v4に対応するLiveSplit.Bridgeを用意します。[Bridgeの導入手順](https://github.com/Nanahuse/LiveSplit.Bridge#インストール)に従い、LiveSplitを終了してからリリースZIP内の `LiveSplit.Bridge.dll` を `Components` に配置します。LiveSplitを開き直し、Edit Layout...でControl > LiveSplit Bridgeを追加してレイアウトを保存してください。
+2. Bridgeの設定を開き、WebSocketポートを `54000` にします。StatusがRunningであることを確認してください。DivergenceSplitterは同じPCのLiveSplitに接続します。
+3. LiveSplitに1区間のテスト用Runを作成して保存し、タイマーを停止状態にしておきます。以降の操作では実際にタイマーを制御するため、テスト用のRunを使ってください。
 
-1. Download [minimal-scenario.yaml](../examples/minimal-scenario.yaml) from this
-   revision and save it to a known local path, for example
-   `C:/DivergenceSplitter/minimal-scenario.yaml`.
-2. Open **Profile**. Choose one input:
-   - **Camera**: click **Detect cameras**, select your camera or capture card, and
-     select an enumerated mode. Leave **Request 60 fps** off for this test.
-   - **Video file**: browse to a playable local recording longer than ten seconds.
-     Codec support depends on the build. An AVI recording with MJPEG is useful for
-     a first check. Playback begins when the profile is applied.
-   - **NDI®**: start your sender, click **Search again**, and select its advertised
-     name. This requires an NDI-enabled build.
-3. Leave **Crop margins** and **Resize** unchecked. Click **Add instance**, enter
-   Bridge port `54000`, select the row, and use **Browse scenario...** to choose the
-   saved YAML. Remove extra rows for this test.
-4. Click **Apply**. Input and scenario evaluation start immediately; Apply does
-   not require a separate Start command in the application.
+## 入力とシナリオの設定
 
-## Observe the first automatic split
+1. このリビジョンの [minimal-scenario.yaml](../examples/minimal-scenario.yaml) をダウンロードし、分かる場所に保存します。例は `C:/DivergenceSplitter/minimal-scenario.yaml` です。
+2. Profileを開き、次のいずれかの入力を選びます。
+   - Camera：Detect camerasを押し、カメラまたはキャプチャーカードと列挙されたモードを選びます。このテストではRequest 60 fpsをオフにします。
+   - Video file：10秒より長い再生可能なローカル録画を選びます。対応コーデックはビルドによります。最初の確認にはMJPEGのAVI録画を使えます。Profileを適用すると再生が始まります。
+   - NDI®：送信元を起動し、Search againで公開名を選びます。NDI対応ビルドが必要です。
+3. Crop marginsとResizeはオフにします。Add instanceで行を追加し、Bridge portを `54000` にします。行を選択してBrowse scenario...から保存したYAMLを指定してください。このテストでは余分な行を削除します。
+4. Applyを押します。入力とシナリオの評価が始まります。アプリ内で別のStart操作をする必要はありません。
 
-1. Open **Monitor**. Check that the preview updates, the frame count increases,
-   and the instance becomes **Ready**.
-2. LiveSplit starts after approximately two seconds of available evaluation.
-   After approximately three more seconds, the first split completes and the
-   one-segment test run ends. Timing depends on frame delivery and Bridge readiness;
-   these waits are not measured from the mouse click on Apply.
-3. Open **Diagnostics** to inspect Start, Splits, condition statuses, and scores.
-   The sample uses `elapsed`, so no reference image or score threshold is needed.
-4. Use **File > Save Profile As...** to save the configured profile. Saving and
-   applying are separate operations; see the [user guide](user-guide.md).
+## 最初の自動Splitの確認
 
-The sample starts again after a timer reset when frames continue arriving. Close
-the application when finished testing. For game-specific behavior, replace the
-sample with [image detection examples](scenarios/examples.md). For errors, start
-with [troubleshooting](troubleshooting.md).
+1. Monitorを開きます。プレビューが更新され、フレーム数が増え、インスタンスがReadyになることを確認してください。
+2. 評価可能になって約2秒後にLiveSplitが開始し、さらに約3秒後に最初のSplitが実行されて1区間のRunが終了します。時刻は映像の到着とBridgeの準備に左右されます。Applyを押した瞬間からの待ち時間ではありません。
+3. Diagnosticsを開き、Start、Splits、Conditionの状態やスコアを確認します。このサンプルは `elapsed` を使うため、参照画像とスコアのしきい値は不要です。
+4. File > Save Profile As...でProfileを保存します。保存と適用は別の操作です。[利用ガイド](user-guide.md)を参照してください。
+
+映像が届き続けている場合、このサンプルはタイマーのReset後に再び開始します。テストを終えたらアプリを閉じてください。ゲーム用の判定には[画像検出の例](scenarios/examples.md)を使い、問題がある場合は[トラブルシューティング](troubleshooting.md)を参照してください。

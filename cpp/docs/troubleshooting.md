@@ -1,87 +1,56 @@
-# Troubleshooting
+# トラブルシューティング
 
-[Documentation home](../README.md)
+[日本語（正本）](troubleshooting.md) | [English](troubleshooting.en.md)
 
-Start in Monitor: check whether frames arrive, whether each instance is Ready,
-and whether a last action/error is shown. Then inspect Diagnostics for the active
-phase, split, condition status, and score.
+[ドキュメント一覧](../README.md)
 
-## Input problems
+まずMonitorで映像の到着、各インスタンスのReady状態、最後のActionとエラーを確認してください。次にDiagnosticsで有効なPhase、Split、Conditionの状態とスコアを調べます。
 
-| Symptom | Check and recovery |
+## 入力の問題
+
+| 症状 | 確認と復旧 |
 | --- | --- |
-| No camera or configured camera not connected | Reconnect it, close other applications using it, click Detect cameras, and select the correct backend/device/mode. Duplicate names need the correct index. |
-| DirectShow subtype cannot be selected or confirmed | Choose another selectable enumerated mode or Media Foundation. Do not invent a subtype GUID. See [camera constraints](configuration.md#camera--capture-card). |
-| Configured capture mode rejected | Re-enumerate modes, disable Request 60 fps, select an available size/FPS, and Apply. |
-| Video cannot open or decode | Check the absolute path and permissions, and try a recording using a codec supported by this OpenCV build. A file-picker extension is not a decoder guarantee. |
-| Reached end of video | Expected at EOF: playback does not loop. Apply to start again. |
-| Crop margins do not fit | Reduce margins relative to the raw input dimensions, before Resize. |
-| NDI input not available in this build | Use the official NDI-enabled ZIP or [enable the SDK at build time](development/building.md#ndi-enabled-builds). |
-| NDI source absent or no frames | Start the sender; check its advertised name, network reachability, and firewall rules; Search again. A saved offline name is retained. An ordinary timeout is not fatal and the receiver can recover when the sender returns. |
-| NDI runtime initialization fails | Extract the entire ZIP and keep its DLL beside the executable. The loader uses the application directory, not PATH or the working directory. Use `--ndi-check` below. |
+| カメラが見つからない、設定したカメラが未接続 | 再接続し、同じ機器を使う他のアプリを閉じます。Detect camerasでバックエンド・機器・モードを選び直してください。同名の機器は正しいインデックスが必要です。 |
+| DirectShowのサブタイプを選択・確認できない | 別の選択可能なモードかMedia Foundationを選びます。GUIDを推測で記述しないでください。[カメラの制約](configuration.md#cameraキャプチャーカード)を参照してください。 |
+| キャプチャーモードを拒否される | モードを再列挙し、Request 60 fpsを無効にして、利用可能なサイズ・FPSを選びApplyします。 |
+| 動画を開けない・デコードできない | 絶対パスとアクセス権を確認し、そのOpenCVビルドが扱えるコーデックの録画を試します。ファイル選択画面の拡張子は再生対応の保証ではありません。 |
+| 動画の末尾に達した | 末尾では停止します。ループしないため、Applyで先頭から再生し直してください。 |
+| Cropの余白が収まらない | Resize前の入力寸法に合わせて余白を減らします。 |
+| このビルドでNDIを使えない | 公式のNDI対応ZIPを使うか、[SDKを有効にしてビルド](development/building.md#ndi対応ビルド)してください。 |
+| NDI送信元が見つからない・映像が来ない | 送信元を起動し、公開名、ネットワーク接続、ファイアウォール設定を確認してSearch againを押します。保存済みの名前はオフラインでも残ります。通常のタイムアウトは致命的なエラーではなく、送信元が戻ると受信を再開できます。 |
+| NDIランタイムを初期化できない | ZIP全体を展開し、DLLを実行ファイルの隣に置いてください。ローダーはPATHや作業ディレクトリではなくアプリのディレクトリから読みます。後述の `--ndi-check` も使えます。 |
 
-Camera open/read errors marked retryable are retried by capture. Mode, decoding,
-normalization, and fatal SDK errors can stop capture. Correct the profile and
-Apply; watch frame count rather than a static last preview.
+再試行可能なカメラのopen／readエラーは取得処理が再試行します。モード、デコード、正規化、致命的なSDKエラーでは取得を停止する場合があります。Profileを修正してApplyし、最後の静止画だけでなくフレーム数の増加を確認してください。
 
-## Bridge connection problems
+## Bridge接続の問題
 
-- Confirm that the current LiveSplit layout includes LiveSplit Bridge and its
-  status is Running. Match its WebSocket port to the Profile row.
-- Use a Bridge release supporting Protocol v4 on the same PC. The application
-  connects to `127.0.0.1`; remote-host settings are not available.
-- For multiple LiveSplit processes, give their Bridge components distinct ports
-  and save each layout. A port already in use can prevent Bridge startup.
-- Connecting may recover automatically after a transient disconnect. A protocol
-  error or Failed state needs correction of the reported cause and a new Apply.
+- 現在のLiveSplitレイアウトにLiveSplit Bridgeがあり、StatusがRunningであることを確認します。WebSocketポートをProfileの行と一致させてください。
+- 同じPCでProtocol v4対応のBridgeを使います。アプリの接続先は `127.0.0.1` であり、リモートホストは設定できません。
+- 複数のLiveSplitではBridgeごとに別のポートを設定し、各レイアウトを保存します。ポートが使用中だとBridgeを起動できない場合があります。
+- 一時的な切断は自動で復旧する場合があります。プロトコルエラーやFailed状態では、表示された原因を修正してApplyし直してください。
 
-An **unknown** control outcome means the request may already have reached
-LiveSplit. The runtime resynchronizes and suppresses the same automatic operation
-against the same authoritative state. Inspect LiveSplit before manually repeating
-an action. Connection recovery is not proof that a previous control failed.
+操作結果がunknownの場合、要求がすでにLiveSplitへ届いた可能性があります。Runtimeは再同期し、同じ確定状態に対する同じ自動操作を抑止します。手動で繰り返す前にLiveSplitの状態を確認してください。再接続したことは前の操作の失敗を示すものではありません。
 
-## Detection does not fire, or fires unexpectedly
+## 判定が成立しない・意図せず成立する
 
-1. Verify the normalized image in Monitor. ROI coordinates refer to the image
-   after Crop/Resize, not raw capture coordinates.
-2. In Diagnostics, inspect the active phase and zero-based split index. A `null`
-   split has no automatic rules. A YAML split list longer than the LiveSplit run
-   invalidates evaluation (with a special allowance for an empty stopped run).
-3. Check rule errors and condition status. An out-of-bounds ROI, incompatible
-   channels, or reference dimensions can fail at evaluation even when YAML loaded.
-   Consult [detector constraints](scenarios/detectors.md).
-4. Compare the latest and maximum score with `minimum_score`. Higher scores mean
-   a stronger match (or more brightness/color coverage). There is no universal
-   threshold across detectors. Test both desired and undesired game frames.
-5. Check [condition behavior](scenarios/conditions.md): edges need an earlier
-   baseline sample; `nth` counts true evaluations; `once` stays true; `hold`
-   restarts on false; a `then` step begins on a later evaluation.
-6. Reapply after editing YAML or images. Apply and runtime resets clear relevant
-   condition state and diagnostic maxima; a saved file alone is not reloaded.
+1. Monitorで正規化後の画像を確認します。ROIは元の映像ではなくCrop／Resize後の座標です。
+2. Diagnosticsで有効なPhaseと0から始まるSplitの位置を確認します。`null` の区間には自動Ruleがありません。YAMLの区間数がLiveSplitより多いと評価を無効にします。ただし空の停止中Runには特例があります。
+3. Ruleのエラー回数とConditionの状態を確認します。YAMLを読み込めても、ROIの範囲外やチャンネル・参照寸法の不一致は評価時に失敗します。[Detectorの制約](scenarios/detectors.md)を確認してください。
+4. 最新・最大スコアと `minimum_score` を比較します。高い値ほど一致度、明るさ、指定色の割合が高いことを示します。方式共通のしきい値はないため、成立させたい画面と成立させたくない画面の両方で確認してください。
+5. [Conditionの動作](scenarios/conditions.md)を確認します。edgeは基準となる前回値が必要です。`nth` はtrueの評価を数え、`once` はtrueを維持し、`hold` はfalseで計測し直し、`then` の次のステップは後の評価で始まります。
+6. YAMLや画像を編集したら再適用します。ApplyとRuntimeのリセットは対応するConditionの状態と最大スコアを消します。ファイルを保存しただけでは再読込しません。
 
-For repeated actions, avoid a condition that remains true indefinitely on a
-non-advancing action such as pause/resume. Use a sequence or suitable stateful
-conditions and account for the [rule reset lifecycle](scenarios/yaml-reference.md#state-and-reset-lifecycle).
+Pause／Resumeなど区間を進めないActionで、常にtrueの条件を使うと操作を繰り返す場合があります。sequenceや適切な状態付きConditionを使い、[Ruleのリセット](scenarios/yaml-reference.md#状態とリセット)も考慮してください。
 
-## Logs
+## ログ
 
-On Windows, logs are appended to
-`%APPDATA%/DivergenceSplitter/diagnostics.log`; rotated files use `.1`, `.2`, and
-`.3` suffixes. Settings and the log directory are created as needed. In Settings,
-select INFO or DEBUG, Save, and reapply the profile before reproducing the issue.
-OFF disables logging; changing the level does not add events that the application
-does not emit.
+Windowsでは `%APPDATA%/DivergenceSplitter/diagnostics.log` に追記します。ローテーションしたファイルの末尾は `.1`、`.2`、`.3` です。設定とログのフォルダーは必要に応じて作成します。問題を再現する前に、SettingsでINFOまたはDEBUGを選び、SaveしてProfileを再適用してください。OFFでは記録しません。ログレベルを変えても、実装が出力しないイベントは追加されません。
 
-Useful events include `profile.apply`, `capture.error`, `instance.state`,
-`instance.ready`, and `instance.action`. Condition evaluation errors are counted
-in Diagnostics; detailed detector exception messages are not guaranteed in the
-log. When reporting a problem, include the application revision/build, relevant
-profile/YAML, input type, normalized dimensions, diagnostic status/score, and the
-log around the event. Remove private paths or source names if necessary.
+主なイベントは `profile.apply`、`capture.error`、`instance.state`、`instance.ready`、`instance.action` です。Conditionの評価エラーはDiagnosticsで数えますが、Detectorの詳しい例外メッセージをログに記録する保証はありません。問題の報告にはアプリのリビジョン・ビルド、ProfileとYAML、入力種別、正規化後の寸法、判定状態・スコア、前後のログを添えてください。必要に応じて私用のパスや送信元名を除いてください。
 
-## Command-line checks
+## CLIでの確認
 
-From the extracted application directory, with a customized profile:
+展開したアプリケーションのフォルダーで、環境に合わせたProfileを指定します。
 
 ```powershell
 .\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --check
@@ -90,15 +59,6 @@ From the extracted application directory, with a customized profile:
 .\divergencesplitter-cli.exe --ndi-list
 ```
 
-`--check` loads the profile and every scenario/reference, applying reference
-resize options. It does **not** open input, check frame/ROI compatibility, connect
-to Bridge, or send controls. The timed command runs a real session and can control
-LiveSplit. Without a positive `--seconds`, it runs until interrupted with Ctrl+C.
-`--ndi-check` initializes the runtime; `--ndi-list` also performs source discovery.
+`--check` はProfileと全シナリオ・参照画像を読み、参照画像のResizeも行います。入力を開く処理、フレームとROIの互換性検査、Bridge接続、タイマー操作は行いません。時間を指定した実行は実際のSessionを動かし、LiveSplitを操作できます。正の `--seconds` を指定しなければCtrl+Cまで実行します。`--ndi-check` はランタイムを初期化し、`--ndi-list` は送信元の検索も行います。
 
-The CLI accepts `--settings C:/DivergenceSplitter/settings.json`. Without this
-option it uses default settings rather than automatically loading the GUI's
-settings file. Exit codes are `0` for successful completion/check, `2` for usage
-errors, `3` for caught configuration/startup/NDI failures, and `4` for a reported
-session runtime error. Inspect printed instance states too: a failed Bridge
-instance need not make the timed command exit nonzero.
+CLIは `--settings C:/DivergenceSplitter/settings.json` も受け取ります。省略時はGUIの設定ファイルを自動読込せず、既定値を使います。終了コードは成功・検証完了が `0`、使用方法の誤りが `2`、捕捉した設定・起動・NDIエラーが `3`、SessionのRuntimeエラーが `4` です。Bridgeインスタンスが失敗しても時間指定実行が0で終わる場合があるため、表示されるインスタンス状態も確認してください。

@@ -1,21 +1,18 @@
-# Developer guide
+# 開発ガイド
 
-[Documentation home](../../README.md)
+[日本語（正本）](README.md) | [English](README.en.md)
 
-| Task | Guide |
+[ドキュメント一覧](../../README.md)
+
+| 作業 | 参照先 |
 | --- | --- |
-| Understand component boundaries, threads, and control flow | [Architecture](architecture.md) |
-| Configure CMake, dependencies, Qt, and the NDI SDK | [Building](building.md) |
-| Run CTest, real Bridge integration, and NDI checks | [Testing](testing.md) |
-| Produce and verify the Windows ZIP and notices | [Distribution](distribution.md) |
+| コンポーネント、スレッド、制御の流れを理解する | [アーキテクチャ](architecture.md) |
+| CMake、依存関係、Qt、NDI SDKを設定する | [ビルド](building.md) |
+| CTest、実Bridgeとの結合、NDIを検証する | [テスト](testing.md) |
+| Windows ZIPと通知を作成・検証する | [配布](distribution.md) |
 
-Public configuration belongs in the [Profile reference](../configuration.md) and
-[scenario reference](../scenarios/yaml-reference.md). Keep those pages in sync
-when changing loaders or evaluation semantics. Use the current implementation
-and tests as the source of truth; do not infer supported fields from UI labels.
+公開設定は[Profileリファレンス](../configuration.md)と[YAMLリファレンス](../scenarios/yaml-reference.md)にまとめています。ローダーや評価動作を変えた場合は文書も更新してください。画面名から仕様を推測せず、現在の実装とテストで確認します。
 
-When changing documentation or examples, validate all complete YAML examples
-through `load_scenario` (or CLI `--check` via a Profile), check JSON through
-`load_profile`, resolve relative links and heading anchors, and review examples
-against the intended branch. `--check` does not validate live input/ROI compatibility;
-use frame-based tests for that. See [testing](testing.md#validating-documentation-examples).
+製品ドキュメントの正本は日本語の `.md` です。英語の `.en.md` は参考訳で、食い違いがある場合は日本語を優先します。変更時は日本語を修正し、対応する英語版にも反映してください。設定キー・数値・コード例の整合性と、両言語のリンクも確認します。
+
+文書や例を変えた場合は、完全なYAMLを `load_scenario` またはProfile経由のCLI `--check` で検証し、JSONを `load_profile` で確認してください。相対リンクと見出しアンカーも解決できることを確認し、対象ブランチの実装と比較します。`--check` は入力とROIの実際の互換性を検査しないため、その確認にはフレームを使うテストが必要です。[例の検証](testing.md#ドキュメントの例の検証)を参照してください。
