@@ -1,9 +1,10 @@
-# C++ migration acceptance, stage 1
+# C++ migration acceptance
 
-The Python packages remain available until checks against the user's actual
-profiles, scenarios, sources, and LiveSplit installation are complete. Passing
-the automated suite establishes the coverage below; it does not certify an
-unavailable external device or a private scenario that was not supplied.
+The legacy Python application, tests, and distribution tooling have been removed.
+C++23 is the sole application implementation. Python helpers for C++ builds and
+distribution, and the independent AutoSplit converter, remain available.
+Passing the automated suite establishes the coverage below; it does not certify
+an unavailable external device or a private scenario that was not supplied.
 
 ## Automated coverage
 
@@ -85,5 +86,6 @@ available and tested.
 - [ ] Run Start/Split/Undo/Reset and disconnect/reconnect against the actual
       LiveSplit installation with Bridge v4 on a test run.
 
-These checks remain the gate for deleting the old Python implementation in
-stage 2. This change adds the C++ behavior and repeatable acceptance harness.
+These environment-specific checks remain outstanding acceptance work before
+using C++ with the user's actual setup. Removing the legacy implementation does
+not mark them complete; the automated harness does not replace these checks.
