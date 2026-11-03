@@ -34,9 +34,9 @@ CPackは `DivergenceSplitter-<version>-windows-x64.zip` を作成し、外側の
 
 ## 第三者ライセンスの通知
 
-アプリのソースは[MIT](../../LICENSE)です。[DISTRIBUTION-NOTICE.txt](../../DISTRIBUTION-NOTICE.txt) にQt、OpenCV、Boost、yaml-cpp、nlohmann/json、Bridgeクライアント、カメラ列挙の移植部分などを記載します。それぞれ別のライセンスが適用されます。
+アプリのソースは[MIT](../../LICENSE)です。[DISTRIBUTION-NOTICE.txt](../../DISTRIBUTION-NOTICE.txt) にQt、OpenCV、Boost、rapidyaml（ryml）、c4core、nlohmann/json、Bridgeクライアント、カメラ列挙の移植部分などを記載します。それぞれ別のライセンスが適用されます。
 
-install・package時に [collect_licenses.py](../../tools/collect_licenses.py) が実際にインストールしたvcpkgの通知と、取得したBridgeのライセンスを集めます。カメラ列挙の元ライセンスと外部Qt 6.8.3の本文も、[third-party-license-lock.json](../../tools/third-party-license-lock.json) にある固定コミットから取得します。取得した本文はGit管理外のビルドキャッシュに保存します。通知の不足、対応しない外部Qtバージョン、固定内容の変化ではパッケージ化を失敗させます。推移的な依存の通知は `licenses/vcpkg/` に含めます。
+install・package時に [collect_licenses.py](../../tools/collect_licenses.py) が実際にインストールしたvcpkgの通知と、取得したBridgeのライセンスを集めます。カメラ列挙の元ライセンスと外部Qt 6.8.3の本文も、[third-party-license-lock.json](../../tools/third-party-license-lock.json) にある固定コミットから取得します。取得した本文はGit管理外のビルドキャッシュに保存します。通知の不足、対応しない外部Qtバージョン、固定内容の変化ではパッケージ化を失敗させます。rymlとc4coreの通知はそれぞれ `licenses/ryml.txt` と `licenses/c4core.txt` を必須とし、ZIP検証でも確認します。その他の推移的な依存の通知は `licenses/vcpkg/` に含めます。
 
 ライセンス本文を短い要約で置き換えないでください。依存を更新するときはビルドだけでなく、パッケージ内の通知も確認します。そのZIPに適用する通知は配布物内のライセンスファイルです。
 

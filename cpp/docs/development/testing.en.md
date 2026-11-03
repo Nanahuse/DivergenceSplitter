@@ -24,7 +24,7 @@ the configured plugin/DLL paths; `ctest` sets these automatically.
 | --- | --- |
 | Detector | [`detector_tests.cpp`](../../tests/detector_tests.cpp): formulas, alpha masks, size/channel constraints, hashes, histogram and correlation cases. |
 | Condition | [`condition_tests.cpp`](../../tests/condition_tests.cpp): short-circuit order, edge history, elapsed start, continuous Hold, Once/Nth and Then progression/reset. |
-| YAML | [`scenario_loader_tests.cpp`](../../tests/scenario_loader_tests.cpp): schema failures, nested conditions, paths, ROI, reference transformations. |
+| YAML | [`scenario_loader_tests.cpp`](../../tests/scenario_loader_tests.cpp): schema failures, anchors, single/multiple merges and precedence, cyclic references, null/numeric boundaries, UTF-8 paths, ROI, reference transformations. UI tests also check recovery after invalid YAML. |
 | Profile | [`profile_tests.cpp`](../../tests/profile_tests.cpp): JSON fields, source types, settings and serialization. |
 | Capture | [`camera_tests.cpp`](../../tests/camera_tests.cpp), [`normalizer_tests.cpp`](../../tests/normalizer_tests.cpp), [`ndi_tests.cpp`](../../tests/ndi_tests.cpp): device resolution, transforms, fake NDI lifetimes/formats/timeouts/recovery. |
 | Cache/runtime | [`frame_cache_tests.cpp`](../../tests/frame_cache_tests.cpp), [`scenario_runtime_tests.cpp`](../../tests/scenario_runtime_tests.cpp), [`instance_runtime_tests.cpp`](../../tests/instance_runtime_tests.cpp): shared evaluation, phase routing, resets, fake-Bridge dispatch, automatic/manual Reset during reaction waits, separate normal/Reset confirmation, delayed events, expiry without input frames, query after Reset rejection, reconnect/unknown-outcome handling. |

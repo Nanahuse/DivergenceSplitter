@@ -53,7 +53,8 @@ def collect(
     required = {
         "boost": "boost-asio",
         "opencv": "opencv4",
-        "yaml-cpp": "yaml-cpp",
+        "ryml": "ryml",
+        "c4core": "c4core",
         "nlohmann-json": "nlohmann-json",
     }
     for name, port in required.items():

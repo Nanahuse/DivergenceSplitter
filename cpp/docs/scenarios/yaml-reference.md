@@ -121,9 +121,9 @@ ProfileのインスタンスごとにConditionツリーを読み込み直しま�
 
 Windowsでも `images/title.png`、`C:/game/title.png` のようにスラッシュを使えます。バックスラッシュを使うならYAMLの単一引用符で囲むと文字どおりに保持します。画像は元のチャンネル数・深度のまま読みます。[画像の制約](detectors.md#参照画像とチャンネル)を参照してください。
 
-## YAMLのアンカーとエイリアス
+## YAMLのアンカー・エイリアス・マージ
 
-`&name` と `*name` はyaml-cppが扱うYAMLの標準機能であり、アプリ独自の参照登録機能ではありません。ルートで共通定義を作り、ConditionやDetectorのマッピング全体をエイリアスで再利用できます。
+`&name` と `*name` はrapidyaml（ryml）が扱うYAMLの標準機能です。共通定義を作り、ConditionやDetectorのマッピング全体をエイリアスで再利用できます。アンカーはルート以外でも定義できます。参照先は同じ名前で参照位置より前にある最後のアンカーです。
 
 ```yaml
 bright: &bright
@@ -139,4 +139,43 @@ splits:
         action: split
 ```
 
-ルートの `bright` はアンカー定義を置くだけの項目です。参照した各箇所で独立したRuntimeオブジェクトを作ります。アプリはマージキー `<<` を展開しません。キーを検査するマッピングでは未知の項目として拒否します。マージによる継承ではなく、マッピング全体を再利用してください。循環エイリアスを使った再帰定義には対応していません。
+ルートの `bright` はアンカー定義を置くだけの項目です。参照した各箇所で独立したRuntimeオブジェクトを作るため、`once` などのConditionの状態は共有しません。
+
+`<<: *name` で共通のマッピングを取り込み、一部の値を変更できます。入れ子のマージにも対応します。
+
+```yaml
+definitions:
+  detected: &detected
+    type: detected
+    minimum_score: 0.9
+    detector: {type: mean_brightness}
+
+start_condition:
+  <<: *detected
+  minimum_score: 0.95
+
+splits:
+  - rules:
+      - condition:
+          <<: *detected
+          minimum_score: 0.8
+        action: split
+```
+
+優先順位はrapidyaml 0.16.0の標準動作に従います。単一マージで上書きする明示値は必ず `<<` **より後**に書いてください。`<<` より前の明示値はマージ元に上書きされます。`<<: [*a, *b]` では、同じキーがあれば**後ろの `b` が優先**されます。複数マージでは、`<<` の後ろに書いた明示値も後続のマージ元に上書きされる場合があります。これは、マージキーのYAML 1.1定義にある「明示値が常に優先」「リストの先頭が優先」とは異なります。
+
+複数マージの結果を確実に上書きするには、結果をいったんアンカーにまとめてから単一マージを使います。
+
+```yaml
+a: &a {type: detected, minimum_score: 0.2}
+b: &b {minimum_score: 0.8, detector: {type: mean_brightness}}
+combined: &combined {<<: [*a, *b]}
+start_condition:
+  <<: *combined
+  minimum_score: 0.95
+splits: []
+```
+
+マージはマッピング単位であり、入れ子のDetectorなどを変更する場合は、そのマッピングにも `<<` を指定します。
+
+マージキーはYAML 1.2のコア仕様ではなく、rapidyamlが対応する拡張機能として利用します。参照・マージを `Tree::resolve()` で展開した後、通常の必須項目・未知キー・型・値の検証を行います。元のYAMLにある重複キーは拒否します。存在しないアンカー、循環参照、マッピング以外を指すマージはYAMLエラーとして読み込みに失敗します。スキーマ違反はスキーマエラーとなり、いずれもアプリケーションを終了させません。

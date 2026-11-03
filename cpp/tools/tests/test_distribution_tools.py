@@ -225,7 +225,7 @@ class LicenseTests(unittest.TestCase):
             share, bridge, output, cache = [
                 root / name for name in ("share", "bridge", "out", "cache")
             ]
-            for port in ("boost-asio", "opencv4", "yaml-cpp", "nlohmann-json", "zlib"):
+            for port in ("boost-asio", "opencv4", "ryml", "c4core", "nlohmann-json", "zlib"):
                 (share / port).mkdir(parents=True)
                 (share / port / "copyright").write_text(port, encoding="utf-8")
             bridge.mkdir()
@@ -235,12 +235,17 @@ class LicenseTests(unittest.TestCase):
             with patch.object(collect_licenses, "pinned_file", return_value=camera):
                 collect_licenses.collect(output, share, bridge, None, "", cache)
             self.assertEqual((output / "opencv.txt").read_text(), "opencv4")
+            self.assertEqual((output / "ryml.txt").read_text(), "ryml")
+            self.assertEqual((output / "c4core.txt").read_text(), "c4core")
             self.assertEqual((output / "vcpkg/zlib.txt").read_text(), "zlib")
-            (share / "opencv4/copyright").unlink()
-            with self.assertRaisesRegex(
-                RuntimeError, "Required dependency notice missing"
-            ):
-                collect_licenses.collect(output, share, bridge, None, "", cache)
+            for port in ("opencv4", "ryml", "c4core"):
+                notice = share / port / "copyright"
+                notice.unlink()
+                with self.subTest(port=port), self.assertRaisesRegex(
+                    RuntimeError, "Required dependency notice missing"
+                ):
+                    collect_licenses.collect(output, share, bridge, None, "", cache)
+                notice.write_text(port, encoding="utf-8")
 
 
 class PackageTests(unittest.TestCase):
@@ -263,7 +268,8 @@ class PackageTests(unittest.TestCase):
                 "qtbase",
                 "opencv",
                 "boost",
-                "yaml-cpp",
+                "ryml",
+                "c4core",
                 "nlohmann-json",
                 "livesplit-bridge-client-cpp",
                 "windows-capture-device-list",
@@ -278,6 +284,20 @@ class PackageTests(unittest.TestCase):
             "runtime_licenses_sha256": hashlib.sha256(b"notices").hexdigest(),
             "agreement_sha256": hashlib.sha256(b"agreement").hexdigest(),
         }
+
+    def test_yaml_dependency_notices_are_required(self):
+        for name in ("ryml", "c4core"):
+            notice = self.root / f"licenses/{name}.txt"
+            for contents in (None, b""):
+                if contents is None:
+                    notice.unlink()
+                else:
+                    notice.write_bytes(contents)
+                with self.subTest(name=name, contents=contents), self.assertRaisesRegex(
+                    RuntimeError, f"licenses/{name}"
+                ):
+                    verify_windows_zip.verify_contents(self.root, False, self.lock)
+            notice.write_bytes(b"test")
 
     def test_ndi_files_and_notices_are_required_and_verified(self):
         (self.root / "Processing.NDI.Lib.x64.dll").write_bytes(b"runtime")

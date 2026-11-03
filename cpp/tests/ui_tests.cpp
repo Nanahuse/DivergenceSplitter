@@ -113,6 +113,28 @@ class UiTests final : public QObject {
     }
 
 private slots:
+    void invalidYamlIsReportedAndControllerCanLoadAValidScenarioAfterwards() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto profile = make_profile(directory, false);
+        AppController controller;
+        const std::filesystem::path path{profile.instances[0].scenario};
+        for (const auto* yaml : {"start_condition: [broken\n",
+                                 "start_condition: *missing\nsplits: []\n",
+                                 "a: &a {condition: *a}\nstart_condition: *a\nsplits: []\n"}) {
+            {
+                std::ofstream stream{path};
+                stream << yaml;
+            }
+            QString error;
+            QVERIFY(!controller.apply_profile(profile, &error));
+            QVERIFY2(error.contains("could not parse scenario YAML"), qPrintable(error));
+            const auto valid = make_profile(directory, false);
+            QVERIFY2(controller.apply_profile(valid, &error), qPrintable(error));
+            controller.stop();
+        }
+    }
+
     void previewTransformsRunOnWorkerWithoutReopeningInput() {
         auto probe = std::make_shared<PreviewProbe>();
         ProfilePreview preview([probe](const auto&) { return std::make_unique<PreviewSource>(probe); });
