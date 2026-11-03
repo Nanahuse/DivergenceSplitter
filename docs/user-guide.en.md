@@ -1,14 +1,16 @@
 # User guide
 
-[日本語（正本）](user-guide.md) | [English](user-guide.en.md)
+[日本語](user-guide.md) | [English (Translation)](user-guide.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Documentation home](../README.en.md) · [First run](getting-started.en.md)
 
 ## Monitor
 
 Monitor shows the normalized input image: the same Crop/Resize output used by all
-scenario instances. The input line shows published frames, measured capture FPS,
-and whether capture is running. The table shows each scenario's connection state,
+scenario instances. The input line shows the number of frames made available for
+evaluation, measured capture FPS, and whether capture is running. The table shows each scenario's connection state,
 timer phase, split index, last requested action, and error or action result.
 Scenario and split indexes in diagnostics are zero-based.
 
@@ -91,7 +93,7 @@ milliseconds, and rule error count.
 | --- | --- |
 | `not_evaluated` | Newly loaded or reset; no evaluation since then. |
 | `true` / `false` | Most recent normal evaluation result. |
-| `skipped` | Result not used at that point in evaluation. Stateful nodes can still update during short-circuit evaluation; see [conditions](scenarios/conditions.en.md). |
+| `skipped` | This condition's result was not used in the latest evaluation. |
 | `error` | Evaluation threw an error, such as an incompatible reference shape. |
 
 Only the active rule groups are evaluated. Inactive groups may retain their last

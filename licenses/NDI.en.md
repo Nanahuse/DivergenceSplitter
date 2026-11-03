@@ -1,6 +1,8 @@
 # NDI® runtime notices
 
-[日本語（正本）](NDI.md) | [English](NDI.en.md)
+[日本語](NDI.md) | [English (Translation)](NDI.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
 

@@ -1,7 +1,5 @@
 # ビルド
 
-[日本語（正本）](building.md) | [English](building.en.md)
-
 [開発ガイド](README.md) · [テスト](testing.md) · [配布](distribution.md)
 
 ## 必要な環境
@@ -11,7 +9,7 @@ Windows x64向けに次を用意してください。
 - Visual Studio 2022または2026のC++デスクトップ開発ワークロードとWindows SDK。C++23対応のMSVCを使い、x64 Developer PowerShellで実行します。
 - PATHから呼び出せるCMake 3.25以上とNinja。
 - bootstrap済みの [vcpkg](https://github.com/microsoft/vcpkg)。`VCPKG_ROOT` に絶対パスを設定します。
-- ビルド・配布用ヘルパー向けのPython 3.10以上。coreだけでもCMakeが必要とします。必要なら `-DPython3_EXECUTABLE=C:/tools/python/python.exe` で指定してください。
+- ビルド・配布用ヘルパー向けのPython 3.10以上。Coreだけをビルドする場合も、CMakeの設定時にPythonが必要です。必要なら `-DPython3_EXECUTABLE=C:/tools/python/python.exe` で指定してください。
 - 初回の依存関係・Bridge取得に使うGitとネットワーク接続。
 
 [vcpkg.json](../../vcpkg.json) でbuiltin baselineを固定し、OpenCV 4のCore・Imgproc・Imgcodecs・Videoioと選択した画像・カメラ機能、rapidyaml（ryml）とその依存のc4core、nlohmann/json、Boost.Asio／Beastを取得します。`tests` featureはGoogleTest、`ui` はQt 6 qtbaseを追加します。hash Detectorにopencv_contribは不要です。
@@ -40,7 +38,7 @@ ctest --preset core --output-on-failure
 
 ## プリセットとオプション
 
-全プリセットはNinjaと `VCPKG_ROOT` のtoolchainを使い、`build/<preset>` に分けて生成します。プリセットのコマンドは リポジトリのルート で実行してください。
+全プリセットはNinjaと `VCPKG_ROOT` のtoolchainを使います。ビルド先はプリセットごとに `build/<preset>` へ分けます。コマンドはリポジトリのルートで実行してください。
 
 | プリセット | 構成 | UI | vcpkg feature |
 | --- | --- | --- | --- |
@@ -66,7 +64,7 @@ ctest --preset core --output-on-failure
 
 ## NDI対応ビルド
 
-通常の開発でSDKを必要としないよう、NDIの既定値はOFFです。ONでは [ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) に一致する公式SDKを取得します。現在の固定値は6.3.2.0です。Windowsの内容をinnoextractで展開し、`Include`、`Bin/x64`、`NDI SDK License Agreement.pdf` があるディレクトリを `NDI_SDK_DIR` に指定してください。SDK開発用ファイルとインストーラーはコミットしません。
+通常の開発でSDKを必要としないよう、NDIの既定値はOFFです。ONでは [ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) に一致する公式SDKを取得します。現在の固定値は6.3.2.0です。Windows用SDKをinnoextractで展開し、`Include`、`Bin/x64`、`NDI SDK License Agreement.pdf` があるディレクトリを `NDI_SDK_DIR` に指定してください。SDK開発用ファイルとインストーラーはコミットしません。
 
 ```powershell
 cmake --preset full-release -DDIVERGENCESPLITTER_ENABLE_NDI=ON -DNDI_SDK_DIR=C:/private/ndi-sdk/app

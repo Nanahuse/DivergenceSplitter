@@ -1,6 +1,8 @@
 # Scenario examples
 
-[日本語（正本）](examples.md) | [English](examples.en.md)
+[日本語](examples.md) | [English (Translation)](examples.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Scenario authoring](README.en.md) · [YAML reference](yaml-reference.en.md)
 
@@ -60,9 +62,9 @@ splits:
 ## Sequential observations, one action
 
 Start on a bright frame. In segment 0, observe a dark frame, then a bright frame
-continuously for 500ms, and finally Split. `within` measures from the dark step's
-success; it does not reset the child Hold on timeout. Use explicit
-[`reset_when`](conditions.en.md#reset_when) when child state must also be cleared.
+continuously for 500ms to Split. More than 10 seconds after the dark frame, the
+sequence restarts at its first step. Timeout does not reset the individual
+conditions; see [`then`](conditions.en.md#then) for details.
 
 ```yaml
 start_condition:
@@ -91,10 +93,10 @@ splits:
 
 ## Multiple conditions
 
-After an automatic start, wait at least two seconds in segment 0 and require
-mostly red pixels continuously for 300ms. The Hold still updates while the first
-`all` child is false, due to stateful short-circuit evaluation. It need not wait
-an additional 300ms after the elapsed condition becomes true.
+After an automatic start, Split when at least two seconds have elapsed from the
+first evaluation in segment 0 and the image has remained mostly red for 300ms.
+The 300ms interval can overlap the initial two-second wait; this does not require
+an additional 300ms after those two seconds.
 
 ```yaml
 start_condition: {type: elapsed, duration: 2s}

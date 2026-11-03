@@ -1,6 +1,8 @@
 # Sample files
 
-[日本語（正本）](README.md) | [English](README.en.md)
+[日本語](README.md) | [English (Translation)](README.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Documentation home](../README.en.md) · [More scenarios](../docs/scenarios/examples.en.md)
 

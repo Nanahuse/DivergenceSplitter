@@ -6,7 +6,7 @@
 
 ## Monitor
 
-Monitorには、全シナリオが使うCrop／Resize後の入力画像を表示します。入力欄には公開したフレーム数、計測した取得FPS、取得が動作中かを表示します。表には各シナリオの接続状態、タイマーのPhase、Splitの位置、最後のAction、エラーまたは操作結果を表示します。シナリオとSplitのインデックスは0から始まります。
+Monitorには、全シナリオが使うCrop／Resize後の入力画像を表示します。入力欄では、判定に渡したフレーム数、計測した取得FPS、映像を取得中かどうかを確認できます。表には各シナリオの接続状態、タイマーのPhase、Splitの位置、最後のAction、エラーまたは操作結果を表示します。シナリオとSplitのインデックスは0から始まります。
 
 Processing FPSはインスタンスごとの評価回数から求めた処理速度です。入力FPSとは異なり、同じ入力でもインスタンスごとに値が変わる場合があります。Current evaluationには現在のConditionの説明・状態と、評価したDetectorのしきい値・最新スコアの概要を表示します。概要にポインターを置くと追加の行を確認できます。完全なConditionツリーと最大スコアはDiagnosticsで確認してください。PendingやWaiting for Reset confirmationの意味は[操作の確定待ち](troubleshooting.md#操作の確定待ちとresetの失敗)を参照してください。
 
@@ -50,7 +50,7 @@ Sessionの実行中は下書きプレビュー用の入力を開きません。S
 | --- | --- |
 | `not_evaluated` | 読み込み直後またはリセット後で、まだ評価していません。 |
 | `true`／`false` | 直近の通常評価の結果です。 |
-| `skipped` | その位置では結果を使っていません。短絡評価中も状態を更新するConditionがあります。[Condition](scenarios/conditions.md)を参照してください。 |
+| `skipped` | 直近の判定では、このConditionの結果を使っていません。 |
 | `error` | 参照画像の形状不一致など、評価中に例外が発生しました。 |
 
 有効なRuleグループだけを評価します。無効なグループには以前の状態が残るため、表示スコアが最新フレームの値とは限りません。Phaseごとの選択とリセットは[YAMLリファレンス](scenarios/yaml-reference.md)で説明します。

@@ -1,13 +1,15 @@
 # Configuration reference
 
-[日本語（正本）](configuration.md) | [English](configuration.en.md)
+[日本語](configuration.md) | [English (Translation)](configuration.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Documentation home](../README.en.md) · [Profile workflow](user-guide.en.md#profile-draft-active-configuration-and-file)
 
 ## Profile JSON v2
 
-A profile contains one shared input and a list of independent scenario/Bridge
-connections. Start with [profile.example.json](../examples/profile.example.json)
+A Profile contains one source shared by all scenarios and a list of scenario/Bridge
+instances. Each scenario's evaluation and connection are independent. Start with [profile.example.json](../examples/profile.example.json)
 and replace its absolute paths. JSON does not support comments or trailing commas.
 Unknown keys are rejected in profile objects, including nested objects. Keys and
 enum strings are case-sensitive.
@@ -110,7 +112,7 @@ NDI requires an enabled build. The official ZIP includes its runtime beside the
 executable. Sender pauses and ordinary receive timeouts keep the receiver alive;
 the SDK reconnects when the named source returns. Fatal SDK/format errors stop
 capture. Frames are converted to owned BGR images before normal processing.
-See [NDI notices](../licenses/NDI.en.md) and [local NDI builds](development/building.en.md#ndi-enabled-builds).
+See [NDI notices](../licenses/NDI.en.md) and [local NDI builds (Japanese)](development/building.md#ndi対応ビルド).
 
 ## Crop, resize, and reference images
 

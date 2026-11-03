@@ -6,7 +6,7 @@
 
 ## Profile JSON v2
 
-Profileには共有する入力1つと、独立したシナリオ・Bridge接続の一覧を記録します。[profile.example.json](../examples/profile.example.json) の絶対パスを変更して使ってください。JSONではコメントと末尾のカンマを使えません。Profileとその入れ子のオブジェクトでは、未知のキーを拒否します。キーと列挙値は大文字・小文字を区別します。
+Profileには、各シナリオで共有する入力1つと、シナリオ・Bridge接続の一覧を記録します。シナリオごとの判定と接続は独立しています。[profile.example.json](../examples/profile.example.json) の絶対パスを変更して使ってください。JSONではコメントと末尾のカンマを使えません。Profileとその入れ子のオブジェクトでは、未知のキーを拒否します。キーと列挙値は大文字・小文字を区別します。
 
 | 項目 | 必須 | 値 |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ NDI対応ビルドが必要です。公式ZIPは実行ファイルの隣にラ�
 | `resize.interpolation` | 任意。`area` が既定値です。`nearest`、`linear`、`cubic`、`lanczos4` も指定できます。 |
 | `resize.resize_references` | 任意の真偽値。既定値は `false`。Resizeが有効な場合だけ作用します。 |
 
-入力画像は「入力 → Crop → Resize → DetectorのROI」の順で処理します。例えば1920×1080の画像を左右8ピクセルずつ切り取ると1904×1080になり、その後1280×720にResizeします。YAMLのROIは最終的な1280×720の座標で指定します。同じ正規化画像をMonitorと全インスタンスで使います。
+入力画像には、Crop、Resize、DetectorのROIをこの順で適用します。例えば1920×1080の画像を左右8ピクセルずつ切り取ると1904×1080になり、その後1280×720にResizeします。YAMLのROIは最終的な1280×720の座標で指定します。同じ正規化画像をMonitorと全インスタンスで使います。
 
 Resize reference imagesは、シナリオの読み込み時に行う別の処理です。有効にすると、選択した補間方法で各参照画像を次の寸法に変換します。
 

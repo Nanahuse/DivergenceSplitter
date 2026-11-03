@@ -1,6 +1,8 @@
 # YAML reference
 
-[日本語（正本）](yaml-reference.md) | [English](yaml-reference.en.md)
+[日本語](yaml-reference.md) | [English (Translation)](yaml-reference.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Scenario authoring](README.en.md) · [Conditions](conditions.en.md) · [Detectors](detectors.en.md) · [Examples](examples.en.md)
 
@@ -95,7 +97,7 @@ described in [Settings](../user-guide.en.md#settings).
 
 ## Evaluation order
 
-For each frame with a valid synchronized timer snapshot:
+When frames arrive and the timer state is synchronized with Bridge:
 
 | Timer phase | Evaluated group |
 | --- | --- |
@@ -103,66 +105,46 @@ For each frame with a valid synchronized timer snapshot:
 | Running or paused | `reset_condition` first, then rules for the current split index if Reset did not fire. |
 | Ended | `incomplete_condition` only. |
 
-Paused timers still evaluate conditions, including elapsed time and split rules.
-The timer phase does not pause the application's monotonic clock. Inactive groups
-are not called. Within an active condition, Boolean short-circuit handling has
-specific state-update rules; see [condition evaluation](conditions.en.md#evaluation-and-short-circuiting).
+Paused timers still evaluate time conditions and rules for the current segment.
+Pausing the timer does not stop condition timing. Groups outside the current
+phase are not evaluated.
 
 ### Pending actions and confirmation
 
-Selecting an action makes it pending before dispatch and suppresses other normal
-actions. Normal actions and Reset have separate pending state. While Running or
-Paused, `reset_condition` can be evaluated during a normal action's reaction delay
-or while a sent Split/Skip awaits confirmation. A pending Reset blocks new actions.
+While an action is waiting to be sent or confirmed, no other normal action starts. Normal actions and Reset have separate confirmation waits. While Running or Paused, however, `reset_condition` is still checked during a normal action's reaction delay and while a sent Split/Skip awaits confirmation. A pending Reset prevents new actions.
 
-Reaction waits still process Bridge events and fresh frames. Manual Reset and an
-automatic Reset interrupting a normal reaction wait bypass additional reaction
-delay and cancel the unsent normal action. Other automatic actions use the
-configured delay. Unrelated events and unchanged queries do not cancel that wait.
+Manual Reset and an automatic Reset that becomes true during a normal action's reaction delay are sent without an additional delay. They cancel the unsent normal action. Other automatic actions use the configured Reaction time. If received timer information shows no change, the reaction wait continues.
 
-A successful RPC starts a wait of at most one second for the corresponding state
-change. It does not always trigger an immediate query. Pause/Resume cannot confirm
-Split/Skip, and a late Split cannot confirm Reset. Revision-only updates and
-unchanged queries do not release confirmation waits.
+After Bridge accepts an action, the application waits up to one second for the corresponding timer state change. Pause/Resume alone does not confirm Split/Skip, and a late Split does not confirm Reset. Receiving timer information without the required state change does not end the wait.
 
-The deadline uses monotonic time from RPC success and is processed even without
-new input frames. At expiry, a query checks authoritative state before releasing
-unconfirmed pending state and resetting its rule group. A later frame can decide
-a fresh action. This second is separate from RPC response timeouts and condition
-`elapsed` timing.
+The second starts when Bridge accepts the action and continues even if video input stops. At expiry, the application checks the timer again, ends the wait for an unconfirmed action, and resets the corresponding rule group. A new automatic action requires evaluation of a new frame. This wait is separate from communication response timeouts and condition `elapsed` timing.
 
-A rejected Reset RPC also triggers a query, clears both old waits, and resets the
-Reset group and the group for the current phase/split index. Locally cancelling
-an unsent Reset preserves a previously sent normal action's confirmation wait.
-A failed query stops evaluation and enters connection recovery. See
-[architecture](../development/architecture.en.md#bridge-and-controls) for
-disconnect and unknown-result handling.
+A rejected Reset also causes the timer to be checked again and the groups listed below to reset. Cancelling Reset before sending it preserves any confirmation wait for a normal action already sent. If timer state cannot be checked, evaluation stops while the connection recovers. See [troubleshooting](../troubleshooting.en.md#control-confirmation-and-reset-failures) for screen checks and [architecture (Japanese)](../development/architecture.md#bridgeとタイマー制御) for the communication design.
 
 ## State and reset lifecycle
 
-Each Profile instance loads a fresh condition tree. Reusing an anchor creates
-independent condition objects at each occurrence, not shared counters or clocks.
-Every condition reset clears its status to `not_evaluated` and recursively resets
-its children; each type's own cleared state is listed in [conditions](conditions.en.md).
+Condition state is independent for each Profile instance and each configured
+occurrence. Reusing an anchor does not share timing or counts. Reset clears the
+condition and all conditions combined within it, returning their displayed status
+to `not_evaluated`. See [conditions](conditions.en.md) for each type's behavior.
 
-The current runtime applies these resets:
+Condition timing, counts, and sequence progress reset at these points:
 
 | Event | Reset behavior |
 | --- | --- |
 | New session / initial Bridge baseline / reconnect | All groups start fresh. |
-| Transition to Not running, or a change to run revision / LiveSplit segment count | All groups reset. |
+| Transition to Not running, or an update to the LiveSplit run / segment count | All groups reset. |
 | Move to another running/paused segment, including Undo | The destination segment's rules reset. |
 | Transition to Ended | The Incomplete group resets. |
 | Return from Ended to Running/Paused | Incomplete and Reset groups reset, and the destination segment resets. |
 | Pause ↔ Resume at the same index | The split group normally retains its condition/sequence state. |
-| Query/event within the same session | Resets follow the run/phase/index changes above. Unchanged queries and revision-only updates preserve groups and pending state. |
-| Normal action not dispatched/rejected, or still unconfirmed after the expiry query | Start for `start`, Incomplete for `undo`, otherwise the current split group. |
-| Reset not dispatched, or still unconfirmed after the expiry query | The Reset group resets. |
-| Successful query after a rejected Reset RPC | Reset group plus Start if Not running, Incomplete if Ended, or the current split group if Running/Paused. Both old waits clear. |
+| Timer information is refreshed during execution | Resets follow the run/phase/index changes above. Without these changes, condition/sequence progress and control confirmation waits are preserved. |
+| Normal action not sent/rejected, or still unconfirmed after the check at expiry | Start for `start`, Incomplete for `undo`, otherwise the current split group. |
+| Reset not sent, or still unconfirmed after the check at expiry | The Reset group resets. |
+| Timer state successfully checked after a rejected Reset | Reset group plus Start if Not running, Incomplete if Ended, or the current split group if Running/Paused. Both normal-action and Reset confirmation waits end. |
 
-Explicit [`reset_when`](conditions.en.md#reset_when) resets its own two child trees
-when its reset condition is true. A `then.within` timeout is different: it restarts
-step progress without resetting child condition state.
+See [`reset_when`](conditions.en.md#reset_when) for resetting individual conditions
+and [`then`](conditions.en.md#then) for progress after a time limit expires.
 
 ## Durations
 
@@ -207,8 +189,8 @@ splits:
         action: split
 ```
 
-The unused `bright` root key only holds the anchor definition. Each use creates
-independent runtime objects, so stateful conditions such as `once` do not share state.
+The unused `bright` root key only holds the anchor definition. Conditions such
+as `once` have independent state at each use; timing and counts are not shared.
 
 Use `<<: *name` to merge a mapping and then override individual fields. Nested
 merges are supported:
@@ -256,8 +238,8 @@ Merging operates on mapping entries; to customize a nested detector, also use
 `<<` inside that detector mapping.
 
 Merge keys are an extension supported by rapidyaml, rather than part of YAML
-1.2's core specification. The loader expands aliases and merges with
-`Tree::resolve()` before validating required/unknown fields, types, and values.
+1.2's core specification. The same constraints on required/unknown fields, types,
+and values apply to aliases and merged mappings.
 Duplicate keys in the source YAML are rejected. Missing anchors, cyclic aliases,
 and merges referring to non-mappings produce YAML errors. Invalid resolved
 scenario fields produce schema errors. Neither error terminates the application.

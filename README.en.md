@@ -1,14 +1,16 @@
 # DivergenceSplitter
 
-[日本語（正本）](README.md) | [English](README.en.md)
+[日本語](README.md) | [English (Translation)](README.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 DivergenceSplitter is a Windows desktop application that analyzes video and
 automatically controls LiveSplit through LiveSplit.Bridge. YAML scenarios define
 when to start, split, reset, and perform other timer actions.
 
-The Japanese documents are authoritative. English is a reference translation;
-if the versions differ, follow the Japanese version. Configuration keys, UI labels,
-and commands retain their implementation names.
+User documentation is available in Japanese and English. Developer, design, build,
+test, CI, distribution, and verification documents are available only in Japanese.
+Configuration keys, UI labels, and commands retain their implementation names.
 
 - Native Qt interface with a live monitor and condition diagnostics.
 - Camera / capture card input through DirectShow or Media Foundation, local video
@@ -24,7 +26,7 @@ Download the `DivergenceSplitter-cpp23-windows-x64` artifact from a successful
 GitHub sign-in is required. Extract the artifact and then the Windows ZIP inside
 it into a writable directory. Keep the DLLs, plugins, and licenses alongside
 `DivergenceSplitter.exe`. Availability depends on a successful NDI-enabled job and
-artifact retention; otherwise [build from source](docs/development/building.en.md).
+artifact retention; otherwise [build from source (Japanese)](docs/development/building.md).
 See [Getting started](docs/getting-started.en.md) for the initial setup.
 
 ## Usage
@@ -49,21 +51,21 @@ for detailed workflows and configuration examples.
 | Write a scenario | [Scenario authoring](docs/scenarios/README.en.md) |
 | Look up YAML, conditions, detectors, or actions | [YAML reference](docs/scenarios/yaml-reference.en.md), [conditions](docs/scenarios/conditions.en.md), [detectors](docs/scenarios/detectors.en.md) |
 | Adapt working patterns | [Scenario examples](docs/scenarios/examples.en.md), [sample files](examples/README.en.md) |
-| Build, test, or distribute the application | [Developer guide](docs/development/README.en.md) |
+| Build, test, or distribute the application | [Developer guide (Japanese)](docs/development/README.md) |
 
 ## Development
 
 The repository root is the CMake project. `src/` holds implementations, `include/`
 holds interfaces shared between targets, `tests/` holds verification, `docs/`
 holds documentation, and `tools/` holds Python build/distribution helpers.
-See the [developer guide](docs/development/README.en.md) for builds, CTest,
+See the [developer guide (Japanese)](docs/development/README.md) for builds, CTest,
 Bridge TestHost integration, NDI, and Windows ZIP verification.
 
 ## License
 
 Application source: [MIT](LICENSE). Bundled dependencies have separate licenses;
 see the [distribution notice](DISTRIBUTION-NOTICE.txt) and
-[distribution guide](docs/development/distribution.en.md).
+[distribution guide (Japanese)](docs/development/distribution.md).
 
 NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
 NDI-enabled distributions include a separately licensed runtime; see

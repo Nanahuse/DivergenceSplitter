@@ -1,6 +1,8 @@
 # Scenario authoring
 
-[日本語（正本）](README.md) | [English](README.en.md)
+[日本語](README.md) | [English (Translation)](README.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Documentation home](../../README.en.md)
 
@@ -22,9 +24,8 @@ Reference-image resizing is a separate Profile option; see
 [configuration](../configuration.en.md#crop-resize-and-reference-images).
 
 Scenarios are evaluated only when normalized frames arrive and the instance has
-a valid Bridge state. Time conditions use monotonic application time, not
-LiveSplit's real time or game time, and do not fire without another evaluation.
+a valid Bridge state. See [conditions](conditions.en.md#time-counts-and-state)
+for timing and input behavior.
 
-The public schema is implemented by
-[`scenario_loader.cpp`](../../src/core/scenario_loader.cpp); condition and detector
-behavior is covered by the [test suite](../development/testing.en.md).
+Developers working on settings or verification can consult the
+[loader](../../src/core/scenario_loader.cpp) and [test instructions (Japanese)](../development/testing.md).

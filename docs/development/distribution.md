@@ -1,12 +1,10 @@
 # Windows向け配布
 
-[日本語（正本）](distribution.md) | [English](distribution.en.md)
-
 [開発ガイド](README.md) · [ビルド環境](building.md) · [テスト](testing.md)
 
 ## ZIPの作成と検証
 
-必要な環境を用意し、x64 Developer PowerShellで リポジトリのルート から実行します。
+必要な環境を用意し、x64 Developer PowerShellでリポジトリのルートから実行します。
 
 ```powershell
 cmake --preset full-release
@@ -18,7 +16,7 @@ python tools/verify_windows_zip.py --build-dir build/full-release --ndi OFF
 
 この既定の開発ビルドはNDI無効です。NDIを同梱する場合は[NDIのオプション](building.md#ndi対応ビルド)で設定し、同じプリセットでビルド・テスト・パッケージ化して、検証時に `--ndi ON` を渡します。SDKや依存構成を切り替える場合は別ディレクトリを使ってください。検証対象ディレクトリのZIPは1つである必要があります。
 
-CPackは `DivergenceSplitter-<version>-windows-x64.zip` を作成し、外側のトップレベルディレクトリは付けません。全体を展開して使ってください。GUI配布物には `DivergenceSplitter.exe`、`divergencesplitter-cli.exe`、ランタイムDLL、Qtプラグイン、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/` を含みます。現行のinstall設定は文書・サンプルを同梱しないため、対応するソースのリビジョンから取得します。
+CPackは `DivergenceSplitter-<version>-windows-x64.zip` を作成し、ZIP内のファイル全体を囲むフォルダーは付けません。全体を展開して使ってください。GUI配布物には `DivergenceSplitter.exe`、`divergencesplitter-cli.exe`、ランタイムDLL、Qtプラグイン、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/` を含みます。文書とサンプルはZIPに含まれません。配布物に対応するリビジョンのソースから取得してください。
 
 検証ヘルパーはZIPを展開し、実行ファイル・通知・SDK除外、CLIの `--help`、GUIの `--smoke-test` を確認します。Qt／NDIの探索用環境変数を外し、PATHをZIPとWindowsのシステムディレクトリに限定して起動します。ONではランタイム・通知の固定ハッシュと、`--ndi-check` によるローカルDLLの初期化も確認します。起動確認は実入力の受信確認とは別です。
 
@@ -27,7 +25,7 @@ CPackは `DivergenceSplitter-<version>-windows-x64.zip` を作成し、外側の
 [C++23](../../.github/workflows/cpp23.yml) はPR、`main` へのpush、手動実行で動きます。Windows、MSVC、Ninja、vcpkg、外部Qt 6.8.3、`ci` プリセットを使います。固定Bridge TestHostをビルドし、CTestと実TestHost結合、ZIP作成、展開後の検証を行います。
 
 - forkのPRはNDI OFFだけをビルドし、SDKのSecretは渡しません。
-- 同じリポジトリのPR、mainへのpush、手動実行はOFFとONの両方が必須です。SDKを取得できなくてもOFFへ黙って切り替えません。
+- 同じリポジトリのPR、mainへのpush、手動実行はOFFとONの両方が必須です。SDKの取得に失敗した場合も、OFFへ切り替えて続行しません。
 - ONには公式Windows SDKのURLを持つリポジトリSecret `NDI_SDK_URL_WINDOWS` が必要です。[get_ndi_sdk.py](../../tools/get_ndi_sdk.py) が `curl.exe` で取得し、インストーラーのSHA-256、バージョン、Authenticode発行者、展開したヘッダー・ランタイム・通知・契約書を検証します。`NDI_SDK_DIR` をジョブ環境へ書き込みます。HTTPエラーやタイムアウトでは失敗して部分ファイルを消し、URLと捕捉したcurl出力はログに出しません。
 - [ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) はSDK 6.3.2.0とinnoextract 1.9の確認済みハッシュを保持します。SDKを公開Actionsキャッシュへ保存しません。vcpkgのキャッシュは依存ダウンロード・バイナリだけです。
 - ONだけが `DivergenceSplitter-cpp23-windows-x64` をアップロードし、両構成がJUnit形式のCTest結果をアップロードします。一時作業ブランチへのpushは起動条件ではありません。PRまたは手動実行で検証します。

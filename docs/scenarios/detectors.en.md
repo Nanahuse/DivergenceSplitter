@@ -1,6 +1,8 @@
 # Detector reference
 
-[日本語（正本）](detectors.md) | [English](detectors.en.md)
+[日本語](detectors.md) | [English (Translation)](detectors.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Scenario authoring](README.en.md) · [Conditions](conditions.en.md#detected) · [Examples](examples.en.md)
 
@@ -146,7 +148,7 @@ per channel (512 joint bins, intensities `[0, 256)`) and L2-normalizes it. Score
 normalizes the histogram coefficient by histogram totals before its square-root
 distance calculation. Matching color distributions score 1.
 
-Requires 8-bit BGR; an 8-bit BGRA reference supplies a binary mask. With no mask,
+Requires 8-bit BGR; an 8-bit BGRA reference uses a binary mask to exclude transparent pixels. With no mask,
 image sizes may differ. With a mask, the input region must match its dimensions
 so the same selected locations can be used. Spatial arrangement is discarded:
 reordered pixels with the same distribution can score 1. Useful for broad scene
@@ -232,9 +234,7 @@ reference: images/screen.png
 
 Required: `reference`; optional: `roi`. Converts both same-size images to float
 grayscale and uses OpenCV `phaseCorrelate` without a window. Score is its response
-(the normalized correlation peak response), clamped to `[0, 1]`. The returned
-translation vector is discarded; the score is not a displacement or a direct
-pixel-error similarity.
+(the normalized correlation peak response), clamped to `[0, 1]`. This is not a displacement or a similarity calculated directly from pixel errors.
 
 Reference/input channel counts can differ if both support grayscale conversion.
 Alpha masks are validated but ignored. Requires equal dimensions. Use textured

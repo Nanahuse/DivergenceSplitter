@@ -68,7 +68,7 @@ sequence:
 
 ## 評価順序
 
-有効な同期済みスナップショットがあるフレームでは、次のグループを評価します。
+映像が届き、Bridgeとタイマーの状態を確認できているときは、次のグループを判定します。
 
 | タイマーのPhase | 評価するグループ |
 | --- | --- |
@@ -76,40 +76,40 @@ sequence:
 | Running／Paused | `reset_condition` を先に評価し、Resetが成立しなければ現在の区間のRule。 |
 | Ended | `incomplete_condition` だけ。 |
 
-Pausedでも経過時間とSplitのRuleを評価します。タイマーの一時停止でアプリの単調増加時計は止まりません。無効なグループは呼び出しません。有効なCondition内の短絡評価については[Conditionの評価](conditions.md#評価と短絡処理)を参照してください。
+Pausedでも時間条件や現在の区間のRuleを判定します。タイマーの一時停止で、時間条件の計測は止まりません。そのPhaseで対象にならないグループは判定しません。
 
 ### Actionの保留と確定待ち
 
-Actionを選ぶと送信前から保留し、通常の別Actionを抑止します。通常ActionとResetの保留は別です。Running／Pausedでは、通常Actionの送信前の反応時間中、または送信したSplit／Skipの確定待ち中に `reset_condition` を評価できます。Resetが保留中は新しいActionを抑止します。
+Actionの送信や完了確認を待つ間は、別の通常Actionを始めません。通常ActionとResetは別々に確定を待ちます。ただしRunning／Pausedでは、通常Actionの反応待ち中や、送信したSplit／Skipの確定待ち中にも `reset_condition` を判定します。Resetが保留中は、新しいActionを始めません。
 
-反応時間中もBridgeイベントと新しいフレームを処理します。手動Resetと、通常Actionの反応時間に割り込む自動Resetは追加の反応時間なしで送信し、未送信の通常Actionを取り消します。それ以外の自動Actionは設定された反応時間を使います。無関係なイベントや状態の変わらないQueryだけでは反応待ちを取り消しません。
+手動Resetと、通常Actionの反応待ち中に成立した自動Resetは、追加の反応時間を待たずに送信します。このとき、未送信の通常Actionは取り消します。それ以外の自動Actionには、設定されたReaction timeを使います。待機中に届いたタイマー情報に変化がなければ、反応待ちは続きます。
 
-RPC成功後に対応する状態変化を最大1秒待ちます。成功直後に必ずQueryするわけではありません。Pause／ResumeはSplit／Skipの完了確認にならず、遅れたSplitもResetの完了確認にはなりません。状態リビジョンだけの更新や、変化のないQueryも確定待ちを解除しません。
+Bridgeが操作を受け付けた後は、対応するタイマーの状態変化を最大1秒待ちます。Pause／ResumeだけではSplit／Skipの完了確認にはならず、遅れて届いたSplitもResetの完了確認にはなりません。タイマー情報を受信しても、該当する状態変化がなければ確定待ちを続けます。
 
-期限はRPC成功時の単調増加時刻から数え、入力フレームが止まっていても処理します。期限に達するとQueryで状態を再確認し、未確定の保留を解除して対応するRuleグループをリセットします。新しいActionは後のフレームで判定します。この1秒はRPC応答のタイムアウトやConditionの `elapsed` とは別です。
+この1秒はBridgeが操作を受け付けた時点から数え、入力映像が止まっていても経過します。期限に達するとタイマーの状態を再確認し、確定しなかった操作の待機を終えて、対応するRuleグループをリセットします。次の自動Actionには、新しいフレームでの判定が必要です。この待機時間は、通信の応答待ちやConditionの `elapsed` とは別です。
 
-ResetのRPCが拒否された場合もQueryし、両方の旧保留を解除してResetグループと現在のPhase・Split位置のグループを初期化します。Resetを送る前にローカルで取り消しただけなら、すでに送信した通常Actionの確定待ちは残します。Queryに失敗すると評価を止めて接続を回復します。切断や結果不明時の処理は[アーキテクチャ](../development/architecture.md#bridgeとタイマー制御)も参照してください。
+Resetを拒否された場合もタイマーの状態を再確認し、下表の対象をリセットします。送信前に取り消しただけなら、すでに送信した通常Actionの確定待ちは残ります。状態を確認できなければ判定を止め、接続の回復を待ちます。画面での確認方法は[トラブルシューティング](../troubleshooting.md#操作の確定待ちとresetの失敗)、通信処理の設計は[アーキテクチャ](../development/architecture.md#bridgeとタイマー制御)を参照してください。
 
 ## 状態とリセット
 
-ProfileのインスタンスごとにConditionツリーを読み込み直します。アンカーを再利用しても、使用箇所ごとに独立したオブジェクトを作るため、時計やカウンターは共有しません。Conditionのリセットは状態を `not_evaluated` に戻し、子も再帰的にリセットします。各型が消す内部状態は[Condition](conditions.md)に記載しています。
+Conditionの状態は、Profileのインスタンスごと、設定した箇所ごとに独立しています。同じアンカーを再利用しても、計測時間や回数は共有しません。リセットすると、そのConditionと組み合わせた各条件の状態を初期化し、表示を `not_evaluated` に戻します。型ごとの動作は[Conditionリファレンス](conditions.md)を参照してください。
 
-現行Runtimeは次のタイミングでリセットします。
+次のタイミングで、Conditionの計測・回数やsequenceの進行をリセットします。
 
 | イベント | リセット対象 |
 | --- | --- |
 | 新しいSession、Bridgeの初期同期、再接続 | すべてのグループ。 |
-| Not runningへの遷移、RunリビジョンまたはLiveSplitの区間数変更 | すべてのグループ。 |
+| Not runningへの遷移、LiveSplitのRunの更新または区間数の変更 | すべてのグループ。 |
 | Undoを含む、Running／Pausedの別区間への移動 | 移動先の区間のRule。 |
 | Endedへの遷移 | Incompleteグループ。 |
 | EndedからRunning／Pausedへの復帰 | Incomplete、Reset、移動先の区間。 |
 | 同じ位置でPauseとResumeを切り替え | 通常は区間のConditionとsequenceの状態を保持。 |
-| 同じSessionでのQuery・イベント | 上記のRun・Phase・位置の変化に応じてリセット。変化のないQueryや状態リビジョンだけの更新ではグループと保留を保持。 |
-| 通常Actionの未送信・拒否、Query後も未確定の期限切れ | `start` ならStart、`undo` ならIncomplete、それ以外は現在の区間。 |
-| Resetの未送信、Query後も未確定の期限切れ | Resetグループ。 |
-| Reset RPCの拒否後にQueryが成功 | Resetグループと、Not runningならStart、EndedならIncomplete、Running／Pausedなら現在の区間。両方の旧保留を解除。 |
+| 実行中にタイマー情報を再確認 | 上記のRun・Phase・位置の変化に応じてリセット。これらに変化がなければ、Conditionやsequenceの進行と操作の確定待ちを保持。 |
+| 通常Actionの未送信・拒否、期限切れ後の再確認でも操作が未確定 | `start` ならStart、`undo` ならIncomplete、それ以外は現在の区間。 |
+| Resetの未送信、期限切れ後の再確認でもResetが未確定 | Resetグループ。 |
+| Resetの拒否後にタイマーの状態を確認できた場合 | Resetグループと、Not runningならStart、EndedならIncomplete、Running／Pausedなら現在の区間。通常ActionとResetの両方の確定待ちを解除。 |
 
-[`reset_when`](conditions.md#reset_when) はReset条件がtrueのときに自身の2つの子ツリーをリセットします。`then.within` のタイムアウトは異なり、子の状態はリセットせずステップの進行だけをやり直します。
+Conditionごとのリセットは [`reset_when`](conditions.md#reset_when)、制限時間を超えたときの進行は [`then`](conditions.md#then) を参照してください。
 
 ## 時間表現
 
@@ -139,7 +139,7 @@ splits:
         action: split
 ```
 
-ルートの `bright` はアンカー定義を置くだけの項目です。参照した各箇所で独立したRuntimeオブジェクトを作るため、`once` などのConditionの状態は共有しません。
+ルートの `bright` はアンカー定義を置くだけの項目です。参照した各箇所で `once` などのConditionの状態は独立しており、計測時間や回数を共有しません。
 
 `<<: *name` で共通のマッピングを取り込み、一部の値を変更できます。入れ子のマージにも対応します。
 
@@ -178,4 +178,4 @@ splits: []
 
 マージはマッピング単位であり、入れ子のDetectorなどを変更する場合は、そのマッピングにも `<<` を指定します。
 
-マージキーはYAML 1.2のコア仕様ではなく、rapidyamlが対応する拡張機能として利用します。参照・マージを `Tree::resolve()` で展開した後、通常の必須項目・未知キー・型・値の検証を行います。元のYAMLにある重複キーは拒否します。存在しないアンカー、循環参照、マッピング以外を指すマージはYAMLエラーとして読み込みに失敗します。スキーマ違反はスキーマエラーとなり、いずれもアプリケーションを終了させません。
+マージキーはYAML 1.2のコア仕様ではなく、rapidyamlが対応する拡張機能として利用します。エイリアスやマージを使った箇所にも、通常と同じ必須項目・未知キー・型・値の制約が適用されます。元のYAMLにある重複キーは拒否します。存在しないアンカー、循環参照、マッピング以外を指すマージはYAMLエラーとして読み込みに失敗します。スキーマ違反はスキーマエラーとなり、いずれもアプリケーションを終了させません。

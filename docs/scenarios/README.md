@@ -13,6 +13,6 @@
 
 座標の基準をそろえてください。入力のCrop／Resizeの後にDetectorのROIを適用します。参照画像のResizeはProfileの別の設定です。[設定リファレンス](../configuration.md#cropresize参照画像)を参照してください。
 
-正規化したフレームが届き、インスタンスが有効なBridge状態を持つときだけシナリオを評価します。時間条件はLiveSplitの実時間・ゲーム内時間ではなく、アプリの単調増加時刻を使います。次の評価がなければ成立結果も更新されません。
+正規化したフレームが届き、インスタンスが有効なBridge状態を持つときだけシナリオを評価します。時間条件の計測と入力の扱いは[Conditionリファレンス](conditions.md#時間回数状態の扱い)を参照してください。
 
-公開スキーマは [scenario_loader.cpp](../../src/core/scenario_loader.cpp) に実装されています。ConditionとDetectorの動作は[テスト](../development/testing.md)でも確認できます。
+設定の実装や検証に関わる開発者は、[ローダー](../../src/core/scenario_loader.cpp)と[テスト手順](../development/testing.md)を参照してください。

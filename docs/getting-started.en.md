@@ -1,6 +1,8 @@
 # Getting started
 
-[日本語（正本）](getting-started.md) | [English](getting-started.en.md)
+[日本語](getting-started.md) | [English (Translation)](getting-started.en.md)
+
+This is an English translation. The Japanese version is the original and takes priority if there are differences.
 
 [Documentation home](../README.en.md)
 
@@ -16,7 +18,7 @@ the test.
    Select a successful trusted run for the revision you intend to use and download
    the `DivergenceSplitter-cpp23-windows-x64` artifact. GitHub artifact downloads
    require sign-in. Availability depends on a successful NDI-enabled job and
-   artifact retention; if no artifact is available, [build from source](development/building.en.md).
+   artifact retention; if no artifact is available, [build from source (Japanese)](development/building.md).
 2. Extract the artifact, then extract the application ZIP inside it into a writable
    local directory. Keep the DLLs, plugin directories, and license files together.
    The official ZIP includes the NDI runtime; installing the SDK is unnecessary.

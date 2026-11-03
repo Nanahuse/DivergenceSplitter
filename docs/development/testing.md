@@ -1,12 +1,10 @@
 # テスト
 
-[日本語（正本）](testing.md) | [English](testing.en.md)
-
 [開発ガイド](README.md) · [ビルド環境](building.md)
 
 ## CTest
 
-対応するプリセットを設定した後、リポジトリのルート で実行します。
+対応するプリセットを設定した後、リポジトリのルートで実行します。
 
 ```powershell
 cmake --build --preset full --parallel
@@ -15,7 +13,7 @@ ctest --preset full -N
 ctest --preset full -R 'Conditions|ScenarioLoader|ScenarioRuntime' --output-on-failure
 ```
 
-検証する構成に合わせて `core`、`core-release`、`full-release` も使えます。coreではQtのテストを含まず、NDIの既定値はOFFです。CMakeはGoogleTestの個別ケースとQtの実行ファイルを登録します。Qtはoffscreenと設定済みプラグイン・DLLパスを使い、CTestが環境を設定します。
+検証する構成に合わせて `core`、`core-release`、`full-release` も使えます。coreではQtのテストを含まず、NDIの既定値はOFFです。CMakeはGoogleTestの個別ケースとQtの実行ファイルを登録します。Qtテストでは、CTestがoffscreen表示と必要なプラグイン・DLLのパスを設定します。
 
 | 分野 | 主なテストと確認対象 |
 | --- | --- |
@@ -27,7 +25,7 @@ ctest --preset full -R 'Conditions|ScenarioLoader|ScenarioRuntime' --output-on-f
 | キャッシュ・Runtime | [frame_cache_tests.cpp](../../tests/frame_cache_tests.cpp)、[scenario_runtime_tests.cpp](../../tests/scenario_runtime_tests.cpp)、[instance_runtime_tests.cpp](../../tests/instance_runtime_tests.cpp)：共有評価、Phase選択、リセット、fake Bridge送信、反応時間中の自動・手動Reset、通常ActionとResetの別々の確定待ち、遅延イベント、入力停止中の期限切れ、Reset拒否後のQuery、再接続・結果不明時の処理。 |
 | UI・ログ | [ui_tests.cpp](../../tests/ui_tests.cpp)、[logging_tests.cpp](../../tests/logging_tests.cpp)：下書きプレビューの入力排他・非表示時の解放・一時停止入力の変換・エラー復旧、参照検証、検索・プレビュー中の応答性、MonitorのCondition概要、Reset Allの長押し・中断、Widget、ログのローテーション。 |
 
-fakeのテストはアプリの動作を決定的な条件で検査します。物理カメラ、外部送信元、利用者のLiveSplit環境の動作確認とは別です。
+fakeを使うテストでは、同じ入力や応答を再現できる条件でアプリの動作を検査します。物理カメラ、外部送信元、利用者のLiveSplit環境の動作確認とは別です。
 
 ## 録画を使うE2Eテスト
 
@@ -43,7 +41,7 @@ ctest --preset full -R 'RecordedPipeline|VideoFileSource|recorded_pipeline_repea
 
 ## 実LiveSplit.Bridge TestHostとの結合
 
-任意の実行ファイルを有効にします。
+TestHost用のテスト実行ファイルは、次のオプションで追加します。
 
 ```powershell
 cmake --preset full -DDIVERGENCESPLITTER_BUILD_TESTHOST_TESTS=ON
@@ -59,7 +57,7 @@ git -C C:/src/LiveSplit.Bridge-TestHost submodule update --init --recursive
 dotnet build C:/src/LiveSplit.Bridge-TestHost/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
 ```
 
-リポジトリのルート に戻り、未使用のローカルポートで既存ランナーを実行します。
+リポジトリのルートに戻り、未使用のローカルポートで既存ランナーを実行します。
 
 ```powershell
 python tools/run_testhost.py --testhost C:/src/LiveSplit.Bridge-TestHost/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/full/divergencesplitter_testhost_tests.exe --port 54157
