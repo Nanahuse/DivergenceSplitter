@@ -5,8 +5,12 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalSpy>
+#include <QStackedWidget>
+#include <QStringList>
 #include <QTabWidget>
+#include <QToolButton>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -14,6 +18,7 @@
 #include <QTableWidget>
 #include <QDir>
 #include <QFontDatabase>
+#include <QFrame>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -25,9 +30,12 @@
 #include "app_controller.hpp"
 #include "image_view.hpp"
 #include "main_window.hpp"
+#include "navigation_bar.hpp"
+#include "profile_header.hpp"
 #include "profile_page.hpp"
 #include "reset_all_button.hpp"
 #include "monitor_page.hpp"
+#include "theme.hpp"
 #include "divergencesplitter/condition/conditions.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
 #include "divergencesplitter/runtime/scenario_runtime.hpp"
@@ -260,17 +268,16 @@ private slots:
         (void)runtime.evaluate(FrameContext{Frame{cv::Mat(2, 2, CV_8UC1, cv::Scalar{128}), {}}, {}});
         const auto overview = scenario_overview(runtime.diagnostics());
         QVERIFY(overview.contains("mean_brightness"));
-        QVERIFY(overview.contains("score 0.502"));
-        QVERIFY(overview.contains("≥ 0.900"));
-        QVERIFY(!overview.contains("max"));
+        QVERIFY(overview.contains("0.5020 / 0.9000"));
+        QVERIFY(overview.contains("Max:"));
         auto diagnostics = runtime.diagnostics();
         diagnostics.reset_pending = ActionOperation::reset;
         QVERIFY(scenario_overview(diagnostics).contains("Reset confirmation"));
         AppController controller;
         MonitorPage monitor(&controller);
-        auto* table = monitor.findChild<QTableWidget*>("monitorInstances");
-        QCOMPARE(table->horizontalHeaderItem(6)->text(), QStringLiteral("Processing FPS"));
-        QCOMPARE(table->horizontalHeaderItem(7)->text(), QStringLiteral("Current evaluation"));
+        auto* cards = monitor.findChild<QScrollArea*>();
+        QVERIFY(cards != nullptr);
+        QVERIFY(monitor.findChild<ResetAllButton*>() != nullptr);
     }
 
 #if DIVERGENCESPLITTER_ENABLE_NDI
@@ -537,15 +544,174 @@ private slots:
         QCOMPARE(converted.pixelColor(0, 0), QColor(128, 128, 128));
     }
 
-    void mainWindowTabs() {
+    void profileHeaderSavesDraftToCurrentPath() {
+        QTemporaryDir directory;
+        const auto profile = make_profile(directory, false);
+        const auto path = std::filesystem::path{directory.filePath("profile.json").toStdString()};
+        save_profile(path, profile);
+        AppController controller;
+        QString error;
+        QVERIFY2(controller.open_profile(path, &error), qPrintable(error));
+        controller.stop();
+        MainWindow window(&controller);
+        auto* header = window.findChild<ProfileHeader*>();
+        QVERIFY(header != nullptr);
+        auto* dirty = header->findChild<QLabel*>(QStringLiteral("dirtyMarker"));
+        auto* source_type = window.findChild<QComboBox*>(QStringLiteral("sourceType"));
+        auto* save = header->findChild<QPushButton*>(QStringLiteral("profileSave"));
+        QVERIFY(dirty != nullptr);
+        QVERIFY(source_type != nullptr);
+        QVERIFY(save != nullptr);
+        source_type->setCurrentIndex(0);
+        QTRY_VERIFY(!dirty->isHidden());
+        save->click();
+        QTRY_VERIFY(dirty->isHidden());
+        QFile saved(QString::fromStdWString(path.wstring()));
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        QVERIFY(saved.readAll().contains("\"type\": \"camera\""));
+    }
+
+    void monitorBuildsScenarioCardsAndKeepsThemAcrossRefresh() {
+        QTemporaryDir directory;
+        const auto profile = make_profile(directory, false);
+        AppController controller;
+        QString error;
+        QVERIFY2(controller.apply_profile(profile, &error), qPrintable(error));
+        MonitorPage monitor(&controller);
+        monitor.resize(1000, 700);
+        monitor.show();
+        monitor.refresh();
+        QTRY_VERIFY(!monitor.findChildren<QFrame*>(QStringLiteral("scenarioCard")).isEmpty());
+        const auto cards = monitor.findChildren<QFrame*>(QStringLiteral("scenarioCard"));
+        QCOMPARE(cards.size(), 1);
+        const auto texts = [&cards] {
+            QStringList values;
+            for (auto* label : cards.front()->findChildren<QLabel*>()) {
+                values.append(label->text());
+            }
+            return values;
+        };
+        QVERIFY(texts().contains(QStringLiteral("Scenario 0")));
+        QVERIFY(texts().contains(QStringLiteral("Evaluating")));
+        QVERIFY(texts().contains(QStringLiteral("Evaluation")));
+        QVERIFY(texts().contains(QStringLiteral("Avg")));
+        QVERIFY(texts().contains(QStringLiteral("Max")));
+        monitor.refresh();
+        QCOMPARE(monitor.findChildren<QFrame*>(QStringLiteral("scenarioCard")).size(), 1);
+        QCOMPARE(monitor.findChildren<QFrame*>(QStringLiteral("scenarioCard")).front(), cards.front());
+        const auto captures = qEnvironmentVariable("DIVERGENCESPLITTER_UI_CAPTURE_DIR");
+        if (!captures.isEmpty()) {
+            QDir().mkpath(captures);
+            QTest::qWait(200);
+            monitor.refresh();
+            QVERIFY(monitor.grab().save(captures + "/monitor-scenario-card.png"));
+        }
+        controller.stop();
+    }
+
+    void mainWindowNavigationAndProfileHeader() {
         AppController controller;
         MainWindow window(&controller);
-        auto* tabs = window.findChild<QTabWidget*>();
+        auto* navigation = window.findChild<NavigationBar*>();
+        auto* header = window.findChild<ProfileHeader*>();
+        auto* stack = window.findChild<QStackedWidget*>();
+        QVERIFY(navigation != nullptr);
+        QVERIFY(header != nullptr);
+        QVERIFY(stack != nullptr);
+        QCOMPARE(stack->count(), 5);
+        QVERIFY(header->findChild<QPushButton*>(QStringLiteral("profileNew")) != nullptr);
+        QVERIFY(header->findChild<QPushButton*>(QStringLiteral("profileOpen")) != nullptr);
+        QVERIFY(header->findChild<QPushButton*>(QStringLiteral("profileSave")) != nullptr);
+        QVERIFY(header->findChild<QPushButton*>(QStringLiteral("profileSaveAs")) != nullptr);
+        auto* dirty = header->findChild<QLabel*>(QStringLiteral("dirtyMarker"));
+        QVERIFY(dirty != nullptr);
+        QVERIFY(dirty->isHidden());
+        auto* source_type = window.findChild<QComboBox*>(QStringLiteral("sourceType"));
+        QVERIFY(source_type != nullptr);
+        source_type->setCurrentIndex(1);
+        QTRY_VERIFY(!dirty->isHidden());
+        source_type->setCurrentIndex(0);
+        QTRY_VERIFY(dirty->isHidden());
+        QCOMPARE(navigation->width(), 60);
+        auto* toggle = navigation->findChild<QToolButton*>(QStringLiteral("navToggle"));
+        QVERIFY(toggle != nullptr);
+        toggle->click();
+        QCOMPARE(navigation->width(), 180);
+        const auto captures = qEnvironmentVariable("DIVERGENCESPLITTER_UI_CAPTURE_DIR");
+        if (!captures.isEmpty()) {
+            QDir().mkpath(captures);
+            window.resize(1200, 900);
+            window.show();
+            QTest::qWait(200);
+            QVERIFY(window.grab().save(captures + "/main-window-monitor.png"));
+        }
+        QToolButton* diagnostics = nullptr;
+        for (auto* button : navigation->findChildren<QToolButton*>()) {
+            if (button->text() == QStringLiteral("Diagnostics")) {
+                diagnostics = button;
+            }
+        }
+        QVERIFY(diagnostics != nullptr);
+        diagnostics->click();
+        QCOMPARE(navigation->current_page(), AppPage::diagnostics);
+        QCOMPARE(stack->currentIndex(), 1);
+        auto* tabs = window.findChild<QTabWidget*>(QStringLiteral("profileTabs"));
         QVERIFY(tabs != nullptr);
-        QCOMPARE(tabs->count(), 5);
-        for (int index = 0; index < tabs->count(); ++index) {
-            tabs->setCurrentIndex(index);
-            QCOMPARE(tabs->currentIndex(), index);
+        QCOMPARE(tabs->count(), 2);
+        QCOMPARE(tabs->tabText(0), QStringLiteral("Input"));
+        QCOMPARE(tabs->tabText(1), QStringLiteral("Scenarios && Connections"));
+        const auto diagnostics_captures =
+            qEnvironmentVariable("DIVERGENCESPLITTER_UI_CAPTURE_DIR");
+        if (!diagnostics_captures.isEmpty()) {
+            QDir().mkpath(diagnostics_captures);
+            QTest::qWait(200);
+            QVERIFY(window.grab().save(diagnostics_captures + "/main-window-diagnostics.png"));
+        }
+        QToolButton* profile = nullptr;
+        for (auto* button : navigation->findChildren<QToolButton*>()) {
+            if (button->text() == QStringLiteral("Profile")) {
+                profile = button;
+            }
+        }
+        QVERIFY(profile != nullptr);
+        profile->click();
+        QCOMPARE(navigation->current_page(), AppPage::profile);
+        QCOMPARE(stack->currentIndex(), 2);
+        if (!diagnostics_captures.isEmpty()) {
+            QTest::qWait(200);
+            QVERIFY(window.grab().save(diagnostics_captures + "/main-window-profile.png"));
+            tabs->setCurrentIndex(1);
+            QTest::qWait(100);
+            QVERIFY(window.grab().save(
+                diagnostics_captures + "/main-window-profile-scenarios.png"
+            ));
+            QToolButton* settings = nullptr;
+            QToolButton* about = nullptr;
+            for (auto* button : navigation->findChildren<QToolButton*>()) {
+                if (button->text() == QStringLiteral("Settings")) {
+                    settings = button;
+                } else if (button->text() == QStringLiteral("About")) {
+                    about = button;
+                }
+            }
+            QVERIFY(settings != nullptr && about != nullptr);
+            settings->click();
+            QTest::qWait(100);
+            QVERIFY(window.grab().save(diagnostics_captures + "/main-window-settings.png"));
+            about->click();
+            QTest::qWait(100);
+            QVERIFY(window.grab().save(diagnostics_captures + "/main-window-about.png"));
+            theme::apply(*qApp, theme::Mode::dark);
+            QToolButton* monitor_button = nullptr;
+            for (auto* button : navigation->findChildren<QToolButton*>()) {
+                if (button->text() == QStringLiteral("Monitor")) {
+                    monitor_button = button;
+                }
+            }
+            QVERIFY(monitor_button != nullptr);
+            monitor_button->click();
+            QTest::qWait(300);
+            QVERIFY(window.grab().save(diagnostics_captures + "/main-window-dark.png"));
         }
     }
 };

@@ -56,6 +56,8 @@ struct ScenarioDiagnosticsSnapshot {
     std::vector<SplitDiagnosticsNode> splits;
     std::uint64_t evaluation_count{};
     double last_evaluation_ms{};
+    double average_evaluation_ms{};
+    double max_evaluation_ms{};
     std::uint64_t rule_errors{};
 };
 

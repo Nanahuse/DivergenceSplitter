@@ -1,18 +1,23 @@
 #pragma once
 
 #include <QWidget>
+
 #include <chrono>
 #include <map>
+#include <vector>
+
 #include "divergencesplitter/runtime/diagnostics.hpp"
 
 class QLabel;
-class QTableWidget;
+class QScrollArea;
+class QVBoxLayout;
 
 namespace divergencesplitter::ui {
 
 class AppController;
 class ImageView;
 class ResetAllButton;
+class ScenarioCard;
 
 [[nodiscard]] QString scenario_overview(const ScenarioDiagnosticsSnapshot& scenario);
 
@@ -28,18 +33,32 @@ signals:
     void resetRequested();
 
 private:
-    AppController* controller_;
-    ImageView* preview_;
-    QLabel* capture_label_;
-    QLabel* error_label_;
-    QTableWidget* instance_table_;
-    ResetAllButton* reset_button_;
     struct EvaluationRate {
         std::uint64_t generation{};
         std::uint64_t count{};
         std::chrono::steady_clock::time_point sampled_at;
         double fps{};
     };
+
+    QLabel* add_status_row(
+        QVBoxLayout* layout,
+        const QString& label,
+        const QString& initial
+    );
+
+    AppController* controller_;
+    ImageView* preview_;
+    QLabel* state_value_;
+    QLabel* input_fps_value_;
+    QLabel* processing_fps_value_;
+    QLabel* input_detail_;
+    QLabel* error_label_;
+    QScrollArea* scroll_;
+    QWidget* cards_container_;
+    QVBoxLayout* cards_layout_;
+    ResetAllButton* reset_button_;
+    std::map<int, ScenarioCard*> cards_;
+    std::vector<int> card_order_;
     std::map<int, EvaluationRate> evaluation_rates_;
 };
 

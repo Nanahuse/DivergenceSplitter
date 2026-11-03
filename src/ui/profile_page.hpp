@@ -17,6 +17,7 @@ class QLineEdit;
 class QPushButton;
 class QSpinBox;
 class QStackedWidget;
+class QTabWidget;
 class QTableWidget;
 class QThread;
 
@@ -36,6 +37,8 @@ public:
     ~ProfilePage() override;
 
     void reload_from_controller();
+    void load_draft(const Profile& profile);
+    void refresh_preview();
     [[nodiscard]] Profile draft_profile() const;
 
 signals:
@@ -67,7 +70,6 @@ private:
     );
     void camera_device_changed(int index);
     void camera_mode_changed(int index);
-    void refresh_preview();
     void stop_preview();
 
     AppController* controller_;

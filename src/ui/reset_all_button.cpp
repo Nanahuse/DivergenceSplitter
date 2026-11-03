@@ -65,11 +65,14 @@ void ResetAllButton::cancel_hold() {
 
 void ResetAllButton::update_text() {
     if (!holding_) {
-        setText(tr("Hold %1 ms to Reset All").arg(hold_duration_ms_));
+        setText(tr("Reset All"));
         return;
     }
-    const int remaining = std::max(0, hold_duration_ms_ - static_cast<int>(elapsed_.elapsed()));
-    setText(tr("Keep holding... %1 ms").arg(remaining));
+    const int remaining_ms =
+        std::max(0, hold_duration_ms_ - static_cast<int>(elapsed_.elapsed()));
+    setText(tr("Hold to reset… %1.%2 s")
+        .arg(remaining_ms / 1000)
+        .arg((remaining_ms % 1000) / 100));
 }
 
 }  // namespace divergencesplitter::ui
