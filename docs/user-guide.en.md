@@ -8,7 +8,7 @@ This is an English translation. The Japanese version is the original and takes p
 
 ## Monitor
 
-Monitor shows the normalized input image: the same Crop/Resize output used by all
+Each table row pairs one scenario with a LiveSplit connection; this pair is called an instance. Monitor shows the normalized input image: the same Crop/Resize output used by all
 scenario instances. The input line shows the number of frames made available for
 evaluation, measured capture FPS, and whether capture is running. The table shows each scenario's connection state,
 timer phase, split index, last requested action, and error or action result.

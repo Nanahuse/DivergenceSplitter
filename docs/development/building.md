@@ -12,7 +12,9 @@ Windows x64向けに次を用意してください。
 - ビルド・配布用ヘルパー向けのPython 3.10以上。Coreだけをビルドする場合も、CMakeの設定時にPythonが必要です。必要なら `-DPython3_EXECUTABLE=C:/tools/python/python.exe` で指定してください。
 - 初回の依存関係・Bridge取得に使うGitとネットワーク接続。
 
-[vcpkg.json](../../vcpkg.json) でbuiltin baselineを固定し、OpenCV 4のCore・Imgproc・Imgcodecs・Videoioと選択した画像・カメラ機能、rapidyaml（ryml）とその依存のc4core、nlohmann/json、Boost.Asio／Beastを取得します。`tests` featureはGoogleTest、`ui` はQt 6 qtbaseを追加します。hash Detectorにopencv_contribは不要です。
+依存ライブラリは [vcpkg.json](../../vcpkg.json) に記述し、builtin baselineでバージョンの基準を固定しています。OpenCV 4のCore・Imgproc・Imgcodecs・Videoioと指定した画像・カメラ機能、rapidyaml（ryml）とc4core、nlohmann/json、Boost.Asio／Beastを取得します。
+
+`tests` featureを選ぶとGoogleTestを、`ui` を選ぶとQt 6 qtbaseを追加します。hash Detectorのためにopencv_contribを追加する必要はありません。
 
 ## 設定・ビルド・起動
 
@@ -26,7 +28,9 @@ ctest --preset full --output-on-failure
 .\build\full\DivergenceSplitter.exe
 ```
 
-初回は依存関係、とくにQtのビルドに時間がかかります。DLLと配置されたQtプラグインは実行ファイルの隣に保ってください。DebugではCMakeがdebug用プラグインをコピーします。Releaseでは利用可能なら `windeployqt` を使います。CLIは `build/full/divergencesplitter-cli.exe` です。[使用方法](../troubleshooting.md#cliでの確認)を参照してください。
+初回は依存ライブラリもビルドするため、時間がかかります。特にQtのビルドは長くなります。生成されたDLLとQtプラグインは、実行ファイルの隣に置いたまま使ってください。
+
+Debugでは、CMakeがデバッグ用プラグインをコピーします。Releaseでは、`windeployqt` が見つかれば、それを使って配置します。CLIは `build/full/divergencesplitter-cli.exe` です。[使い方](../troubleshooting.md#cliでの確認)も参照してください。
 
 Qtなしでcore／runtimeを開発する場合は次を使います。
 
@@ -48,7 +52,9 @@ ctest --preset core --output-on-failure
 | `full-release` | Release | 有効 | `tests;ui` |
 | `ci` | Release | 外部Qtを使用 | `tests`。TestHostテストも有効。 |
 
-`ci` では `CMAKE_PREFIX_PATH` または `Qt6_DIR` からQtを見つけられる必要があります。workflowはvcpkgでQtをビルドせず、外部のQt 6.8.3 MSVC 2022 x64を使います。ローカルでも同じ構成にするなら、configure時に `-DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64` を指定し、アーキテクチャをそろえてください。UI有効時はQt WidgetsとQt Testの両方が必要です。
+`ci` プリセットでは、インストール済みのQtを `CMAKE_PREFIX_PATH` または `Qt6_DIR` で指定します。workflowはvcpkgでQtをビルドせず、外部のQt 6.8.3 MSVC 2022 x64を使います。
+
+ローカルでも同じ構成を使う場合は、configure時に `-DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64` などを指定し、アーキテクチャを合わせてください。UIを有効にする場合は、Qt WidgetsとQt Testの両方が必要です。
 
 | CMakeオプション | 既定値 | 動作 |
 | --- | --- | --- |
@@ -60,11 +66,15 @@ ctest --preset core --output-on-failure
 | `DIVERGENCESPLITTER_ENABLE_NDI` | `OFF` | Windows x64で公式SDKの受信機を有効化。 |
 | `NDI_SDK_DIR` | 空 | NDI有効時の展開済みSDKルート。 |
 
-既存クライアントを使う場合は `-DFETCHCONTENT_SOURCE_DIR_LIVESPLIT_BRIDGE=C:/src/livesplit-bridge-client-cpp` を指定できます。再現確認では所定の固定バージョンに合わせてください。アプリのターゲットは `divergencesplitter_core`、`divergencesplitter_runtime`、`divergencesplitter_cli` と、UI有効時の `divergencesplitter_ui`／`DivergenceSplitter` です。
+Bridgeクライアントのソースが手元にある場合は、`-DFETCHCONTENT_SOURCE_DIR_LIVESPLIT_BRIDGE=C:/src/livesplit-bridge-client-cpp` で指定できます。再現性を確認するときは、指定されている固定バージョンのソースを使ってください。
+
+アプリ側のターゲットは `divergencesplitter_core`、`divergencesplitter_runtime`、`divergencesplitter_cli` です。UIが有効な場合は、`divergencesplitter_ui` と `DivergenceSplitter` もビルドします。
 
 ## NDI対応ビルド
 
-通常の開発でSDKを必要としないよう、NDIの既定値はOFFです。ONでは [ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) に一致する公式SDKを取得します。現在の固定値は6.3.2.0です。Windows用SDKをinnoextractで展開し、`Include`、`Bin/x64`、`NDI SDK License Agreement.pdf` があるディレクトリを `NDI_SDK_DIR` に指定してください。SDK開発用ファイルとインストーラーはコミットしません。
+NDIは既定でOFFです。通常の開発ではSDKを用意する必要がありません。ONにする場合は、[ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) の固定値に一致する公式SDKを使います。現在の固定バージョンは6.3.2.0です。
+
+Windows用SDKをinnoextractで展開し、`Include`、`Bin/x64`、`NDI SDK License Agreement.pdf` が入っているフォルダーを `NDI_SDK_DIR` に指定してください。SDKの開発用ファイルやインストーラーはコミットしません。
 
 ```powershell
 cmake --preset full-release -DDIVERGENCESPLITTER_ENABLE_NDI=ON -DNDI_SDK_DIR=C:/private/ndi-sdk/app
@@ -74,7 +84,9 @@ ctest --preset full-release --output-on-failure
 .\build\full-release\divergencesplitter-cli.exe --ndi-list
 ```
 
-Windows x64、`Processing.NDI.Lib.h`、`Processing.NDI.DynamicLoad.h`、ランタイムDLL、ランタイム通知、確認済みの契約書が必要です。ファイル不足、DLL・通知・契約書の固定ハッシュとの不一致ではconfigureを失敗させます。DLLはビルドした実行ファイルの隣へコピーし、そこから絶対パスで読みます。別の場所にインストールしたランタイムでは代替しません。CIでの取得・検証は[配布](distribution.md#ci-workflow)を参照してください。
+NDI有効時はWindows x64が必要です。SDKには `Processing.NDI.Lib.h`、`Processing.NDI.DynamicLoad.h`、ランタイムDLL、ランタイム通知、確認済みの契約書が必要です。不足するファイルがある場合や、DLL・通知・契約書のハッシュが固定値と違う場合は、configureに失敗します。
+
+DLLは実行ファイルの隣へコピーし、その絶対パスから読み込みます。別の場所にインストールされたランタイムで代用することはありません。CIでの取得と検証は[配布](distribution.md#ci-workflow)を参照してください。
 
 ## ビルドの問題
 

@@ -4,7 +4,7 @@
 
 [ドキュメント一覧](../README.md)
 
-まずMonitorで映像の到着、各インスタンスのReady状態、最後のActionとエラーを確認してください。次にDiagnosticsで有効なPhase、Split、Conditionの状態とスコアを調べます。
+問題が起きたら、まずMonitorで映像が届いているか、接続がReadyになっているか、最後のActionやエラーが何かを確認してください。判定がおかしい場合は、Diagnosticsで現在のSplit位置とConditionの結果・スコアを調べます。
 
 ## 入力の問題
 
@@ -20,7 +20,7 @@
 | NDI送信元が見つからない・映像が来ない | 送信元を起動し、公開名、ネットワーク接続、ファイアウォール設定を確認してSearch againを押します。保存済みの名前はオフラインでも残ります。通常のタイムアウトは致命的なエラーではなく、送信元が戻ると受信を再開できます。 |
 | NDIランタイムを初期化できない | ZIP全体を展開し、DLLを実行ファイルの隣に置いてください。ローダーはPATHや作業ディレクトリではなくアプリのディレクトリから読みます。後述の `--ndi-check` も使えます。 |
 
-再試行可能なカメラのopen／readエラーは取得処理が再試行します。モード、デコード、正規化、致命的なSDKエラーでは取得を停止する場合があります。Profileを修正してApplyし、最後の静止画だけでなくフレーム数の増加を確認してください。
+カメラを開く処理や読み取りで、再試行できるエラーが起きた場合は、自動でやり直します。一方、モードの不一致、デコード、画像変換、回復できないSDKエラーでは、取得を止める場合があります。Profileを修正してApplyしたら、映像が表示されるだけでなく、フレーム数も増えていることを確認してください。
 
 ## Bridge接続の問題
 
@@ -29,15 +29,23 @@
 - 複数のLiveSplitではBridgeごとに別のポートを設定し、各レイアウトを保存します。ポートが使用中だとBridgeを起動できない場合があります。
 - 一時的な切断は自動で復旧する場合があります。プロトコルエラーやFailed状態では、表示された原因を修正してApplyし直してください。
 
-操作結果がunknownの場合、要求がすでにLiveSplitへ届いた可能性があります。Runtimeは再同期し、同じ確定状態に対する同じ自動操作を抑止します。手動で繰り返す前にLiveSplitの状態を確認してください。再接続したことは前の操作の失敗を示すものではありません。
+操作結果がunknownの場合は、LiveSplitがすでに操作を受け取っている可能性があります。アプリはタイマーの状態を確認し直しますが、同じ状態に対して同じ自動操作を繰り返し送らないようにします。
+
+手動で操作を繰り返す前に、LiveSplitの表示を確認してください。再接続したからといって、直前の操作が失敗したとは限りません。
 
 ## 操作の確定待ちとResetの失敗
 
-MonitorのCurrent evaluationにPendingやWaiting for Reset confirmationが出たら、最後のActionとLiveSplitの実際のPhase・Split位置を確認してください。操作結果のokはRPC成功を示し、対応する状態変化の確認とは別です。通常ActionとResetは別々に保留し、Pause／ResumeだけでSplit／Skipの待機が解除されたり、遅れたSplitでResetが確認されたりはしません。
+Current evaluationにPendingやWaiting for Reset confirmationが出ている間は、アプリが操作の送信や結果の確認を待っています。Monitorの最後のActionと、LiveSplitの実際の状態・Split位置を見比べてください。
 
-RPC成功後は対応する状態変化を最大1秒待ち、期限に達するとQueryで再確認します。入力映像が停止しても期限は処理します。Query後も未確定なら保留を解除して対応するRuleを初期化しますが、次の自動Actionの判定には新しいフレームが必要です。映像と接続の両方を確認してください。確定待ち・反応時間・Ruleの関係は[YAMLリファレンス](scenarios/yaml-reference.md#actionの保留と確定待ち)にまとめています。
+操作結果がokでも、タイマーの状態変化をまだ確認できていない場合があります。通常ActionとResetは別々に確認します。Pause／ResumeしただけではSplit／Skipを確認したことにはならず、遅れて届いたSplitもResetの確認には使いません。
 
-ResetのRPCが拒否された場合は表示されたエラーを確認します。アプリはQueryで現在の状態を取り直し、通常ActionとResetの旧保留を解除してResetグループと現在のPhase・位置のグループを初期化します。Queryに失敗した場合は評価を止めて接続を回復します。ConnectingやFailedが続く場合はBridgeのStatus・ポートとログを調べてください。Reset Allの後も各インスタンスの結果を個別に確認します。
+Bridgeが操作を受け付けた後は、対応する状態変化を最大1秒待ちます。映像が止まっていても、この期限は進みます。期限に達したらタイマーを再確認し、それでも結果が確定しなければ待機を終えて、対応するRuleをリセットします。
+
+その後の自動操作には、新しいフレームでの判定が必要です。映像と接続の両方が戻っているかを確認してください。反応時間やRuleとの関係は[YAMLリファレンス](scenarios/yaml-reference.md#actionの保留と確定待ち)を参照してください。
+
+Resetが拒否されたら、表示されたエラーを確認してください。アプリは現在のタイマー状態を調べ直し、通常ActionとResetの確定待ちを終えます。そのうえで、Reset条件と、現在のタイマー状態・Split位置に対応する条件をリセットします。タイマーの状態を確認できなければ、判定を止めて接続を回復します。
+
+ConnectingやFailedが続くときは、BridgeのStatus、ポート、ログを調べてください。Reset Allを使った場合も、すべての行で成功したかを確認します。
 
 ## 判定が成立しない・意図せず成立する
 
@@ -48,13 +56,17 @@ ResetのRPCが拒否された場合は表示されたエラーを確認します
 5. [Conditionの動作](scenarios/conditions.md)を確認します。edgeは基準となる前回値が必要です。`nth` はtrueの評価を数え、`once` はtrueを維持し、`hold` はfalseで計測し直し、`then` の次のステップは後の評価で始まります。
 6. YAMLや画像を編集したら再適用します。ApplyとRuntimeのリセットは対応するConditionの状態と最大スコアを消します。ファイルを保存しただけでは再読込しません。
 
-Pause／Resumeなど区間を進めないActionで、常にtrueの条件を使うと操作を繰り返す場合があります。sequenceや適切な状態付きConditionを使い、[Ruleのリセット](scenarios/yaml-reference.md#状態とリセット)も考慮してください。
+Pause／Resumeのように区間を移動しない操作では、条件がtrueのままだと同じ操作を繰り返す場合があります。sequenceで操作を順番に並べるか、条件が変化したときだけ成立するConditionなどを使ってください。条件がいつやり直しになるかは、[Ruleのリセット](scenarios/yaml-reference.md#状態とリセット)を参照してください。
 
 ## ログ
 
-Windowsでは `%APPDATA%/DivergenceSplitter/diagnostics.log` に追記します。ローテーションしたファイルの末尾は `.1`、`.2`、`.3` です。設定とログのフォルダーは必要に応じて作成します。問題を再現する前に、SettingsでINFOまたはDEBUGを選び、SaveしてProfileを再適用してください。OFFでは記録しません。ログレベルを変えても、実装が出力しないイベントは追加されません。
+ログは `%APPDATA%/DivergenceSplitter/diagnostics.log` に追記します。古いログを退避したファイルには、末尾に `.1`、`.2`、`.3` が付きます。保存先のフォルダーは必要に応じて作成します。
 
-主なイベントは `profile.apply`、`capture.error`、`instance.state`、`instance.ready`、`instance.action` です。Conditionの評価エラーはDiagnosticsで数えますが、Detectorの詳しい例外メッセージをログに記録する保証はありません。問題の報告にはアプリのリビジョン・ビルド、ProfileとYAML、入力種別、正規化後の寸法、判定状態・スコア、前後のログを添えてください。必要に応じて私用のパスや送信元名を除いてください。
+問題を再現する前に、SettingsのLog levelをINFOまたはDEBUGにしてSaveし、Profileを再びApplyしてください。OFFでは記録しません。DEBUGを選んでも、もともと記録対象でないイベントは追加されません。
+
+主なログ項目は `profile.apply`、`capture.error`、`instance.state`、`instance.ready`、`instance.action` です。Conditionの判定エラーはDiagnosticsで数えますが、Detectorの詳しい例外メッセージがログに残るとは限りません。
+
+問題を報告するときは、アプリのリビジョン・ビルド、ProfileとYAML、入力の種類、Crop／Resize後の寸法、判定結果・スコア、問題が起きた前後のログを添えてください。必要に応じて、個人的なファイルパスや送信元の名前を取り除いてください。
 
 ## CLIでの確認
 
@@ -67,6 +79,10 @@ Windowsでは `%APPDATA%/DivergenceSplitter/diagnostics.log` に追記します�
 .\divergencesplitter-cli.exe --ndi-list
 ```
 
-`--check` はProfileと全シナリオ・参照画像を読み、参照画像のResizeも行います。入力を開く処理、フレームとROIの互換性検査、Bridge接続、タイマー操作は行いません。時間を指定した実行は実際のSessionを動かし、LiveSplitを操作できます。正の `--seconds` を指定しなければCtrl+Cまで実行します。`--ndi-check` はランタイムを初期化し、`--ndi-list` は送信元の検索も行います。
+`--check` は、Profile、各シナリオ、参照画像を読み込んで設定を検証します。設定されていれば参照画像のResizeも行います。映像入力は開かず、Bridgeにも接続しないため、タイマー操作は送りません。実際の映像とROIが合うかどうかは、この方法では確認できません。
 
-CLIは `--settings C:/DivergenceSplitter/settings.json` も受け取ります。省略時はGUIの設定ファイルを自動読込せず、既定値を使います。終了コードは成功・検証完了が `0`、使用方法の誤りが `2`、捕捉した設定・起動・NDIエラーが `3`、SessionのRuntimeエラーが `4` です。Bridgeインスタンスが失敗しても時間指定実行が0で終わる場合があるため、表示されるインスタンス状態も確認してください。
+`--seconds` を指定した実行では実際に映像を取得してシナリオを動かし、LiveSplitを操作します。正の秒数を指定しなければ、Ctrl+Cを押すまで続きます。`--ndi-check` はNDIランタイムの初期化を確認し、`--ndi-list` は送信元の検索も行います。
+
+CLIの設定ファイルは `--settings C:/DivergenceSplitter/settings.json` で指定します。省略した場合は既定値を使い、GUIの設定ファイルを自動では読み込みません。
+
+終了コードは、成功または検証完了が `0`、引数の誤りが `2`、設定・起動・NDIで捕捉したエラーが `3`、実行中のSessionのエラーが `4` です。時間を指定した実行では、個々のBridge接続が失敗しても `0` で終了する場合があります。終了コードだけでなく、表示された各インスタンスの状態も確認してください。

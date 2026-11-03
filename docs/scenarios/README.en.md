@@ -6,9 +6,16 @@ This is an English translation. The Japanese version is the original and takes p
 
 [Documentation home](../../README.en.md)
 
-A scenario is a `.yaml` or `.yml` file describing a start condition, optional
-reset/finish-recovery conditions, and rules for each LiveSplit segment. A Profile
-connects that file to a local Bridge port and a video input.
+A scenario is a `.yaml` or `.yml` file that defines automatic timer controls. It specifies when to Start and when each LiveSplit segment should Split or perform another action. Optional conditions can Reset a run or undo its final split after it ends.
+
+A Profile combines the file with a video input and the Bridge port for LiveSplit on the same PC. Scenario settings use these terms:
+
+| Term | Meaning |
+| --- | --- |
+| Detector | An image-analysis method that returns a score, such as similarity or brightness. |
+| Condition | A test that becomes true based on scores, elapsed time, counts, or other conditions. |
+| Action | A control sent to LiveSplit, such as Start, Split, or Reset. |
+| Rule | A condition paired with an action; when the condition is true, the action is requested. |
 
 1. Try the [minimal scenario](../../examples/minimal-scenario.yaml) using
    [Getting started](../getting-started.en.md).

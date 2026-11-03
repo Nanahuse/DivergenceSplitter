@@ -13,7 +13,9 @@ ctest --preset full -N
 ctest --preset full -R 'Conditions|ScenarioLoader|ScenarioRuntime' --output-on-failure
 ```
 
-検証する構成に合わせて `core`、`core-release`、`full-release` も使えます。coreではQtのテストを含まず、NDIの既定値はOFFです。CMakeはGoogleTestの個別ケースとQtの実行ファイルを登録します。Qtテストでは、CTestがoffscreen表示と必要なプラグイン・DLLのパスを設定します。
+ビルドした構成に合わせて、`core`、`core-release`、`full-release` も使えます。coreにはQtテストを含まず、NDIの既定値はOFFです。
+
+CMakeはGoogleTestの各ケースと、Qtテストの実行ファイルをCTestへ登録します。Qtテストを実行するときは、CTestがoffscreen表示と、必要なプラグイン・DLLのパスを設定します。
 
 | 分野 | 主なテストと確認対象 |
 | --- | --- |
@@ -25,13 +27,17 @@ ctest --preset full -R 'Conditions|ScenarioLoader|ScenarioRuntime' --output-on-f
 | キャッシュ・Runtime | [frame_cache_tests.cpp](../../tests/frame_cache_tests.cpp)、[scenario_runtime_tests.cpp](../../tests/scenario_runtime_tests.cpp)、[instance_runtime_tests.cpp](../../tests/instance_runtime_tests.cpp)：共有評価、Phase選択、リセット、fake Bridge送信、反応時間中の自動・手動Reset、通常ActionとResetの別々の確定待ち、遅延イベント、入力停止中の期限切れ、Reset拒否後のQuery、再接続・結果不明時の処理。 |
 | UI・ログ | [ui_tests.cpp](../../tests/ui_tests.cpp)、[logging_tests.cpp](../../tests/logging_tests.cpp)：下書きプレビューの入力排他・非表示時の解放・一時停止入力の変換・エラー復旧、参照検証、検索・プレビュー中の応答性、MonitorのCondition概要、Reset Allの長押し・中断、Widget、ログのローテーション。 |
 
-fakeを使うテストでは、同じ入力や応答を再現できる条件でアプリの動作を検査します。物理カメラ、外部送信元、利用者のLiveSplit環境の動作確認とは別です。
+fakeを使うテストは実機の代わりに決めた入力や応答を与え、同じ条件を再現してアプリの動作を調べます。物理カメラ、外部のNDI送信元、利用者のLiveSplitで動くことを確認するテストとは別です。
 
 ## 録画を使うE2Eテスト
 
-[recorded_pipeline_tests.cpp](../../tests/recorded_pipeline_tests.cpp)はMJPEG AVI、JSON Profile、YAMLを生成し、実際のデコード、Crop／Resize、CapturePipeline、Scenario評価、InstanceRuntimeを通してfake Bridgeの操作履歴を確認します。Start／Split、外部Undo後の再判定、共有フレーム上の複数シナリオの独立性を検証します。フレームごとの完了待ちで入力順と操作履歴を比較するため、実際の無制限な取得速度を再現する試験ではありません。
+[recorded_pipeline_tests.cpp](../../tests/recorded_pipeline_tests.cpp)は、録画の読み込みからタイマー操作の要求までを通して調べるE2Eテストです。MJPEG AVI、Profile JSON、YAMLを生成し、デコード、Crop／Resize、CapturePipeline、Scenarioの判定、InstanceRuntimeを実際に動かして、fake Bridgeに届いた操作履歴を確認します。
 
-VideoFileSourceのテストは内蔵MJPEGデコーダーの優先使用とWindowsのH.264フォールバックを確認し、RecordedPipelineには低FPS動画の停止応答も含みます。CTestの `recorded_pipeline_repeat` は録画・デコーダーのケースを新しいプロセスで20回実行し、起動時の不安定さも検査します。
+確認するのは、Start／Split、外部Undoで戻った区間の再判定、同じフレームを使う複数シナリオの独立した動作です。フレームごとに処理が終わるのを待って入力順と操作履歴を比べるため、通常の速度制限なしの映像取得を再現する試験ではありません。
+
+VideoFileSourceでは、内蔵MJPEGデコーダーを先に使うことと、H.264の動画をWindowsのデコーダーで読み込めることを確認します。RecordedPipelineでは、低FPSの動画でも速やかに停止できるかを確認します。
+
+CTestの `recorded_pipeline_repeat` は、録画とデコーダーのケースを新しいプロセスで20回実行します。毎回起動し直すことで、デコーダー起動時の不安定さも調べます。
 
 ```powershell
 ctest --preset full -R 'RecordedPipeline|VideoFileSource|recorded_pipeline_repeat' --output-on-failure
@@ -63,11 +69,15 @@ dotnet build C:/src/LiveSplit.Bridge-TestHost/tests/LiveSplit.Bridge.TestHost/Li
 python tools/run_testhost.py --testhost C:/src/LiveSplit.Bridge-TestHost/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/full/divergencesplitter_testhost_tests.exe --port 54157
 ```
 
-ヘルパーはTestHostを起動し、標準入力を開いたままREADYを待ちます。`DIVERGENCESPLITTER_TESTHOST_PORT` と `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` を設定してテストを行い、最後にTestHostを止めます。テストはQuery・Event、Pause／Resumeと、`TestHost.RecordedVideoThroughYamlToRealBridgeControls` による録画→YAML→実BridgeへのStart／Split送信を確認します。録画テストは操作数、最後のSplitの成功、実タイマーのSplit位置1、動画の終端を検証します。
+ヘルパーはTestHostを起動し、標準入力を開いたままREADYの出力を待ちます。続いて `DIVERGENCESPLITTER_TESTHOST_PORT` と `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` を設定してテストを実行し、最後にTestHostを止めます。
+
+テストではQuery・EventとPause／Resumeを確認します。`TestHost.RecordedVideoThroughYamlToRealBridgeControls` は、録画をYAMLで判定し、実BridgeへStart／Splitを送ります。操作数、最後のSplitの成功、実タイマーのSplit位置1、動画の終端を確認します。
 
 制御テストはTestHostの既定の2区間Runを必要とし、タイマーの開始・Split・Resetも行います。隔離したTestHostを使い、本番LiveSplitのポートには接続しないでください。
 
-自分で起動したHostには、CTest前に `DIVERGENCESPLITTER_TESTHOST_PORT` を設定します。未設定ならテストをスキップするため、CTest成功だけでは実Bridgeの制御確認になりません。制御には `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` も必要です。`--testhost` にディレクトリを指定する場合、その中のTestHost実行ファイルは1つである必要があります。
+自分でTestHostを起動する場合は、CTestの前に `DIVERGENCESPLITTER_TESTHOST_PORT` を設定してください。未設定のままではテストをスキップするため、CTestが成功しても実Bridgeを制御できたことにはなりません。制御テストには `DIVERGENCESPLITTER_TESTHOST_ALLOW_CONTROL=1` も必要です。
+
+ヘルパーの `--testhost` にディレクトリを渡す場合は、その中にTestHostの実行ファイルが1つだけ存在する必要があります。
 
 ## 実NDIの検証
 
@@ -80,7 +90,9 @@ $env:NDI_SOAK_SECONDS = '600'
 Remove-Item Env:NDI_SOAK_SECONDS
 ```
 
-`ndi_sdk_initialization` は初期化・終了を確認します。`ndi_sdk_loopback` は実SDKのローカル送信元を作り、検索、選択、受信BGR変換、Crop／Resize、プレビュー、シナリオのStart判定、送信元の破棄・再作成、再接続、終了を検証します。継続時間は最大3600秒にできます。CTestのタイムアウトは90秒なので、長時間の実行では例のように実行ファイルを直接呼んでください。
+`ndi_sdk_initialization` はSDKの初期化と終了を確認します。`ndi_sdk_loopback` は、実SDKでローカルの送信元を作り、検索、選択、受信、BGR変換、Crop／Resize、プレビュー、ScenarioのStart判定を確認します。さらに送信元を破棄して作り直し、再接続と終了も調べます。
+
+継続時間は最大3600秒にできます。ただし、CTestのタイムアウトは90秒なので、長時間試す場合は、上の例のようにテストの実行ファイルを直接呼んでください。
 
 [NDI Tools](https://ndi.video/tools/) などの独立した送信元でも対象ネットワークを確認してください。選択、プレビュー、判定、停止・再開後の復帰、保存Profileの再読込、継続受信を調べます。送受信側のバージョン、時間、フレーム数、エラー、ネットワーク構成を記録してください。ローカルループバックだけでは別の送信元・ネットワークを検証できません。
 
@@ -96,6 +108,8 @@ SDK取得とZIP検証ヘルパーを検査します。実際のZIPは[配布手�
 
 [profile.example.json](../../examples/profile.example.json) の動画・シナリオの絶対パスを変更し、ビルドしたCLIの `--profile <path> --check` を実行します。実際のC++ローダーでProfileとシナリオ、参照Resizeを確認し、タイマー操作は送りません。
 
-[シナリオ例](../scenarios/examples.md)の完全なYAMLも参照画像と一緒に保存し、Profileの参照先を変えて確認します。ConditionやDetectorだけの断片は完全なシナリオに埋め込んでください。JSON／YAMLの構文解析だけではスキーマ検証になりません。`--check` は動画・コーデックを開かず、実フレームとDetectorの寸法比較もしないため、Monitorかフレームを使うテストで確認してください。
+[シナリオ例](../scenarios/examples.md)のYAMLも、参照画像と一緒に保存し、Profileの参照先を変えて確認してください。ConditionやDetectorだけを示した例は、それだけではシナリオとして読み込めません。完全なシナリオの中に埋め込んで試します。
+
+JSONやYAMLの文法として正しいだけでは、アプリの設定として有効とは限りません。また、`--check` は動画やコーデックを開かず、映像とDetectorの寸法も比べません。それらはMonitorで実際の映像を表示するか、フレームを使うテストで確認してください。
 
 ソースへのパスとMarkdownアンカーを確認し、`git diff --check` と `git diff --name-only` で文書・例だけの変更であることも確認します。

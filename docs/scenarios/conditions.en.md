@@ -6,10 +6,9 @@ This is an English translation. The Japanese version is the original and takes p
 
 [Scenario authoring](README.en.md) · [YAML lifecycle](yaml-reference.en.md#state-and-reset-lifecycle)
 
-Every condition is a mapping with a required `type`. The following twelve types
-are the complete public set. Fields listed below are required unless described as
-optional. `condition` is a single child mapping; `conditions` is an ordered list
-of child mappings. Unknown fields are rejected.
+A Condition defines when a timer control should be requested. Set `type` to one of the twelve types below.
+
+Use `condition` for one nested condition and `conditions` for a list of conditions. Each condition is written as a group containing `type` and its settings. Fields are required unless described as optional. Unknown fields are rejected.
 
 ## Time, counts, and state
 

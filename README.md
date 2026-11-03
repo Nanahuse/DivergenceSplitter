@@ -2,20 +2,22 @@
 
 [日本語（正本）](README.md) | [English](README.en.md)
 
-DivergenceSplitterは、映像を解析してLiveSplitを自動操作するWindowsアプリケーションです。C++23で実装し、Qt Widgetsの画面とCLIを備えています。
+DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit、Resetを自動で行うWindowsアプリです。判定条件はYAMLファイルに記述します。画面から入力映像や判定結果を確認でき、コマンドラインからの実行にも対応しています。
 
 ## 主な機能
 
-- カメラ・キャプチャーカード、動画ファイル、NDI対応ビルドでのNDI®入力。
-- Crop／Resizeと画像Detector、Conditionを組み合わせたYAMLシナリオの判定。
-- LiveSplit.Bridgeを通じたStart、Split、Resetなどの操作。
-- 複数のシナリオ・LiveSplitインスタンスでの入力共有と、画面でのプレビュー・診断。
+- カメラ・キャプチャーカード、動画ファイル、NDI®の映像を入力に使えます。NDIには対応ビルドが必要です。
+- 映像の切り取り（Crop）やサイズ変更（Resize）を行い、画像の検出方法（Detector）と条件（Condition）を組み合わせて判定できます。
+- 条件が成立すると、LiveSplit.Bridgeを通じてStart、Split、Resetなどの操作を送ります。
+- 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。画面には映像のプレビューと判定・接続の状態を表示します。
 
 ## インストール
 
-[C++23のGitHub Actions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)で、使いたいリビジョンの成功した実行から `DivergenceSplitter-cpp23-windows-x64` アーティファクトを取得します。GitHubへのサインインが必要です。展開後、中のWindows ZIPも書き込み可能なフォルダーに展開し、`DivergenceSplitter.exe` を起動してください。DLL、プラグイン、ライセンスは同じ構成で保ちます。
+[C++23のGitHub Actions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-cpp23-windows-x64` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
 
-アーティファクトの提供はNDI有効ジョブの成功と保存期間によります。取得できない場合は[ソースからビルド](docs/development/building.md)してください。詳しい導入手順は[はじめに](docs/getting-started.md)を参照してください。
+ダウンロードしたファイルを展開すると、中にアプリ本体のWindows ZIPがあります。そのZIPも書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLL、プラグイン、ライセンスのファイルは、展開後の配置を保ってください。
+
+ダウンロードできるのは、NDI有効ジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
 
 ## 使い方
 
@@ -28,7 +30,9 @@ DivergenceSplitterは、映像を解析してLiveSplitを自動操作するWindo
 
 ## ドキュメント
 
-利用者向けドキュメントは日本語と英語を用意し、日本語版を正本、英語版を翻訳とします。開発・設計・ビルド・テスト・CI・配布手順と検証記録は日本語のみです。記述に差がある場合は日本語版に従ってください。設定キー、画面名、コマンドは実装上の表記を使います。
+利用者向けの文書には日本語版と英語版があります。日本語版を正本とし、英語版はその翻訳です。内容が異なる場合は日本語版に従ってください。画面名、設定キー、コマンドは、どちらの言語でも製品の表記に合わせています。
+
+開発・設計・ビルド・テスト・CI・配布の手順と検証記録は、日本語のみで提供します。
 
 | 目的 | 参照先 |
 | --- | --- |
@@ -43,7 +47,9 @@ DivergenceSplitterは、映像を解析してLiveSplitを自動操作するWindo
 
 ## 開発
 
-リポジトリ直下がCMakeプロジェクトです。`src/` は実装、`include/` はターゲット間の共有インターフェース、`tests/` は検証、`docs/` は文書、`tools/` はビルド・配布補助を置きます。[開発ガイド](docs/development/README.md)にビルド、CTest、Bridge TestHost結合試験、NDI、Windows ZIPの生成・検証をまとめています。ビルド・配布の補助スクリプトにはPythonを使用します。
+アプリはC++23とQt Widgetsで実装しています。CMakeの設定はリポジトリ直下にあります。実装は `src/`、複数のターゲットで共有するヘッダーは `include/`、テストは `tests/`、文書は `docs/` に置きます。`tools/` にはPythonで書いたビルド・配布用の補助スクリプトがあります。
+
+ビルド、CTest、Bridge TestHostとの結合テスト、NDI、Windows ZIPの作成と検証は、[開発ガイド](docs/development/README.md)を参照してください。
 
 ## ライセンス
 
