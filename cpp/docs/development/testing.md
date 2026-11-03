@@ -21,7 +21,7 @@ ctest --preset full -R 'Conditions|ScenarioLoader|ScenarioRuntime' --output-on-f
 | --- | --- |
 | Detector | [detector_tests.cpp](../../tests/detector_tests.cpp)：計算式、alphaマスク、寸法・チャンネル制約、hash、histogram、相関。 |
 | Condition | [condition_tests.cpp](../../tests/condition_tests.cpp)：短絡順序、edge履歴、elapsedの開始、Holdの連続成立、Once／Nth、Thenの進行・リセット。 |
-| YAML | [scenario_loader_tests.cpp](../../tests/scenario_loader_tests.cpp)：スキーマエラー、入れ子の条件、パス、ROI、参照変換。 |
+| YAML | [scenario_loader_tests.cpp](../../tests/scenario_loader_tests.cpp)：スキーマエラー、アンカー・単一／複数マージと優先順位、循環参照、null・数値境界、UTF-8パス、ROI、参照変換。UIテストでは不正YAMLからの復帰も確認します。 |
 | Profile | [profile_tests.cpp](../../tests/profile_tests.cpp)：JSON項目、入力型、設定、保存形式。 |
 | Capture | [camera_tests.cpp](../../tests/camera_tests.cpp)、[normalizer_tests.cpp](../../tests/normalizer_tests.cpp)、[ndi_tests.cpp](../../tests/ndi_tests.cpp)：機器の特定、画像変換、fake NDIの寿命・形式・タイムアウト・復帰。 |
 | キャッシュ・Runtime | [frame_cache_tests.cpp](../../tests/frame_cache_tests.cpp)、[scenario_runtime_tests.cpp](../../tests/scenario_runtime_tests.cpp)、[instance_runtime_tests.cpp](../../tests/instance_runtime_tests.cpp)：共有評価、Phase選択、リセット、fake Bridge送信、反応時間中の自動・手動Reset、通常ActionとResetの別々の確定待ち、遅延イベント、入力停止中の期限切れ、Reset拒否後のQuery、再接続・結果不明時の処理。 |

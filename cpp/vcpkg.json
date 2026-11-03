@@ -23,7 +23,7 @@
         "webp"
       ]
     },
-    "yaml-cpp"
+    "ryml"
   ],
   "features": {
     "ui": {

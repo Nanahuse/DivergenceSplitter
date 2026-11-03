@@ -66,7 +66,7 @@ endif()
 
 include(FetchContent)
 find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs videoio)
-find_package(yaml-cpp CONFIG REQUIRED)
+find_package(ryml CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -112,7 +112,7 @@ target_link_libraries(divergencesplitter_core
         opencv_imgproc
         opencv_imgcodecs
         opencv_videoio
-        yaml-cpp::yaml-cpp
+        ryml::ryml
         nlohmann_json::nlohmann_json
         Threads::Threads
 )

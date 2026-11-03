@@ -20,7 +20,7 @@ For Windows x64 builds, install:
 
 The manifest [`vcpkg.json`](../../vcpkg.json) pins a builtin baseline and supplies
 OpenCV 4 (Core, Imgproc, Imgcodecs, Videoio and selected codec/camera features),
-yaml-cpp, nlohmann/json, and Boost.Asio/Beast. Its `tests` feature adds GoogleTest;
+rapidyaml (ryml, with c4core), nlohmann/json, and Boost.Asio/Beast. Its `tests` feature adds GoogleTest;
 `ui` adds Qt 6 qtbase. No opencv_contrib dependency is needed for hash detectors.
 
 ## Configure, build, run

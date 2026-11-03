@@ -2,12 +2,14 @@
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <ryml/ryml.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <string>
 
 #include "divergencesplitter/scenario/scenario.hpp"
+#include "divergencesplitter/condition/conditions.hpp"
 #include "divergencesplitter/runtime/session.hpp"
 #include "divergencesplitter/runtime/scenario_runtime.hpp"
 #include "test_support.hpp"
@@ -56,7 +58,266 @@ std::filesystem::path write_reference(const std::filesystem::path& directory) {
     return path;
 }
 
+void expect_load_error(const std::filesystem::path& path, ScenarioErrorKind kind) {
+    try {
+        (void)load_scenario(path);
+        FAIL() << "expected ScenarioLoadError";
+    } catch (const ScenarioLoadError& error) {
+        EXPECT_EQ(error.kind(), kind) << error.what();
+    }
+}
+
 }  // namespace
+
+TEST(ScenarioLoader, ResolvesNestedMergesAndExplicitOverrides) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    write_text(path, R"(
+definitions:
+  detected: &detected
+    type: detected
+    minimum_score: 0.9
+    detector: &detector {type: mean_brightness}
+  nested: &nested
+    <<: *detected
+    minimum_score: 0.8
+start_condition:
+  <<: *nested
+  minimum_score: 0.95
+reset_condition: *detected
+splits:
+  - rules:
+      - condition:
+          <<: *nested
+          minimum_score: 0.7
+        action: split
+)");
+    const auto loaded = load_scenario(path);
+    const auto check = [](const Condition* condition, double score) {
+        const auto* detected = dynamic_cast<const DetectedCondition*>(condition);
+        ASSERT_NE(detected, nullptr);
+        EXPECT_DOUBLE_EQ(detected->minimum_score(), score);
+        ASSERT_NE(detected->detector(), nullptr);
+        EXPECT_EQ(detected->detector()->type_name(), "mean_brightness");
+    };
+    check(loaded.scenario.start_condition.get(), 0.95);
+    check(loaded.scenario.reset_condition.get(), 0.9);
+    check(loaded.scenario.splits[0]->at(0)->active_condition(), 0.7);
+}
+
+TEST(ScenarioLoader, MergePriorityMatchesRapidyamlSourceOrder) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    const std::string definitions = R"(
+a: &a {type: detected, minimum_score: 0.2, detector: {type: mean_brightness}}
+b: &b {minimum_score: 0.8, detector: {type: mean_brightness}}
+combined: &combined {<<: [*a, *b]}
+splits: []
+start_condition:
+)";
+    for (const auto& [mapping, score] : std::vector<std::pair<std::string, double>>{
+        {"  <<: [*a, *b]\n", 0.8},
+        {"  <<: [*b, *a]\n", 0.2},
+        {"  <<: *a\n  minimum_score: 0.5\n", 0.5},
+        {"  <<: *combined\n  minimum_score: 0.95\n", 0.95},
+        {"  minimum_score: 0.5\n  <<: *a\n", 0.2},
+        {"  <<: [*a, *b]\n  minimum_score: 0.5\n", 0.8},
+        {"  minimum_score: 0.5\n  <<: [*a, *b]\n", 0.8},
+    }) {
+        SCOPED_TRACE(mapping);
+        write_text(path, definitions + mapping);
+        const auto loaded = load_scenario(path);
+        const auto* detected = dynamic_cast<const DetectedCondition*>(loaded.scenario.start_condition.get());
+        ASSERT_NE(detected, nullptr);
+        EXPECT_DOUBLE_EQ(detected->minimum_score(), score);
+    }
+}
+
+TEST(ScenarioLoader, AliasesAndMergesBuildIndependentConditionState) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    write_text(path, R"(
+definitions:
+  once: &once {type: once, condition: {type: elapsed, duration: 1s}}
+start_condition: *once
+reset_condition: {<<: *once}
+splits:
+  - rules:
+      - {condition: *once, action: split}
+)");
+    const auto loaded = load_scenario(path);
+    auto& start = loaded.scenario.start_condition;
+    auto& reset = loaded.scenario.reset_condition;
+    EXPECT_NE(start.get(), reset.get());
+    EXPECT_NE(start->children()[0], reset->children()[0]);
+    test::ManualTimeProvider clock;
+    auto context = test::make_context(cv::Mat::zeros(2, 2, CV_8UC3), clock);
+    EXPECT_EQ(start->evaluate(context), false);
+    clock.advance(std::chrono::seconds{1});
+    context = test::make_context(cv::Mat::zeros(2, 2, CV_8UC3), clock);
+    EXPECT_EQ(start->evaluate(context), true);
+    EXPECT_EQ(reset->evaluate(context), false);
+    clock.advance(std::chrono::seconds{1});
+    context = test::make_context(cv::Mat::zeros(2, 2, CV_8UC3), clock);
+    EXPECT_EQ(reset->evaluate(context), true);
+    EXPECT_EQ(loaded.scenario.splits[0]->at(0)->active_condition()->type_name(), "once");
+}
+
+TEST(ScenarioLoader, InvalidYamlAndReferencesThrowWithoutChangingGlobalCallbacks) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    const auto callbacks = ryml::get_callbacks();
+    for (const auto* source : {
+        "start_condition: [broken\n",
+        "start_condition: *missing\nsplits: []\n",
+        "a: &a {type: not, condition: *a}\nstart_condition: *a\nsplits: []\n",
+        "a: &a [*a]\nstart_condition: *a\nsplits: []\n",
+        "a: &a {nested: &b {nested: *a}}\nstart_condition: *b\nsplits: []\n",
+        "a: &a {<<: *a}\nstart_condition: *a\nsplits: []\n",
+        "a: &a scalar\nstart_condition: {<<: *a}\nsplits: []\n",
+        "a: &a [1, 2]\nstart_condition: {<<: [*a]}\nsplits: []\n",
+        "start_condition: {<<: [not_an_alias]}\nsplits: []\n",
+        "start_condition: {<<: [{type: elapsed}]}\nsplits: []\n",
+    }) {
+        SCOPED_TRACE(source);
+        write_text(path, source);
+        expect_load_error(path, ScenarioErrorKind::yaml);
+        EXPECT_EQ(ryml::get_callbacks(), callbacks);
+        write_text(path, "start_condition: {type: elapsed, duration: 0s}\nsplits: []\n");
+        EXPECT_NO_THROW((void)load_scenario(path));
+    }
+}
+
+TEST(ScenarioLoader, RejectsInvalidSchemaAfterMerging) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    for (const auto* mapping : {
+        "{type: elapsed, duration: 1s, mystery: 1}",
+        "{type: detected, minimum_score: 0.5}",
+        "{type: elapsed, duration: null}",
+        "{type: elapsed, duration: 1s, duration: 2s}",
+    }) {
+        SCOPED_TRACE(mapping);
+        write_text(path, std::string{"base: &base "} + mapping
+            + "\nstart_condition: {<<: *base}\nsplits: []\n");
+        expect_load_error(path, ScenarioErrorKind::schema);
+    }
+}
+
+TEST(ScenarioLoader, PreservesNullAndQuotedStringDistinctions) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    const std::string prefix = "start_condition: {type: elapsed, duration: 0s}\nsplits: [null, ~, ]\n";
+    for (const auto* value : {"null", "Null", "NULL", "~", "", "!!null null"}) {
+        SCOPED_TRACE(value);
+        write_text(path, prefix + "reset_condition: " + value + "\nincomplete_condition: " + value + "\n");
+        const auto loaded = load_scenario(path);
+        EXPECT_FALSE(loaded.scenario.reset_condition);
+        EXPECT_FALSE(loaded.scenario.incomplete_condition);
+        EXPECT_EQ(loaded.scenario.splits.size(), 2U);
+    }
+    for (const auto* value : {"\"null\"", "'~'", "\"\"", "!!str null", "{}", "[]"}) {
+        SCOPED_TRACE(value);
+        write_text(path, prefix + "reset_condition: " + value + "\n");
+        expect_load_error(path, ScenarioErrorKind::schema);
+    }
+    write_text(path, prefix);
+    EXPECT_NO_THROW((void)load_scenario(path));
+}
+
+TEST(ScenarioLoader, RejectsInvalidNumericAndDurationScalars) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    for (const auto* value : {"null", "~", "''", "true", "0.5garbage", "1e999", ".nan", ".inf", "[1]"}) {
+        SCOPED_TRACE(value);
+        write_text(path, std::string{"start_condition: {type: detected, detector: {type: mean_brightness}, minimum_score: "}
+            + value + "}\nsplits: []\n");
+        expect_load_error(path, ScenarioErrorKind::schema);
+    }
+    for (const auto* value : {"2147483648", "-2147483649", "1.5", "2x", "null", "[]"}) {
+        SCOPED_TRACE(value);
+        write_text(path, std::string{"start_condition: {type: nth, condition: {type: elapsed, duration: 0s}, count: "}
+            + value + "}\nsplits: []\n");
+        expect_load_error(path, ScenarioErrorKind::schema);
+    }
+    for (const auto* value : {"null", "''", "1", "-1s", "1e3s", "9223372037s", "99999999999999999999999999999999999999999999999999999999s"}) {
+        SCOPED_TRACE(value);
+        write_text(path, std::string{"start_condition: {type: elapsed, duration: "} + value + "}\nsplits: []\n");
+        expect_load_error(path, ScenarioErrorKind::schema);
+    }
+}
+
+TEST(ScenarioLoader, AcceptsExistingNumericFormatsAndFoldedStrings) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.YML";
+    for (const auto* count : {"+2", "02", "0x2", "'2 '"}) {
+        SCOPED_TRACE(count);
+        write_text(path, std::string{"start_condition:\n  type: nth\n  count: "} + count
+            + "\n  condition:\n    type: elapsed\n    duration: >-\n      0.5s\nsplits: []\n");
+        EXPECT_NO_THROW((void)load_scenario(path));
+    }
+}
+
+TEST(ScenarioLoader, RejectsMissingFieldsAndDuplicateKeys) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    for (const auto* source : {
+        "", "null", "[]", "splits: []", "start_condition: {type: elapsed, duration: 0s}",
+        "start_condition: {duration: 0s}\nsplits: []",
+        "start_condition: {type: elapsed, type: elapsed, duration: 0s}\nsplits: []",
+        "start_condition: {type: elapsed, duration: 0s}\nsplits: []\nsplits: []",
+    }) {
+        SCOPED_TRACE(source);
+        write_text(path, source);
+        expect_load_error(path, ScenarioErrorKind::schema);
+    }
+    expect_load_error(directory.path() / "missing.yaml", ScenarioErrorKind::io);
+}
+
+TEST(ScenarioLoader, PreservesUtf8AndQuotedReferencePaths) {
+    TemporaryDirectory directory;
+    std::filesystem::create_directory(directory.path() / "images");
+    const auto image_path = directory.path() / "images" / std::filesystem::u8path("参照画像.png");
+    std::vector<unsigned char> bytes;
+    ASSERT_TRUE(cv::imencode(".png", cv::Mat(8, 8, CV_8UC3, cv::Scalar{40, 80, 120}), bytes));
+    {
+        std::ofstream image{image_path, std::ios::binary};
+        image.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+    const auto path = directory.path() / "scenario.yaml";
+    for (const auto* reference : {
+        "'images/参照画像.png'",
+#ifdef _WIN32
+        "'images\\参照画像.png'",
+#endif
+    }) {
+        SCOPED_TRACE(reference);
+        write_text(path, std::string{"# UTF-8のコメント\nstart_condition:\n  type: detected\n  minimum_score: 0.5\n"
+            "  detector:\n    type: mean_absolute_similarity\n    reference: "} + reference + "\nsplits: []\n");
+        const auto loaded = load_scenario(path);
+        const auto image = loaded.scenario.start_condition->detector()->reference_images()[0].image;
+        EXPECT_EQ(image.size(), cv::Size(8, 8));
+        EXPECT_EQ(image.at<cv::Vec3b>(0, 0), cv::Vec3b(40, 80, 120));
+    }
+}
+
+TEST(ScenarioLoader, LoadsFirstDocumentWithAnchorsAndAllowsAnchorRedefinition) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    write_text(path, R"(
+---
+first: &condition {type: elapsed, duration: 0s}
+start_condition: *condition
+second: &condition {type: once, condition: {type: elapsed, duration: 0s}}
+reset_condition: *condition
+splits: []
+---
+ignored: &condition {type: unknown}
+)");
+    const auto loaded = load_scenario(path);
+    EXPECT_EQ(loaded.scenario.start_condition->type_name(), "elapsed");
+    EXPECT_EQ(loaded.scenario.reset_condition->type_name(), "once");
+}
 
 TEST(ScenarioLoader, LoadsNestedScenario) {
     TemporaryDirectory directory;

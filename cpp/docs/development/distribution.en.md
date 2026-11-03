@@ -63,7 +63,7 @@ real TestHost integration, packages the ZIP, and verifies the extracted result.
 
 Application source is [MIT](../../LICENSE). The package's
 [`DISTRIBUTION-NOTICE.txt`](../../DISTRIBUTION-NOTICE.txt) identifies bundled/linked
-dependencies, including Qt, OpenCV, Boost, yaml-cpp, nlohmann/json, the Bridge
+dependencies, including Qt, OpenCV, Boost, rapidyaml (ryml), c4core, nlohmann/json, the Bridge
 client, and the camera-enumeration adaptation. Their licenses remain separate.
 
 At install/package time,
@@ -74,7 +74,9 @@ upstream commits using
 [`third-party-license-lock.json`](../../tools/third-party-license-lock.json).
 Downloaded texts remain in the ignored build cache. Missing notices, unsupported
 external Qt versions, or changed pinned contents fail packaging. Transitive
-dependency notices are included under `licenses/vcpkg/`.
+dependency notices are included under `licenses/vcpkg/`. Both
+`licenses/ryml.txt` and `licenses/c4core.txt` are required and checked by the ZIP
+verifier.
 
 Do not replace license bodies with short summaries. When updating dependencies,
 verify the collected package notices as well as the build. The distribution's

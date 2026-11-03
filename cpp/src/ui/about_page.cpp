@@ -23,7 +23,7 @@ AboutPage::AboutPage(QWidget* parent) : QWidget(parent) {
         "<li>Qt Widgets interface</li>"
         "<li>OpenCV image processing</li>"
         "<li>livesplit-bridge-client-cpp (LiveSplit.Bridge JSON protocol)</li>"
-        "<li>yaml-cpp scenario loading</li>"
+        "<li>rapidyaml (ryml) scenario loading</li>"
         "</ul>"
         "<h3>NDI®</h3>"
         "<p><a href=\"https://ndi.video/\">NDI — ndi.video</a>. %2</p>"

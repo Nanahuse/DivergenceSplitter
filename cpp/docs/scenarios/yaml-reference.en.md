@@ -186,11 +186,12 @@ Use forward slashes on Windows (`images/title.png`, `C:/game/title.png`). If usi
 backslashes, YAML single quotes keep them literal. Reference images are decoded
 with their original channels/depth; see [image constraints](detectors.en.md#reference-images-and-channels).
 
-## YAML anchors and aliases
+## YAML anchors, aliases, and merges
 
-Anchors (`&name`) and aliases (`*name`) are YAML features provided by yaml-cpp,
-not a DivergenceSplitter reference registry. Store reusable definitions at the
-root and alias complete condition/detector mappings:
+Anchors (`&name`) and aliases (`*name`) are YAML features provided by rapidyaml
+(ryml). Alias complete condition/detector mappings, using definitions at the
+root or nested elsewhere. An alias refers to the most recent preceding anchor
+with that name:
 
 ```yaml
 bright: &bright
@@ -206,8 +207,57 @@ splits:
         action: split
 ```
 
-The unused `bright` root key only holds the anchor definition. Aliases are parsed
-into independent runtime objects at their use sites. YAML merge keys (`<<`) are
-not expanded by the application; in checked mappings they are unknown fields.
-Alias a complete mapping rather than relying on merge-key inheritance. Avoid
-cyclic aliases; the loader has no supported recursive-definition mechanism.
+The unused `bright` root key only holds the anchor definition. Each use creates
+independent runtime objects, so stateful conditions such as `once` do not share state.
+
+Use `<<: *name` to merge a mapping and then override individual fields. Nested
+merges are supported:
+
+```yaml
+definitions:
+  detected: &detected
+    type: detected
+    minimum_score: 0.9
+    detector: {type: mean_brightness}
+
+start_condition:
+  <<: *detected
+  minimum_score: 0.95
+
+splits:
+  - rules:
+      - condition:
+          <<: *detected
+          minimum_score: 0.8
+        action: split
+```
+
+Precedence follows rapidyaml 0.16.0's standard behavior. For a single merge,
+always write explicit overrides **after** `<<`; fields written before it can be
+replaced by the merge source. With `<<: [*a, *b]`, the **later `b` wins** on
+duplicate keys. With multiple merges, even explicit fields after `<<` can be
+overwritten by a later merge source. This differs from the YAML 1.1 merge
+definition, where explicit fields always win and earlier list entries have priority.
+
+To reliably override the result of multiple merges, give the combined mapping
+its own anchor, then use a single merge:
+
+```yaml
+a: &a {type: detected, minimum_score: 0.2}
+b: &b {minimum_score: 0.8, detector: {type: mean_brightness}}
+combined: &combined {<<: [*a, *b]}
+start_condition:
+  <<: *combined
+  minimum_score: 0.95
+splits: []
+```
+
+Merging operates on mapping entries; to customize a nested detector, also use
+`<<` inside that detector mapping.
+
+Merge keys are an extension supported by rapidyaml, rather than part of YAML
+1.2's core specification. The loader expands aliases and merges with
+`Tree::resolve()` before validating required/unknown fields, types, and values.
+Duplicate keys in the source YAML are rejected. Missing anchors, cyclic aliases,
+and merges referring to non-mappings produce YAML errors. Invalid resolved
+scenario fields produce schema errors. Neither error terminates the application.

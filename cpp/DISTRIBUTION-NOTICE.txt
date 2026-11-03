@@ -14,7 +14,9 @@ notices are included under licenses/vcpkg/.
 - OpenCV 4 - Apache-2.0. See licenses/opencv.txt.
 - Boost (Asio, Beast and dependencies) - Boost Software License 1.0.
   See licenses/boost.txt.
-- yaml-cpp - MIT. See licenses/yaml-cpp.txt.
+- rapidyaml (ryml) - MIT. See licenses/ryml.txt.
+- c4core - MIT, BSD-2-Clause and Boost Software License 1.0.
+  See licenses/c4core.txt.
 - nlohmann/json - MIT. See licenses/nlohmann-json.txt.
 - livesplit-bridge-client-cpp - MIT. See
   licenses/livesplit-bridge-client-cpp.txt.

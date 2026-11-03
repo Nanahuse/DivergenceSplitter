@@ -14,7 +14,7 @@ Windows x64向けに次を用意してください。
 - ビルド・配布用ヘルパー向けのPython 3.10以上。coreだけでもCMakeが必要とします。必要なら `-DPython3_EXECUTABLE=C:/tools/python/python.exe` で指定してください。
 - 初回の依存関係・Bridge取得に使うGitとネットワーク接続。
 
-[vcpkg.json](../../vcpkg.json) でbuiltin baselineを固定し、OpenCV 4のCore・Imgproc・Imgcodecs・Videoioと選択した画像・カメラ機能、yaml-cpp、nlohmann/json、Boost.Asio／Beastを取得します。`tests` featureはGoogleTest、`ui` はQt 6 qtbaseを追加します。hash Detectorにopencv_contribは不要です。
+[vcpkg.json](../../vcpkg.json) でbuiltin baselineを固定し、OpenCV 4のCore・Imgproc・Imgcodecs・Videoioと選択した画像・カメラ機能、rapidyaml（ryml）とその依存のc4core、nlohmann/json、Boost.Asio／Beastを取得します。`tests` featureはGoogleTest、`ui` はQt 6 qtbaseを追加します。hash Detectorにopencv_contribは不要です。
 
 ## 設定・ビルド・起動
 
