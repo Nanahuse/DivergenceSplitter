@@ -17,9 +17,6 @@ jobs:
         ndi: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["OFF","ON"]' || '["OFF"]') }}
     permissions:
       contents: read
-    defaults:
-      run:
-        working-directory: cpp
     env:
       VCPKG_ROOT: C:\vcpkg
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
@@ -62,7 +59,7 @@ jobs:
           path: |
             C:\vcpkg\downloads
             C:\vcpkg-cache
-          key: cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('cpp/vcpkg.json') }}
+          key: cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             cpp23-vcpkg-${{ runner.os }}-
 
@@ -94,7 +91,7 @@ jobs:
 
       - name: TestHost integration
         working-directory: ${{ github.workspace }}
-        run: python cpp/tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe cpp/build/ci/divergencesplitter_testhost_tests.exe --port 54000
+        run: python tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/ci/divergencesplitter_testhost_tests.exe --port 54000
       - name: Package ZIP
         run: cmake --build --preset ci --target package
 
@@ -106,7 +103,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: DivergenceSplitter-cpp23-windows-x64
-          path: cpp/build/ci/*.zip
+          path: build/ci/*.zip
           if-no-files-found: error
 
       - name: Upload test results
@@ -114,5 +111,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cpp23-tests-ndi-${{ matrix.ndi }}
-          path: cpp/build/ci/ctest-results.xml
+          path: build/ci/ctest-results.xml
           if-no-files-found: warn
