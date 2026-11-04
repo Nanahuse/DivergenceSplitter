@@ -351,10 +351,15 @@ QFrame#scenarioCard {
 QFrame#scenarioCard:hover {
     border-color: %11;
 }
-QFrame#dividerLine {
+QFrame#dividerHorizontal {
     background-color: %6;
     border: 0px;
     max-height: 1px;
+}
+QFrame#dividerVertical {
+    background-color: %6;
+    border: 0px;
+    max-width: 1px;
 }
 QLabel#stateReady { color: %15; font-weight: 600; }
 QLabel#stateConnecting { color: %16; font-weight: 600; }

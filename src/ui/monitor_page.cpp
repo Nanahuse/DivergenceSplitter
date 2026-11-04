@@ -389,7 +389,7 @@ public:
         layout->addWidget(evaluation_body_);
 
         auto* divider = new QFrame(this);
-        divider->setObjectName(QStringLiteral("dividerLine"));
+        divider->setObjectName(QStringLiteral("dividerHorizontal"));
         divider->setFrameShape(QFrame::HLine);
         divider->setFixedHeight(1);
         layout->addWidget(divider);

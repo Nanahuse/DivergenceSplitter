@@ -155,6 +155,7 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     auto* video_page = new QWidget(source_stack_);
     auto* video_layout = new QHBoxLayout(video_page);
     video_path_ = new QLineEdit(video_page);
+    video_path_->setObjectName(QStringLiteral("videoPath"));
     auto* video_browse = new QPushButton(tr("Browse..."), video_page);
     video_layout->addWidget(video_path_, 1);
     video_layout->addWidget(video_browse);
@@ -301,6 +302,7 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     auto* instances_group = new QGroupBox(tr("LiveSplit Instances"), scenarios_tab);
     auto* instances_layout = new QVBoxLayout(instances_group);
     instance_table_ = new QTableWidget(instances_group);
+    instance_table_->setObjectName(QStringLiteral("instanceTable"));
     instance_table_->setColumnCount(2);
     instance_table_->setHorizontalHeaderLabels({tr("Bridge port"), tr("Scenario YAML")});
     instance_table_->horizontalHeader()->setStretchLastSection(true);
@@ -564,7 +566,6 @@ void ProfilePage::apply() {
     }
     status_label_->setText(tr("Profile applied."));
     emit profileApplied();
-    emit statusMessage(tr("Profile applied."));
 }
 
 void ProfilePage::add_instance() {

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QString>
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 
 #include "divergencesplitter/configuration/configuration.hpp"
@@ -29,7 +31,20 @@ class MainWindow final : public QMainWindow {
     Q_OBJECT
 
 public:
-    explicit MainWindow(AppController* controller, QWidget* parent = nullptr);
+    struct FileDialogHooks {
+        std::function<QString(const QString& title, const QString& initial, const QString& filter)>
+            open_file;
+        std::function<QString(const QString& title, const QString& initial, const QString& filter)>
+            save_file;
+        std::function<bool(const QString& title, const QString& message)> confirm_discard;
+        std::function<void(const QString& title, const QString& message)> show_error;
+    };
+
+    explicit MainWindow(
+        AppController* controller,
+        QWidget* parent = nullptr,
+        FileDialogHooks dialogs = {}
+    );
     ~MainWindow() override;
 
 protected:
@@ -47,8 +62,11 @@ private:
     void refresh_diagnostics();
     void update_profile_header();
     void notify(const QString& message, bool error = false);
+    [[nodiscard]] bool has_unsaved_changes() const;
+    [[nodiscard]] bool confirm_discard(const QString& title);
 
     AppController* controller_;
+    FileDialogHooks dialogs_;
     NavigationBar* navigation_;
     ProfileHeader* profile_header_;
     QStackedWidget* pages_;
@@ -63,7 +81,7 @@ private:
     QTimer* diagnostics_timer_;
     QTimer* header_timer_;
     std::optional<std::filesystem::path> profile_path_;
-    Profile baseline_profile_;
+    std::optional<Profile> saved_profile_;
 };
 
 }  // namespace divergencesplitter::ui

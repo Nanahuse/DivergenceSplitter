@@ -13,6 +13,7 @@
 #include <QVBoxLayout>
 
 #include <filesystem>
+#include <utility>
 
 #include "about_page.hpp"
 #include "app_controller.hpp"
@@ -39,9 +40,37 @@ QString display_path(const std::optional<std::filesystem::path>& path) {
 
 }  // namespace
 
-MainWindow::MainWindow(AppController* controller, QWidget* parent)
-    : QMainWindow(parent), controller_(controller),
-      baseline_profile_(controller->profile()) {
+MainWindow::MainWindow(AppController* controller, QWidget* parent, FileDialogHooks dialogs)
+    : QMainWindow(parent), controller_(controller), dialogs_(std::move(dialogs)) {
+    if (!dialogs_.open_file) {
+        dialogs_.open_file = [this](
+                                 const QString& title,
+                                 const QString& initial,
+                                 const QString& filter
+                             ) {
+            return QFileDialog::getOpenFileName(this, title, initial, filter);
+        };
+    }
+    if (!dialogs_.save_file) {
+        dialogs_.save_file = [this](
+                                 const QString& title,
+                                 const QString& initial,
+                                 const QString& filter
+                             ) {
+            return QFileDialog::getSaveFileName(this, title, initial, filter);
+        };
+    }
+    if (!dialogs_.confirm_discard) {
+        dialogs_.confirm_discard = [this](const QString& title, const QString& message) {
+            return QMessageBox::question(this, title, message) == QMessageBox::Yes;
+        };
+    }
+    if (!dialogs_.show_error) {
+        dialogs_.show_error = [this](const QString& title, const QString& message) {
+            QMessageBox::critical(this, title, message);
+        };
+    }
+
     setWindowTitle(tr("DivergenceSplitter"));
     resize(1200, 900);
     setMinimumSize(900, 600);
@@ -56,7 +85,7 @@ MainWindow::MainWindow(AppController* controller, QWidget* parent)
     root->addWidget(navigation_);
 
     auto* divider = new QFrame(central_);
-    divider->setObjectName(QStringLiteral("dividerLine"));
+    divider->setObjectName(QStringLiteral("dividerVertical"));
     divider->setFrameShape(QFrame::VLine);
     divider->setFixedWidth(1);
     root->addWidget(divider);
@@ -71,7 +100,7 @@ MainWindow::MainWindow(AppController* controller, QWidget* parent)
     content_layout->addWidget(profile_header_);
 
     auto* header_divider = new QFrame(content);
-    header_divider->setObjectName(QStringLiteral("dividerLine"));
+    header_divider->setObjectName(QStringLiteral("dividerHorizontal"));
     header_divider->setFrameShape(QFrame::HLine);
     header_divider->setFixedHeight(1);
     content_layout->addWidget(header_divider);
@@ -119,14 +148,10 @@ MainWindow::MainWindow(AppController* controller, QWidget* parent)
         notify(tr("Manual reset requested for all scenarios."));
     });
     connect(profile_, &ProfilePage::profileApplied, this, [this]() {
-        baseline_profile_ = profile_->draft_profile();
         refresh_diagnostics();
         refresh_monitor();
         update_profile_header();
         notify(tr("Profile applied."));
-    });
-    connect(profile_, &ProfilePage::statusMessage, this, [this](const QString& message) {
-        notify(message);
     });
     connect(settings_, &SettingsPage::settingsSaved, this, [this](const QString& theme) {
         apply_theme(theme);
@@ -149,7 +174,7 @@ MainWindow::MainWindow(AppController* controller, QWidget* parent)
     header_timer_->start();
 
     profile_path_ = controller_->profile_path();
-    baseline_profile_ = profile_->draft_profile();
+    saved_profile_ = profile_->draft_profile();
     apply_theme(QString::fromStdString(controller_->settings().theme));
     refresh_monitor();
     refresh_diagnostics();
@@ -201,8 +226,18 @@ void MainWindow::refresh_diagnostics() {
     }
 }
 
+bool MainWindow::has_unsaved_changes() const {
+    return !saved_profile_.has_value() ||
+           !profiles_equal(profile_->draft_profile(), *saved_profile_);
+}
+
+bool MainWindow::confirm_discard(const QString& title) {
+    return !has_unsaved_changes() ||
+           dialogs_.confirm_discard(title, tr("Discard the unsaved Profile changes?"));
+}
+
 void MainWindow::update_profile_header() {
-    const bool dirty = !profiles_equal(profile_->draft_profile(), baseline_profile_);
+    const bool dirty = has_unsaved_changes();
     profile_header_->sync(display_path(profile_path_), dirty, true, true);
 }
 
@@ -216,14 +251,10 @@ void MainWindow::notify(const QString& message, bool error) {
 }
 
 void MainWindow::new_profile() {
-    const bool dirty = !profiles_equal(profile_->draft_profile(), baseline_profile_);
-    if (dirty && QMessageBox::question(
-                     this, tr("New Profile"), tr("Discard the unsaved Profile changes?")
-                 ) != QMessageBox::Yes) {
+    if (!confirm_discard(tr("New Profile"))) {
         return;
     }
-    const QString path = QFileDialog::getSaveFileName(
-        this,
+    const QString path = dialogs_.save_file(
         tr("New Profile"),
         QStringLiteral("profile.json"),
         tr("Profile JSON (*.json)")
@@ -234,20 +265,16 @@ void MainWindow::new_profile() {
     Profile profile;
     profile_->load_draft(profile);
     profile_path_ = std::filesystem::path{path.toStdWString()};
-    baseline_profile_ = profile_->draft_profile();
+    saved_profile_.reset();
     update_profile_header();
     notify(tr("New profile; save to apply it."));
 }
 
 void MainWindow::open_profile() {
-    const bool dirty = !profiles_equal(profile_->draft_profile(), baseline_profile_);
-    if (dirty && QMessageBox::question(
-                     this, tr("Open Profile"), tr("Discard the unsaved Profile changes?")
-                 ) != QMessageBox::Yes) {
+    if (!confirm_discard(tr("Open Profile"))) {
         return;
     }
-    const QString path = QFileDialog::getOpenFileName(
-        this,
+    const QString path = dialogs_.open_file(
         tr("Open Profile"),
         {},
         tr("Profile JSON (*.json);;All files (*.*)")
@@ -258,14 +285,14 @@ void MainWindow::open_profile() {
     QString error;
     if (!controller_->open_profile(std::filesystem::path{path.toStdWString()}, &error)) {
         notify(error, true);
-        QMessageBox::critical(this, tr("Open Profile"), error);
+        dialogs_.show_error(tr("Open Profile"), error);
         return;
     }
     profile_->reload_from_controller();
     settings_->reload_from_controller();
     apply_theme(QString::fromStdString(controller_->settings().theme));
     profile_path_ = controller_->profile_path();
-    baseline_profile_ = profile_->draft_profile();
+    saved_profile_ = profile_->draft_profile();
     update_profile_header();
     refresh_monitor();
     refresh_diagnostics();
@@ -276,11 +303,11 @@ bool MainWindow::save_profile_to(const std::filesystem::path& path) {
     QString error;
     if (!controller_->save_profile_file(path, profile_->draft_profile(), &error)) {
         notify(error, true);
-        QMessageBox::critical(this, tr("Save Profile"), error);
+        dialogs_.show_error(tr("Save Profile"), error);
         return false;
     }
     profile_path_ = controller_->profile_path();
-    baseline_profile_ = profile_->draft_profile();
+    saved_profile_ = profile_->draft_profile();
     update_profile_header();
     notify(tr("Profile saved."));
     return true;
@@ -298,8 +325,7 @@ void MainWindow::save_profile_as() {
     const QString initial = profile_path_.has_value()
         ? QString::fromStdWString(profile_path_->wstring())
         : QStringLiteral("profile.json");
-    const QString path = QFileDialog::getSaveFileName(
-        this,
+    const QString path = dialogs_.save_file(
         tr("Save Profile As"),
         initial,
         tr("Profile JSON (*.json)")

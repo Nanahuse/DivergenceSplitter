@@ -45,7 +45,7 @@ AboutPage::AboutPage(QWidget* parent) : QWidget(parent) {
     layout->addWidget(trademark);
 
     auto* divider = new QFrame(this);
-    divider->setObjectName(QStringLiteral("dividerLine"));
+    divider->setObjectName(QStringLiteral("dividerHorizontal"));
     divider->setFrameShape(QFrame::HLine);
     divider->setFixedHeight(1);
     layout->addWidget(divider);

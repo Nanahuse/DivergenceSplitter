@@ -43,7 +43,6 @@ public:
 
 signals:
     void profileApplied();
-    void statusMessage(const QString& message);
 
 protected:
     void showEvent(QShowEvent* event) override;

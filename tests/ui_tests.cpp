@@ -2,6 +2,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QFile>
 #include <QMessageBox>
 #include <QPushButton>
@@ -544,6 +545,21 @@ private slots:
         QCOMPARE(converted.pixelColor(0, 0), QColor(128, 128, 128));
     }
 
+    void themeSwitchesLightAndDarkPalettes() {
+        theme::apply(*qApp, theme::Mode::light);
+        const QColor light = QApplication::palette().color(QPalette::Window);
+        const QString light_style = qApp->styleSheet();
+        theme::apply(*qApp, theme::Mode::dark);
+        const QColor dark = QApplication::palette().color(QPalette::Window);
+        const QString dark_style = qApp->styleSheet();
+        QVERIFY(light != dark);
+        QVERIFY(dark.lightness() < light.lightness());
+        QVERIFY(!light_style.isEmpty());
+        QVERIFY(light_style != dark_style);
+        QVERIFY(dark_style.contains(QStringLiteral("#111512")));
+        theme::apply(*qApp, theme::Mode::light);
+    }
+
     void profileHeaderSavesDraftToCurrentPath() {
         QTemporaryDir directory;
         const auto profile = make_profile(directory, false);
@@ -557,18 +573,118 @@ private slots:
         auto* header = window.findChild<ProfileHeader*>();
         QVERIFY(header != nullptr);
         auto* dirty = header->findChild<QLabel*>(QStringLiteral("dirtyMarker"));
-        auto* source_type = window.findChild<QComboBox*>(QStringLiteral("sourceType"));
         auto* save = header->findChild<QPushButton*>(QStringLiteral("profileSave"));
+        auto* crop_enabled = window.findChild<QCheckBox*>(QStringLiteral("cropEnabled"));
+        auto* crop_left = window.findChild<QSpinBox*>(QStringLiteral("cropLeft"));
+        auto* profile_page = window.findChild<ProfilePage*>();
         QVERIFY(dirty != nullptr);
-        QVERIFY(source_type != nullptr);
         QVERIFY(save != nullptr);
-        source_type->setCurrentIndex(0);
+        QVERIFY(crop_enabled != nullptr);
+        QVERIFY(crop_left != nullptr);
+        QVERIFY(profile_page != nullptr);
+        crop_enabled->setChecked(true);
+        crop_left->setValue(1);
         QTRY_VERIFY(!dirty->isHidden());
+        auto* apply = button(*profile_page, QStringLiteral("Apply"));
+        QVERIFY(apply != nullptr);
+        QSignalSpy applied(profile_page, &ProfilePage::profileApplied);
+        apply->click();
+        QTRY_COMPARE(applied.count(), 1);
+        QVERIFY(!dirty->isHidden());
         save->click();
         QTRY_VERIFY(dirty->isHidden());
         QFile saved(QString::fromStdWString(path.wstring()));
         QVERIFY(saved.open(QIODevice::ReadOnly));
-        QVERIFY(saved.readAll().contains("\"type\": \"camera\""));
+        const auto contents = saved.readAll();
+        QVERIFY(contents.contains("\"type\": \"video\""));
+        QVERIFY(contents.contains("\"left\": 1"));
+    }
+
+    void profileNewIsDirtyUntilSaved() {
+        QTemporaryDir directory;
+        const auto fixture = make_profile(directory, false);
+        AppController controller;
+        const QString new_path = directory.filePath("new-profile.json");
+        MainWindow::FileDialogHooks dialogs;
+        dialogs.save_file = [&new_path](const QString&, const QString&, const QString&) {
+            return new_path;
+        };
+        dialogs.confirm_discard = [](const QString&, const QString&) { return true; };
+        MainWindow window(&controller, nullptr, dialogs);
+        auto* header = window.findChild<ProfileHeader*>();
+        auto* profile_page = window.findChild<ProfilePage*>();
+        QVERIFY(header != nullptr && profile_page != nullptr);
+        auto* dirty = header->findChild<QLabel*>(QStringLiteral("dirtyMarker"));
+        auto* path = header->findChild<QLineEdit*>(QStringLiteral("profilePath"));
+        auto* create = header->findChild<QPushButton*>(QStringLiteral("profileNew"));
+        auto* save = header->findChild<QPushButton*>(QStringLiteral("profileSave"));
+        QVERIFY(dirty != nullptr && path != nullptr && create != nullptr && save != nullptr);
+        QVERIFY(dirty->isHidden());
+        create->click();
+        QVERIFY(!dirty->isHidden());
+        QCOMPARE(path->text(), new_path);
+        QVERIFY(!QFile::exists(new_path));
+
+        auto* source_type = window.findChild<QComboBox*>(QStringLiteral("sourceType"));
+        auto* video_path = window.findChild<QLineEdit*>(QStringLiteral("videoPath"));
+        auto* instances = window.findChild<QTableWidget*>(QStringLiteral("instanceTable"));
+        QVERIFY(source_type != nullptr && video_path != nullptr && instances != nullptr);
+        source_type->setCurrentIndex(1);
+        video_path->setText(directory.filePath("frame%02d.png"));
+        auto* add = button(*profile_page, QStringLiteral("Add instance"));
+        QVERIFY(add != nullptr);
+        add->click();
+        QCOMPARE(instances->rowCount(), 1);
+        instances->item(0, 0)->setText(QStringLiteral("54000"));
+        instances->item(0, 1)->setText(
+            QString::fromStdString(fixture.instances.front().scenario)
+        );
+
+        auto* apply = button(*profile_page, QStringLiteral("Apply"));
+        QVERIFY(apply != nullptr);
+        QSignalSpy applied(profile_page, &ProfilePage::profileApplied);
+        apply->click();
+        QTRY_COMPARE(applied.count(), 1);
+        QVERIFY(!dirty->isHidden());
+        save->click();
+        QTRY_VERIFY(dirty->isHidden());
+        QVERIFY(QFile::exists(new_path));
+        QVERIFY(controller.profile_path().has_value());
+        QCOMPARE(
+            controller.profile_path()->wstring(),
+            std::filesystem::path{new_path.toStdWString()}.wstring()
+        );
+    }
+
+    void profileSaveFailureKeepsDirtyState() {
+        QTemporaryDir directory;
+        const auto profile = make_profile(directory, false);
+        const auto path = std::filesystem::path{directory.filePath("profile.json").toStdString()};
+        save_profile(path, profile);
+        AppController controller;
+        QString error;
+        QVERIFY2(controller.open_profile(path, &error), qPrintable(error));
+        controller.stop();
+        QString error_message;
+        MainWindow::FileDialogHooks dialogs;
+        dialogs.show_error = [&error_message](const QString&, const QString& message) {
+            error_message = message;
+        };
+        MainWindow window(&controller, nullptr, dialogs);
+        auto* header = window.findChild<ProfileHeader*>();
+        auto* dirty = header->findChild<QLabel*>(QStringLiteral("dirtyMarker"));
+        auto* save = header->findChild<QPushButton*>(QStringLiteral("profileSave"));
+        auto* crop_enabled = window.findChild<QCheckBox*>(QStringLiteral("cropEnabled"));
+        auto* crop_left = window.findChild<QSpinBox*>(QStringLiteral("cropLeft"));
+        QVERIFY(dirty != nullptr && save != nullptr);
+        QVERIFY(crop_enabled != nullptr && crop_left != nullptr);
+        crop_enabled->setChecked(true);
+        crop_left->setValue(1);
+        QTRY_VERIFY(!dirty->isHidden());
+        QVERIFY(QDir(directory.path()).removeRecursively());
+        save->click();
+        QTRY_VERIFY(!error_message.isEmpty());
+        QVERIFY(!dirty->isHidden());
     }
 
     void monitorBuildsScenarioCardsAndKeepsThemAcrossRefresh() {
@@ -637,12 +753,20 @@ private slots:
         QVERIFY(toggle != nullptr);
         toggle->click();
         QCOMPARE(navigation->width(), 180);
+        window.resize(1200, 900);
+        window.show();
+        QTest::qWait(50);
+        auto* vertical_divider = window.findChild<QFrame*>(QStringLiteral("dividerVertical"));
+        auto* horizontal_divider =
+            window.findChild<QFrame*>(QStringLiteral("dividerHorizontal"));
+        QVERIFY(vertical_divider != nullptr && horizontal_divider != nullptr);
+        QCOMPARE(vertical_divider->width(), 1);
+        QVERIFY(vertical_divider->height() > 1);
+        QCOMPARE(horizontal_divider->height(), 1);
         const auto captures = qEnvironmentVariable("DIVERGENCESPLITTER_UI_CAPTURE_DIR");
         if (!captures.isEmpty()) {
             QDir().mkpath(captures);
-            window.resize(1200, 900);
-            window.show();
-            QTest::qWait(200);
+            QTest::qWait(150);
             QVERIFY(window.grab().save(captures + "/main-window-monitor.png"));
         }
         QToolButton* diagnostics = nullptr;
