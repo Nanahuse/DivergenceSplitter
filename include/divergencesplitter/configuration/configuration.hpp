@@ -95,17 +95,23 @@ using SourceConfiguration =
 
 struct ConnectionConfiguration {
     int port{54000};
+
+    friend bool operator==(const ConnectionConfiguration&, const ConnectionConfiguration&) = default;
 };
 
 struct InstanceConfiguration {
     ConnectionConfiguration connection;
     std::string scenario;
+
+    friend bool operator==(const InstanceConfiguration&, const InstanceConfiguration&) = default;
 };
 
 struct Profile {
     int version{2};
     SourceConfiguration source;
     std::vector<InstanceConfiguration> instances;
+
+    friend bool operator==(const Profile&, const Profile&) = default;
 };
 
 struct ProfileLoadResult {

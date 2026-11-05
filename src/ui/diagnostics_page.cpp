@@ -1,7 +1,9 @@
 #include "diagnostics_page.hpp"
 
+#include <QColor>
 #include <QHeaderView>
 #include <QLabel>
+#include <QScrollBar>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -11,6 +13,7 @@
 #include <vector>
 
 #include "app_controller.hpp"
+#include "theme.hpp"
 
 namespace divergencesplitter::ui {
 namespace {
@@ -23,53 +26,70 @@ struct DiagnosticRow {
     QString column1;
     QString column2;
     QString column3;
+    QString column4;
+    QString column5;
+    QColor color;
 };
 
-QString score_text(const std::optional<double>& latest, const std::optional<double>& maximum) {
-    if (!latest.has_value() && !maximum.has_value()) {
-        return {};
-    }
-    QString text = latest.has_value() ? QString::number(*latest, 'f', 4) : QStringLiteral("-");
-    if (maximum.has_value()) {
-        text += QStringLiteral(" (max %1)").arg(*maximum, 0, 'f', 4);
-    }
-    return text;
+QString score_text(const std::optional<double>& value) {
+    return value.has_value() ? QString::number(*value, 'f', 4) : QString{};
 }
 
 QString instance_state_text(InstanceState state) {
     switch (state) {
         case InstanceState::connecting:
-            return QObject::tr("connecting");
+            return QObject::tr("Connecting");
         case InstanceState::ready:
-            return QObject::tr("ready");
+            return QObject::tr("Ready");
         case InstanceState::failed:
-            return QObject::tr("failed");
+            return QObject::tr("Failed");
         case InstanceState::stopped:
-            return QObject::tr("stopped");
+            return QObject::tr("Stopped");
     }
     return {};
 }
 
-QString condition_detail(const ConditionDiagnosticsNode& node) {
-    QString detail = QString::fromStdString(node.description);
-    if (!node.detector_type.empty()) {
-        detail += QStringLiteral(" [%1]").arg(QString::fromStdString(node.detector_type));
+QColor condition_color(const QString& status, const theme::SemanticColors& colors) {
+    if (status == "true") {
+        return colors.ready;
     }
-    if (node.minimum_score.has_value()) {
-        detail += QStringLiteral(" threshold=%1").arg(*node.minimum_score);
+    if (status == "error") {
+        return colors.error;
     }
-    return detail;
+    if (status == "false") {
+        return colors.warning;
+    }
+    return colors.muted;
+}
+
+QColor state_color(InstanceState state, const theme::SemanticColors& colors) {
+    switch (state) {
+        case InstanceState::ready:
+            return colors.ready;
+        case InstanceState::connecting:
+            return colors.connecting;
+        case InstanceState::failed:
+            return colors.failed;
+        case InstanceState::stopped:
+            return colors.stopped;
+    }
+    return colors.muted;
 }
 
 class RowBuilder {
 public:
+    explicit RowBuilder(theme::SemanticColors colors) : colors_(std::move(colors)) {}
+
     void add(
         const QString& key,
         const QString& parent,
         QString column0,
         QString column1 = {},
         QString column2 = {},
-        QString column3 = {}
+        QString column3 = {},
+        QString column4 = {},
+        QString column5 = {},
+        QColor color = {}
     ) {
         rows.push_back(DiagnosticRow{
             key,
@@ -79,6 +99,9 @@ public:
             std::move(column1),
             std::move(column2),
             std::move(column3),
+            std::move(column4),
+            std::move(column5),
+            std::move(color),
         });
     }
 
@@ -88,14 +111,33 @@ public:
         const QString& scenario_prefix
     ) {
         const QString key = scenario_prefix + QString::fromStdString(node.path);
+        const QString status = QString::fromStdString(node.status);
+        const QString type = QString::fromStdString(node.type);
+        const QString description = QString::fromStdString(node.description);
         add(
             key,
             parent,
-            QString::fromStdString(node.type),
-            QString::fromStdString(node.status),
-            score_text(node.latest_score, node.max_score),
-            condition_detail(node)
+            type,
+            status,
+            {},
+            {},
+            {},
+            description == type ? QString{} : description,
+            condition_color(status, colors_)
         );
+        if (!node.detector_type.empty()) {
+            add(
+                key + QStringLiteral("/detector"),
+                key,
+                QString::fromStdString(node.detector_type),
+                status,
+                score_text(node.minimum_score),
+                score_text(node.latest_score),
+                score_text(node.max_score),
+                {},
+                condition_color(status, colors_)
+            );
+        }
         for (const auto& child : node.children) {
             add_condition(key, child, scenario_prefix);
         }
@@ -116,7 +158,7 @@ public:
         const QString active = node.active_rule_index.has_value()
             ? QObject::tr("active step %1").arg(*node.active_rule_index)
             : QString{};
-        add(key, parent, label, {}, {}, active);
+        add(key, parent, label, {}, {}, {}, {}, active);
         if (node.condition.type != "none" && !node.condition.type.empty()) {
             add_condition(key, node.condition, scenario_prefix);
         }
@@ -142,15 +184,17 @@ public:
     }
 
     std::vector<DiagnosticRow> rows;
+    const theme::SemanticColors& colors() const { return colors_; }
 
 private:
+    theme::SemanticColors colors_;
     QHash<QString, int> next_position_;
 };
 
 std::vector<DiagnosticRow> build_rows(
     const std::vector<InstanceDiagnosticsSnapshot>& instances
 ) {
-    RowBuilder builder;
+    RowBuilder builder{theme::colors(theme::current_mode())};
     for (const auto& instance : instances) {
         const QString root = QStringLiteral("s%1").arg(instance.index);
         const QString prefix = root + QLatin1Char('/');
@@ -160,13 +204,29 @@ std::vector<DiagnosticRow> build_rows(
             QObject::tr("Scenario %1").arg(instance.index),
             instance_state_text(instance.state),
             {},
-            QString::fromStdString(instance.error)
+            {},
+            {},
+            QString::fromStdString(instance.error),
+            state_color(instance.state, builder.colors())
+        );
+        builder.add(
+            root + QStringLiteral("/connection"),
+            root,
+            QObject::tr("Connection"),
+            {},
+            {},
+            {},
+            {},
+            QString::fromStdString(instance.error),
+            state_color(instance.state, builder.colors())
         );
         if (instance.run.has_value()) {
             builder.add(
                 root + QStringLiteral("/run"),
                 root,
                 QObject::tr("Run"),
+                {},
+                {},
                 {},
                 {},
                 QString::fromStdString(
@@ -181,7 +241,9 @@ std::vector<DiagnosticRow> build_rows(
         const auto& scenario = *instance.scenario;
         builder.add_group(QObject::tr("Start"), QStringLiteral("start"), scenario.start, prefix, root);
         builder.add_group(QObject::tr("Reset"), QStringLiteral("reset"), scenario.reset, prefix, root);
-        builder.add_group(QObject::tr("Incomplete"), QStringLiteral("incomplete"), scenario.incomplete, prefix, root);
+        builder.add_group(
+            QObject::tr("Incomplete"), QStringLiteral("incomplete"), scenario.incomplete, prefix, root
+        );
 
         const QString splits_key = prefix + QStringLiteral("splits");
         builder.add(splits_key, root, QObject::tr("Splits"));
@@ -190,26 +252,32 @@ std::vector<DiagnosticRow> build_rows(
             builder.add(
                 split_key,
                 splits_key,
-                QObject::tr("Split %1").arg(split.index),
+                QObject::tr("Split %1").arg(split.index + 1),
                 split.configured ? QObject::tr("configured") : QObject::tr("not configured")
             );
             for (const auto& rule : split.rules) {
                 builder.add_rule(split_key, rule, prefix);
             }
         }
+        const bool measured = scenario.evaluation_count > 0;
         builder.add(
             prefix + QStringLiteral("metrics"),
             root,
             QObject::tr("Evaluation"),
             {},
             {},
-            QObject::tr("%1 evaluations, %2 ms last, %3 rule errors")
+            {},
+            {},
+            QObject::tr("%1 evaluations | Avg %2 ms | Max %3 ms | %4 rule errors")
                 .arg(scenario.evaluation_count)
-                .arg(scenario.last_evaluation_ms, 0, 'f', 3)
+                .arg(measured ? QString::number(scenario.average_evaluation_ms, 'f', 2)
+                              : QStringLiteral("—"))
+                .arg(measured ? QString::number(scenario.max_evaluation_ms, 'f', 2)
+                              : QStringLiteral("—"))
                 .arg(scenario.rule_errors)
         );
     }
-    return std::move(builder.rows);
+    return builder.rows;
 }
 
 QString signature_of(const std::vector<DiagnosticRow>& rows) {
@@ -248,25 +316,42 @@ void set_columns(QTreeWidgetItem* item, const DiagnosticRow& row) {
     item->setText(1, row.column1);
     item->setText(2, row.column2);
     item->setText(3, row.column3);
+    item->setText(4, row.column4);
+    item->setText(5, row.column5);
+    if (row.color.isValid()) {
+        item->setForeground(1, row.color);
+    } else {
+        item->setData(1, Qt::ForegroundRole, {});
+    }
 }
 
 }  // namespace
 
 DiagnosticsPage::DiagnosticsPage(AppController* controller, QWidget* parent)
     : QWidget(parent), controller_(controller) {
+    setObjectName(QStringLiteral("page"));
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(16, 14, 16, 14);
+    layout->setSpacing(8);
     auto* title = new QLabel(tr("Diagnostics"), this);
-    QFont title_font = title->font();
-    title_font.setPointSize(title_font.pointSize() + 4);
-    title_font.setBold(true);
-    title->setFont(title_font);
+    title->setObjectName(QStringLiteral("pageTitle"));
     layout->addWidget(title);
+    auto* hint = new QLabel(
+        tr("Scenario → Rule → Condition → Detector. Expand a scenario to inspect scores."),
+        this
+    );
+    hint->setProperty("role", QStringLiteral("muted"));
+    layout->addWidget(hint);
 
     tree_ = new QTreeWidget(this);
-    tree_->setColumnCount(4);
-    tree_->setHeaderLabels({tr("Item"), tr("Status"), tr("Score"), tr("Detail")});
+    tree_->setObjectName(QStringLiteral("diagnosticsTree"));
+    tree_->setColumnCount(6);
+    tree_->setHeaderLabels(
+        {tr("Item"), tr("Status"), tr("Threshold"), tr("Current"), tr("Max"), tr("Detail")}
+    );
     tree_->header()->setStretchLastSection(true);
-    tree_->setAlternatingRowColors(true);
+    tree_->setAlternatingRowColors(false);
+    tree_->setUniformRowHeights(true);
     layout->addWidget(tree_, 1);
 }
 
@@ -280,6 +365,7 @@ void DiagnosticsPage::refresh() {
     for (int index = 0; index < tree_->topLevelItemCount(); ++index) {
         collect_state(tree_->topLevelItem(index), expanded, selected_key);
     }
+    const int scroll_position = tree_->verticalScrollBar()->value();
 
     tree_->setUpdatesEnabled(false);
     const bool rebuild = signature != structure_signature_ ||
@@ -308,9 +394,9 @@ void DiagnosticsPage::refresh() {
         if (!selected_key.isEmpty() && items_.contains(selected_key)) {
             tree_->setCurrentItem(items_.value(selected_key));
         }
-        tree_->resizeColumnToContents(0);
-        tree_->resizeColumnToContents(1);
-        tree_->resizeColumnToContents(2);
+        for (int column = 0; column < 5; ++column) {
+            tree_->resizeColumnToContents(column);
+        }
     } else {
         for (const auto& row : rows) {
             if (auto* item = items_.value(row.key, nullptr); item != nullptr) {
@@ -319,6 +405,9 @@ void DiagnosticsPage::refresh() {
         }
     }
     tree_->setUpdatesEnabled(true);
+    if (rebuild) {
+        tree_->verticalScrollBar()->setValue(scroll_position);
+    }
     tree_->viewport()->update();
 }
 

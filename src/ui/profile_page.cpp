@@ -5,6 +5,7 @@
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -16,6 +17,7 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -53,27 +55,52 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
       ndi_discovery_(std::move(ndi_discovery)) {
     ndi_discovery_available_ = ndi_enabled() || static_cast<bool>(ndi_discovery_);
     if (!ndi_discovery_) ndi_discovery_ = [] { return discover_ndi_sources(); };
+    setObjectName(QStringLiteral("page"));
     auto* outer = new QVBoxLayout(this);
-    auto* scroll = new QScrollArea(this);
-    scroll->setWidgetResizable(true);
-    auto* content = new QWidget(scroll);
-    auto* layout = new QVBoxLayout(content);
-    scroll->setWidget(content);
-    outer->addWidget(scroll);
+    outer->setContentsMargins(16, 14, 16, 14);
+    outer->setSpacing(10);
 
-    auto* title = new QLabel(tr("Profile"), content);
-    QFont title_font = title->font();
-    title_font.setPointSize(title_font.pointSize() + 4);
-    title_font.setBold(true);
-    title->setFont(title_font);
-    layout->addWidget(title);
+    auto* title = new QLabel(tr("Profile"), this);
+    title->setObjectName(QStringLiteral("pageTitle"));
+    outer->addWidget(title);
 
     auto* draft_label = new QLabel(
-        tr("Edits are kept as a draft. Apply restarts the runtime with the draft values."),
-        content
+        tr("Changes are kept as a draft. Apply restarts the runtime with the draft values."),
+        this
     );
     draft_label->setWordWrap(true);
-    layout->addWidget(draft_label);
+    draft_label->setProperty("role", QStringLiteral("muted"));
+    outer->addWidget(draft_label);
+
+    auto* tabs = new QTabWidget(this);
+    tabs->setObjectName(QStringLiteral("profileTabs"));
+    outer->addWidget(tabs, 1);
+
+    auto* input_tab = new QWidget(tabs);
+    input_tab->setObjectName(QStringLiteral("page"));
+    auto* input_tab_layout = new QVBoxLayout(input_tab);
+    input_tab_layout->setContentsMargins(0, 0, 0, 0);
+    auto* scroll = new QScrollArea(input_tab);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto* content = new QWidget(scroll);
+    content->setObjectName(QStringLiteral("page"));
+    auto* layout = new QVBoxLayout(content);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(12);
+    scroll->setWidget(content);
+    input_tab_layout->addWidget(scroll);
+    tabs->addTab(input_tab, tr("Input"));
+
+    auto* scenarios_tab = new QWidget(tabs);
+    scenarios_tab->setObjectName(QStringLiteral("page"));
+    auto* scenarios_layout = new QVBoxLayout(scenarios_tab);
+    scenarios_layout->setContentsMargins(12, 12, 12, 12);
+    scenarios_layout->setSpacing(12);
+    tabs->addTab(scenarios_tab, tr("Scenarios && Connections"));
+
+    auto* top_row = new QHBoxLayout;
+    top_row->setSpacing(16);
 
     auto* source_group = new QGroupBox(tr("Input source"), content);
     auto* source_layout = new QVBoxLayout(source_group);
@@ -128,6 +155,7 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     auto* video_page = new QWidget(source_stack_);
     auto* video_layout = new QHBoxLayout(video_page);
     video_path_ = new QLineEdit(video_page);
+    video_path_->setObjectName(QStringLiteral("videoPath"));
     auto* video_browse = new QPushButton(tr("Browse..."), video_page);
     video_layout->addWidget(video_path_, 1);
     video_layout->addWidget(video_browse);
@@ -167,9 +195,9 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     source_stack_->addWidget(ndi_page);
 
     source_layout->addWidget(source_stack_);
-    layout->addWidget(source_group);
+    top_row->addWidget(source_group, 1);
 
-    auto* transform_group = new QGroupBox(tr("Frame transform"), content);
+    auto* transform_group = new QGroupBox(tr("Frame Processing"), content);
     auto* transform_layout = new QVBoxLayout(transform_group);
     auto* crop_row = new QHBoxLayout;
     crop_enabled_ = new QCheckBox(tr("Crop margins"), transform_group);
@@ -228,9 +256,8 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     resize_references_->setEnabled(false);
     connect(resize_enabled_, &QCheckBox::toggled, resize_references_, &QWidget::setEnabled);
     transform_layout->addWidget(resize_references_);
-    layout->addWidget(transform_group);
 
-    auto* preview_group = new QGroupBox(tr("Draft input preview"), content);
+    auto* preview_group = new QGroupBox(tr("Input Preview"), content);
     auto* preview_layout = new QVBoxLayout(preview_group);
     preview_enabled_ = new QCheckBox(tr("Preview input"), preview_group);
     preview_enabled_->setObjectName(QStringLiteral("previewEnabled"));
@@ -248,7 +275,9 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     preview_stop_session_->setObjectName(QStringLiteral("previewStopSession"));
     preview_layout->addWidget(preview_stop_session_);
     connect(preview_stop_session_, &QPushButton::clicked, controller_, &AppController::stop);
-    layout->addWidget(preview_group);
+    top_row->addWidget(preview_group, 1);
+    layout->addLayout(top_row);
+    layout->addWidget(transform_group);
     connect(preview_enabled_, &QCheckBox::toggled, this, &ProfilePage::refresh_preview);
     connect(controller_, &AppController::sessionStarting, this, [this] {
         preview_suspended_ = true;
@@ -262,10 +291,18 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     preview_timer->setInterval(100);
     connect(preview_timer, &QTimer::timeout, this, &ProfilePage::refresh_preview);
     preview_timer->start();
+    connect(tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index == 0) {
+            refresh_preview();
+        } else {
+            stop_preview();
+        }
+    });
 
-    auto* instances_group = new QGroupBox(tr("LiveSplit instances"), content);
+    auto* instances_group = new QGroupBox(tr("LiveSplit Instances"), scenarios_tab);
     auto* instances_layout = new QVBoxLayout(instances_group);
     instance_table_ = new QTableWidget(instances_group);
+    instance_table_->setObjectName(QStringLiteral("instanceTable"));
     instance_table_->setColumnCount(2);
     instance_table_->setHorizontalHeaderLabels({tr("Bridge port"), tr("Scenario YAML")});
     instance_table_->horizontalHeader()->setStretchLastSection(true);
@@ -281,20 +318,22 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
     instance_buttons->addWidget(browse_button);
     instance_buttons->addStretch(1);
     instances_layout->addLayout(instance_buttons);
-    layout->addWidget(instances_group, 1);
+    scenarios_layout->addWidget(instances_group, 1);
 
-    status_label_ = new QLabel(tr("No profile applied."), content);
+    status_label_ = new QLabel(tr("No profile applied."), this);
     status_label_->setWordWrap(true);
-    layout->addWidget(status_label_);
+    status_label_->setProperty("role", QStringLiteral("muted"));
+    outer->addWidget(status_label_);
 
     auto* actions = new QHBoxLayout;
-    auto* reload_button = new QPushButton(tr("Revert draft"), content);
-    auto* apply_button = new QPushButton(tr("Apply"), content);
+    auto* reload_button = new QPushButton(tr("Revert draft"), this);
+    auto* apply_button = new QPushButton(tr("Apply"), this);
+    apply_button->setObjectName(QStringLiteral("primaryButton"));
     apply_button->setDefault(true);
     actions->addWidget(reload_button);
     actions->addStretch(1);
     actions->addWidget(apply_button);
-    layout->addLayout(actions);
+    outer->addLayout(actions);
 
     connect(source_type_, &QComboBox::currentIndexChanged, this, &ProfilePage::source_type_changed);
     connect(camera_detect_button_, &QPushButton::clicked, this, [this]() {
@@ -316,6 +355,12 @@ ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscover
 void ProfilePage::reload_from_controller() {
     load_profile(controller_->profile());
     status_label_->setText(tr("Draft loaded from the active profile."));
+}
+
+void ProfilePage::load_draft(const Profile& profile) {
+    load_profile(profile);
+    status_label_->setText(tr("New profile draft. Save or Apply to continue."));
+    refresh_preview();
 }
 
 void ProfilePage::load_profile(const Profile& profile) {
@@ -521,7 +566,6 @@ void ProfilePage::apply() {
     }
     status_label_->setText(tr("Profile applied."));
     emit profileApplied();
-    emit statusMessage(tr("Profile applied."));
 }
 
 void ProfilePage::add_instance() {
@@ -605,8 +649,8 @@ void ProfilePage::stop_preview() {
 
 void ProfilePage::refresh_preview() {
     preview_stop_session_->setVisible(controller_->session().running());
-    if (!isVisible() || !preview_enabled_->isChecked() || preview_suspended_ ||
-        controller_->session().running()) {
+    if (!isVisible() || !preview_view_->isVisible() || !preview_enabled_->isChecked() ||
+        preview_suspended_ || controller_->session().running()) {
         stop_preview();
         preview_status_->setText(controller_->session().running() || preview_suspended_
             ? tr("Preview stopped while a Session is active. Stop the Session to preview draft settings.")

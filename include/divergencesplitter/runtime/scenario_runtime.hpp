@@ -71,6 +71,8 @@ private:
     std::optional<MonotonicTime> reset_state_wait_started_at_;
     std::uint64_t evaluation_count_{};
     double last_evaluation_ms_{};
+    double total_evaluation_ms_{};
+    double max_evaluation_ms_{};
     std::uint64_t rule_errors_{};
 };
 

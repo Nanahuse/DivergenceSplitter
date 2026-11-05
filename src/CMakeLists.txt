@@ -98,13 +98,20 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/image_view.hpp
         ui/main_window.hpp
         ui/monitor_page.hpp
+        ui/navigation_bar.hpp
+        ui/notification_toast.hpp
+        ui/profile_header.hpp
         ui/profile_page.hpp
         ui/profile_preview.hpp
         ui/reset_all_button.hpp
         ui/settings_page.hpp
+        ui/theme.hpp
         ui/app_controller.cpp
         ui/main_window.cpp
         ui/monitor_page.cpp
+        ui/navigation_bar.cpp
+        ui/notification_toast.cpp
+        ui/profile_header.cpp
         ui/diagnostics_page.cpp
         ui/profile_page.cpp
         ui/profile_preview.cpp
@@ -112,6 +119,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/about_page.cpp
         ui/reset_all_button.cpp
         ui/image_view.cpp
+        ui/theme.cpp
     )
     add_library(divergencesplitter::ui ALIAS divergencesplitter_ui)
 

@@ -1,5 +1,6 @@
 #include "divergencesplitter/runtime/scenario_runtime.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <stdexcept>
 #include <string>
@@ -177,6 +178,8 @@ std::optional<Action> ScenarioRuntime::evaluate(FrameContext context) {
         const auto wall_completed = std::chrono::steady_clock::now();
         last_evaluation_ms_ =
             std::chrono::duration<double, std::milli>(wall_completed - wall_started).count();
+        total_evaluation_ms_ += last_evaluation_ms_;
+        max_evaluation_ms_ = std::max(max_evaluation_ms_, last_evaluation_ms_);
     };
 
     if (!snapshot_.has_value() || !configuration_valid_) {
@@ -363,6 +366,10 @@ ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics() const {
     }
     result.evaluation_count = evaluation_count_;
     result.last_evaluation_ms = last_evaluation_ms_;
+    result.average_evaluation_ms = evaluation_count_ > 0
+        ? total_evaluation_ms_ / static_cast<double>(evaluation_count_)
+        : 0.0;
+    result.max_evaluation_ms = max_evaluation_ms_;
     result.rule_errors = rule_errors_;
     return result;
 }
