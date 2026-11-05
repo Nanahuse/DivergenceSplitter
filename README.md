@@ -1,397 +1,58 @@
 # DivergenceSplitter
 
-An automatic splitter configured with JSON and Python scenario modules.
-
-## Installation
-
-Scenario repositories that only define rules install the authoring library:
-
-```console
-uv add "divergencesplitter @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter"
-```
-
-An application that loads and runs scenarios installs the runtime. It includes
-the authoring library transitively, plus the LiveSplit Bridge client:
-
-```console
-uv add "divergencesplitter @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter" "divergencesplitter-runtime @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter-runtime"
-```
-
-Pin a tag or commit in production. Both direct references are needed until the
-packages are published to a package index.
-
-## Packages
-
-This repository is managed as a uv workspace with three independently
-installable packages:
-
-- `divergencesplitter` contains the public scenario-authoring API, detectors,
-  conditions, rules, frame sources, and shared models.
-- `divergencesplitter-runtime` contains scenario loading and the runtime state
-  machines. It depends on `divergencesplitter`.
-- `divergencesplitter-ui` is the Windows-only desktop UI. It depends on
-  `divergencesplitter-runtime` and Flet. Core and runtime install without any
-  GUI dependency.
-
-Custom `Condition` implementations must expose a read-only `children` property
-returning their child conditions in declaration order (an empty tuple for
-leaves). Custom `ImageDetector` implementations must expose a read-only
-`reference_images` property returning labeled immutable reference images (an
-empty tuple when there are none). These properties feed the desktop UI display
-only; they never perform evaluation, reset, or state changes.
-
-Scenario modules only import the authoring library and export `scenario`. A
-minimal `scenario.py` is:
-
-```python
-import divergencesplitter as ds
-
-brightness = ds.MeanBrightnessDetector()
-split_condition = ds.Detected(brightness, minimum_score=200.0)
-reset_condition = ds.Not(ds.Detected(brightness, minimum_score=10.0))
-start_condition = ds.Detected(brightness, minimum_score=10.0)
-
-scenario = ds.Scenario(
-    start_condition=start_condition,
-    reset_condition=reset_condition,
-    incomplete_condition=None,
-    splits=((ds.Rule(split_condition, ds.Action("split")),),),
-)
-```
-
-`reset_condition` is optional. Omit it (or pass `None` in Python) when the
-scenario has no automatic reset condition.
-
-Built-in detectors generally report scores in the range `[0.0, 1.0]`, with
-higher values indicating a stronger response. Custom detectors are not
-required to use this range.
-
-Scenarios do not carry a LiveSplit connection; the JSON configuration pairs
-each scenario with a LiveSplit Bridge port. The JSON configuration selects the
-frame source and one or more connection/scenario instances independently. The
-Profile schema is version `2` and stores only the LiveSplit Bridge WebSocket
-port per instance:
-
-```json
-{
-  "version": 2,
-  "source": {
-    "type": "video",
-    "path": "./run.mp4"
-  },
-  "instances": [
-    {
-      "connection": {
-        "port": 54000
-      },
-      "scenario": "./scenario.py"
-    }
-  ]
-}
-```
-
-A version `1` Profile is migrated on load. Its Protocol v1 ZeroMQ endpoints are
-not convertible to a Protocol v4 WebSocket port, so their values are discarded
-and each instance is assigned a fresh port starting at `54000` in file order.
-The next save writes the version `2` form.
-
-A scenario may also be written as YAML (`scenario.yaml`). The loader is chosen
-from the file extension: `.py` for Python, `.yaml`/`.yml` for YAML. A YAML
-scenario defines `start_condition`, optional `reset_condition`, optional
-`incomplete_condition`, and `splits` using `type` discriminators:
-
-```yaml
-start_condition:
-  type: detected
-  minimum_score: 0.8
-  detector:
-    type: template_match
-    reference: ./images/title.png
-
-reset_condition:
-  type: detected
-  minimum_score: 0.8
-  detector:
-    type: template_match
-    reference: ./images/title.png
-
-incomplete_condition:
-  type: detected
-  minimum_score: 0.8
-  detector:
-    type: template_match
-    reference: ./images/title.png
-
-splits:
-  - rules:
-      - condition:
-          type: detected
-          minimum_score: 0.9
-          detector:
-            type: template_match
-            reference: ./images/title.png
-        action: split
-```
-
-Every public Condition and Detector exposed by the Python API can also be built
-from YAML. The loader only constructs Core objects; it never re-implements
-condition or detector semantics.
-
-Condition `type` names: `detected`, `all`, `any`, `not`, `rising_edge`,
-`falling_edge`, `once`, `elapsed`, `hold`, `nth`, `reset_when`, `then`.
-
-Detector `type` names: `template_match`, `mean_absolute_similarity`,
-`root_mean_square_similarity`, `difference_hash_similarity`, `mean_brightness`,
-`color_range`, `phase_correlation`.
-
-Compound conditions nest freely:
-
-```yaml
-type: all
-conditions:
-  - type: falling_edge
-    condition:
-      type: detected
-      minimum_score: 0.95
-      detector:
-        type: template_match
-        reference: image.png
-  - type: elapsed
-    duration: 2s
-```
-
-`elapsed` and `hold` take a `duration` (`500ms`, `3s`); `hold` fires only after
-its child condition has been continuously true for that duration. `then`'s
-`within` is optional; without it the sequence waits with no deadline. `nth`
-takes `count` and a `condition`; `reset_when` takes `condition` and
-`reset_condition`.
-`color_range` takes explicit `lower`/`upper` lists, and `mean_brightness` takes
-no configuration beyond an optional `roi`. YAML anchors/aliases and
-`duration`/`within` time expressions are supported, and unknown fields or types
-are rejected.
-
-Run it with the runtime CLI:
-
-```console
-uv run divergencesplitter config.json
-```
-
-Press Ctrl+C to request cooperative shutdown. The process distinguishes normal
-completion, invalid CLI use, scenario-module errors, startup validation errors,
-runtime errors, and user interruption with separate exit codes. While running,
-`runtime.fps` is logged once per second. UI code can read the same non-consuming
-values from `OperationalDiagnostics.metrics_snapshot()` without parsing logs.
-
-Scenario modules are trusted Python code and execute with the runner's process
-permissions. Only load modules you trust.
-
-Camera configuration stores the device name as the primary identifier and its
-enumeration ID to disambiguate devices with the same name:
-
-```json
-{
-  "version": 2,
-  "source": {
-    "type": "camera",
-    "device": {
-      "backend": "media_foundation",
-      "name": "USB Video Device",
-      "index": 0
-    },
-    "mode": {
-      "width": 1280,
-      "height": 720,
-      "fps": 60.0,
-      "subtype_guid": "47504A4D-0000-0010-8000-00AA00389B71"
-    }
-  },
-  "instances": [
-    {
-      "connection": {
-        "port": 54000
-      },
-      "scenario": "./scenario.py"
-    }
-  ]
-}
-```
-
-On Windows, the runtime enumerates camera devices and capture modes with
-`windows-capture-device-list` v0.2.0. DirectShow and Media Foundation are
-shown as separate choices, so the same physical camera may appear twice. The
-backend is part of the device identity; there is no backend fallback. A unique
-name match is accepted even if its index changed. If several devices have the
-same name within one backend, the saved index must match one of them. Capture
-modes must be present in the current enumeration and are never substituted.
-Relative scenario and video paths are resolved from the configuration file's
-directory. The Profile version is `2`.
-
-Before using a camera/backend combination in production, manually confirm that
-it opens, continuously captures frames, releases the device on shutdown, and
-reopens after a disconnect. Record the effective resolution and frame rate;
-requested OpenCV properties are not a guarantee of exact effective values. The
-selected backend must also return from synchronous `read()` in finite time,
-because stopping waits for an in-progress read and the source does not add a
-reader thread or a generic read timeout.
-
-## NDI® input
-
-NDI is a third input source alongside Camera and Video File. It selects a
-sender by its advertised NDI name, never by list position, so reordering the
-network source list cannot connect to a different sender. Learn more about the
-technology at [ndi.video](https://ndi.video/):
-
-```json
-{
-  "version": 2,
-  "source": {
-    "type": "ndi",
-    "name": "Gaming PC (OBS)",
-    "transform": { "crop": null, "resize": null }
-  },
-  "instances": [
-    {
-      "connection": {
-        "port": 54000
-      },
-      "scenario": "./scenario.py"
-    }
-  ]
-}
-```
-
-NDI is optional for the core libraries: `divergencesplitter` and
-`divergencesplitter-runtime` never require it. The NDI runtime and its Python
-binding load lazily, so an environment without NDI still starts, still lists NDI
-configurations, and still uses Camera and Video File normally. When NDI is
-unavailable the desktop UI shows the NDI source type as `NDI (Unavailable)` and
-refuses to select it, but an already-open NDI configuration keeps its source name
-and can be switched to Camera or Video.
-
-The Windows desktop UI includes NDI support by default. Installing
-`divergencesplitter-ui` on Windows pulls in `ndi-python`, so Windows UI users do
-not need to request the `ndi` extra. To use NDI from the core libraries alone,
-install the optional extra:
-
-```console
-uv add "divergencesplitter[ndi] @ git+https://github.com/Nanahuse/DivergenceSplitter.git#subdirectory=packages/divergencesplitter"
-```
-
-`ndi-python` is the MIT-licensed Python binding. The NDI Runtime that it ships
-is licensed separately by Vizrt NDI AB under the NDI SDK License Agreement and
-is not covered by the MIT License. See
-[`THIRD_PARTY_LICENSES/NDI.md`](THIRD_PARTY_LICENSES/NDI.md) for the boundary
-and the applicable conditions. The Windows distribution CI builds from the
-normal UI dependencies and includes the binding and runtime license notices.
-For the same build environment locally, use
-`uv sync --locked --all-packages --group build` and run build tools
-with `uv run --no-sync`. A temporary
-loss of the sender does not stop the session; the receiver resumes when the same
-source name returns. NDI receive uses a bounded timeout, so shutdown stays
-responsive.
-
-NDI® is a registered trademark of Vizrt NDI AB.
-
-## LiveSplit Bridge constraints
-
-Run a LiveSplit.Bridge instance exposing JSON Protocol v4 on the WebSocket port
-each scenario is configured with. The runtime connects to the RPC endpoint
-`ws://127.0.0.1:<port>/bridge/v4/rpc` and subscribes to
-`ws://127.0.0.1:<port>/bridge/v4/events`; only the port is stored in the
-Profile. RPC and Events use separate connections and threads per instance.
-Initial synchronization reads `TimerState` and `RunState` from one RPC session.
-Events carry a session ID and a non-zero uint32 sequence that wraps from the
-maximum back to `1`; gaps, duplicates, out-of-order sequences, and session
-changes stop control and rebuild both connections. The protocol has no
-heartbeat event and does not provide an atomic boundary between a query and the
-event stream, so events received during synchronization are drained and the
-baseline is re-read before the runtime starts.
-
-Control success confirms that Bridge handled the operation, but does not include
-the resulting timer state. The runtime waits up to one second for a state event
-and then queries `TimerState`. If a Split left the index unchanged, rules for
-that index are reset and evaluated again on a new frame. Control requests with
-unknown outcomes are never retried; the instance reconnects and resumes from
-fresh state.
-
-## Performance
-
-The reproducible 360p/720p, 60 fps baseline and initial SLO are in
-[`PERFORMANCE.md`](PERFORMANCE.md).
-
-## Development
-
-The workspace has one shared `uv.lock`. Commands can target either package:
-
-```console
-uv sync
-uv run pytest
-uv run --package divergencesplitter pytest packages/divergencesplitter/tests
-uv run --package divergencesplitter-runtime pytest packages/divergencesplitter-runtime/tests
-```
-
-To run multiple actions in order within one split slot, use `RuleSequence`:
-
-```python
-ds.RuleSequence(
-    ds.Rule(..., ds.Action("pause")),
-    ds.Rule(..., ds.Action("resume")),
-    ds.Rule(..., ds.Action("split")),
-)
-```
-
-The YAML equivalent keeps the existing `splits -> rules` shape:
-
-```yaml
-splits:
-  - rules:
-      - sequence:
-          - condition: {type: elapsed, duration: 1s}
-            action: pause
-          - condition: {type: elapsed, duration: 2s}
-            action: resume
-          - condition: {type: elapsed, duration: 3s}
-            action: split
-```
-
-`Then` sequences conditions until one Action is reached; `RuleSequence`
-sequences multiple Rules and their Actions.
-
-## Windows distribution
-
-The `Windows distribution` CI workflow builds the desktop UI and AutoSplit
-Converter sequentially in one Windows job. Its `DivergenceSplitter-windows-x64`
-artifact downloads as a GitHub Actions ZIP:
-
-```text
-DivergenceSplitter/
-  DivergenceSplitter.exe
-  _internal/
-autosplit-converter/
-  autosplit-converter.exe
-  _internal/
-```
-
-Extract the entire archive before launching either executable. Both applications
-use PyInstaller's directory distribution format; keep each executable together
-with its `_internal` directory.
-
-## Diagnostic logging
-
-Choose `OFF` (no log output) or `DEBUG` (all diagnostic details) in Configuration.
-Changing this setting also updates the running session immediately. Save the
-configuration to keep the choice for future sessions.
-
-The desktop application writes UTF-8 logs to
-`%APPDATA%\DivergenceSplitter\diagnostics.log` on Windows, the same per-user
-directory that stores `settings.json`. This location is fixed: source runs
-(`uv run divergencesplitter-ui`) and the packaged EXE write to the same file, and
-it never depends on the current working directory or the executable path. On
-other platforms the log lives in
-`$XDG_CONFIG_HOME/DivergenceSplitter/diagnostics.log` (or
-`~/.config/DivergenceSplitter/diagnostics.log`).
-Logs rotate at 5 MiB with up to three backups (`diagnostics.log.1`,
-`diagnostics.log.2`, `diagnostics.log.3`). OFF suppresses new output; it does not
-remove previously recorded logs. The CLI continues to write to standard error.
-Existing INFO, WARNING, and ERROR settings are accepted as compatibility aliases
-for DEBUG.
+[日本語（正本）](README.md) | [English](README.en.md)
+
+DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit、Resetを自動で行うWindowsアプリです。判定条件はYAMLファイルに記述します。画面から入力映像や判定結果を確認でき、コマンドラインからの実行にも対応しています。
+
+## 主な機能
+
+- カメラ・キャプチャーカード、動画ファイル、NDI®の映像を入力に使えます。NDIには対応ビルドが必要です。
+- 映像の切り取り（Crop）やサイズ変更（Resize）を行い、画像の検出方法（Detector）と条件（Condition）を組み合わせて判定できます。
+- 条件が成立すると、LiveSplit.Bridgeを通じてStart、Split、Resetなどの操作を送ります。
+- 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。画面には映像のプレビューと判定・接続の状態を表示します。
+
+## インストール
+
+[C++23のGitHub Actions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-cpp23-windows-x64` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
+
+ダウンロードしたファイルを展開すると、中にアプリ本体のWindows ZIPがあります。そのZIPも書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLL、プラグイン、ライセンスのファイルは、展開後の配置を保ってください。
+
+ダウンロードできるのは、NDI有効ジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
+
+## 使い方
+
+1. LiveSplitにProtocol v4対応のLiveSplit.Bridgeを導入し、テスト用Runを用意します。
+2. Profileで映像入力、YAMLシナリオ、Bridgeポートを設定します。
+3. Draft input previewで映像とCrop／Resizeの結果を確認し、Applyを押します。入力とBridgeの準備が整うとシナリオの評価とタイマー操作が始まります。
+4. MonitorとDiagnosticsで判定・接続状態を確認し、Profileを保存します。
+
+具体的な操作と設定例は[利用ガイド](docs/user-guide.md)と[サンプル](examples/README.md)にあります。
+
+## ドキュメント
+
+利用者向けの文書には日本語版と英語版があります。日本語版を正本とし、英語版はその翻訳です。内容が異なる場合は日本語版に従ってください。画面名、設定キー、コマンドは、どちらの言語でも製品の表記に合わせています。
+
+開発・設計・ビルド・テスト・CI・配布の手順と検証記録は、日本語のみで提供します。
+
+| 目的 | 参照先 |
+| --- | --- |
+| 導入して最初の自動Splitを試す | [はじめに](docs/getting-started.md) |
+| Monitor、Profile、Diagnostics、Settingsを使う | [利用ガイド](docs/user-guide.md) |
+| 入力、画像変換、Bridge接続を設定する | [設定リファレンス](docs/configuration.md) |
+| 入力・接続・判定の問題を調べる | [トラブルシューティング](docs/troubleshooting.md) |
+| シナリオを作る | [シナリオ作成](docs/scenarios/README.md) |
+| YAML、Condition、Detector、Actionの仕様を調べる | [YAML](docs/scenarios/yaml-reference.md)、[Condition](docs/scenarios/conditions.md)、[Detector](docs/scenarios/detectors.md) |
+| 設定例を応用する | [シナリオ例](docs/scenarios/examples.md)、[サンプルファイル](examples/README.md) |
+| ビルド、テスト、配布を行う | [開発ガイド](docs/development/README.md) |
+
+## 開発
+
+アプリはC++23とQt Widgetsで実装しています。CMakeの設定はリポジトリ直下にあります。実装は `src/`、複数のターゲットで共有するヘッダーは `include/`、テストは `tests/`、文書は `docs/` に置きます。`tools/` にはPythonで書いたビルド・配布用の補助スクリプトがあります。
+
+ビルド、CTest、Bridge TestHostとの結合テスト、NDI、Windows ZIPの作成と検証は、[開発ガイド](docs/development/README.md)を参照してください。
+
+## ライセンス
+
+ソースコードは[MITライセンス](LICENSE)です。同梱する依存ライブラリにはそれぞれ別のライセンスが適用されます。[配布時の通知](DISTRIBUTION-NOTICE.txt)と[第三者ライセンスの収集・配布手順](docs/development/distribution.md)を参照してください。
+
+NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。NDI対応の配布物に同梱するランタイムの条件は[NDIの通知](licenses/NDI.md)を参照してください。

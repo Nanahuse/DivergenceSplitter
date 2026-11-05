@@ -1,0 +1,9 @@
+{
+  "version": "6.3.2.0",
+  "installer_sha256": "4d5dd36a1c7c7634f408bf459b068787cce6f5310a3efe832d76b1ddeb54e499",
+  "runtime_sha256": "2b6602075868ba4401f82f417d72424805d69b11ca86078023d0d489ff45dd84",
+  "runtime_licenses_sha256": "9f18e17e95324b1907c4de45f676ce2fedbc0a5c4ff6ed451b31c3fcb1229b8d",
+  "agreement_sha256": "11ae13ae038d5af06d2fd5f9e55cbbdb97e75d2526656a0dbaa4dafcb7bf48e6",
+  "innoextract_version": "1.9",
+  "innoextract_sha256": "6989342c9b026a00a72a38f23b62a8e6a22cc5de69805cf47d68ac2fec993065"
+}
