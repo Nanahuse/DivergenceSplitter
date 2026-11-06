@@ -59,6 +59,8 @@ install・package時には[collect_licenses.py](../../tools/collect_licenses.py)
 | Qt Widgets（比較実験の基準） | なし | 44,268,303 bytes | 基準 |
 | Dear ImGui（今回の配布物） | なし | 6,570,098 bytes | 約85.2%削減 |
 | Dear ImGui（今回の配布物） | あり | 31,759,381 bytes | 約28.3%削減 |
+| Dear ImGui（CI NDI OFF） | あり | 31,628,981 bytes | 約28.6%削減 |
+| Dear ImGui（CI NDI ON） | あり | 35,301,444 bytes | 約20.3%削減 |
 
 今回の配布ZIPは `vc_redist.x64.exe`（25,635,768 bytes）を含みます。Qt基準値は同じ比較実験の記録で、QtのDLL・プラグインを含み、vc_redistを含みません。今回の「なし」は、生成したZIPからvc_redistだけを除いて同じDEFLATE条件で再圧縮した値です。Qt版の実配布ZIPと完全に同じ条件ではないため、削減率は参考値として扱います。
 
