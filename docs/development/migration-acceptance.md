@@ -12,7 +12,7 @@ Qt Widgets版の4画面をDear ImGuiへ置き換え、Diagnostics画面は今回
 | 日本語IME / DPI / 終了処理 | 日本語フォントを読み込み、Win32のIMEメッセージをImGuiバックエンドへ渡す。WM_DPICHANGEDでスタイルとフォントを再構築。終了時にプレビュー、NDI検索、Session、D3D11、COMを解放。実IME変換と実モニター間移動は手動確認項目。 |
 | Windows CI | NDI OFF / ONのmatrixを維持。ImGuiはFetchContentで固定タグを取得し、Qtのインストール手順を削除。 |
 | Qt依存の削除 | 製品GUI、CMake、vcpkg manifest、配布ZIPからQtを削除。ZIP検証はQt6Core.dllとplatforms/qwindows.dllを拒否。 |
-| 圧縮後ZIP容量 | 同一比較条件（Qt 2920fb6、NDI OFF、DEFLATE level 6）で、vc_redistなし Qt 40,538,833 / Dear ImGui 6,571,420 bytes（約83.8%削減）、vc_redistあり Qt 57,603,103 / Dear ImGui 31,760,842 bytes（約44.9%削減）。NDI ONのDear ImGuiは35,301,449 bytes。Qt NDI ONはSDKがないため未測定。詳細は[配布](distribution.md#配布zip容量の比較)。 |
+| 圧縮後ZIP容量 | 同一比較条件（Qt 2920fb6、NDI OFF、DEFLATE level 6）で、vc_redistなし Qt 40,538,833 / Dear ImGui 6,571,420 bytes（約83.8%削減）、vc_redistあり Qt 57,603,103 / Dear ImGui 31,760,842 bytes（約44.9%削減）。NDI ONのDear ImGuiは35,302,635 bytes（CI NDI OFFは31,630,340 bytes）。Qt NDI ONはSDKがないため未測定。詳細は[配布](distribution.md#配布zip容量の比較)。 |
 
 ローカルでNDI SDKを用意できないため、NDI ONの実機ループバックはCIと手動確認に委ねます。カメラ・動画・NDIの物理入力、実LiveSplit、実IME、DPIの実画面確認は、自動テストだけで完了扱いにしません。
 

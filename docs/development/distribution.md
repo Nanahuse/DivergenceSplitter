@@ -60,9 +60,9 @@ install・package時には[collect_licenses.py](../../tools/collect_licenses.py)
 | Dear ImGui (今回) | OFF | なし | 6,571,420 bytes | 約83.8%削減 |
 | Qt Widgets (`2920fb6`) | OFF | あり | 57,603,103 bytes | 基準 |
 | Dear ImGui (今回) | OFF | あり | 31,760,842 bytes | 約44.9%削減 |
-| Dear ImGui (今回) | ON | あり | 35,301,449 bytes | NDI ONの実配布ZIP |
+| Dear ImGui (今回) | ON | あり | 35,302,635 bytes | NDI ONの実配布ZIP |
 
-CI実測はNDI OFF 31,628,979 bytes、NDI ON 35,301,449 bytesです。Qt版のNDI ONはこの環境にSDKがないため未測定で、上記の削減率はNDI OFF同士の比較です。`vc_redist.x64.exe` を同梱する判断は維持し、比較では両方の有無を揃えています。
+CI実測はNDI OFF 31,630,340 bytes、NDI ON 35,302,635 bytesです。Qt版のNDI ONはこの環境にSDKがないため未測定で、上記の削減率はNDI OFF同士の比較です。`vc_redist.x64.exe` を同梱する判断は維持し、比較では両方の有無を揃えています。
 
 ## NDIランタイムの同梱物
 
