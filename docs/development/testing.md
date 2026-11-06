@@ -13,7 +13,7 @@ ctest --preset full -N
 ctest --preset full -R 'Conditions|ScenarioLoader|ScenarioRuntime' --output-on-failure
 ```
 
-ビルドした構成に合わせて、`core`、`core-release`、`full-release` も使えます。coreにはUIテストを含まず、NDIの既定値はOFFです。
+ビルドした構成に合わせて、`core`、`core-release`、`full-release` も使えます。coreにはUIテストを含みません。NDI Runtimeがない環境ではNDIループバックテストをスキップします。
 
 CMakeはGoogleTestの各ケースをCTestへ登録します。UIテストはDear ImGuiの描画やWin32ウィンドウを作らず、UIから分離した状態管理・Monitorモデル・入力プレビューを検証します。
 
@@ -29,7 +29,7 @@ CMakeはGoogleTestの各ケースをCTestへ登録します。UIテストはDear
 
 fakeを使うテストは実機の代わりに決めた入力や応答を与え、同じ条件を再現してアプリの動作を調べます。物理的なカメラ、外部のNDI送信元、利用者のLiveSplitで動くことを確認するテストとは別です。
 
-GUIの起動確認は、ビルドした実行ファイルに `--smoke-test` を渡します。実際のWin32ウィンドウとDirect3D 11の初期化、NDI有効時のアプリローカルSDKの読み込みを確認し、約20フレームで終了します。画面の見た目やIMEの変換操作は、この自動試験だけでは確認できません。
+GUIの起動確認は、ビルドした実行ファイルに `--smoke-test` を渡します。実際のWin32ウィンドウとDirect3D 11の初期化、NDI Runtimeがある場合の初期化を確認し、約20フレームで終了します。NDI Runtimeがない場合も起動できることを確認します。画面の見た目やIMEの変換操作は、この自動試験だけでは確認できません。
 
 ## 録画を使ったE2Eテスト
 
@@ -83,18 +83,22 @@ python tools/run_testhost.py --testhost C:/src/LiveSplit.Bridge-TestHost/tests/L
 
 ## 実NDIの検証
 
-固定SDKでNDIを有効にした構成で実行します。
+NDI Runtimeを別途インストールして実行します。Runtimeが見つからない場合、`ndi_sdk_loopback` はスキップされます。NDIの初期化・受信を確認するときは、Runtimeのフォルダーを `NDI_RUNTIME_DIR_V6` に指定してください。
 
 ```powershell
-ctest --preset full-release -R '^ndi_sdk_' --output-on-failure
+$env:NDI_RUNTIME_DIR_V6 = 'C:/path/to/NDI Runtime'
+ctest --preset full-release -R '^ndi_sdk_loopback$' --output-on-failure
 $env:NDI_SOAK_SECONDS = '600'
 .\build\full-release\divergencesplitter_ndi_loopback_tests.exe
 Remove-Item Env:NDI_SOAK_SECONDS
+Remove-Item Env:NDI_RUNTIME_DIR_V6
 ```
 
-`ndi_sdk_initialization` はSDKの初期化と終了を確認します。`ndi_sdk_loopback` は、実SDKでローカルの送信元を作り、検索、選択、受信、BGR変換、Crop・Resize、プレビュー、ScenarioのStart判定を確認します。さらに送信元を破棄して作り直し、再接続と終了を調べます。
+`ndi_sdk_loopback` は、実Runtimeでローカルの送信元を作り、検索、選択、受信、BGR変換、Crop・Resize、プレビュー、ScenarioのStart判定を確認します。さらに送信元を破棄して作り直し、再接続と終了を調べます。
 
 継続時間は最大3600秒にできます。ただし、CTestのタイムアウトは90秒なので、長時間試す場合は上記のようにテストの実行ファイルを直接呼んでください。
+
+Runtimeをインストールしていない環境でも、`DivergenceSplitter.exe --smoke-test` とCamera・Videoのテストは実行できます。NDI Runtimeがない状態でNDI入力を選んだ場合は、Profile/Aboutにインストール案内が表示され、NDI入力だけが利用不可になります。
 
 [NDI Tools](https://ndi.video/tools/) などの独立した送信元も対象ネットワークに確認してください。選択、プレビュー、判定、停止・再開後の復帰、保存Profileの再読込、継続受信を調べます。送受信側のバージョン、時間、フレーム数、エラー、ネットワーク構成を記録してください。ローカルループバックだけでは別の送信元やネットワークを検証できません。
 

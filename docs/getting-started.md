@@ -11,7 +11,7 @@
 ## ダウンロードと起動
 
 1. [C++23のActions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、利用するリビジョンの信頼できる実行結果を選びます。成功した実行から `DivergenceSplitter-cpp23-windows-x64` をダウンロードしてください。GitHubへのサインインが必要です。NDI有効ジョブが成功していない場合や、保存期間が切れている場合は取得できません。その場合は[ソースからビルド](development/building.md)します。
-2. ダウンロードしたファイルを展開し、中にあるアプリ本体のZIPも、書き込み可能なローカルフォルダーへ展開します。DLL、プラグインのフォルダー、ライセンスは、展開後の配置を保ってください。公式ZIPにはNDIランタイムが含まれているため、SDKをインストールする必要はありません。
+2. ダウンロードしたファイルを展開し、中にあるアプリ本体のZIPも、書き込み可能なローカルフォルダーへ展開します。DLLとライセンスは、展開後の配置を保ってください。公式ZIPにはNDI Runtimeは含まれません。NDI入力を使用する場合は別途インストールしてください。
 3. `DivergenceSplitter.exe` を起動します。初回は映像入力が未設定です。以前に開いたProfileのファイルが残っていれば、起動時に自動で読み込んで適用します。その場合は、映像とBridgeの準備が整うと、保存済みのシナリオによるタイマー操作が始まることがあります。
 
 ## LiveSplit.Bridgeへの接続
@@ -26,7 +26,7 @@
 2. Profileを開き、映像入力を選びます。
    - Camera：Detect camerasを押し、一覧からカメラまたはキャプチャーカードとモードを選びます。このテストではRequest 60 fpsをオフにします。
    - Video file：再生できるローカルの動画を選びます。テストには10秒より長い録画を使ってください。対応するコーデックはビルドによって異なりますが、最初の確認にはMJPEGのAVI録画を使えます。動画は下書きプレビューでも再生され、Applyすると先頭に戻ります。
-   - NDI®：送信元を起動し、Search againを押して送信元の公開名を選びます。NDI対応ビルドが必要です。
+   - NDI®：送信元を起動し、Search againを押して送信元の公開名を選びます。NDI Runtimeを別途インストールする必要があります。
 3. Crop marginsとResizeをオフにします。Add instanceで行を追加し、Bridge portに `54000` を指定します。その行を選び、Browse scenario...から保存したYAMLを指定してください。このテストで使わない行は削除します。
 4. Draft input previewのPreview inputを有効にし、映像が表示されることを確認します。入力の寸法、受信FPS、変換後の寸法も確認してください。シナリオを実行中の場合は、先にStop Session and preview draftで停止します。プレビューだけではシナリオの判定やLiveSplitの操作は行いません。入力エラーを修正してから次へ進んでください。詳しくは[下書きプレビュー](user-guide.md#入力の下書きプレビュー)を参照してください。
 5. Applyを押します。映像の取得とシナリオの判定が始まります。DivergenceSplitter側で別にStartを押す必要はありません。

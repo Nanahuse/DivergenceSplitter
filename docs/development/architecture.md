@@ -19,7 +19,6 @@ CMakeプロジェクトのルートはリポジトリ直下です。実装は `s
 | [CMakeLists.txt](../../CMakeLists.txt) | Project、オプション、依存関係の発見、Dear ImGuiのFetchContent、ルートでのテスト有効化、サブディレクトリ登録。 |
 | [src/CMakeLists.txt](../../src/CMakeLists.txt) | Core・Runtime・CLI・Dear ImGui・UIターゲット。 |
 | [tests/CMakeLists.txt](../../tests/CMakeLists.txt) | GoogleTest、UI、NDI、TestHostのテスト登録。 |
-| [cmake/NdiSdk.cmake](../../cmake/NdiSdk.cmake) | NDI SDKの検証と固定ハッシュの検証。 |
 | [cmake/Packaging.cmake](../../cmake/Packaging.cmake) | インストール、依存ライセンス収集、Windows ZIPとCPack。 |
 
 ```text
@@ -63,7 +62,7 @@ OpenCVはWindowsの非ASCIIパスを直接扱えないため、動画入力で�
 
 NDIにはインターリース済みのBGRX・BGRAを要求します。UYVY・UYVAとRGBA・RGBXの変換にも対応し、行ストライドに従って読み取り、alphaを取り除いたBGR画像をアプリ側で保持します。readで待つのは最大50msです。通常のタイムアウトでは、受信機を作り直しません。
 
-SDKのDLLは実行ファイルと同じフォルダーから動的に読み込みます。作業ディレクトリやPATHからは探さず、NDIのインポートライブラリにもリンクしません。SDK無効のビルドでも、CaptureのAPIは同じです。
+NDI Runtimeは配布ZIPに同梱せず、起動時にインストール済みRuntimeを検出します。NDILIB_REDIST_FOLDERとNDILIB_LIBRARY_NAME、一般的なインストール先を確認し、LoadLibraryExW、NDIlib_v5_load、初期化の成功を調べます。Runtimeがない場合や初期化に失敗した場合も、Camera・Video入力とアプリ本体は通常どおり動作し、NDI入力だけを無効にします。NDI SDKヘッダーはビルド用に `third_party/ndi/include` へ固定版を同梱し、NDIのインポートライブラリにはリンクしません。
 
 ## Conditionの評価
 

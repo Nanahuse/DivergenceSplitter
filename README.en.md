@@ -14,7 +14,7 @@ Configuration keys, UI labels, and commands retain their implementation names.
 
 - Native Dear ImGui interface with a live monitor and condition summaries.
 - Camera / capture card input through DirectShow or Media Foundation, local video
-  files supported by OpenCV, and NDI® network sources in NDI-enabled builds.
+  files supported by OpenCV, and NDI® network sources when the NDI Runtime is installed.
 - Crop and resize processing, nine image detectors, and stateful conditions.
 - One shared input feeding independent scenarios and LiveSplit instances.
 - A headless command-line runner for validation and automated checks.
@@ -25,7 +25,7 @@ Download the `DivergenceSplitter-cpp23-windows-x64` artifact from a successful
 [C++23 Actions run](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml).
 GitHub sign-in is required. Extract the artifact and then the Windows ZIP inside
 it into a writable directory. Keep the DLLs and licenses alongside
-`DivergenceSplitter.exe`. Availability depends on a successful NDI-enabled job and
+`DivergenceSplitter.exe`. Availability depends on a successful Windows job and
 artifact retention; otherwise [build from source (Japanese)](docs/development/building.md).
 See [Getting started](docs/getting-started.en.md) for the initial setup.
 
@@ -68,5 +68,5 @@ see the [distribution notice](DISTRIBUTION-NOTICE.txt) and
 [distribution guide (Japanese)](docs/development/distribution.md).
 
 NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
-NDI-enabled distributions include a separately licensed runtime; see
-[NDI notices](licenses/NDI.en.md).
+NDI input requires a separately installed runtime; the distribution does not
+bundle it. See [NDI notices](licenses/NDI.en.md).

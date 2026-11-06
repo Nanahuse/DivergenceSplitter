@@ -6,7 +6,7 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ## 主な機能
 
-- カメラ・キャプチャーカード、動画ファイル、NDI®の映像を入力に使えます。NDIには対応ビルドが必要です。
+- カメラ・キャプチャーカード、動画ファイル、NDI®の映像を入力に使えます。NDI入力を使用するには、NDI Runtimeを別途インストールする必要があります。
 - 映像の切り取り（Crop）やサイズ変更（Resize）を行い、画像の検出方法（Detector）と条件（Condition）を組み合わせて判定できます。
 - 条件が成立すると、LiveSplit.Bridgeを通じてStart、Split、Resetなどの操作を送ります。
 - 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。画面には映像のプレビューと判定・接続の状態を表示します。
@@ -17,7 +17,7 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ダウンロードしたファイルを展開すると、中にアプリ本体のWindows ZIPがあります。そのZIPも書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLLとライセンスのファイルは、展開後の配置を保ってください。
 
-ダウンロードできるのは、NDI有効ジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
+ダウンロードできるのは、Windowsジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
 
 ## 使い方
 
@@ -55,4 +55,4 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ソースコードは[MITライセンス](LICENSE)です。同梱する依存ライブラリにはそれぞれ別のライセンスが適用されます。[配布時の通知](DISTRIBUTION-NOTICE.txt)と[第三者ライセンスの収集・配布手順](docs/development/distribution.md)を参照してください。
 
-NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。NDI対応の配布物に同梱するランタイムの条件は[NDIの通知](licenses/NDI.md)を参照してください。
+NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。NDI入力を使用する場合、NDI Runtimeを別途インストールする必要があります。配布ZIPには同梱されません。条件は[NDIの通知](licenses/NDI.md)を参照してください。

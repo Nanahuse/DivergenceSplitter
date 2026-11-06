@@ -16,6 +16,8 @@ Windows x64向けに次を用意してください。
 
 GUIはDear ImGuiを使います。Dear ImGuiはvcpkgではなくFetchContentで固定タグ（既定は `v1.91.9b`）から取得し、Win32バックエンドとDirect3D 11バックエンドをアプリへ静的リンクします。Qtは使いません。`tests` featureを選ぶとGoogleTestを追加します。hash Detectorのためにopencv_contribを追加する必要はありません。
 
+NDI入力のアダプターは常にビルドします。NDI SDKのヘッダーは [third_party/ndi/include](../../third_party/ndi/include) に固定版を同梱しているため、ビルド環境にNDI SDKを用意する必要はありません。NDI Runtimeは実行時の任意依存で、NDI入力を使う場合だけ別途インストールします。配布ZIPにはNDI Runtimeを含めません。
+
 ## 設定・ビルド・起動
 
 リポジトリのルートからDeveloper PowerShellで実行します。
@@ -50,8 +52,6 @@ ctest --preset core --output-on-failure
 | `full-release` | Release | 有効 | `tests` |
 | `ci` | Release | 有効 | `tests`。TestHostテストも有効。 |
 
-`ci` プリセットもvcpkg manifestの依存だけを使い、外部SDKやQtのインストールは不要です。
-
 | CMakeオプション | 既定値 | 動作 |
 | --- | --- | --- |
 | `DIVERGENCESPLITTER_BUILD_UI` | `ON` | Dear ImGui UIとGUI実行ファイルをビルド。 |
@@ -60,36 +60,27 @@ ctest --preset core --output-on-failure
 | `DIVERGENCESPLITTER_FETCH_BRIDGE` | `ON` | Bridgeクライアントを取得・ビルド。OFFでは親ビルドが `livesplit_bridge::livesplit_bridge` を用意する必要があります。 |
 | `DIVERGENCESPLITTER_BRIDGE_TAG` | `v0.1.0` | FetchContentで取得するタグ・コミット。 |
 | `DIVERGENCESPLITTER_IMGUI_TAG` | `v1.91.9b` | FetchContentで取得するDear ImGuiのタグ・コミット。 |
-| `DIVERGENCESPLITTER_ENABLE_NDI` | `OFF` | Windows x64で公式SDKの受信機を有効化。 |
-| `NDI_SDK_DIR` | 空 | NDI有効時の展開済みSDKルート。 |
 
 Bridgeクライアントのソースが手元にある場合は、`-DFETCHCONTENT_SOURCE_DIR_LIVESPLIT_BRIDGE=C:/src/livesplit-bridge-client-cpp` で指定できます。再現性を確認するときは、指定されている固定バージョンのソースを使ってください。
 
 アプリ側のターゲットは `divergencesplitter_core`、`divergencesplitter_runtime`、`divergencesplitter_cli` です。UIが有効な場合、`divergencesplitter_imgui`、`divergencesplitter_ui`、`DivergenceSplitter` もビルドします。
 
-## NDI対応ビルド
+## NDI Runtime（実行時の任意依存）
 
-NDIは既定でOFFです。通常の開発ではSDKを用意する必要がありません。ONにする場合、[ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) の固定値に一致する公式SDKを使ってください。現在の固定バージョンは6.3.2.0です。
+NDI入力を使用する場合だけ、NDI RuntimeをNDI公式サイトからインストールしてください。DivergenceSplitterは起動時にインストール済みRuntimeを検出し、見つからない場合はNDI入力だけを無効にします。Camera・Video入力とその他の機能は通常どおり動作します。
 
-Windows用SDKをinnoextractで展開し、`Include`、`Bin/x64`、`NDI SDK License Agreement.pdf` が入っているフォルダーを `NDI_SDK_DIR` に指定してください。SDKの開発用ファイルやインストーラーはコミットしません。
+- Runtimeの検索には `NDILIB_REDIST_FOLDER`（通常は `NDI_RUNTIME_DIR_V6`）と `NDILIB_LIBRARY_NAME` を使用し、一般的なインストール先も確認します。
+- DLLの読み込み、`NDIlib_v5_load`、初期化の成功を確認します。失敗した場合は理由をAbout/Profileに表示します。
+- 起動後にRuntimeをインストールした場合、再起動後に再判定します。
+- 配布ZIPには `Processing.NDI.Lib.x64.dll` を含めません。アプリのディレクトリへDLLを置く運用は前提にしていません。
 
-```powershell
-cmake --preset full-release -DDIVERGENCESPLITTER_ENABLE_NDI=ON -DNDI_SDK_DIR=C:/private/ndi-sdk/app
-cmake --build --preset full-release --parallel
-ctest --preset full-release --output-on-failure
-.\build\full-release\divergencesplitter-cli.exe --ndi-check
-.\build\full-release\divergencesplitter-cli.exe --ndi-list
-```
-
-NDI有効時はWindows x64が必要です。SDKには `Processing.NDI.Lib.h`、`Processing.NDI.DynamicLoad.h`、ランタイムDLL、ランタイム通知、確認済みの契約書が必要です。不足するファイルがある場合や、DLL・通知・契約書のハッシュが固定値と違う場合は、configureに失敗します。
-
-DLLは実行ファイルの隣へコピーし、その絶対パスから読み込みます。別の場所にインストールされたランタイムで代用することはありません。CIでの取得と検証は[配布](distribution.md#ci-workflow)を参照してください。
+NDIの初期化・受信を自動テストする場合、CIは固定SDKからRuntime DLLだけを取得し、`NDI_RUNTIME_DIR_V6` をそのフォルダーへ向けてループバックテストを実行します。SDKのヘッダーはビルドに使いません。Secretがないfork PRではRuntimeテストをスキップし、Runtime未導入の起動・Camera・Video動作を検証します。
 
 ## ビルドで問題が起きた場合
 
 - コンパイラーやWindows SDKがない場合、x64 Developer PowerShellを開き直してください。
 - toolchainがない場合、`VCPKG_ROOT` とbootstrapを確認してからconfigureします。
 - Dear ImGuiの取得に失敗する場合、gitとGitHubへの接続を確認するか、`-DDIVERGENCESPLITTER_IMGUI_TAG` を利用可能な固定タグへ変更します。取得済みソースを使う場合は `-DFETCHCONTENT_SOURCE_DIR_IMGUI=<path>` を指定できます。
-- NDIのハッシュが合わない場合、固定SDKを使ってください。検証を無効化するのではなく、固定値を更新する際にSDKと通知を確認します。
+- NDI入力が利用できない場合、NDI Runtimeがインストールされているか、`NDI_RUNTIME_DIR_V6` が正しいかを確認し、アプリを再起動してください。`divergencesplitter-cli --ndi-check` で状態を確認できます。
 
 依存関係、コンパイラー、SDKを変える場合は別のビルドディレクトリか新しいプリセットを使い、古いキャッシュの混入を避けてください。パッケージ化に必要な追加の通知は[配布ガイド](distribution.md)を参照してください。

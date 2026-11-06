@@ -1,42 +1,181 @@
 #include "divergencesplitter/capture/ndi.hpp"
 #include "divergencesplitter/capture/frame_source.hpp"
 
-#if DIVERGENCESPLITTER_ENABLE_NDI
 #include <windows.h>
 #include <Processing.NDI.Lib.h>
 #include <Processing.NDI.DynamicLoad.h>
 
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <vector>
+
+#include "divergencesplitter/text.hpp"
 
 namespace divergencesplitter {
 namespace {
 
-// Application-local loading is deliberate: the ZIP must work without a global
-// runtime installation, PATH entry, SDK installation, or current-directory DLL.
+struct LoadedRuntime {
+    HMODULE module{};
+    const NDIlib_v5* functions{};
+    std::filesystem::path path;
+};
+
+struct LoadAttempt {
+    std::optional<LoadedRuntime> runtime;
+    bool found_file{};
+    std::string error;
+};
+
+std::vector<std::filesystem::path> runtime_candidates() {
+    std::vector<std::filesystem::path> result;
+    const auto library = std::filesystem::path{NDILIB_LIBRARY_NAME};
+
+    const auto add_environment = [&](const wchar_t* name) {
+        const DWORD size = GetEnvironmentVariableW(name, nullptr, 0);
+        if (size == 0) {
+            return;
+        }
+        std::wstring value(size, L'\0');
+        const DWORD written = GetEnvironmentVariableW(name, value.data(), size);
+        if (written == 0 || written >= size) {
+            return;
+        }
+        value.resize(written);
+        if (!value.empty()) {
+            result.push_back(std::filesystem::path{value} / library);
+        }
+    };
+    add_environment(to_wide(NDILIB_REDIST_FOLDER).c_str());
+    add_environment(L"NDI_RUNTIME_DIR_V5");
+
+    const auto add_program_files = [&](const wchar_t* environment, const wchar_t* folder) {
+        const DWORD size = GetEnvironmentVariableW(environment, nullptr, 0);
+        if (size == 0) {
+            return;
+        }
+        std::wstring value(size, L'\0');
+        const DWORD written = GetEnvironmentVariableW(environment, value.data(), size);
+        if (written == 0 || written >= size) {
+            return;
+        }
+        value.resize(written);
+        if (!value.empty()) {
+            result.push_back(std::filesystem::path{value} / L"NDI" / folder / library);
+        }
+    };
+    add_program_files(L"ProgramW6432", L"NDI 6 Runtime");
+    add_program_files(L"ProgramW6432", L"NDI 5 Runtime");
+    add_program_files(L"ProgramFiles", L"NDI 6 Runtime");
+    add_program_files(L"ProgramFiles", L"NDI 5 Runtime");
+
+    return result;
+}
+
+LoadAttempt load_runtime() {
+    LoadAttempt attempt;
+    for (const auto& candidate : runtime_candidates()) {
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(candidate, error)) {
+            continue;
+        }
+        attempt.found_file = true;
+        const HMODULE module = LoadLibraryExW(
+            candidate.c_str(),
+            nullptr,
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32
+        );
+        if (module == nullptr) {
+            attempt.error = "cannot load " + candidate.filename().string() +
+                            " (Windows error " + std::to_string(GetLastError()) + ")";
+            continue;
+        }
+        const auto load = reinterpret_cast<const NDIlib_v5* (*)()>(
+            GetProcAddress(module, "NDIlib_v5_load")
+        );
+        if (load == nullptr) {
+            FreeLibrary(module);
+            attempt.error = "runtime does not expose NDIlib_v5_load";
+            continue;
+        }
+        const NDIlib_v5* functions = load();
+        if (functions == nullptr) {
+            FreeLibrary(module);
+            attempt.error = "NDIlib_v5_load returned no function table";
+            continue;
+        }
+        attempt.runtime = LoadedRuntime{module, functions, candidate};
+        return attempt;
+    }
+    return attempt;
+}
+
+NdiRuntimeStatus detect_runtime_status() {
+    LoadAttempt attempt = load_runtime();
+    if (!attempt.runtime.has_value()) {
+        if (!attempt.found_file) {
+            return {
+                NdiAvailability::not_installed,
+                "NDI Runtime was not found. Install NDI Runtime to enable NDI input.",
+            };
+        }
+        return {
+            NdiAvailability::failed,
+            "NDI Runtime could not be loaded: " + attempt.error,
+        };
+    }
+    LoadedRuntime runtime = std::move(*attempt.runtime);
+    const bool initialized = runtime.functions->initialize();
+    std::string version;
+    if (initialized) {
+        if (const char* text = runtime.functions->version(); text != nullptr) {
+            version = text;
+        }
+        runtime.functions->destroy();
+    }
+    FreeLibrary(runtime.module);
+    if (!initialized) {
+        return {
+            NdiAvailability::failed,
+            "NDI Runtime was found but could not be initialized: " +
+                runtime.path.string(),
+        };
+    }
+    return {
+        NdiAvailability::available,
+        version.empty() ? "NDI Runtime is available." : "NDI Runtime " + version + " is available.",
+    };
+}
+
 class SdkApi final : public NdiApi {
 public:
-    SdkApi() {
-        std::vector<wchar_t> path(32768);
-        const auto length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-        if (length == 0 || length >= path.size()) fail("cannot locate application directory");
-        const auto dll = std::filesystem::path{std::wstring{path.data(), length}}.parent_path() /
-            L"Processing.NDI.Lib.x64.dll";
-        module_ = LoadLibraryExW(dll.c_str(), nullptr,
-            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!module_) fail("cannot load application-local Processing.NDI.Lib.x64.dll (Windows error " +
-            std::to_string(GetLastError()) + ")");
-        const auto load = reinterpret_cast<const NDIlib_v5* (*)()>(GetProcAddress(module_, "NDIlib_v5_load"));
-        if (load) functions_ = load();
-        if (!functions_) {
+    explicit SdkApi(LoadedRuntime runtime)
+        : module_(runtime.module), functions_(runtime.functions) {}
+    ~SdkApi() override {
+        if (module_ != nullptr) {
+            if (initialized_) {
+                functions_->destroy();
+            }
             FreeLibrary(module_);
-            module_ = nullptr;
-            fail("runtime does not expose the official NDIlib_v5_load function table");
         }
     }
-    ~SdkApi() override { if (module_) FreeLibrary(module_); }
-    bool initialize() override { return functions_->initialize(); }
-    void destroy() noexcept override { functions_->destroy(); }
+    bool initialize() override {
+        if (!functions_->initialize()) {
+            return false;
+        }
+        initialized_ = true;
+        return true;
+    }
+    void destroy() noexcept override {
+        if (initialized_) {
+            functions_->destroy();
+            initialized_ = false;
+        }
+        if (module_ != nullptr) {
+            FreeLibrary(module_);
+            module_ = nullptr;
+        }
+    }
     std::string version() const override { return functions_->version(); }
     Handle create_finder() override {
         NDIlib_find_create_t settings;
@@ -51,7 +190,10 @@ public:
     }
     std::vector<std::string> sources(Handle finder) override {
         std::uint32_t count{};
-        const auto* values = functions_->find_get_current_sources(static_cast<NDIlib_find_instance_t>(finder), &count);
+        const auto* values = functions_->find_get_current_sources(
+            static_cast<NDIlib_find_instance_t>(finder),
+            &count
+        );
         std::vector<std::string> result;
         for (std::uint32_t i = 0; values && i < count; ++i) {
             if (values[i].p_ndi_name) result.emplace_back(values[i].p_ndi_name);
@@ -91,7 +233,13 @@ public:
             }
             delete frame;
         });
-        buffers->type = api->recv_capture_v2(recv, &buffers->video, &buffers->audio, &buffers->metadata, timeout_ms);
+        buffers->type = api->recv_capture_v2(
+            recv,
+            &buffers->video,
+            &buffers->audio,
+            &buffers->metadata,
+            timeout_ms
+        );
         NdiCapturedFrame result;
         result.lease = buffers;
         switch (buffers->type) {
@@ -118,20 +266,41 @@ public:
     }
 
 private:
-    [[noreturn]] static void fail(const std::string& message) {
-        throw FrameSourceError("NDI SDK: " + message, false);
-    }
     HMODULE module_{};
     const NDIlib_v5* functions_{};
+    bool initialized_{};
 };
+
 }  // namespace
 
-std::shared_ptr<NdiApi> make_ndi_sdk_api() { return std::make_shared<SdkApi>(); }
-}  // namespace divergencesplitter
-#else
-namespace divergencesplitter {
-std::shared_ptr<NdiApi> make_ndi_sdk_api() {
-    throw FrameSourceError("NDI input is not available in this build. Enable DIVERGENCESPLITTER_ENABLE_NDI.", false);
+const NdiRuntimeStatus& ndi_runtime_status() noexcept {
+    static const NdiRuntimeStatus status = [] {
+        try {
+            return detect_runtime_status();
+        } catch (const std::exception& error) {
+            return NdiRuntimeStatus{
+                NdiAvailability::failed,
+                std::string{"NDI Runtime detection failed: "} + error.what(),
+            };
+        } catch (...) {
+            return NdiRuntimeStatus{
+                NdiAvailability::failed,
+                "NDI Runtime detection failed.",
+            };
+        }
+    }();
+    return status;
 }
+
+std::shared_ptr<NdiApi> make_ndi_sdk_api() {
+    LoadAttempt attempt = load_runtime();
+    if (!attempt.runtime.has_value()) {
+        throw FrameSourceError(
+            "NDI Runtime is unavailable: " + ndi_runtime_status().message,
+            false
+        );
+    }
+    return std::make_shared<SdkApi>(std::move(*attempt.runtime));
+}
+
 }  // namespace divergencesplitter
-#endif

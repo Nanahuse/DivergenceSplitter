@@ -298,16 +298,18 @@ class PackageTests(unittest.TestCase):
                 with self.subTest(name=name, contents=contents), self.assertRaisesRegex(
                     RuntimeError, f"licenses/{name}"
                 ):
-                    verify_windows_zip.verify_contents(self.root, False, self.lock)
+                    verify_windows_zip.verify_contents(self.root, self.lock)
             notice.write_bytes(b"test")
 
-    def test_ndi_files_and_notices_are_required_and_verified(self):
-        (self.root / "Processing.NDI.Lib.x64.dll").write_bytes(b"runtime")
-        (self.root / "Processing.NDI.Lib.Licenses.txt").write_bytes(b"notices")
-        verify_windows_zip.verify_contents(self.root, True, self.lock)
-        (self.root / "Processing.NDI.Lib.Licenses.txt").write_bytes(b"changed")
-        with self.assertRaisesRegex(RuntimeError, "modified NDI"):
-            verify_windows_zip.verify_contents(self.root, True, self.lock)
+    def test_ndi_runtime_is_rejected(self):
+        for name in ("Processing.NDI.Lib.x64.dll", "Processing.NDI.Lib.Licenses.txt"):
+            file = self.root / name
+            file.write_bytes(b"runtime")
+            with self.subTest(name=name), self.assertRaisesRegex(
+                RuntimeError, "optional NDI runtime"
+            ):
+                verify_windows_zip.verify_contents(self.root, self.lock)
+            file.unlink()
 
     def test_qt_runtime_is_rejected(self):
         for name in ("Qt6Core.dll", "platforms/qwindows.dll"):
@@ -317,7 +319,7 @@ class PackageTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(
                 RuntimeError, "Qt runtime"
             ):
-                verify_windows_zip.verify_contents(self.root, False, self.lock)
+                verify_windows_zip.verify_contents(self.root, self.lock)
             file.unlink()
 
     def test_contract_pdf_is_rejected_even_when_renamed(self):
@@ -328,7 +330,7 @@ class PackageTests(unittest.TestCase):
             file = self.root / name
             file.write_bytes(contents)
             with self.assertRaisesRegex(RuntimeError, "contract PDF"):
-                verify_windows_zip.verify_contents(self.root, False, self.lock)
+                verify_windows_zip.verify_contents(self.root, self.lock)
             file.unlink()
 
     def test_development_files_rejected(self):
@@ -336,14 +338,11 @@ class PackageTests(unittest.TestCase):
             file = self.root / name
             file.write_bytes(b"test")
             with self.assertRaisesRegex(RuntimeError, "development files"):
-                verify_windows_zip.verify_contents(self.root, False, self.lock)
+                verify_windows_zip.verify_contents(self.root, self.lock)
             file.unlink()
 
-    def test_off_package_rejects_runtime(self):
-        verify_windows_zip.verify_contents(self.root, False, self.lock)
-        (self.root / "Processing.NDI.Lib.x64.dll").write_bytes(b"runtime")
-        with self.assertRaisesRegex(RuntimeError, "SDK-disabled"):
-            verify_windows_zip.verify_contents(self.root, False, self.lock)
+    def test_package_accepts_missing_optional_runtime(self):
+        verify_windows_zip.verify_contents(self.root, self.lock)
 
 
 if __name__ == "__main__":

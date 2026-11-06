@@ -38,18 +38,13 @@ void AboutPage::draw() {
 
     ImGui::Spacing();
     ImGui::SeparatorText("NDI®");
+    ImGui::TextWrapped("%s", ndi_runtime_status().message.c_str());
     ImGui::TextWrapped(
-        "%s",
-        ndi_enabled()
-            ? "NDI input is enabled; the Windows ZIP includes its runtime."
-            : "NDI input is disabled in this development build."
-    );
-    ImGui::TextWrapped(
-        "NDI® is a registered trademark of Vizrt NDI AB. The bundled NDI runtime is "
-        "separately licensed by NDI, Inc. / Vizrt NDI AB. Its use terms form part of "
-        "this distribution's terms of use. See also Processing.NDI.Lib.Licenses.txt "
-        "and the official NDI SDK License Agreement at https://ndi.link/ndisdk_license. "
-        "The SDK agreement PDF is not bundled."
+        "The NDI runtime is not bundled with DivergenceSplitter. Install NDI Runtime "
+        "separately to use NDI input; restart the application after installation. "
+        "NDI® is a registered trademark of Vizrt NDI AB. The runtime is separately "
+        "licensed by NDI, Inc. / Vizrt NDI AB. See the official NDI SDK License "
+        "Agreement at https://ndi.link/ndisdk_license."
     );
 
     ImGui::Spacing();

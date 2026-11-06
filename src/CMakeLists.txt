@@ -53,13 +53,8 @@ add_library(divergencesplitter_runtime STATIC
 add_library(divergencesplitter::runtime ALIAS divergencesplitter_runtime)
 
 target_compile_features(divergencesplitter_runtime PUBLIC cxx_std_23)
-target_compile_definitions(divergencesplitter_runtime PUBLIC
-    DIVERGENCESPLITTER_ENABLE_NDI=$<BOOL:${DIVERGENCESPLITTER_ENABLE_NDI}>)
-if(DIVERGENCESPLITTER_ENABLE_NDI)
-    target_include_directories(divergencesplitter_runtime SYSTEM PRIVATE "${NDI_SDK_DIR}/Include")
-    # Dynamic-load function table only; no NDI import library is linked.
-    configure_file("${NDI_RUNTIME_DLL}" "${CMAKE_BINARY_DIR}/Processing.NDI.Lib.x64.dll" COPYONLY)
-endif()
+target_include_directories(divergencesplitter_runtime SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/ndi/include")
 target_link_libraries(divergencesplitter_runtime
     PUBLIC
         divergencesplitter::core

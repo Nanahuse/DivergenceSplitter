@@ -12,11 +12,6 @@ option(DIVERGENCESPLITTER_BUILD_UI "Build the Dear ImGui Win32 desktop UI" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTS "Build the CTest suite" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS "Build the optional LiveSplit.Bridge TestHost smoke test" OFF)
 option(DIVERGENCESPLITTER_FETCH_BRIDGE "Fetch the LiveSplit Bridge C++ client" ON)
-option(DIVERGENCESPLITTER_ENABLE_NDI "Build NDI input (requires the official Windows x64 SDK)" OFF)
-set(NDI_SDK_DIR "" CACHE PATH "Extracted official NDI SDK root")
-
-include(cmake/NdiSdk.cmake)
-
 set(
     DIVERGENCESPLITTER_BRIDGE_TAG
     "v0.1.0"

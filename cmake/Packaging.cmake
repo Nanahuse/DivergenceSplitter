@@ -32,10 +32,6 @@ install(CODE "
         COMMAND_ERROR_IS_FATAL ANY
     )
 ")
-if(DIVERGENCESPLITTER_ENABLE_NDI)
-    install(FILES "${NDI_RUNTIME_DLL}" "${NDI_RUNTIME_LICENSE}" DESTINATION .)
-endif()
-
 if(WIN32)
     install(CODE "
         file(GLOB _app_dlls \"${CMAKE_BINARY_DIR}/*.dll\")

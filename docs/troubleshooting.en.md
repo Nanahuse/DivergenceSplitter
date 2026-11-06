@@ -20,9 +20,9 @@ phase, split, condition status, and score.
 | Video cannot open or decode | Check the absolute path and permissions, and try a recording using a codec supported by this OpenCV build. A file-picker extension is not a decoder guarantee. |
 | Reached end of video | Expected at EOF: playback does not loop. Apply to start again. |
 | Crop margins do not fit | Reduce margins relative to the raw input dimensions, before Resize. |
-| NDI input not available in this build | Use the official NDI-enabled ZIP or [enable the SDK at build time (Japanese)](development/building.md#ndi対応ビルド). |
+| NDI input not available | Install the NDI Runtime separately from <https://ndi.video/> and restart the application. The distribution ZIP does not include it. |
 | NDI source absent or no frames | Start the sender; check its advertised name, network reachability, and firewall rules; Search again. A saved offline name is retained. An ordinary timeout is not fatal and the receiver can recover when the sender returns. |
-| NDI runtime initialization fails | Extract the entire ZIP and keep its DLL beside the executable. The loader uses the application directory, not PATH or the working directory. Use `--ndi-check` below. |
+| NDI runtime initialization fails | Check the installed runtime and the `NDI_RUNTIME_DIR_V6` path, then restart the application. Use `--ndi-check` below. |
 
 Camera open/read errors marked retryable are retried by capture. Mode, decoding,
 normalization, and fatal SDK errors can stop capture. Correct the profile and

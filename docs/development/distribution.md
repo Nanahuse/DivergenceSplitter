@@ -11,34 +11,30 @@ cmake --preset full-release
 cmake --build --preset full-release --parallel
 ctest --preset full-release --output-on-failure
 cmake --build build/full-release --target package
-python tools/verify_windows_zip.py --build-dir build/full-release --ndi OFF
+python tools/verify_windows_zip.py --build-dir build/full-release
 ```
 
-このコマンド例はNDI無効の開発用ZIPを作ります。NDIを同梱する場合は、[NDIのオプション](building.md#ndi対応ビルド)を有効にし、同じプリセットでビルド・テスト・パッケージ化してください。検証時には `--ndi ON` を渡します。
-
-SDKや依存ライブラリの構成を変えるときは、別のビルドディレクトリを使ってください。検証スクリプトに指定するディレクトリには、検証対象のZIPを1つだけ置いてください。
-
-CIはパッケージ化の前にMicrosoft公式の c_redist.x64.exe をビルドディレクトリへダウンロードします。ローカルで同じZIPを作る場合も、uild/<preset>/vc_redist.x64.exe を用意してください。
+配布ZIPは1種類だけです。NDI対応・非対応のビルドやZIPは作り分けません。NDI Runtimeは同梱せず、NDI入力を使用する利用者が別途インストールします。
 
 CPackが作るファイル名は `DivergenceSplitter-<version>-windows-x64.zip` です。ZIP展開時は全体を囲むフォルダーがなく、実行ファイルなどが直接入っています。使うときは、ZIPの内容をすべて同じ場所へ展開してください。
 
-GUI配布物には、`DivergenceSplitter.exe`、`divergencesplitter-cli.exe`、OpenCVなどのランタイムDLL、`vc_redist.x64.exe`（存在する場合）、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/` を含めます。Dear ImGuiは静的リンクするためDLLは不要です。QtのDLLやプラグインは含めません。文書とサンプルは含めないため、対応するリビジョンのソースから取得してください。
+GUI配布物には、`DivergenceSplitter.exe`、`divergencesplitter-cli.exe`、OpenCVなどのランタイムDLL、`vc_redist.x64.exe`、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/` を含めます。Dear ImGuiは静的リンクするためDLLは不要です。QtのDLLやプラグイン、NDI Runtime DLL、NDI Runtimeのインストーラーは含めません。文書とサンプルは含めないため、対応するリビジョンのソースから取得してください。
 
-検証スクリプトはZIPを展開し、必要な実行ファイルと通知があること、Qtのランタイムが残っていないこと、SDKの開発用ファイルが混ざっていないことを調べます。その後、CLIの `--help` とGUIの `--smoke-test` で起動を確認します。
+CIはパッケージ化の前にMicrosoft公式の `vc_redist.x64.exe` をビルドディレクトリへダウンロードします。ローカルで同じZIPを作る場合も、`build/<preset>/vc_redist.x64.exe` を用意してください。
 
-起動時はNDIの探索用環境変数を外し、PATHを展開先とWindowsのシステムディレクトリだけにします。NDI有効の場合、ランタイムと通知の固定ハッシュ、および `--ndi-check` による展開先DLLの初期化も確認します。この起動試験だけで、実際の入力を受信できたことにはなりません。
+検証スクリプトはZIPを展開し、必要な実行ファイルと通知があること、Qtのランタイムが残っていないこと、NDI Runtime DLLやNDIのインストーラーが含まれていないこと、SDKの開発用ファイルが混ざっていないことを調べます。その後、CLIの `--help` とGUIの `--smoke-test` で、NDI Runtimeがない環境でも起動することを確認します。
 
 ## CI workflow
 
-[C++23](../../.github/workflows/cpp23.yml)は、PR、`main` へのpush、手動実行で動きます。Windows、MSVC、Ninja、vcpkgを使い、`ci` プリセットでビルドします。Dear ImGuiはconfigure時にFetchContentで取得します。Qtのインストール手順はありません。
+[C++23](../../.github/workflows/cpp23.yml)は、PR、`main` へのpush、手動実行で動きます。Windows、MSVC、Ninja、vcpkgを使い、`ci` プリセットで1種類だけビルドします。Dear ImGuiはconfigure時にFetchContentで取得します。Qtのインストール手順はありません。
 
 固定リビジョンのBridge TestHostもビルドし、CTest、実TestHostとの結合テスト、ZIPの作成、展開後の起動検証まで実行します。
 
-- forkのPRはNDI OFFだけをビルドし、SDKのSecretは渡しません。
-- 同じリポジトリのPR、mainへのpush、手動実行はOFFとONの両方が必須です。SDKの取得に失敗した場合も、OFFへ切り替えて続行しません。
-- ONには公式Windows SDKのURLを持つリポジトリSecret `NDI_SDK_URL_WINDOWS` が必要です。[get_ndi_sdk.py](../../tools/get_ndi_sdk.py) が `curl.exe` で取得し、インストーラーのSHA-256、バージョン、Authenticode発行者、展開したヘッダー・ランタイム・通知・契約書を検証します。`NDI_SDK_DIR` をジョブ環境へ書き込みます。HTTPエラーやタイムアウトでは失敗して部分ファイルを消し、URLと捕捉したcurl出力をログに出しません。
-- [ndi-sdk-lock.json](../../tools/ndi-sdk-lock.json) はSDK 6.3.2.0とinnoextract 1.9の確認済みハッシュを保持します。SDKを展開Actionsキャッシュへ保存しません。vcpkgのキャッシュは依存ダウンロードとバイナリだけです。
-- ONだけが `DivergenceSplitter-cpp23-windows-x64` をアップロードし、両構成がJUnit形式のCTest結果をアップロードします。一時作業ブランチへのpushは起動条件ではありません。PRまたは手動実行で検証します。
+- ビルドにNDI SDKは不要です。NDIヘッダーはリポジトリに固定版を同梱しています。
+- NDI Runtimeの初期化・受信テストは、リポジトリSecret `NDI_SDK_URL_WINDOWS` がある場合だけ実行します。CIは公式SDKを取得し、`NDI_RUNTIME_DIR_V6` をSDK内のRuntimeフォルダーへ向けてループバックテストを実行します。
+- forkのPRやSecretがない実行では、NDI Runtimeテストをスキップします。ビルド・起動・Camera・Videoのテストは常に実行します。
+- Secretがない場合もNDI ON/OFFビルドへ切り替えず、同じ1種類のビルドを続行します。
+- 成果物 `DivergenceSplitter-cpp23-windows-x64` は1種類だけアップロードし、CTest結果もアップロードします。
 
 ## 第三者ライセンスの通知
 
@@ -52,24 +48,23 @@ install・package時には[collect_licenses.py](../../tools/collect_licenses.py)
 
 ## 配布ZIP容量の比較
 
-比較条件を揃えて測定しました。Qt Widgets版は同じリポジトリの `2920fb6` を同じMSVC・vcpkg（OpenCV 4.14）・Release・NDI OFF・DEFLATE level 6でビルドし、`windeployqt` でQtランタイムとプラグインを配置したZIPです。Dear ImGui版は今回のブランチのReleaseビルドです。vc_redistの有無は、生成したZIPから `vc_redist.x64.exe` だけを除いて同じ条件で再圧縮して比較しました。
+比較条件を揃えて測定しました。Qt Widgets版は同じリポジトリの `2920fb6` を同じMSVC・vcpkg（OpenCV 4.14）・Release・DEFLATE level 6でビルドし、`windeployqt` でQtランタイムとプラグインを配置したZIPです。Dear ImGui版は今回のブランチのReleaseビルドです。どちらもNDI Runtimeを含みません。vc_redistの有無は、生成したZIPから `vc_redist.x64.exe` だけを除いて同じ条件で再圧縮して比較しました。
 
-| 構成 | NDI | vc_redist | 圧縮後ZIP | 比較 |
-| --- | --- | --- | ---: | --- |
-| Qt Widgets (`2920fb6`) | OFF | なし | 40,538,833 bytes | 基準 |
-| Dear ImGui (今回) | OFF | なし | 6,571,420 bytes | 約83.8%削減 |
-| Qt Widgets (`2920fb6`) | OFF | あり | 57,603,103 bytes | 基準 |
-| Dear ImGui (今回) | OFF | あり | 31,760,842 bytes | 約44.9%削減 |
-| Dear ImGui (今回) | ON | あり | 35,302,635 bytes | NDI ONの実配布ZIP |
+| 構成 | vc_redist | 圧縮後ZIP | 比較 |
+| --- | --- | ---: | --- |
+| Qt Widgets (`2920fb6`) | なし | 40,538,833 bytes | 基準 |
+| Dear ImGui (今回) | なし | 6,585,390 bytes | 約83.8%削減 |
+| Qt Widgets (`2920fb6`) | あり | 57,603,103 bytes | 基準 |
+| Dear ImGui (今回) | あり | 31,775,362 bytes | 約44.8%削減 |
 
-CI実測はNDI OFF 31,630,340 bytes、NDI ON 35,302,635 bytesです。Qt版のNDI ONはこの環境にSDKがないため未測定で、上記の削減率はNDI OFF同士の比較です。`vc_redist.x64.exe` を同梱する判断は維持し、比較では両方の有無を揃えています。
+配布ZIPは1種類で、NDI Runtimeの有無による差はありません。CIの実測値はPRと配布記録で確認してください。
 
-## NDIランタイムの同梱物
+## NDI Runtimeの扱い
 
-NDI®はVizrt NDI ABの登録商標です。NDI公式サイトは https://ndi.video/ です。ONのZIPには `Processing.NDI.Lib.x64.dll`、変更しない `Processing.NDI.Lib.Licenses.txt`、アプリ側で管理する[licenses/NDI-TERMS.txt](../../licenses/NDI-TERMS.txt) も含みます。
+NDI®はVizrt NDI ABの登録商標です。NDI公式サイトは https://ndi.video/ です。配布ZIPには `Processing.NDI.Lib.x64.dll`、`Processing.NDI.Lib.Licenses.txt`、NDI Runtimeのインストーラーを含めません。
 
-SDK契約書PDFはSDKの取得時とconfigure時に検査しますが、ZIPには入れません。ヘッダー、インポートライブラリ、インストーラー、送信サンプル、NDI Toolsも同梱しません。検証スクリプトは、これらの開発用ファイルがあるとエラーにします。
+NDI入力を使用する利用者は、NDI公式サイトからNDI Runtimeを別途インストールします。アプリは起動時にインストール済みRuntimeを検出し、見つからない場合はNDI入力だけを無効にします。Runtimeのライセンス条件と第三者の通知は、インストールしたRuntimeに含まれるものを確認してください。
 
-NDI無効のZIPにも説明用の通知は含めますが、NDI DLLは含めません。
+`licenses/NDI-TERMS.txt` は、NDI Runtimeを別途利用する場合に適用される条件の説明として同梱します。SDK契約書PDF、SDKヘッダー、インポートライブラリ、インストーラー、送信サンプル、NDI ToolsはZIPに含めません。検証スクリプトは、これらの開発用ファイルやNDI Runtimeが含まれているとエラーにします。
 
-ランタイムの個別条件と公式のライセンス・配布規定へのリンクは [licenses/NDI.md](../../licenses/NDI.md) を参照してください。NDI対応パッケージには商標表記、公式サイトへのリンク、ランタイム通知、利用条件を保ちます。固定SDKを更新して別のZIPを展開する前に、実際の契約書、最新のSDKの要件を含む再配布条件を確認してください。
+ランタイムの個別条件と公式のライセンス・配布規定へのリンクは [licenses/NDI.md](../../licenses/NDI.md) を参照してください。NDI対応を理由に別のZIPを作らず、単一の配布物で商標表記、公式サイトへのリンク、利用条件を保ちます。固定SDKを更新する前に、実際の契約書、最新のSDKの要件を含む再配布条件を確認してください。

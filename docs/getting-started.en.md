@@ -17,11 +17,12 @@ the test.
 1. Open the repository's [C++23 Actions workflow](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml).
    Select a successful trusted run for the revision you intend to use and download
    the `DivergenceSplitter-cpp23-windows-x64` artifact. GitHub artifact downloads
-   require sign-in. Availability depends on a successful NDI-enabled job and
+   require sign-in. Availability depends on a successful Windows job and
    artifact retention; if no artifact is available, [build from source (Japanese)](development/building.md).
 2. Extract the artifact, then extract the application ZIP inside it into a writable
-   local directory. Keep the DLLs, plugin directories, and license files together.
-   The official ZIP includes the NDI runtime; installing the SDK is unnecessary.
+   local directory. Keep the DLLs and license files together.
+   The official ZIP does not include the NDI Runtime. Install the NDI Runtime
+separately if you want to use NDI input.
 3. Run `DivergenceSplitter.exe`. A fresh installation has no active input. If the
    profile remembered from the previous session still exists, the application
    opens and applies it at startup.
@@ -53,7 +54,7 @@ the test.
      a first check. It also plays in the draft preview; Apply restarts playback
      from the beginning.
    - **NDI®**: start your sender, click **Search again**, and select its advertised
-     name. This requires an NDI-enabled build.
+     name. This requires the NDI Runtime to be installed separately.
 3. Leave **Crop margins** and **Resize** unchecked. Click **Add instance**, enter
    Bridge port `54000`, select the row, and use **Browse scenario...** to choose the
    saved YAML. Remove extra rows for this test.

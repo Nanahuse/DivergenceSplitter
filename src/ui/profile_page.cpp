@@ -420,9 +420,11 @@ void ProfilePage::draw_source_controls() {
         switch_source(1);
     }
     ImGui::SameLine();
+    ImGui::BeginDisabled(!ndi_enabled() && type != 2);
     if (ImGui::RadioButton("NDI", type == 2)) {
         switch_source(2);
     }
+    ImGui::EndDisabled();
     ImGui::Dummy(ImVec2(0.0f, 4.0f * app_->dpi_scale()));
     switch (type) {
         case 0:
@@ -592,7 +594,12 @@ void ProfilePage::draw_ndi_source() {
     ImGui::EndDisabled();
 
     if (!ndi_enabled()) {
-        text_muted("NDI input is not available in this build.");
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        text_muted(ndi_runtime_status().message);
+        text_muted(
+            "Install NDI Runtime from https://ndi.video/ and restart DivergenceSplitter."
+        );
+        ImGui::PopTextWrapPos();
     } else if (!ndi_notice_.empty()) {
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
         text_muted(ndi_notice_);
@@ -615,9 +622,9 @@ void ProfilePage::draw_ndi_source() {
 
     ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
     text_muted(
-        "NDI® is a registered trademark of Vizrt NDI AB. The bundled NDI runtime is "
-        "separately licensed. See licenses/NDI-TERMS.txt in the distribution for its use "
-        "terms."
+        "NDI® is a registered trademark of Vizrt NDI AB. The NDI runtime is not "
+        "bundled and is separately licensed. See licenses/NDI-TERMS.txt in the "
+        "distribution for its use terms."
     );
     ImGui::PopTextWrapPos();
 }
@@ -848,7 +855,7 @@ void ProfilePage::apply() {
     }
     if (std::holds_alternative<NdiSourceConfiguration>(profile.source)) {
         if (!ndi_enabled()) {
-            fail("NDI input is not available in this build.");
+            fail("NDI Runtime is unavailable: " + ndi_runtime_status().message);
             return;
         }
         if (std::get<NdiSourceConfiguration>(profile.source).name.empty()) {

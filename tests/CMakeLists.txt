@@ -29,15 +29,13 @@ add_test(NAME recorded_pipeline_repeat COMMAND "${CMAKE_COMMAND}"
     -P "${CMAKE_CURRENT_LIST_DIR}/repeat_recorded_pipeline.cmake")
 set_tests_properties(recorded_pipeline_repeat PROPERTIES
     TIMEOUT 180 LABELS "recording;regression")
-if(DIVERGENCESPLITTER_ENABLE_NDI)
-    add_test(NAME ndi_sdk_initialization COMMAND divergencesplitter_cli --ndi-check)
-    add_executable(divergencesplitter_ndi_loopback_tests ndi_loopback_tests.cpp)
-    target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE "${NDI_SDK_DIR}/Include")
-    target_compile_definitions(divergencesplitter_ndi_loopback_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::runtime GTest::gtest_main)
-    add_test(NAME ndi_sdk_loopback COMMAND divergencesplitter_ndi_loopback_tests)
-    set_tests_properties(ndi_sdk_loopback PROPERTIES TIMEOUT 90 LABELS "ndi;integration")
-endif()
+add_executable(divergencesplitter_ndi_loopback_tests ndi_loopback_tests.cpp)
+target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/ndi/include")
+target_compile_definitions(divergencesplitter_ndi_loopback_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::runtime GTest::gtest_main)
+add_test(NAME ndi_sdk_loopback COMMAND divergencesplitter_ndi_loopback_tests)
+set_tests_properties(ndi_sdk_loopback PROPERTIES TIMEOUT 90 LABELS "ndi;integration")
 
 if(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS)
     add_executable(divergencesplitter_testhost_tests testhost_tests.cpp)
