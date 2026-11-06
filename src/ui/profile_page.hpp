@@ -9,6 +9,7 @@
 #include "divergencesplitter/capture/camera_devices.hpp"
 #include "divergencesplitter/configuration/configuration.hpp"
 #include "image_texture.hpp"
+#include "ndi_discovery.hpp"
 #include "profile_preview.hpp"
 
 namespace divergencesplitter::ui {
@@ -59,7 +60,6 @@ private:
     void select_camera_mode(int index);
     void refresh_ndi_sources();
     void poll_ndi_discovery();
-    void stop_ndi_discovery();
     void browse_scenario(std::size_t index);
     void browse_video();
 
@@ -81,13 +81,8 @@ private:
     bool ndi_discovery_available_{};
     std::vector<std::string> ndi_sources_;
     std::string ndi_notice_;
-    bool ndi_searching_{};
     double ndi_last_search_{};
-    std::thread ndi_worker_;
-    mutable std::mutex ndi_mutex_;
-    std::vector<std::string> ndi_pending_sources_;
-    std::string ndi_pending_error_;
-    bool ndi_result_ready_{};
+    NdiDiscoveryWorker ndi_worker_;
 
     std::string status_;
 };

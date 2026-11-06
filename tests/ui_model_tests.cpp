@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <imgui.h>
 #include <opencv2/core.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -15,6 +18,7 @@
 #include "divergencesplitter/text.hpp"
 
 #include "monitor_model.hpp"
+#include "ndi_discovery.hpp"
 #include "profile_document.hpp"
 #include "profile_preview.hpp"
 
@@ -232,6 +236,66 @@ TEST(Text, Utf8PathsRoundTripJapanese) {
     const auto path = path_from_utf8(value);
     EXPECT_EQ(path_to_utf8(path), value);
     EXPECT_EQ(to_utf8(to_wide(value)), value);
+}
+
+TEST(NdiDiscoveryWorker, RepeatedSearchesPublishResults) {
+    std::atomic_int calls{};
+    NdiDiscoveryWorker worker([&] {
+        ++calls;
+        return std::vector<std::string>{"sender A", "sender B"};
+    });
+    for (int iteration = 0; iteration < 50; ++iteration) {
+        worker.start();
+        std::optional<NdiDiscoveryResult> result;
+        ASSERT_TRUE(wait_until([&] {
+            result = worker.take_result();
+            return result.has_value();
+        }));
+        ASSERT_TRUE(result->error.empty());
+        ASSERT_EQ(result->sources.size(), 2);
+        EXPECT_EQ(result->sources[0], "sender A");
+        EXPECT_FALSE(worker.busy());
+    }
+    EXPECT_EQ(calls.load(), 50);
+}
+
+TEST(NdiDiscoveryWorker, BusySearchBlocksRestartAndReportsErrors) {
+    std::promise<void> release;
+    auto ready = release.get_future();
+    NdiDiscoveryWorker worker([&]() -> std::vector<std::string> {
+        ready.wait();
+        throw std::runtime_error("offline sender");
+    });
+    worker.start();
+    EXPECT_TRUE(worker.busy());
+    worker.start();
+    release.set_value();
+
+    std::optional<NdiDiscoveryResult> result;
+    ASSERT_TRUE(wait_until([&] {
+        result = worker.take_result();
+        return result.has_value();
+    }));
+    EXPECT_EQ(result->error, "offline sender");
+    EXPECT_TRUE(result->sources.empty());
+    EXPECT_FALSE(worker.busy());
+}
+
+
+TEST(ImGuiLabels, ResetButtonKeepsStableIdWhileCountingDown) {
+    ImGuiContext* context = ImGui::CreateContext();
+    ImGui::SetCurrentContext(context);
+    ImGui::GetIO().DisplaySize = ImVec2(800.0f, 600.0f);
+    ImGui::GetIO().Fonts->AddFontDefault();
+    ImGui::GetIO().Fonts->Build();
+    ImGui::NewFrame();
+    const ImGuiID idle = ImGui::GetID("Reset All###reset_all");
+    const ImGuiID holding = ImGui::GetID("Hold... 1.0 s###reset_all");
+    const ImGuiID triggered = ImGui::GetID("Reset requested###reset_all");
+    ImGui::EndFrame();
+    ImGui::DestroyContext(context);
+    EXPECT_EQ(idle, holding);
+    EXPECT_EQ(idle, triggered);
 }
 
 }  // namespace divergencesplitter::ui

@@ -200,11 +200,12 @@ void MonitorPage::draw_cards() {
 void MonitorPage::draw_reset_button() {
     const double now = ImGui::GetTime();
     const float scale = app_->dpi_scale();
-    std::string label = "Reset All";
+    // Keep the ImGui widget ID stable while the visible label counts down.
+    std::string label = "Reset All###reset_all";
     if (reset_holding_) {
         const double remaining = std::max(0.0, 2.0 - (now - reset_started_));
         char text[64]{};
-        std::snprintf(text, sizeof(text), "Hold... %.1f s", remaining);
+        std::snprintf(text, sizeof(text), "Hold... %.1f s###reset_all", remaining);
         label = text;
     }
     if (ImGui::Button(label.c_str(), ImVec2(130.0f * scale, 34.0f * scale))) {

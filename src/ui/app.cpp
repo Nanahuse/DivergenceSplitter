@@ -237,6 +237,13 @@ LRESULT App::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             return 0;
         }
         case WM_CLOSE:
+            if (!smoke_test_ && document_.dirty() &&
+                !confirm(
+                    "DivergenceSplitter",
+                    "Discard the unsaved Profile changes?"
+                )) {
+                return 0;
+            }
             DestroyWindow(window);
             return 0;
         case WM_DESTROY:

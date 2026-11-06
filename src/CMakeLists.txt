@@ -112,6 +112,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/image_texture.hpp
         ui/monitor_model.hpp
         ui/monitor_page.hpp
+        ui/ndi_discovery.hpp
         ui/profile_document.hpp
         ui/profile_page.hpp
         ui/profile_preview.hpp
@@ -125,6 +126,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/image_texture.cpp
         ui/monitor_model.cpp
         ui/monitor_page.cpp
+        ui/ndi_discovery.cpp
         ui/profile_page.cpp
         ui/profile_preview.cpp
         ui/settings_page.cpp

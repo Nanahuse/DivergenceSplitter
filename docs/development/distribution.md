@@ -52,17 +52,17 @@ install・package時には[collect_licenses.py](../../tools/collect_licenses.py)
 
 ## 配布ZIP容量の比較
 
-同じ比較実験（Windows x64、MSVC、Release、OpenCV、DEFLATE level 6）で測定した圧縮後ZIP容量を記録します。vc_redist.x64.exeの有無で条件が変わるため、両方を残します。
+比較条件を揃えて測定しました。Qt Widgets版は同じリポジトリの `2920fb6` を同じMSVC・vcpkg（OpenCV 4.14）・Release・NDI OFF・DEFLATE level 6でビルドし、`windeployqt` でQtランタイムとプラグインを配置したZIPです。Dear ImGui版は今回のブランチのReleaseビルドです。vc_redistの有無は、生成したZIPから `vc_redist.x64.exe` だけを除いて同じ条件で再圧縮して比較しました。
 
-| 構成 | vc_redist | 圧縮後ZIP | 比較 |
-| --- | --- | ---: | --- |
-| Qt Widgets（比較実験の基準） | なし | 44,268,303 bytes | 基準 |
-| Dear ImGui（今回の配布物） | なし | 6,570,098 bytes | 約85.2%削減 |
-| Dear ImGui（今回の配布物） | あり | 31,759,381 bytes | 約28.3%削減 |
-| Dear ImGui（CI NDI OFF） | あり | 31,628,981 bytes | 約28.6%削減 |
-| Dear ImGui（CI NDI ON） | あり | 35,301,444 bytes | 約20.3%削減 |
+| 構成 | NDI | vc_redist | 圧縮後ZIP | 比較 |
+| --- | --- | --- | ---: | --- |
+| Qt Widgets (`2920fb6`) | OFF | なし | 40,538,833 bytes | 基準 |
+| Dear ImGui (今回) | OFF | なし | 6,571,420 bytes | 約83.8%削減 |
+| Qt Widgets (`2920fb6`) | OFF | あり | 57,603,103 bytes | 基準 |
+| Dear ImGui (今回) | OFF | あり | 31,760,842 bytes | 約44.9%削減 |
+| Dear ImGui (今回) | ON | あり | 35,301,449 bytes | NDI ONの実配布ZIP |
 
-今回の配布ZIPは `vc_redist.x64.exe`（25,635,768 bytes）を含みます。Qt基準値は同じ比較実験の記録で、QtのDLL・プラグインを含み、vc_redistを含みません。今回の「なし」は、生成したZIPからvc_redistだけを除いて同じDEFLATE条件で再圧縮した値です。Qt版の実配布ZIPと完全に同じ条件ではないため、削減率は参考値として扱います。
+CI実測はNDI OFF 31,628,979 bytes、NDI ON 35,301,449 bytesです。Qt版のNDI ONはこの環境にSDKがないため未測定で、上記の削減率はNDI OFF同士の比較です。`vc_redist.x64.exe` を同梱する判断は維持し、比較では両方の有無を揃えています。
 
 ## NDIランタイムの同梱物
 

@@ -56,6 +56,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
     target_link_libraries(divergencesplitter_ui_tests
         PRIVATE
             divergencesplitter::ui
+            divergencesplitter_imgui
             GTest::gtest_main
     )
     target_include_directories(divergencesplitter_ui_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")

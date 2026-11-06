@@ -116,6 +116,14 @@ std::string narrow_acp(std::wstring_view value) {
     return result;
 }
 
+void remove_temporary_links(std::vector<std::filesystem::path>& links) {
+    std::error_code ignored;
+    for (const auto& link : links) {
+        std::filesystem::remove(link, ignored);
+    }
+    links.clear();
+}
+
 // OpenCV on Windows treats narrow paths as the active code page. For non-ASCII
 // paths, try an ASCII short path or a temporary hard link before falling back.
 struct VideoOpenPaths {
@@ -127,11 +135,11 @@ struct VideoOpenPaths {
 
     std::vector<std::string> candidates;
     std::vector<std::filesystem::path> links;
+    bool keep_links{false};
 
     ~VideoOpenPaths() {
-        std::error_code ignored;
-        for (const auto& link : links) {
-            std::filesystem::remove(link, ignored);
+        if (!keep_links) {
+            remove_temporary_links(links);
         }
     }
 };
@@ -315,6 +323,7 @@ struct VideoFileFrameSource::Impl {
     double fps{kDefaultVideoFps};
     std::chrono::steady_clock::time_point playback_started{};
     std::uint64_t frames_read{};
+    std::vector<std::filesystem::path> temporary_links;
 };
 
 VideoFileFrameSource::VideoFileFrameSource(VideoFileSourceOptions options)
@@ -355,6 +364,8 @@ void VideoFileFrameSource::open() {
         impl_->capture.release();
         throw FrameSourceError("cannot open video file: " + options_.path, false);
     }
+    paths.keep_links = true;
+    impl_->temporary_links = std::move(paths.links);
     const double recorded_fps = impl_->capture.get(cv::CAP_PROP_FPS);
     impl_->fps = recorded_fps > 0.0 ? recorded_fps : kDefaultVideoFps;
     impl_->playback_started = std::chrono::steady_clock::now();
@@ -398,6 +409,7 @@ void VideoFileFrameSource::close() noexcept {
     if (impl_) {
         impl_->capture.release();
         impl_->opened = false;
+        remove_temporary_links(impl_->temporary_links);
     }
 }
 

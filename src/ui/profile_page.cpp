@@ -72,7 +72,9 @@ bool source_ready_for_preview(const SourceConfiguration& source) {
 }  // namespace
 
 ProfilePage::ProfilePage(App* app, NdiDiscovery ndi_discovery)
-    : app_(app), ndi_discovery_(std::move(ndi_discovery)) {
+    : app_(app),
+      ndi_discovery_(std::move(ndi_discovery)),
+      ndi_worker_([this] { return ndi_discovery_(); }) {
     ndi_discovery_available_ = ndi_enabled() || static_cast<bool>(ndi_discovery_);
     if (!ndi_discovery_) {
         ndi_discovery_ = [] { return discover_ndi_sources(); };
@@ -82,7 +84,7 @@ ProfilePage::ProfilePage(App* app, NdiDiscovery ndi_discovery)
 
 ProfilePage::~ProfilePage() {
     stop_preview();
-    stop_ndi_discovery();
+    ndi_worker_.stop();
 }
 
 Profile ProfilePage::draft_profile() const {
@@ -136,7 +138,7 @@ void ProfilePage::update(bool visible, double now) {
         refresh_preview();
     }
     if (std::holds_alternative<NdiSourceConfiguration>(app_->document().draft.source) &&
-        ndi_discovery_available_ && !ndi_searching_ && now - ndi_last_search_ >= 5.0) {
+        ndi_discovery_available_ && !ndi_worker_.busy() && now - ndi_last_search_ >= 5.0) {
         refresh_ndi_sources();
     }
 }
@@ -583,7 +585,7 @@ void ProfilePage::draw_ndi_source() {
         next_preview_ = 0.0;
     }
     ImGui::SameLine();
-    ImGui::BeginDisabled(!ndi_discovery_available_ || ndi_searching_);
+    ImGui::BeginDisabled(!ndi_discovery_available_ || ndi_worker_.busy());
     if (ImGui::Button("Search again")) {
         refresh_ndi_sources();
     }
@@ -934,49 +936,22 @@ void ProfilePage::browse_scenario(std::size_t index) {
 }
 
 void ProfilePage::refresh_ndi_sources() {
-    if (!ndi_discovery_available_ || ndi_searching_) {
+    if (!ndi_discovery_available_ || ndi_worker_.busy()) {
         return;
     }
-    stop_ndi_discovery();
-    ndi_searching_ = true;
     ndi_last_search_ = ImGui::GetTime();
     ndi_notice_ = "Searching for NDI sources...";
-    ndi_worker_ = std::thread([this] {
-        std::vector<std::string> names;
-        std::string error;
-        try {
-            names = ndi_discovery_();
-        } catch (const std::exception& failure) {
-            error = failure.what();
-        }
-        std::scoped_lock lock{ndi_mutex_};
-        ndi_pending_sources_ = std::move(names);
-        ndi_pending_error_ = std::move(error);
-        ndi_result_ready_ = true;
-    });
+    ndi_worker_.start();
 }
 
 void ProfilePage::poll_ndi_discovery() {
-    if (!ndi_result_ready_) {
+    auto result = ndi_worker_.take_result();
+    if (!result.has_value()) {
         return;
     }
-    if (ndi_worker_.joinable()) {
-        ndi_worker_.join();
-    }
-    std::vector<std::string> names;
-    std::string error;
-    {
-        std::scoped_lock lock{ndi_mutex_};
-        names = std::move(ndi_pending_sources_);
-        error = std::move(ndi_pending_error_);
-        ndi_pending_sources_.clear();
-        ndi_pending_error_.clear();
-        ndi_result_ready_ = false;
-    }
-    ndi_searching_ = false;
-    ndi_sources_ = std::move(names);
-    if (!error.empty()) {
-        ndi_notice_ = "NDI discovery failed: " + error;
+    ndi_sources_ = std::move(result->sources);
+    if (!result->error.empty()) {
+        ndi_notice_ = "NDI discovery failed: " + result->error;
         return;
     }
     const auto& draft = app_->document().draft;
@@ -991,12 +966,6 @@ void ProfilePage::poll_ndi_discovery() {
         ndi_notice_ = "Saved source is currently offline: " + selected;
     } else {
         ndi_notice_ = std::to_string(ndi_sources_.size()) + " NDI source(s) found.";
-    }
-}
-
-void ProfilePage::stop_ndi_discovery() {
-    if (ndi_worker_.joinable()) {
-        ndi_worker_.join();
     }
 }
 

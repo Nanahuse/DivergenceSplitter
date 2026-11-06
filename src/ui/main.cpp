@@ -35,8 +35,11 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
     }
 
     ImGui_ImplWin32_EnableDpiAwareness();
-    divergencesplitter::ui::App app;
-    const int result = app.run(instance, show_command, smoke_test);
+    int result = 0;
+    {
+        divergencesplitter::ui::App app;
+        result = app.run(instance, show_command, smoke_test);
+    }
     CoUninitialize();
     return result;
 }
