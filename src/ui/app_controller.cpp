@@ -1,12 +1,12 @@
 #include "app_controller.hpp"
 
-#include <QString>
-
 #include <exception>
+
+#include "divergencesplitter/text.hpp"
 
 namespace divergencesplitter::ui {
 
-AppController::AppController(QObject* parent) : QObject(parent) {
+AppController::AppController() {
     try {
         const auto path = default_settings_path();
         if (std::filesystem::exists(path)) {
@@ -16,59 +16,58 @@ AppController::AppController(QObject* parent) : QObject(parent) {
         settings_ = AppSettings{};
     }
 
-    if (settings_.last_profile.has_value()) {
-        const std::filesystem::path path{*settings_.last_profile};
-        if (std::filesystem::exists(path)) {
-            QString ignored;
-            open_profile(path, &ignored);
-        }
-    }
+    load_initial_profile();
 }
 
 AppController::~AppController() {
     session_.stop();
 }
 
+void AppController::load_initial_profile() {
+    if (!settings_.last_profile.has_value()) {
+        return;
+    }
+    const auto path = path_from_utf8(*settings_.last_profile);
+    if (std::filesystem::exists(path)) {
+        std::string ignored;
+        open_profile(path, &ignored);
+    }
+}
+
 Profile AppController::profile() const {
     return profile_;
 }
 
-bool AppController::apply_profile(const Profile& profile, QString* error) {
-    emit sessionStarting();
+bool AppController::apply_profile(const Profile& profile, std::string* error) {
     try {
         session_.apply_profile(profile, settings_);
         profile_ = profile;
-        if (profile_path_.has_value()) {
-            settings_.last_profile = profile_path_->string();
-            save_app_settings(default_settings_path(), settings_);
-        }
-        emit sessionChanged();
         return true;
     } catch (const std::exception& failure) {
         if (error != nullptr) {
-            *error = QString::fromUtf8(failure.what());
+            *error = failure.what();
         }
-        emit sessionChanged();
         return false;
     }
 }
 
-bool AppController::open_profile(const std::filesystem::path& path, QString* error) {
+bool AppController::open_profile(const std::filesystem::path& path, std::string* error) {
     try {
         auto loaded = load_profile(path);
-        emit sessionStarting();
         session_.apply_profile(loaded.profile, settings_);
         profile_ = loaded.profile;
         profile_path_ = path;
-        settings_.last_profile = path.string();
-        save_app_settings(default_settings_path(), settings_);
-        emit sessionChanged();
+        settings_.last_profile = path_to_utf8(path);
+        try {
+            save_app_settings(default_settings_path(), settings_);
+        } catch (const std::exception&) {
+            // The profile itself opened successfully; remember it next time if possible.
+        }
         return true;
     } catch (const std::exception& failure) {
         if (error != nullptr) {
-            *error = QString::fromUtf8(failure.what());
+            *error = failure.what();
         }
-        emit sessionChanged();
         return false;
     }
 }
@@ -76,23 +75,27 @@ bool AppController::open_profile(const std::filesystem::path& path, QString* err
 bool AppController::save_profile_file(
     const std::filesystem::path& path,
     const Profile& profile,
-    QString* error
+    std::string* error
 ) {
     try {
         save_profile(path, profile);
         profile_path_ = path;
-        settings_.last_profile = path.string();
-        save_app_settings(default_settings_path(), settings_);
+        settings_.last_profile = path_to_utf8(path);
+        try {
+            save_app_settings(default_settings_path(), settings_);
+        } catch (const std::exception&) {
+            // The profile file was written; a settings-file failure must not report it lost.
+        }
         return true;
     } catch (const std::exception& failure) {
         if (error != nullptr) {
-            *error = QString::fromUtf8(failure.what());
+            *error = failure.what();
         }
         return false;
     }
 }
 
-void AppController::save_settings(const AppSettings& settings, QString* error) {
+void AppController::save_settings(const AppSettings& settings, std::string* error) {
     try {
         const auto previous_profile = settings_.last_profile;
         settings_ = settings;
@@ -102,7 +105,7 @@ void AppController::save_settings(const AppSettings& settings, QString* error) {
         save_app_settings(default_settings_path(), settings_);
     } catch (const std::exception& failure) {
         if (error != nullptr) {
-            *error = QString::fromUtf8(failure.what());
+            *error = failure.what();
         }
     }
 }
@@ -113,15 +116,14 @@ std::optional<std::filesystem::path> AppController::profile_path() const {
 
 void AppController::stop() {
     session_.stop();
-    emit sessionChanged();
 }
 
 void AppController::request_reset_all() {
     session_.request_reset_all();
 }
 
-QString AppController::last_error() const {
-    return QString::fromStdString(session_.last_error());
+std::string AppController::last_error() const {
+    return session_.last_error();
 }
 
 }  // namespace divergencesplitter::ui

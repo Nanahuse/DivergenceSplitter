@@ -1,86 +1,68 @@
 #include "about_page.hpp"
 
-#include <QCoreApplication>
-#include <QFrame>
-#include <QLabel>
-#include <QTextBrowser>
-#include <QVBoxLayout>
-#include <QUrl>
+#include <imgui.h>
 
 #include "divergencesplitter/capture/ndi.hpp"
+#include "ui_helpers.hpp"
 
 namespace divergencesplitter::ui {
 
-AboutPage::AboutPage(QWidget* parent) : QWidget(parent) {
-    setObjectName(QStringLiteral("page"));
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(24, 20, 24, 20);
-    layout->setSpacing(8);
+AboutPage::AboutPage() = default;
 
-    auto* title = new QLabel(tr("DivergenceSplitter"), this);
-    title->setObjectName(QStringLiteral("pageTitle"));
-    layout->addWidget(title);
+void AboutPage::draw() {
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+    ImGui::Indent(16.0f);
+    ImGui::TextUnformatted("DivergenceSplitter");
+    text_muted("Version " DIVERGENCESPLITTER_VERSION);
+    ImGui::Spacing();
 
-    const QString version_text = QCoreApplication::applicationVersion().isEmpty()
-        ? QStringLiteral(DIVERGENCESPLITTER_VERSION)
-        : QCoreApplication::applicationVersion();
-    auto* version = new QLabel(tr("Version %1").arg(version_text), this);
-    version->setProperty("role", QStringLiteral("muted"));
-    layout->addWidget(version);
+    ImGui::TextLinkOpenURL("GitHub", "https://github.com/Nanahuse/DivergenceSplitter");
+    ImGui::SameLine();
+    ImGui::TextUnformatted("|");
+    ImGui::SameLine();
+    ImGui::TextLinkOpenURL("NDI website", "https://ndi.video/");
+    text_muted("NDI® is a registered trademark of Vizrt NDI AB.");
 
-    auto* links = new QLabel(
-        tr("<a href=\"https://github.com/Nanahuse/DivergenceSplitter\">GitHub</a>"
-           " &nbsp;&nbsp; "
-           "<a href=\"https://ndi.video/\">NDI website</a>"),
-        this
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::BeginChild("##about_scroll", ImVec2(0.0f, 0.0f), false);
+    ImGui::Indent(16.0f);
+    ImGui::SeparatorText("Components");
+    ImGui::BulletText("Dear ImGui interface");
+    ImGui::BulletText("Win32 window and Direct3D 11 rendering");
+    ImGui::BulletText("OpenCV image processing");
+    ImGui::BulletText("livesplit-bridge-client-cpp (LiveSplit.Bridge JSON protocol)");
+    ImGui::BulletText("rapidyaml (ryml) scenario loading");
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("NDI®");
+    ImGui::TextWrapped(
+        "%s",
+        ndi_enabled()
+            ? "NDI input is enabled; the Windows ZIP includes its runtime."
+            : "NDI input is disabled in this development build."
     );
-    links->setOpenExternalLinks(true);
-    layout->addWidget(links);
-
-    auto* trademark = new QLabel(
-        tr("NDI® is a registered trademark of Vizrt NDI AB."), this
+    ImGui::TextWrapped(
+        "NDI® is a registered trademark of Vizrt NDI AB. The bundled NDI runtime is "
+        "separately licensed by NDI, Inc. / Vizrt NDI AB. Its use terms form part of "
+        "this distribution's terms of use. See also Processing.NDI.Lib.Licenses.txt "
+        "and the official NDI SDK License Agreement at https://ndi.link/ndisdk_license. "
+        "The SDK agreement PDF is not bundled."
     );
-    trademark->setProperty("role", QStringLiteral("muted"));
-    trademark->setWordWrap(true);
-    layout->addWidget(trademark);
 
-    auto* divider = new QFrame(this);
-    divider->setObjectName(QStringLiteral("dividerHorizontal"));
-    divider->setFrameShape(QFrame::HLine);
-    divider->setFixedHeight(1);
-    layout->addWidget(divider);
-
-    auto* browser = new QTextBrowser(this);
-    browser->setOpenExternalLinks(true);
-    browser->setFrameShape(QFrame::NoFrame);
-    browser->setHtml(tr(
-        "<h3>Components</h3>"
-        "<ul>"
-        "<li>Qt Widgets interface</li>"
-        "<li>OpenCV image processing</li>"
-        "<li>livesplit-bridge-client-cpp (LiveSplit.Bridge JSON protocol)</li>"
-        "<li>rapidyaml (ryml) scenario loading</li>"
-        "</ul>"
-        "<h3>NDI®</h3>"
-        "<p>%1</p>"
-        "<p>NDI® is a registered trademark of Vizrt NDI AB. The bundled NDI runtime is "
-        "separately licensed by NDI, Inc. / Vizrt NDI AB. "
-        "Its <a href=\"%2\">use terms</a> form part of this distribution's terms of use. "
-        "See also Processing.NDI.Lib.Licenses.txt and the "
-        "<a href=\"https://ndi.link/ndisdk_license\">official NDI SDK License Agreement</a>. "
-        "The SDK agreement PDF is not bundled.</p>"
-        "<h3>License</h3>"
-        "<p>DivergenceSplitter is distributed under the MIT License. Third-party license "
-        "notices are included in the distribution under <code>licenses/</code> and "
-        "<code>DISTRIBUTION-NOTICE.txt</code>.</p>"
-    ).arg(
-        ndi_enabled() ? tr("NDI input is enabled; the Windows ZIP includes its runtime.")
-                      : tr("NDI input is disabled in this development build."),
-        QUrl::fromLocalFile(
-            QCoreApplication::applicationDirPath() + "/licenses/NDI-TERMS.txt"
-        ).toString()
-    ));
-    layout->addWidget(browser, 1);
+    ImGui::Spacing();
+    ImGui::SeparatorText("License");
+    ImGui::TextWrapped(
+        "DivergenceSplitter is distributed under the MIT License. Third-party license "
+        "notices are included in the distribution under licenses/ and "
+        "DISTRIBUTION-NOTICE.txt."
+    );
+    ImGui::Unindent(16.0f);
+    ImGui::EndChild();
+    ImGui::Unindent(16.0f);
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
 }
 
 }  // namespace divergencesplitter::ui

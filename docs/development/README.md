@@ -5,7 +5,7 @@
 | 作業 | 参照先 |
 | --- | --- |
 | コンポーネント、スレッド、制御の流れを理解する | [アーキテクチャ](architecture.md) |
-| CMake、依存関係、Qt、NDI SDKを設定する | [ビルド](building.md) |
+| CMake、依存関係、Dear ImGui、NDI SDKを設定する | [ビルド](building.md) |
 | CTest、実Bridgeとの結合、NDIを検証する | [テスト](testing.md) |
 | Windows ZIPと通知を作成・検証する | [配布](distribution.md) |
 | C++移行時の検証範囲と未確認の項目を調べる | [移行受け入れ記録](migration-acceptance.md) |

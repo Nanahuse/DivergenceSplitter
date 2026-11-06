@@ -11,7 +11,6 @@ import hashlib
 import json
 import shutil
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -41,8 +40,7 @@ def collect(
     destination: Path,
     share: Path,
     bridge: Path,
-    qt_dir: Path | None,
-    qt_version: str,
+    imgui_source: Path | None,
     cache: Path,
 ) -> None:
     lock = json.loads(
@@ -66,26 +64,8 @@ def collect(
     copy_notice(
         pinned_file(lock["camera"], cache), destination / lock["camera"]["name"]
     )
-    if qt_dir is not None:
-        installed = qt_dir.parent / "qtbase/copyright"
-        if installed.is_file():
-            copy_notice(installed, destination / "qtbase.txt")
-        else:
-            qt = lock["qt"]
-            if qt_version != qt["version"]:
-                raise RuntimeError(
-                    "External Qt license pin differs from Qt version; update the license lock"
-                )
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                sources = list(
-                    pool.map(lambda entry: pinned_file(entry, cache), qt["files"])
-                )
-            # Match the Qt/vcpkg license bundle format without storing a copy in Git.
-            with (destination / "qtbase.txt").open("wb") as output:
-                for entry, source in zip(qt["files"], sources, strict=True):
-                    output.write(f"{entry['name']}:\n\n".encode())
-                    output.write(source.read_bytes())
-                    output.write(b"\n\n")
+    if imgui_source is not None:
+        copy_notice(imgui_source / "LICENSE.txt", destination / "imgui.txt")
     print(
         "Collected dependency license notices from build inputs and verified upstream sources"
     )
@@ -96,16 +76,14 @@ def main() -> None:
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--vcpkg-share", type=Path, required=True)
     parser.add_argument("--bridge-source", type=Path, required=True)
-    parser.add_argument("--qt-dir", type=Path)
-    parser.add_argument("--qt-version", default="")
+    parser.add_argument("--imgui-source", type=Path)
     parser.add_argument("--cache", type=Path, required=True)
     args = parser.parse_args()
     collect(
         args.destination,
         args.vcpkg_share,
         args.bridge_source,
-        args.qt_dir,
-        args.qt_version,
+        args.imgui_source,
         args.cache,
     )
 

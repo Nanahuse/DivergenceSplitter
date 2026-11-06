@@ -20,6 +20,7 @@
 
 #include "divergencesplitter/condition/conditions.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
+#include "divergencesplitter/text.hpp"
 
 namespace divergencesplitter {
 namespace {
@@ -283,7 +284,7 @@ cv::Mat read_reference(
     const LoadContext& context,
     const std::optional<Region>& roi
 ) {
-    std::filesystem::path path = std::filesystem::u8path(as_string(node, field));
+    std::filesystem::path path = path_from_utf8(as_string(node, field));
     if (path.is_relative()) {
         path = context.base_directory / path;
     }

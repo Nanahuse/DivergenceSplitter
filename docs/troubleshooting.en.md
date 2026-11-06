@@ -7,7 +7,7 @@ This is an English translation. The Japanese version is the original and takes p
 [Documentation home](../README.en.md)
 
 Start in Monitor: check whether frames arrive, whether each instance is Ready,
-and whether a last action/error is shown. Then inspect Diagnostics for the active
+and whether a last action/error is shown. Then inspect Monitor for the active
 phase, split, condition status, and score.
 
 ## Input problems
@@ -69,7 +69,7 @@ Status, ports, and logs. After Reset All, check every instance's result separate
 
 1. Verify the normalized image in Monitor. ROI coordinates refer to the image
    after Crop/Resize, not raw capture coordinates.
-2. In Diagnostics, inspect the active phase and zero-based split index. A `null`
+2. In Monitor, inspect the active phase and zero-based split index. A `null`
    split has no automatic rules. A YAML split list longer than the LiveSplit run
    invalidates evaluation (with a special allowance for an empty stopped run).
 3. Check rule errors and condition status. An out-of-bounds ROI, incompatible
@@ -99,7 +99,7 @@ does not emit.
 
 Useful events include `profile.apply`, `capture.error`, `instance.state`,
 `instance.ready`, and `instance.action`. Condition evaluation errors are counted
-in Diagnostics; detailed detector exception messages are not guaranteed in the
+in Monitor; detailed detector exception messages are not guaranteed in the
 log. When reporting a problem, include the application revision/build, relevant
 profile/YAML, input type, normalized dimensions, diagnostic status/score, and the
 log around the event. Remove private paths or source names if necessary.

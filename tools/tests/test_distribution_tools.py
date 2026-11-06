@@ -232,19 +232,23 @@ class LicenseTests(unittest.TestCase):
             (bridge / "LICENSE").write_text("bridge upstream", encoding="utf-8")
             camera = root / "camera"
             camera.write_text("camera upstream", encoding="utf-8")
+            imgui = root / "imgui"
+            imgui.mkdir()
+            (imgui / "LICENSE.txt").write_text("imgui upstream", encoding="utf-8")
             with patch.object(collect_licenses, "pinned_file", return_value=camera):
-                collect_licenses.collect(output, share, bridge, None, "", cache)
+                collect_licenses.collect(output, share, bridge, imgui, cache)
             self.assertEqual((output / "opencv.txt").read_text(), "opencv4")
             self.assertEqual((output / "ryml.txt").read_text(), "ryml")
             self.assertEqual((output / "c4core.txt").read_text(), "c4core")
             self.assertEqual((output / "vcpkg/zlib.txt").read_text(), "zlib")
+            self.assertEqual((output / "imgui.txt").read_text(), "imgui upstream")
             for port in ("opencv4", "ryml", "c4core"):
                 notice = share / port / "copyright"
                 notice.unlink()
                 with self.subTest(port=port), self.assertRaisesRegex(
                     RuntimeError, "Required dependency notice missing"
                 ):
-                    collect_licenses.collect(output, share, bridge, None, "", cache)
+                    collect_licenses.collect(output, share, bridge, None, cache)
                 notice.write_text(port, encoding="utf-8")
 
 
@@ -254,8 +258,6 @@ class PackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         names = [
-            "platforms/qwindows.dll",
-            "Qt6Core.dll",
             "opencv_core4.dll",
             "vc_redist.x64.exe",
             "LICENSE.txt",
@@ -265,7 +267,7 @@ class PackageTests(unittest.TestCase):
         names += [
             f"licenses/{name}.txt"
             for name in (
-                "qtbase",
+                "imgui",
                 "opencv",
                 "boost",
                 "ryml",
@@ -306,6 +308,17 @@ class PackageTests(unittest.TestCase):
         (self.root / "Processing.NDI.Lib.Licenses.txt").write_bytes(b"changed")
         with self.assertRaisesRegex(RuntimeError, "modified NDI"):
             verify_windows_zip.verify_contents(self.root, True, self.lock)
+
+    def test_qt_runtime_is_rejected(self):
+        for name in ("Qt6Core.dll", "platforms/qwindows.dll"):
+            file = self.root / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(b"test")
+            with self.subTest(name=name), self.assertRaisesRegex(
+                RuntimeError, "Qt runtime"
+            ):
+                verify_windows_zip.verify_contents(self.root, False, self.lock)
+            file.unlink()
 
     def test_contract_pdf_is_rejected_even_when_renamed(self):
         for name, contents in (

@@ -1,3 +1,21 @@
+## Dear ImGui移行の受け入れ記録（2026-11）
+
+Qt Widgets版の4画面をDear ImGuiへ置き換え、Diagnostics画面は今回の対象外としました。Runtimeの診断データは維持しています。
+
+| 要件 | 確認結果 |
+| --- | --- |
+| 4画面 | Monitor / Profile / Settings / Aboutを実装。Windows上で起動と画面描画を確認。 |
+| Windows標準ファイルピッカー | ProfileのOpen/Save、Scenario YAML、動画ファイルに `IFileOpenDialog` / `IFileSaveDialog` を使用。保存時は `FOS_OVERWRITEPROMPT`。日本語パスはUTF-8で保存し、内部では `std::filesystem::path` へ変換。 |
+| draft / saved / applied | ProfileDocumentで分離。SaveはRuntimeを変更せず、Applyはファイルを保存せず、Apply成功だけでは未保存表示を消さない。UIテストで確認。 |
+| Core / Runtimeテスト | Debug構成とRelease構成で144/144成功。 |
+| Camera / Video / NDIプレビュー | ProfilePreviewのワーカー、Crop/Resize、入力再利用、エラー復旧をUIテストで確認。実機のCamera・外部NDIは手動確認項目として残す。 |
+| 日本語IME / DPI / 終了処理 | 日本語フォントを読み込み、Win32のIMEメッセージをImGuiバックエンドへ渡す。WM_DPICHANGEDでスタイルとフォントを再構築。終了時にプレビュー、NDI検索、Session、D3D11、COMを解放。実IME変換と実モニター間移動は手動確認項目。 |
+| Windows CI | NDI OFF / ONのmatrixを維持。ImGuiはFetchContentで固定タグを取得し、Qtのインストール手順を削除。 |
+| Qt依存の削除 | 製品GUI、CMake、vcpkg manifest、配布ZIPからQtを削除。ZIP検証はQt6Core.dllとplatforms/qwindows.dllを拒否。 |
+| 圧縮後ZIP容量 | 同一比較条件（vc_redistなし、DEFLATE level 6）でQt Widgets 44,268,303 bytes、Dear ImGui 6,570,098 bytes（約85.2%削減）。vc_redistを含む実配布ZIPは31,759,381 bytes。詳細は[配布](distribution.md#配布zip容量の比較)。 |
+
+ローカルでNDI SDKを用意できないため、NDI ONの実機ループバックはCIと手動確認に委ねます。カメラ・動画・NDIの物理入力、実LiveSplit、実IME、DPIの実画面確認は、自動テストだけで完了扱いにしません。
+
 # C++移行受け入れ記録
 
 [開発ガイド](README.md) · [テスト](testing.md)
@@ -21,9 +39,9 @@
 | 判定前にCrop／Resizeする | 録画の常に明るい外枠を切り取り、残った画像をResizeして、暗い画面と明るい画面の操作順を確認します。ローダーとDetectorの既存テストでは、Python版OpenCVによる比較用の期待値も維持します。 |
 | 複数のシナリオを独立して実行する | `RecordedPipeline.MultipleYamlScenariosRemainIndependentOnSharedFrames` は、同じデコード済みフレームを使う2つのYAMLシナリオについて、異なる操作履歴を確認します。 |
 | Profile JSON v2とYAMLを読み込む | 録画E2EではProfileを保存・再読込してからYAMLを読み込みます。Profileテストはv1からの移行と厳密なv2の保存・読込、ローダーテストは対応するCondition・Detectorと `.py` の拒否を確認します。 |
-| Apply前に下書き入力をプレビューする | Qtテストは変換後の画素、開いた入力の寸法・FPS、ワーカースレッドでの取得、GUIの応答、入力変更、一時停止した入力、エラーからの復旧、ページの表示・非表示、Session開始前の入力解放を確認します。 |
-| NDI SDKで入力を取得する | SDK初期化と、ループバックでの検索・受信・正規化・判定・再接続を確認します。QtテストではSessionを停止し、その送信元を下書きプレビューで受信してからSessionを再開します。 |
-| Monitorに判定と処理速度を表示する | Qtテストはスコア・しきい値の概要とProcessing FPS列を確認します。Reset Allの長押し・キャンセルの既存テストも維持します。 |
+| Apply前に下書き入力をプレビューする | UIテストは変換後の画素、開いた入力の寸法・FPS、ワーカースレッドでの取得、GUIの応答、入力変更、一時停止した入力、エラーからの復旧、ページの表示・非表示、Session開始前の入力解放を確認します。 |
+| NDI SDKで入力を取得する | SDK初期化と、ループバックでの検索・受信・正規化・判定・再接続を確認します。UIテストではSessionを停止し、その送信元を下書きプレビューで受信してからSessionを再開します。 |
+| Monitorに判定と処理速度を表示する | UIテストはスコア・しきい値の概要とProcessing FPS列を確認します。Reset Allの長押し・キャンセルの既存テストも維持します。 |
 
 録画テストは、操作履歴と状態が期待どおりかを確認します。そのために、フレームごとの処理完了を待つか、同じ状態が一定時間続く録画を使います。スレッドが毎回まったく同じ時刻に動くことは求めません。
 
@@ -47,7 +65,7 @@ CIは録画パイプラインとデコーダーのケースを、NDIの各構成
 cmake --preset full -DDIVERGENCESPLITTER_BUILD_TESTHOST_TESTS=ON
 cmake --build --preset full --parallel
 ctest --preset full --output-on-failure
-# 固定した公式SDKで、SDKとNDIのQt結合テストを有効にする
+# 固定した公式SDKで、SDKとNDIのNDI結合テストを有効にする
 cmake --preset full -DDIVERGENCESPLITTER_ENABLE_NDI=ON -DNDI_SDK_DIR=C:/path/to/sdk
 cmake --build --preset full --parallel
 ctest --preset full --output-on-failure
@@ -56,7 +74,7 @@ python tools/run_testhost.py --testhost C:/path/to/TestHost/bin --test-exe build
 
 TestHost用の環境変数がなければ、各制御テストはスキップされます。実際のRPCを確認するときは、上のヘルパーを使ってください。通常のCTestが成功しただけでは、実Bridgeとの通信を検証したことにはなりません。
 
-Qtテストはテスト専用の設定ディレクトリを使います。`DIVERGENCESPLITTER_UI_CAPTURE_DIR` を指定すると、下書きプレビューの画面を保存できます。
+UIテストはWin32ウィンドウやImGuiコンテキストを作らないため、テスト専用の設定ディレクトリは不要です。
 
 ## 利用者の環境で残っている確認
 

@@ -15,8 +15,6 @@ from pathlib import Path
 
 def verify_contents(root: Path, ndi: bool, lock: dict[str, str]) -> None:
     required = [
-        "platforms/qwindows.dll",
-        "Qt6Core.dll",
         "opencv_core4.dll",
         "vc_redist.x64.exe",
         "LICENSE.txt",
@@ -26,7 +24,7 @@ def verify_contents(root: Path, ndi: bool, lock: dict[str, str]) -> None:
     required += [
         f"licenses/{name}.txt"
         for name in (
-            "qtbase",
+            "imgui",
             "opencv",
             "boost",
             "ryml",
@@ -39,6 +37,9 @@ def verify_contents(root: Path, ndi: bool, lock: dict[str, str]) -> None:
     for name in required:
         if not (root / name).is_file() or not (root / name).stat().st_size:
             raise RuntimeError(f"ZIP missing required distribution file: {name}")
+    for name in ("Qt6Core.dll", "platforms/qwindows.dll"):
+        if (root / name).exists():
+            raise RuntimeError(f"ZIP still contains Qt runtime: {name}")
     if ndi:
         for name, key in (
             ("Processing.NDI.Lib.x64.dll", "runtime_sha256"),
@@ -75,12 +76,7 @@ def verify_contents(root: Path, ndi: bool, lock: dict[str, str]) -> None:
 def launch(root: Path, ndi: bool) -> None:
     # os.environ is case-insensitive on Windows; a plain copied dict is not.
     environment = {name.upper(): value for name, value in os.environ.items()}
-    for name in (
-        "QT_PLUGIN_PATH",
-        "QML2_IMPORT_PATH",
-        "NDI_RUNTIME_DIR_V6",
-        "NDI_RUNTIME_DIR_V5",
-    ):
+    for name in ("NDI_RUNTIME_DIR_V6", "NDI_RUNTIME_DIR_V5"):
         environment.pop(name, None)
     system = Path(environment["SYSTEMROOT"])
     environment["PATH"] = os.pathsep.join(map(str, (root, system / "System32", system)))

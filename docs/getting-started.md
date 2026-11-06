@@ -35,7 +35,7 @@
 
 1. Monitorを開き、プレビューが更新されてフレーム数が増えることを確認します。LiveSplitに接続する行の状態がReadyになっていることも確認してください。
 2. 判定できる状態になって約2秒後にLiveSplitが開始し、さらに約3秒後にSplitして、1区間のRunが終了します。開始時刻は映像の到着とBridgeの準備に左右されます。Applyを押した時刻から数えるわけではありません。
-3. Diagnosticsを開き、Start、Splits、Conditionの状態を確認します。このサンプルの条件は `elapsed` なので、参照画像やスコアのしきい値を用意する必要はありません。
-4. File > Save Profile As...でProfileを保存します。保存しても設定を適用したことにはなりません。保存とApplyの違いは[利用ガイド](user-guide.md)を参照してください。
+3. Monitorを開き、Start、Splits、Conditionの状態を確認します。このサンプルの条件は `elapsed` なので、参照画像やスコアのしきい値を用意する必要はありません。
+4. Profile画面のSave AsボタンでProfileを保存します。保存しても設定を適用したことにはなりません。保存とApplyの違いは[利用ガイド](user-guide.md)を参照してください。
 
 映像が届き続けている場合、このサンプルはタイマーのReset後に再び開始します。テストを終えたらアプリを閉じてください。ゲーム用の判定には[画像検出の例](scenarios/examples.md)を使い、問題がある場合は[トラブルシューティング](troubleshooting.md)を参照してください。

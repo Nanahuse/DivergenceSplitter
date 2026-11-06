@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "divergencesplitter/text.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -409,14 +411,14 @@ ProfileLoadResult load_profile(const std::filesystem::path& path) {
     }
 
     for (const auto& instance : instances) {
-        const std::filesystem::path scenario_path{instance.scenario};
+        const std::filesystem::path scenario_path = path_from_utf8(instance.scenario);
         if (!scenario_path.is_absolute()) {
             fail("scenario path must be an absolute path: " + instance.scenario);
         }
     }
     if (std::holds_alternative<VideoSourceConfiguration>(source)) {
         const auto& video = std::get<VideoSourceConfiguration>(source);
-        if (!std::filesystem::path{video.path}.is_absolute()) {
+        if (!path_from_utf8(video.path).is_absolute()) {
             fail("video source path must be an absolute path: " + video.path);
         }
     }
@@ -464,7 +466,7 @@ AppSettings load_app_settings(const std::filesystem::path& path) {
     std::optional<std::string> last_profile;
     if (root.contains("last_profile") && !root.at("last_profile").is_null()) {
         last_profile = string_value(root.at("last_profile"), "last_profile");
-        if (!std::filesystem::path{*last_profile}.is_absolute()) {
+        if (!path_from_utf8(*last_profile).is_absolute()) {
             fail("last_profile must be an absolute path");
         }
     }

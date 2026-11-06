@@ -1,36 +1,22 @@
 #pragma once
 
-#include <QWidget>
-
 #include <chrono>
 #include <map>
 #include <vector>
 
-#include "divergencesplitter/runtime/diagnostics.hpp"
-
-class QLabel;
-class QScrollArea;
-class QVBoxLayout;
+#include "image_texture.hpp"
+#include "monitor_model.hpp"
 
 namespace divergencesplitter::ui {
 
-class AppController;
-class ImageView;
-class ResetAllButton;
-class ScenarioCard;
+class App;
 
-[[nodiscard]] QString scenario_overview(const ScenarioDiagnosticsSnapshot& scenario);
-
-class MonitorPage final : public QWidget {
-    Q_OBJECT
-
+class MonitorPage {
 public:
-    explicit MonitorPage(AppController* controller, QWidget* parent = nullptr);
+    explicit MonitorPage(App* app);
 
-    void refresh();
-
-signals:
-    void resetRequested();
+    void update(double now);
+    void draw();
 
 private:
     struct EvaluationRate {
@@ -40,26 +26,28 @@ private:
         double fps{};
     };
 
-    QLabel* add_status_row(
-        QVBoxLayout* layout,
-        const QString& label,
-        const QString& initial
-    );
+    struct Data {
+        bool running{};
+        std::uint64_t frames_published{};
+        double measured_fps{};
+        double processing_fps{};
+        std::string last_error;
+        std::vector<ScenarioCardModel> cards;
+    };
 
-    AppController* controller_;
-    ImageView* preview_;
-    QLabel* state_value_;
-    QLabel* input_fps_value_;
-    QLabel* processing_fps_value_;
-    QLabel* input_detail_;
-    QLabel* error_label_;
-    QScrollArea* scroll_;
-    QWidget* cards_container_;
-    QVBoxLayout* cards_layout_;
-    ResetAllButton* reset_button_;
-    std::map<int, ScenarioCard*> cards_;
-    std::vector<int> card_order_;
+    void draw_status_rows();
+    void draw_cards();
+    void draw_reset_button();
+    void draw_card(const ScenarioCardModel& card);
+
+    App* app_;
+    ImageTexture preview_;
+    Data data_;
+    double next_update_{};
     std::map<int, EvaluationRate> evaluation_rates_;
+    bool reset_holding_{};
+    bool reset_triggered_{};
+    double reset_started_{};
 };
 
 }  // namespace divergencesplitter::ui

@@ -1,7 +1,6 @@
 #include "profile_preview.hpp"
 
 #include <chrono>
-#include "image_view.hpp"
 
 namespace divergencesplitter::ui {
 namespace {
@@ -9,7 +8,7 @@ SourceConfiguration input_identity(SourceConfiguration source) {
     std::visit([](auto& value) { value.transform = {}; }, source);
     return source;
 }
-}
+}  // namespace
 
 ProfilePreview::ProfilePreview(SourceFactory factory) : factory_(std::move(factory)) {}
 ProfilePreview::~ProfilePreview() { stop(); }
@@ -106,7 +105,7 @@ void ProfilePreview::run() {
                 auto normalizer = std::visit([](const auto& value) {
                     return create_frame_normalizer(value.transform);
                 }, requested);
-                result.image = mat_to_qimage(normalizer.normalize(latest_frame));
+                result.image = normalizer.normalize(latest_frame);
             } catch (const std::exception& error) {
                 result.error = error.what();
             }

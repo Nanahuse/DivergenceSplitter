@@ -7,6 +7,7 @@
 
 #include "divergencesplitter/livesplit/client.hpp"
 #include "divergencesplitter/scenario/scenario.hpp"
+#include "divergencesplitter/text.hpp"
 
 namespace divergencesplitter {
 
@@ -50,7 +51,7 @@ void Session::apply_profile(const Profile& profile, const AppSettings& settings)
     new_instances.reserve(profile.instances.size());
     for (std::size_t index = 0; index < profile.instances.size(); ++index) {
         const auto& instance = profile.instances[index];
-        const std::filesystem::path scenario_path{instance.scenario};
+        const std::filesystem::path scenario_path = path_from_utf8(instance.scenario);
         if (!scenario_path.is_absolute()) {
             throw ConfigurationError(
                 "scenario path must be an absolute path: " + instance.scenario

@@ -1,33 +1,42 @@
-#include <QApplication>
-#include <QTimer>
+#include <Windows.h>
+#include <shellapi.h>
 
-#include "divergencesplitter/capture/ndi.hpp"
+#include <imgui_impl_win32.h>
 
-#include "app_controller.hpp"
-#include "main_window.hpp"
+#include <string>
 
-int main(int argc, char* argv[]) {
-    QApplication application(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("DivergenceSplitter"));
-    QApplication::setOrganizationName(QStringLiteral("Nanahuse"));
-    QApplication::setApplicationVersion(QStringLiteral(DIVERGENCESPLITTER_VERSION));
+#include "app.hpp"
 
-    divergencesplitter::ui::AppController controller;
-    divergencesplitter::ui::MainWindow window(&controller);
-    window.show();
-    // Distribution smoke test: run the real GUI event loop, verify a native
-    // window and the application-local SDK, then shut down normally. This works
-    // with hidden CI windows where Process.MainWindowTitle is unavailable.
-    if (application.arguments().contains(QStringLiteral("--smoke-test"))) {
-        QTimer::singleShot(100, &application, [&] {
-            try {
-                if (divergencesplitter::ndi_enabled())
-                    (void)divergencesplitter::acquire_ndi_runtime();
-                application.exit(window.winId() != 0 && window.isVisible() ? 0 : 3);
-            } catch (const std::exception&) {
-                application.exit(3);
-            }
-        });
+int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
+    int argument_count = 0;
+    LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
+    bool smoke_test = false;
+    for (int index = 1; index < argument_count; ++index) {
+        if (std::wstring{arguments[index]} == L"--smoke-test") {
+            smoke_test = true;
+        }
     }
-    return application.exec();
+    if (arguments != nullptr) {
+        LocalFree(arguments);
+    }
+
+    const HRESULT com = CoInitializeEx(
+        nullptr,
+        COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE
+    );
+    if (FAILED(com)) {
+        MessageBoxW(
+            nullptr,
+            L"COM initialization failed.",
+            L"DivergenceSplitter",
+            MB_OK | MB_ICONERROR
+        );
+        return 1;
+    }
+
+    ImGui_ImplWin32_EnableDpiAwareness();
+    divergencesplitter::ui::App app;
+    const int result = app.run(instance, show_command, smoke_test);
+    CoUninitialize();
+    return result;
 }

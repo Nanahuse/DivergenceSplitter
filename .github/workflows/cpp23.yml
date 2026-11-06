@@ -40,16 +40,6 @@ jobs:
           NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
         run: python tools/get_ndi_sdk.py
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: "6.8.3"
-          host: windows
-          target: desktop
-          arch: win64_msvc2022_64
-          archives: qtbase
-          cache: true
-
       - name: Bootstrap vcpkg
         run: C:\vcpkg\bootstrap-vcpkg.bat
 
@@ -93,7 +83,12 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: python tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/ci/divergencesplitter_testhost_tests.exe --port 54000
       - name: Package ZIP
-        run: cmake --build --preset ci --target package
+        run: |
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "build/ci/vc_redist.x64.exe"
+          cmake --build --preset ci --target package
+
+      - name: Record ZIP size
+        run: Get-ChildItem build/ci/*.zip | Select-Object Name, Length | Format-Table -AutoSize
 
       - name: Verify extracted ZIP
         run: python tools/verify_windows_zip.py --ndi ${{ matrix.ndi }}

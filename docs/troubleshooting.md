@@ -4,7 +4,7 @@
 
 [ドキュメント一覧](../README.md)
 
-問題が起きたら、まずMonitorで映像が届いているか、接続がReadyになっているか、最後のActionやエラーが何かを確認してください。判定がおかしい場合は、Diagnosticsで現在のSplit位置とConditionの結果・スコアを調べます。
+問題が起きたら、まずMonitorで映像が届いているか、接続がReadyになっているか、最後のActionやエラーが何かを確認してください。判定がおかしい場合は、Monitorで現在のSplit位置とConditionの結果・スコアを調べます。
 
 ## 入力の問題
 
@@ -50,7 +50,7 @@ ConnectingやFailedが続くときは、BridgeのStatus、ポート、ログを�
 ## 判定が成立しない・意図せず成立する
 
 1. Monitorで正規化後の画像を確認します。ROIは元の映像ではなくCrop／Resize後の座標です。
-2. Diagnosticsで有効なPhaseと0から始まるSplitの位置を確認します。`null` の区間には自動Ruleがありません。YAMLの区間数がLiveSplitより多いと評価を無効にします。ただし空の停止中Runには特例があります。
+2. Monitorで有効なPhaseと0から始まるSplitの位置を確認します。`null` の区間には自動Ruleがありません。YAMLの区間数がLiveSplitより多いと評価を無効にします。ただし空の停止中Runには特例があります。
 3. Ruleのエラー回数とConditionの状態を確認します。YAMLを読み込めても、ROIの範囲外やチャンネル・参照寸法の不一致は評価時に失敗します。[Detectorの制約](scenarios/detectors.md)を確認してください。
 4. 最新・最大スコアと `minimum_score` を比較します。高い値ほど一致度、明るさ、指定色の割合が高いことを示します。方式共通のしきい値はないため、成立させたい画面と成立させたくない画面の両方で確認してください。
 5. [Conditionの動作](scenarios/conditions.md)を確認します。edgeは基準となる前回値が必要です。`nth` はtrueの評価を数え、`once` はtrueを維持し、`hold` はfalseで計測し直し、`then` の次のステップは後の評価で始まります。
@@ -64,7 +64,7 @@ Pause／Resumeのように区間を移動しない操作では、条件がtrue�
 
 問題を再現する前に、SettingsのLog levelをINFOまたはDEBUGにしてSaveし、Profileを再びApplyしてください。OFFでは記録しません。DEBUGを選んでも、もともと記録対象でないイベントは追加されません。
 
-主なログ項目は `profile.apply`、`capture.error`、`instance.state`、`instance.ready`、`instance.action` です。Conditionの判定エラーはDiagnosticsで数えますが、Detectorの詳しい例外メッセージがログに残るとは限りません。
+主なログ項目は `profile.apply`、`capture.error`、`instance.state`、`instance.ready`、`instance.action` です。Conditionの判定エラーはMonitorで数えますが、Detectorの詳しい例外メッセージがログに残るとは限りません。
 
 問題を報告するときは、アプリのリビジョン・ビルド、ProfileとYAML、入力の種類、Crop／Resize後の寸法、判定結果・スコア、問題が起きた前後のログを添えてください。必要に応じて、個人的なファイルパスや送信元の名前を取り除いてください。
 

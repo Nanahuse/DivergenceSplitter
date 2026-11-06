@@ -73,9 +73,9 @@ the test.
    After approximately three more seconds, the first split completes and the
    one-segment test run ends. Timing depends on frame delivery and Bridge readiness;
    these waits are not measured from the mouse click on Apply.
-3. Open **Diagnostics** to inspect Start, Splits, condition statuses, and scores.
+3. Open **Monitor** to inspect Start, Splits, condition statuses, and scores.
    The sample uses `elapsed`, so no reference image or score threshold is needed.
-4. Use **File > Save Profile As...** to save the configured profile. Saving and
+4. Use **the **Save As** button in Profile** to save the configured profile. Saving and
    applying are separate operations; see the [user guide](user-guide.en.md).
 
 The sample starts again after a timer reset when frames continue arriving. Close

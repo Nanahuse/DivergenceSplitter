@@ -1,124 +1,124 @@
 #include "settings_page.hpp"
 
-#include <QComboBox>
-#include <QFormLayout>
-#include <QFrame>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QSpinBox>
-#include <QVBoxLayout>
+#include <imgui.h>
 
-#include "app_controller.hpp"
+#include <algorithm>
+#include <array>
+
+#include "app.hpp"
+#include "theme.hpp"
+#include "ui_helpers.hpp"
 
 namespace divergencesplitter::ui {
+namespace {
 
-SettingsPage::SettingsPage(AppController* controller, QWidget* parent)
-    : QWidget(parent), controller_(controller) {
-    setObjectName(QStringLiteral("page"));
-    auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(24, 20, 24, 20);
-    outer->setSpacing(10);
+constexpr std::array<const char*, 5> kLogLevels{
+    "OFF", "DEBUG", "INFO", "WARNING", "ERROR",
+};
 
-    auto* title = new QLabel(tr("Application Settings"), this);
-    title->setObjectName(QStringLiteral("pageTitle"));
-    outer->addWidget(title);
-    auto* note = new QLabel(
-        tr("Edit the values, then select Apply to save and apply them."), this
-    );
-    note->setProperty("role", QStringLiteral("muted"));
-    outer->addWidget(note);
-
-    auto* scroll = new QScrollArea(this);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    auto* content = new QWidget(scroll);
-    content->setObjectName(QStringLiteral("page"));
-    auto* layout = new QVBoxLayout(content);
-    layout->setContentsMargins(0, 8, 0, 8);
-    layout->setSpacing(12);
-
-    auto* appearance = new QGroupBox(tr("Appearance"), content);
-    auto* appearance_layout = new QFormLayout(appearance);
-    theme_ = new QComboBox(appearance);
-    theme_->setObjectName(QStringLiteral("settingsTheme"));
-    theme_->setFixedWidth(220);
-    theme_->addItems({tr("Light"), tr("Dark")});
-    appearance_layout->addRow(tr("Theme"), theme_);
-    layout->addWidget(appearance);
-
-    auto* runtime = new QGroupBox(tr("Runtime"), content);
-    auto* runtime_layout = new QFormLayout(runtime);
-    reaction_time_ = new QSpinBox(runtime);
-    reaction_time_->setObjectName(QStringLiteral("settingsReactionTime"));
-    reaction_time_->setFixedWidth(220);
-    reaction_time_->setRange(0, 5000);
-    reaction_time_->setSuffix(tr(" ms"));
-    runtime_layout->addRow(tr("Reaction time"), reaction_time_);
-    layout->addWidget(runtime);
-
-    auto* logging = new QGroupBox(tr("Logging"), content);
-    auto* logging_layout = new QFormLayout(logging);
-    log_level_ = new QComboBox(logging);
-    log_level_->setObjectName(QStringLiteral("settingsLogLevel"));
-    log_level_->setFixedWidth(220);
-    log_level_->addItems({"OFF", "DEBUG", "INFO", "WARNING", "ERROR"});
-    logging_layout->addRow(tr("Log level"), log_level_);
-    auto* log_note = new QLabel(tr("DEBUG log: see diagnostics.log"), logging);
-    log_note->setProperty("role", QStringLiteral("muted"));
-    logging_layout->addRow(log_note);
-    layout->addWidget(logging);
-    layout->addStretch(1);
-
-    scroll->setWidget(content);
-    outer->addWidget(scroll, 1);
-
-    status_ = new QLabel(this);
-    status_->setProperty("role", QStringLiteral("muted"));
-    status_->setWordWrap(true);
-    outer->addWidget(status_);
-
-    auto* buttons = new QHBoxLayout;
-    auto* reload = new QPushButton(tr("Reload"), this);
-    auto* save = new QPushButton(tr("Apply"), this);
-    save->setObjectName(QStringLiteral("primaryButton"));
-    buttons->addWidget(reload);
-    buttons->addStretch(1);
-    buttons->addWidget(save);
-    outer->addLayout(buttons);
-
-    connect(reload, &QPushButton::clicked, this, &SettingsPage::reload_from_controller);
-    connect(save, &QPushButton::clicked, this, &SettingsPage::save);
-
-    reload_from_controller();
+int log_level_index(const std::string& value) {
+    const auto found = std::find(kLogLevels.begin(), kLogLevels.end(), value);
+    return found == kLogLevels.end() ? 2 : static_cast<int>(found - kLogLevels.begin());
 }
 
-void SettingsPage::reload_from_controller() {
-    const auto& settings = controller_->settings();
-    const int log_index = log_level_->findText(QString::fromStdString(settings.log_level));
-    log_level_->setCurrentIndex(std::max(0, log_index));
-    reaction_time_->setValue(settings.reaction_time_ms);
-    theme_->setCurrentIndex(settings.theme == "dark" ? 1 : 0);
-    status_->setText(tr("Settings loaded. Reaction time applies on the next Apply."));
+}  // namespace
+
+SettingsPage::SettingsPage(App* app) : app_(app) {
+    reload();
+}
+
+void SettingsPage::reload() {
+    const auto& settings = app_->controller().settings();
+    theme_index_ = settings.theme == "dark" ? 1 : 0;
+    reaction_time_ms_ = settings.reaction_time_ms;
+    log_level_index_ = log_level_index(settings.log_level);
+    status_ = "Settings loaded. Reaction time applies on the next Apply.";
+}
+
+void SettingsPage::draw() {
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+    ImGui::Indent(16.0f);
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colors(app_->theme_mode()).text);
+    ImGui::TextUnformatted("Application Settings");
+    ImGui::PopStyleColor();
+    text_muted("Edit the values, then select Apply to save and apply them.");
+    ImGui::Spacing();
+
+    const float scale = app_->dpi_scale();
+    const float actions_height = 76.0f * scale;
+    const float scroll_height =
+        std::max(120.0f * scale, ImGui::GetContentRegionAvail().y - actions_height);
+    ImGui::BeginChild("##settings_scroll", ImVec2(0.0f, scroll_height), false);
+    ImGui::Indent(16.0f);
+
+    ImGui::SeparatorText("Appearance");
+    if (ImGui::RadioButton("Light", theme_index_ == 0)) {
+        theme_index_ = 0;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Dark", theme_index_ == 1)) {
+        theme_index_ = 1;
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Runtime");
+    ImGui::SetNextItemWidth(220.0f * app_->dpi_scale());
+    ImGui::InputInt("Reaction time (ms)", &reaction_time_ms_);
+    reaction_time_ms_ = std::clamp(reaction_time_ms_, 0, 5000);
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Logging");
+    ImGui::SetNextItemWidth(220.0f * app_->dpi_scale());
+    if (ImGui::BeginCombo("Log level", kLogLevels[static_cast<std::size_t>(log_level_index_)])) {
+        for (int index = 0; index < static_cast<int>(kLogLevels.size()); ++index) {
+            const bool selected = index == log_level_index_;
+            if (ImGui::Selectable(kLogLevels[static_cast<std::size_t>(index)], selected)) {
+                log_level_index_ = index;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    text_muted("DEBUG log: see diagnostics.log");
+
+    ImGui::Unindent(16.0f);
+    ImGui::EndChild();
+
+    ImGui::Indent(16.0f);
+    if (!status_.empty()) {
+        text_muted(status_);
+    }
+    ImGui::Spacing();
+    if (ImGui::Button("Reload")) {
+        reload();
+    }
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x - 110.0f * app_->dpi_scale(), 0.0f));
+    ImGui::SameLine();
+    if (primary_button("Apply")) {
+        save();
+    }
+    ImGui::Unindent(16.0f);
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
 }
 
 void SettingsPage::save() {
-    auto settings = controller_->settings();
-    settings.log_level = log_level_->currentText().toStdString();
-    settings.reaction_time_ms = reaction_time_->value();
-    settings.theme = theme_->currentIndex() == 1 ? "dark" : "light";
-    QString error;
-    controller_->save_settings(settings, &error);
-    if (!error.isEmpty()) {
-        status_->setText(error);
-        QMessageBox::critical(this, tr("Settings"), error);
+    auto settings = app_->controller().settings();
+    settings.log_level = kLogLevels[static_cast<std::size_t>(log_level_index_)];
+    settings.reaction_time_ms = reaction_time_ms_;
+    settings.theme = theme_index_ == 1 ? "dark" : "light";
+    std::string error;
+    app_->controller().save_settings(settings, &error);
+    if (!error.empty()) {
+        status_ = error;
+        app_->notify(error, true);
         return;
     }
-    status_->setText(tr("Settings saved."));
-    emit settingsSaved(QString::fromStdString(settings.theme));
+    status_ = "Settings saved.";
+    app_->apply_theme(theme::mode_from_string(settings.theme));
+    app_->notify("Settings saved.");
 }
 
 }  // namespace divergencesplitter::ui
