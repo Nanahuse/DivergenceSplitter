@@ -7,7 +7,7 @@ Qt Widgets版の4画面をDear ImGuiへ置き換え、Diagnostics画面は今回
 | 4画面 | Monitor / Profile / Settings / Aboutを実装。Windows上で起動と画面描画を確認。 |
 | Windows標準ファイルピッカー | ProfileのOpen/Save、Scenario YAML、動画ファイルに `IFileOpenDialog` / `IFileSaveDialog` を使用。保存時は `FOS_OVERWRITEPROMPT`。日本語パスはUTF-8で保存し、内部では `std::filesystem::path` へ変換。 |
 | draft / saved / applied | ProfileDocumentで分離。SaveはRuntimeを変更せず、Applyはファイルを保存せず、Apply成功だけでは未保存表示を消さない。UIテストで確認。 |
-| Core / Runtimeテスト | Debug構成とRelease構成で149/149成功。 |
+| Core / Runtimeテスト | Debug構成とRelease構成で149/149成功（CIはTestHostを含む150/150）。 |
 | Camera / Video / NDIプレビュー | ProfilePreviewのワーカー、Crop/Resize、入力再利用、エラー復旧をUIテストで確認。実機のCamera・外部NDIは手動確認項目として残す。 |
 | 日本語IME / DPI / 終了処理 | 日本語フォントを読み込み、Win32のIMEメッセージをImGuiバックエンドへ渡す。WM_DPICHANGEDでスタイルとフォントを再構築。終了時にプレビュー、NDI検索、Session、D3D11、COMを解放。実IME変換と実モニター間移動は手動確認項目。 |
 | Windows CI | 単一のWindowsジョブ。ImGuiはFetchContentで固定タグを取得し、Qtのインストール手順を削除。NDI RuntimeテストはSecretがある場合のみ実行し、fork PRではスキップ。 |
