@@ -64,12 +64,6 @@
       "license": "External dependency; NDI license applies",
       "url": "https://ndi.link/ndisdk_license",
       "source": "external"
-    },
-    {
-      "name": "Microsoft Visual C++ Redistributable",
-      "license": "Microsoft license terms",
-      "url": "https://visualstudio.microsoft.com/license-terms/",
-      "source": "bundled"
     }
   ]
 }

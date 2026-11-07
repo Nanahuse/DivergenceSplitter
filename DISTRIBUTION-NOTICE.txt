@@ -26,9 +26,6 @@ Third-party components:
 - NDI Runtime - External dependency; NDI license applies. The runtime is not
   bundled. Install it separately to use NDI input. See
   https://ndi.link/ndisdk_license and licenses/NDI-TERMS.txt.
-- Microsoft Visual C++ Redistributable - Microsoft license terms. The
-  vc_redist.x64.exe installer is included in this ZIP. See
-  https://visualstudio.microsoft.com/license-terms/.
 
 NDI® is a registered trademark of Vizrt NDI AB. NDI website:
 https://ndi.video/. The NDI runtime is separately licensed by NDI, Inc. /

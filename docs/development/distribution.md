@@ -18,11 +18,9 @@ python tools/verify_windows_zip.py --build-dir build/full-release
 
 CPackが作るファイル名は `DivergenceSplitter-<version>-windows-x64.zip` です。ZIP展開時は全体を囲むフォルダーがなく、実行ファイルなどが直接入っています。使うときは、ZIPの内容をすべて同じ場所へ展開してください。
 
-GUI配布物には、`DivergenceSplitter.exe`、OpenCVなどのランタイムDLL、`vc_redist.x64.exe`、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/`（`components.json`を含む）を含めます。Dear ImGuiは静的リンクするためDLLは不要です。QtのDLLやプラグイン、NDI Runtime DLL、NDI Runtimeのインストーラーは含めません。設定とサンプルは含めないため、対応するリポジトリのソースを取得してください。
+GUI配布物には、`DivergenceSplitter.exe`、OpenCVなどのランタイムDLL、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/`（`components.json`を含む）を含めます。Dear ImGuiは静的リンクするためDLLは不要です。QtのDLLやプラグイン、NDI Runtime DLL、NDI Runtimeのインストーラー、`vc_redist.x64.exe` は含めません。設定とサンプルは含めないため、対応するリポジトリのソースを取得してください。必要な環境では、Microsoft公式のVisual C++ Redistributableを別途インストールしてください。
 
-CIはパッケージ化の前にMicrosoft公式の `vc_redist.x64.exe` をビルドディレクトリへダウンロードします。ローカルで同じZIPを作る場合も、`build/<preset>/vc_redist.x64.exe` を用意してください。
-
-検証スクリプトはZIPを展開し、必要な実行ファイルと通知を確認すること、Qtのランタイムが残っていないこと、NDI Runtime DLLやNDIのインストーラーが含まれていないこと、SDKの開発用ファイルが含まれていないことを調べます。その後、GUIの `--smoke-test` で、NDI Runtimeがない環境でも起動し、Aboutのライセンス表を描画できることを確認します。配布物に製品CLIは含めません。テスト実行ファイルとGUI起動試験はビルドディレクトリとCIで使用します。
+検証スクリプトはZIPを展開し、必要な実行ファイルと通知を確認すること、Qtのランタイムが残っていないこと、NDI Runtime DLLやNDIのインストーラー、`vc_redist.x64.exe` が含まれていないこと、SDKの開発用ファイルが含まれていないことを調べます。その後、GUIの `--smoke-test` で、NDI Runtimeがない環境でも起動し、Aboutのライセンス表を描画できることを確認します。配布物に製品CLIは含めません。テスト実行ファイルとGUI起動試験はビルドディレクトリとCIで使用します。
 
 ## CI workflow
 
@@ -48,16 +46,14 @@ CIはパッケージ化の前にMicrosoft公式の `vc_redist.x64.exe` をビル
 
 ## 配布ZIP容量の比較
 
-比較条件を揃えて測定しました。Qt Widgets版は同じリポジトリの `2920fb6` を同じMSVC・vcpkg（OpenCV 4.14）・Release・DEFLATE level 6でビルドし、`windeployqt` でQtランタイムとプラグインを配置したZIPです。Dear ImGui版は今回のブランチのReleaseビルドです。どちらもNDI Runtimeを含みません。vc_redistの有無は、生成したZIPから `vc_redist.x64.exe` だけを除いて同じ条件で再圧縮して比較しました。
+比較条件を揃えて測定しました。Qt Widgets版は同じリポジトリの `2920fb6` を同じMSVC・vcpkg（OpenCV 4.14）・Release・DEFLATE level 6でビルドし、`windeployqt` でQtランタイムとプラグインを配置したZIPです。Dear ImGui版は今回のブランチのReleaseビルドです。どちらもNDI Runtimeと `vc_redist.x64.exe` を含みません。
 
-| 構成 | vc_redist | 圧縮後ZIP | 比較 |
-| --- | --- | ---: | --- |
-| Qt Widgets (`2920fb6`) | なし | 40,538,833 bytes | 基準 |
-| Dear ImGui (今回) | なし | 5,903,586 bytes | 約85.4%削減 |
-| Qt Widgets (`2920fb6`) | あり | 57,603,103 bytes | 基準 |
-| Dear ImGui (今回) | あり | 31,109,465 bytes | 約46.0%削減 |
+| 構成 | 圧縮後ZIP | 比較 |
+| --- | ---: | --- |
+| Qt Widgets (`2920fb6`) | 40,538,833 bytes | 基準 |
+| Dear ImGui (今回、比較用にlevel 6で再圧縮) | 5,903,447 bytes | 約85.4%削減 |
 
-配布ZIPは1種類で、NDI Runtimeの有無による差はありません。今回のローカル実測は31,109,465 bytes（NDI Runtimeなしの単一ZIP）です。
+配布ZIPは1種類で、NDI Runtimeの有無による差はありません。今回のローカル実測は5,723,621 bytes（NDI Runtimeと `vc_redist.x64.exe` を含まない単一ZIP）です。
 
 ## NDI Runtimeの扱い
 

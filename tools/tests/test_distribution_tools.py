@@ -260,7 +260,6 @@ class PackageTests(unittest.TestCase):
         names = [
             "DivergenceSplitter.exe",
             "opencv_core4.dll",
-            "vc_redist.x64.exe",
             "LICENSE.txt",
             "DISTRIBUTION-NOTICE.txt",
             "licenses/components.json",
@@ -356,6 +355,13 @@ class PackageTests(unittest.TestCase):
         file = self.root / "divergencesplitter-cli.exe"
         file.write_bytes(b"test")
         with self.assertRaisesRegex(RuntimeError, "removed product CLI"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
+        file.unlink()
+
+    def test_vc_redist_is_rejected(self):
+        file = self.root / "vc_redist.x64.exe"
+        file.write_bytes(b"test")
+        with self.assertRaisesRegex(RuntimeError, "Visual C\\+\\+ Redistributable"):
             verify_windows_zip.verify_contents(self.root, self.lock)
         file.unlink()
 

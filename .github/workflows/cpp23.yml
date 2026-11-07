@@ -84,9 +84,7 @@ jobs:
         run: python tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/ci/divergencesplitter_testhost_tests.exe --port 54000
 
       - name: Package ZIP
-        run: |
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "build/ci/vc_redist.x64.exe"
-          cmake --build --preset ci --target package
+        run: cmake --build --preset ci --target package
 
       - name: Record ZIP size
         run: Get-ChildItem build/ci/*.zip | Select-Object Name, Length | Format-Table -AutoSize

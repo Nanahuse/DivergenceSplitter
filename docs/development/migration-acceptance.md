@@ -14,7 +14,7 @@ Qt Widgets版の4画面をDear ImGuiへ置き換え、Diagnostics画面は今回
 | Qt依存の削除 | 製品GUI、CMake、vcpkg manifest、配布ZIPからQtを削除。ZIP検証はQt6Core.dllとplatforms/qwindows.dllを拒否。 |
 | 製品CLIの削除 | `src/cli` と `divergencesplitter_cli` ターゲット、配布物から削除。ZIP検証はCLIを拒否。テスト実行ファイルとGUIの `--smoke-test` は維持。 |
 | ライセンス管理の一元化 | `licenses/components.json` をAbout、収集スクリプト、ZIP検証で共有。必須通知の欠落・空ファイル・追加のvcpkg通知を検査。 |
-| 圧縮後ZIP容量 | 同一比較条件（Qt 2920fb6、NDI Runtimeなし、DEFLATE level 6）で、vc_redistなし Qt 40,538,833 / Dear ImGui 5,903,586 bytes（約85.4%削減）、vc_redistあり Qt 57,603,103 / Dear ImGui 31,109,465 bytes（約46.0%削減）。配布ZIPは1種類。詳細は[配布](distribution.md#配布zip容量の比較)。 |
+| 圧縮後ZIP容量 | 同一比較条件（Qt `2920fb6`、NDI Runtimeなし、vc_redistなし、DEFLATE level 6）で、Qt 40,538,833 / Dear ImGui 5,903,447 bytes（約85.4%削減）。配布ZIPは1種類で、`vc_redist.x64.exe` を含まない。詳細は[配布](distribution.md#配布zip容量の比較)。 |
 
 NDI Runtimeがない環境ではNDIループバックテストをスキップします。Runtimeがある環境では初期化・受信を確認済みです。カメラ・動画・NDIの物理入力、実LiveSplit、実IME、DPIの実画面確認は、自動テストだけで完了扱いにしません。
 

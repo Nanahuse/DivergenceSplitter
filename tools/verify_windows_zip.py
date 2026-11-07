@@ -19,7 +19,6 @@ def verify_contents(root: Path, lock: dict[str, str]) -> None:
     required = [
         "DivergenceSplitter.exe",
         "opencv_core4.dll",
-        "vc_redist.x64.exe",
         "LICENSE.txt",
         "DISTRIBUTION-NOTICE.txt",
         "licenses/components.json",
@@ -30,6 +29,8 @@ def verify_contents(root: Path, lock: dict[str, str]) -> None:
             raise RuntimeError(f"ZIP missing required distribution file: {name}")
     if (root / "divergencesplitter-cli.exe").exists():
         raise RuntimeError("ZIP still contains the removed product CLI")
+    if (root / "vc_redist.x64.exe").exists():
+        raise RuntimeError("ZIP contains the Visual C++ Redistributable installer")
     for name in ("Qt6Core.dll", "platforms/qwindows.dll"):
         if (root / name).exists():
             raise RuntimeError(f"ZIP still contains Qt runtime: {name}")
