@@ -53,11 +53,11 @@ CIはパッケージ化の前にMicrosoft公式の `vc_redist.x64.exe` をビル
 | 構成 | vc_redist | 圧縮後ZIP | 比較 |
 | --- | --- | ---: | --- |
 | Qt Widgets (`2920fb6`) | なし | 40,538,833 bytes | 基準 |
-| Dear ImGui (今回) | なし | 5,902,954 bytes | 約85.4%削減 |
+| Dear ImGui (今回) | なし | 5,903,586 bytes | 約85.4%削減 |
 | Qt Widgets (`2920fb6`) | あり | 57,603,103 bytes | 基準 |
-| Dear ImGui (今回) | あり | 31,108,776 bytes | 約46.0%削減 |
+| Dear ImGui (今回) | あり | 31,109,465 bytes | 約46.0%削減 |
 
-配布ZIPは1種類で、NDI Runtimeの有無による差はありません。今回のローカル実測は31,108,776 bytes（NDI Runtimeなしの単一ZIP）です。
+配布ZIPは1種類で、NDI Runtimeの有無による差はありません。今回のローカル実測は31,109,465 bytes（NDI Runtimeなしの単一ZIP）です。
 
 ## NDI Runtimeの扱い
 

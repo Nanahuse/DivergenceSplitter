@@ -24,7 +24,9 @@ struct LicenseInventory {
 
 [[nodiscard]] std::filesystem::path application_directory();
 [[nodiscard]] std::optional<LicenseInventory> load_license_inventory();
-[[nodiscard]] std::vector<std::string> transitive_license_files();
+[[nodiscard]] std::vector<std::string> license_notice_files(
+    const LicenseInventory* inventory
+);
 [[nodiscard]] bool open_file(std::string_view relative_path);
 
 }  // namespace divergencesplitter::ui

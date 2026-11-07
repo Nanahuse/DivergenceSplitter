@@ -46,7 +46,7 @@ Camera / Video / NDI
 | Session・configuration | [session.cpp](../../src/runtime/session.cpp)、[configuration.cpp](../../src/runtime/configuration.cpp)：JSON、入力の作成、任意の参照Resize、Sessionの置き換えと停止。 |
 | Bridge | [livesplit_client.cpp](../../src/runtime/livesplit_client.cpp)、[livesplit_adapter.cpp](../../src/runtime/livesplit_adapter.cpp)：クライアントとの型変換、Query・Eventによる同期、ローカルの状態とRunリビジョン。 |
 | GUI | [src/ui/](../../src/ui)：Dear ImGui、Win32ウィンドウ、Direct3D 11、AppController、ProfileDocument。タイマーRPCはGUIスレッドで待たない。 |
-| About・ライセンス | [about_page.cpp](../../src/ui/about_page.cpp)、[license_inventory.cpp](../../src/ui/license_inventory.cpp)：`licenses/components.json` を読み、直接依存と推移的依存のライセンスを表示する。収集とZIP検証も同じ一覧を使う。 |
+| About・ライセンス | [about_page.cpp](../../src/ui/about_page.cpp)、[license_inventory.cpp](../../src/ui/license_inventory.cpp)：`licenses/components.json` を読み、直接依存と追加のライセンス通知を表示する。収集とZIP検証も同じ一覧を使う。 |
 
 ## フレームと所有関係
 

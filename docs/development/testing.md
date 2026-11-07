@@ -108,7 +108,7 @@ Runtimeをインストールしていない環境でも、`DivergenceSplitter.ex
 python -m unittest discover -s tools/tests -v
 ```
 
-SDK取得、ライセンス収集、ZIP検証ヘルパーを検査します。`licenses/components.json` の必須通知、製品CLIの不在、推移的vcpkg通知も確認します。実際のZIPは[配布](distribution.md)で別途確認してください。パッケージ版のAbout画面では、コンポーネント表、推移的依存、アプリケーションライセンスが表示され、各Licenseリンクから原文を開けることを確認します。
+SDK取得、ライセンス収集、ZIP検証ヘルパーを検査します。`licenses/components.json` の必須通知、製品CLIの不在、vcpkgの追加通知も確認します。実際のZIPは[配布](distribution.md)で別途確認してください。パッケージ版のAbout画面では、コンポーネント表、追加のライセンス通知、アプリケーションライセンスが表示され、各Licenseリンクから原文を開けることを確認します。
 
 ## ドキュメントと例の検証
 

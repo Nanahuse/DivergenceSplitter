@@ -4,7 +4,7 @@ Qt Widgets版の4画面をDear ImGuiへ置き換え、Diagnostics画面は今回
 
 | 要件 | 確認結果 |
 | --- | --- |
-| 4画面 | Monitor / Profile / Settings / Aboutを実装。Aboutは `licenses/components.json` から直接依存と推移的依存のライセンスを表示。Windows上で起動と画面描画を確認。 |
+| 4画面 | Monitor / Profile / Settings / Aboutを実装。Aboutは `licenses/components.json` から直接依存と追加のライセンス通知を表示。Windows上で起動と画面描画を確認。 |
 | Windows標準ファイルピッカー | ProfileのOpen/Save、Scenario YAML、動画ファイルに `IFileOpenDialog` / `IFileSaveDialog` を使用。保存時は `FOS_OVERWRITEPROMPT`。日本語パスはUTF-8で保存し、内部では `std::filesystem::path` へ変換。 |
 | draft / saved / applied | ProfileDocumentで分離。SaveはRuntimeを変更せず、Applyはファイルを保存せず、Apply成功だけでは未保存表示を消さない。UIテストで確認。 |
 | Core / Runtimeテスト | Debug構成とRelease構成で152/152成功（CIはTestHostを含む153/153）。 |
@@ -13,8 +13,8 @@ Qt Widgets版の4画面をDear ImGuiへ置き換え、Diagnostics画面は今回
 | Windows CI | 単一のWindowsジョブ。ImGuiはFetchContentで固定タグを取得し、Qtのインストール手順を削除。NDI RuntimeテストはSecretがある場合のみ実行し、fork PRではスキップ。 |
 | Qt依存の削除 | 製品GUI、CMake、vcpkg manifest、配布ZIPからQtを削除。ZIP検証はQt6Core.dllとplatforms/qwindows.dllを拒否。 |
 | 製品CLIの削除 | `src/cli` と `divergencesplitter_cli` ターゲット、配布物から削除。ZIP検証はCLIを拒否。テスト実行ファイルとGUIの `--smoke-test` は維持。 |
-| ライセンス管理の一元化 | `licenses/components.json` をAbout、収集スクリプト、ZIP検証で共有。必須通知の欠落・空ファイル・推移的vcpkg通知を検査。 |
-| 圧縮後ZIP容量 | 同一比較条件（Qt 2920fb6、NDI Runtimeなし、DEFLATE level 6）で、vc_redistなし Qt 40,538,833 / Dear ImGui 5,902,954 bytes（約85.4%削減）、vc_redistあり Qt 57,603,103 / Dear ImGui 31,108,776 bytes（約46.0%削減）。配布ZIPは1種類。詳細は[配布](distribution.md#配布zip容量の比較)。 |
+| ライセンス管理の一元化 | `licenses/components.json` をAbout、収集スクリプト、ZIP検証で共有。必須通知の欠落・空ファイル・追加のvcpkg通知を検査。 |
+| 圧縮後ZIP容量 | 同一比較条件（Qt 2920fb6、NDI Runtimeなし、DEFLATE level 6）で、vc_redistなし Qt 40,538,833 / Dear ImGui 5,903,586 bytes（約85.4%削減）、vc_redistあり Qt 57,603,103 / Dear ImGui 31,109,465 bytes（約46.0%削減）。配布ZIPは1種類。詳細は[配布](distribution.md#配布zip容量の比較)。 |
 
 NDI Runtimeがない環境ではNDIループバックテストをスキップします。Runtimeがある環境では初期化・受信を確認済みです。カメラ・動画・NDIの物理入力、実LiveSplit、実IME、DPIの実画面確認は、自動テストだけで完了扱いにしません。
 

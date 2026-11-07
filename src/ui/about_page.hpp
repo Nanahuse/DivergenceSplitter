@@ -16,7 +16,7 @@ public:
 
 private:
     std::optional<LicenseInventory> inventory_;
-    std::vector<std::string> transitive_;
+    std::vector<std::string> additional_notices_;
 };
 
 }  // namespace divergencesplitter::ui

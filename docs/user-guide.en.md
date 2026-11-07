@@ -101,4 +101,4 @@ is in [configuration](configuration.en.md#application-settings).
 
 ## About
 
-About shows the application version and project/license links. The license tables list bundled third-party components with their license names and links to the original notices. Transitive dependencies appear in a separate table. Full license texts and notices are included in licenses/ and DISTRIBUTION-NOTICE.txt. NDI Runtime is shown as an external component and is not bundled; check its detection status in Profile's NDI input settings.
+About shows the application version and project/license links. The license tables list bundled third-party components with their license names and links to the original notices. Additional license notices appear in a separate table. Full license texts and notices are included in licenses/ and DISTRIBUTION-NOTICE.txt. NDI Runtime is shown as an external component and is not bundled; check its detection status in Profile's NDI input settings.

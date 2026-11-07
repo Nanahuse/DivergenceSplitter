@@ -32,7 +32,8 @@ void draw_details(const LicenseComponent& component) {
 }  // namespace
 
 AboutPage::AboutPage()
-    : inventory_(load_license_inventory()), transitive_(transitive_license_files()) {}
+    : inventory_(load_license_inventory()),
+      additional_notices_(license_notice_files(inventory_ ? &*inventory_ : nullptr)) {}
 
 void AboutPage::draw() {
     ImGui::Dummy(ImVec2(0.0f, 8.0f));
@@ -90,26 +91,27 @@ void AboutPage::draw() {
     }
 
     ImGui::Spacing();
-    ImGui::SeparatorText("Transitive dependencies");
-    if (transitive_.empty()) {
-        text_muted("No transitive notices are installed in this build.");
+    ImGui::SeparatorText("Additional license notices");
+    text_muted(
+        "Collected vcpkg notices for transitive and build/test-only dependencies. "
+        "This list is not a runtime component list."
+    );
+    if (additional_notices_.empty()) {
+        text_muted("No additional license notices are installed in this build.");
     } else if (ImGui::BeginTable(
-                   "##transitive",
-                   3,
+                   "##notices",
+                   2,
                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                        ImGuiTableFlags_SizingStretchProp
                )) {
-        ImGui::TableSetupColumn("Component", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("License", ImGuiTableColumnFlags_WidthFixed, 260.0f);
+        ImGui::TableSetupColumn("Notice", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthFixed, 90.0f);
         ImGui::TableHeadersRow();
-        for (const auto& file : transitive_) {
+        for (const auto& file : additional_notices_) {
             const auto name = std::filesystem::path{file}.stem().string();
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(name.c_str());
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted("See notice");
             ImGui::TableNextColumn();
             if (ImGui::SmallButton(("License##" + file).c_str())) {
                 (void)open_file(file);

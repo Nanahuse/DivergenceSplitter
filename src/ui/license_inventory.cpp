@@ -53,7 +53,7 @@ std::optional<LicenseInventory> load_license_inventory() {
     }
 }
 
-std::vector<std::string> transitive_license_files() {
+std::vector<std::string> license_notice_files(const LicenseInventory* inventory) {
     std::vector<std::string> result;
     const auto directory = application_directory() / "licenses" / "vcpkg";
     std::error_code error;
@@ -64,7 +64,20 @@ std::vector<std::string> transitive_license_files() {
         if (!entry.is_regular_file() || entry.path().extension() != ".txt") {
             continue;
         }
-        result.push_back("licenses/vcpkg/" + entry.path().filename().string());
+        const std::string name = entry.path().stem().string();
+        bool direct = false;
+        if (inventory != nullptr) {
+            for (const auto& component : inventory->components) {
+                if (component.source.starts_with("vcpkg:") &&
+                    component.source.substr(6) == name) {
+                    direct = true;
+                    break;
+                }
+            }
+        }
+        if (!direct) {
+            result.push_back("licenses/vcpkg/" + entry.path().filename().string());
+        }
     }
     std::sort(result.begin(), result.end());
     return result;
