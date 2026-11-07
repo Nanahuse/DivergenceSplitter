@@ -57,7 +57,7 @@ install・package時には[collect_licenses.py](../../tools/collect_licenses.py)
 | Qt Widgets (`2920fb6`) | あり | 57,603,103 bytes | 基準 |
 | Dear ImGui (今回) | あり | 31,775,455 bytes | 約44.8%削減 |
 
-配布ZIPは1種類で、NDI Runtimeの有無による差はありません。CI実測値はPRを参照してください。
+配布ZIPは1種類で、NDI Runtimeの有無による差はありません。CI実測は31,644,799 bytes（NDI Runtimeなしの単一ZIP）です。
 
 ## NDI Runtimeの扱い
 
