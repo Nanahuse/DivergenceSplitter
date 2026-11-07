@@ -1,35 +1,26 @@
 #pragma once
 
-#include <QString>
-#include <QWidget>
-
-class QComboBox;
-class QLabel;
-class QSpinBox;
+#include <string>
 
 namespace divergencesplitter::ui {
 
-class AppController;
+class App;
 
-class SettingsPage final : public QWidget {
-    Q_OBJECT
-
+class SettingsPage {
 public:
-    explicit SettingsPage(AppController* controller, QWidget* parent = nullptr);
+    explicit SettingsPage(App* app);
 
-    void reload_from_controller();
-
-signals:
-    void settingsSaved(const QString& theme);
+    void reload();
+    void draw();
 
 private:
     void save();
 
-    AppController* controller_;
-    QComboBox* log_level_;
-    QSpinBox* reaction_time_;
-    QComboBox* theme_;
-    QLabel* status_;
+    App* app_;
+    int theme_index_{};
+    int reaction_time_ms_{};
+    int log_level_index_{};
+    std::string status_;
 };
 
 }  // namespace divergencesplitter::ui

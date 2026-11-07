@@ -70,6 +70,9 @@ bool wait_until(Predicate predicate, std::chrono::seconds timeout = 20s) {
 }
 
 TEST(NdiSdkLoopback, DiscoversReceivesNormalizesEvaluatesAndReconnects) {
+    if (!ndi_enabled()) {
+        GTEST_SKIP() << ndi_runtime_status().message;
+    }
     auto runtime = acquire_ndi_runtime();
     auto module = GetModuleHandleW(L"Processing.NDI.Lib.x64.dll");
     ASSERT_NE(module, nullptr);

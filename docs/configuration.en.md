@@ -108,11 +108,15 @@ optional. This selects a source by name, not by IP or URL. Profile's editable li
 retains saved names when a sender is offline. **Search again** refreshes discovery;
 the list also refreshes while Profile is visible.
 
-NDI requires an enabled build. The official ZIP includes its runtime beside the
+NDI input requires the NDI Runtime to be installed separately. The distribution
+ZIP does not include the runtime. The application detects an installed runtime at
+startup; if it is missing, only NDI input is unavailable and the rest of the
+application continues to work. Restart the application after installing the
+runtime.
+See [NDI notices](../licenses/NDI.en.md) and [NDI runtime setup (Japanese)](development/building.md#ndi-runtime実行時の任意依存).
 executable. Sender pauses and ordinary receive timeouts keep the receiver alive;
 the SDK reconnects when the named source returns. Fatal SDK/format errors stop
 capture. Frames are converted to owned BGR images before normal processing.
-See [NDI notices](../licenses/NDI.en.md) and [local NDI builds (Japanese)](development/building.md#ndi対応ビルド).
 
 ## Crop, resize, and reference images
 

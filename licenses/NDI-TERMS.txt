@@ -1,11 +1,12 @@
-Terms for the bundled NDI runtime
-================================
+Terms for the optional NDI runtime
+==================================
 
-These terms are part of the terms of use of the Windows distribution when it
-includes Processing.NDI.Lib.x64.dll. By using or redistributing that component,
-you agree to these terms. They apply to the NDI SDK/runtime and its protocols,
-not to DivergenceSplitter's own MIT-licensed source code. DivergenceSplitter's
-MIT License and your rights under it remain unchanged.
+The DivergenceSplitter Windows distribution does not bundle
+Processing.NDI.Lib.x64.dll. If you install the NDI Runtime separately to use
+NDI input, these terms describe the conditions that apply to that runtime. They
+apply to the NDI SDK/runtime and its protocols, not to DivergenceSplitter's own
+MIT-licensed source code. DivergenceSplitter's MIT License and your rights under
+it remain unchanged.
 
 The NDI runtime is proprietary software of NDI, Inc. / Vizrt NDI AB and its
 licensors, not MIT-licensed software. Copyright NDI, Inc. All rights reserved.

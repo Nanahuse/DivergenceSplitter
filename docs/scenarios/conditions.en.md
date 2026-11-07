@@ -26,7 +26,7 @@ detector: {type: mean_brightness}
 
 `minimum_score` must be a finite number and `detector` must be a detector mapping; both are required. True when the score is at least `minimum_score`, including equality. Thresholds are not restricted to a range, but every supported detector returns a score in `[0, 1]`. A threshold above 1 cannot match; 0 matches every valid score.
 
-Diagnostics shows the latest score and maximum score since reset. Reset clears both. A detector failure produces `error` and increases the rule error count; it is distinct from a false result.
+Monitor shows the latest score and maximum score since reset. Reset clears both. A detector failure produces `error` and increases the rule error count; it is distinct from a false result.
 
 ## all
 

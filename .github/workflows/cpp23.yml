@@ -8,18 +8,14 @@ on:
 
 jobs:
   windows:
-    name: Windows (NDI ${{ matrix.ndi }})
+    name: Windows
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # pull_request (never pull_request_target): fork code gets no SDK Secret.
-        ndi: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["OFF","ON"]' || '["OFF"]') }}
     permissions:
       contents: read
     env:
       VCPKG_ROOT: C:\vcpkg
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
+      NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
     steps:
       - uses: actions/checkout@v5
 
@@ -34,21 +30,11 @@ jobs:
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Get official pinned NDI SDK (no public cache)
-        if: matrix.ndi == 'ON'
+      - name: Get official pinned NDI SDK for runtime integration test
+        if: env.NDI_SDK_URL_WINDOWS != ''
         env:
           NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
         run: python tools/get_ndi_sdk.py
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: "6.8.3"
-          host: windows
-          target: desktop
-          arch: win64_msvc2022_64
-          archives: qtbase
-          cache: true
 
       - name: Bootstrap vcpkg
         run: C:\vcpkg\bootstrap-vcpkg.bat
@@ -81,25 +67,34 @@ jobs:
         run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
 
       - name: Configure
-        run: cmake --preset ci -DDIVERGENCESPLITTER_ENABLE_NDI=${{ matrix.ndi }} "-DNDI_SDK_DIR=${{ env.NDI_SDK_DIR }}"
+        run: cmake --preset ci
 
       - name: Build
         run: cmake --build --preset ci --parallel
 
       - name: Test
-        run: ctest --preset ci --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
+        run: |
+          if ($env:NDI_SDK_DIR) {
+            $env:NDI_RUNTIME_DIR_V6 = Join-Path $env:NDI_SDK_DIR "Bin/x64"
+          }
+          ctest --preset ci --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
 
       - name: TestHost integration
         working-directory: ${{ github.workspace }}
         run: python tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/ci/divergencesplitter_testhost_tests.exe --port 54000
+
       - name: Package ZIP
-        run: cmake --build --preset ci --target package
+        run: |
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "build/ci/vc_redist.x64.exe"
+          cmake --build --preset ci --target package
+
+      - name: Record ZIP size
+        run: Get-ChildItem build/ci/*.zip | Select-Object Name, Length | Format-Table -AutoSize
 
       - name: Verify extracted ZIP
-        run: python tools/verify_windows_zip.py --ndi ${{ matrix.ndi }}
+        run: python tools/verify_windows_zip.py --build-dir build/ci
 
       - name: Upload distribution
-        if: matrix.ndi == 'ON'
         uses: actions/upload-artifact@v7
         with:
           name: DivergenceSplitter-cpp23-windows-x64
@@ -110,6 +105,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: cpp23-tests-ndi-${{ matrix.ndi }}
+          name: cpp23-tests
           path: build/ci/ctest-results.xml
           if-no-files-found: warn

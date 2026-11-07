@@ -5,6 +5,7 @@
 #include <string>
 
 #include "divergencesplitter/configuration/configuration.hpp"
+#include "divergencesplitter/text.hpp"
 
 using namespace divergencesplitter;
 
@@ -167,4 +168,23 @@ TEST(AppSettings, RejectsUnknownField) {
     const auto path = directory.path() / "settings.json";
     write_text(path, R"({"version": 1, "log_level": "INFO", "reaction_time_ms": 0, "extra": true})");
     EXPECT_THROW(load_app_settings(path), ConfigurationError);
+}
+
+
+TEST(Profile, RoundTripsUtf8Paths) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() /
+                      path_from_utf8(reinterpret_cast<const char*>(u8"プロファイル.json"));
+    Profile profile;
+    profile.source = VideoSourceConfiguration{
+        path_to_utf8(path_from_utf8(reinterpret_cast<const char*>(u8"C:/資料/動画.mp4"))),
+        {},
+    };
+    profile.instances.push_back({
+        {54000},
+        path_to_utf8(path_from_utf8(reinterpret_cast<const char*>(u8"C:/資料/シナリオ.yaml"))),
+    });
+    save_profile(path, profile);
+    const auto loaded = load_profile(path);
+    EXPECT_EQ(loaded.profile, profile);
 }

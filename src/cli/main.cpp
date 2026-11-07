@@ -10,6 +10,7 @@
 #include "divergencesplitter/configuration/configuration.hpp"
 #include "divergencesplitter/capture/ndi.hpp"
 #include "divergencesplitter/runtime/session.hpp"
+#include "divergencesplitter/text.hpp"
 
 namespace {
 
@@ -45,6 +46,11 @@ std::string describe_state(divergencesplitter::InstanceState state) {
 
 int main(int argc, char** argv) {
     if (argc == 2 && (std::string{argv[1]} == "--ndi-check" || std::string{argv[1]} == "--ndi-list")) {
+        const auto& status = divergencesplitter::ndi_runtime_status();
+        if (status.availability != divergencesplitter::NdiAvailability::available) {
+            std::cerr << status.message << '\n';
+            return 3;
+        }
         try {
             auto runtime = divergencesplitter::acquire_ndi_runtime();
             std::cout << "NDI runtime: " << runtime->api().version() << '\n';
@@ -108,7 +114,7 @@ int main(int argc, char** argv) {
         if (check_only) {
             for (const auto& instance : loaded.profile.instances) {
                 (void)load_profile_scenario(
-                    std::filesystem::path{instance.scenario}, loaded.profile.source
+                    path_from_utf8(instance.scenario), loaded.profile.source
                 );
             }
             std::cout << "profile and scenarios are valid\n";

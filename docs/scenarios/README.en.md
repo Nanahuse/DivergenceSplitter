@@ -24,7 +24,7 @@ A Profile combines the file with a video input and the Bridge port for LiveSplit
 3. Choose a [detector](detectors.en.md), then wrap it in `detected` and any needed
    [conditions](conditions.en.md).
 4. Adapt [examples](examples.en.md), Apply, and inspect scores in
-   [Diagnostics](../user-guide.en.md#diagnostics).
+   [Monitor](../user-guide.en.md#monitor).
 
 Keep the coordinate system stable: input Crop/Resize runs before detector ROI.
 Reference-image resizing is a separate Profile option; see

@@ -6,7 +6,7 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ## 主な機能
 
-- カメラ・キャプチャーカード、動画ファイル、NDI®の映像を入力に使えます。NDIには対応ビルドが必要です。
+- カメラ・キャプチャーカード、動画ファイル、NDI®の映像を入力に使えます。NDI入力を使用するには、NDI Runtimeを別途インストールする必要があります。
 - 映像の切り取り（Crop）やサイズ変更（Resize）を行い、画像の検出方法（Detector）と条件（Condition）を組み合わせて判定できます。
 - 条件が成立すると、LiveSplit.Bridgeを通じてStart、Split、Resetなどの操作を送ります。
 - 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。画面には映像のプレビューと判定・接続の状態を表示します。
@@ -15,16 +15,16 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 [C++23のGitHub Actions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-cpp23-windows-x64` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
 
-ダウンロードしたファイルを展開すると、中にアプリ本体のWindows ZIPがあります。そのZIPも書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLL、プラグイン、ライセンスのファイルは、展開後の配置を保ってください。
+ダウンロードしたファイルを展開すると、中にアプリ本体のWindows ZIPがあります。そのZIPも書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLLとライセンスのファイルは、展開後の配置を保ってください。
 
-ダウンロードできるのは、NDI有効ジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
+ダウンロードできるのは、Windowsジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
 
 ## 使い方
 
 1. LiveSplitにProtocol v4対応のLiveSplit.Bridgeを導入し、テスト用Runを用意します。
 2. Profileで映像入力、YAMLシナリオ、Bridgeポートを設定します。
 3. Draft input previewで映像とCrop／Resizeの結果を確認し、Applyを押します。入力とBridgeの準備が整うとシナリオの評価とタイマー操作が始まります。
-4. MonitorとDiagnosticsで判定・接続状態を確認し、Profileを保存します。
+4. Monitorで判定・接続状態を確認し、Profileを保存します。
 
 具体的な操作と設定例は[利用ガイド](docs/user-guide.md)と[サンプル](examples/README.md)にあります。
 
@@ -37,7 +37,7 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 | 目的 | 参照先 |
 | --- | --- |
 | 導入して最初の自動Splitを試す | [はじめに](docs/getting-started.md) |
-| Monitor、Profile、Diagnostics、Settingsを使う | [利用ガイド](docs/user-guide.md) |
+| Monitor、Profile、Settings、Aboutを使う | [利用ガイド](docs/user-guide.md) |
 | 入力、画像変換、Bridge接続を設定する | [設定リファレンス](docs/configuration.md) |
 | 入力・接続・判定の問題を調べる | [トラブルシューティング](docs/troubleshooting.md) |
 | シナリオを作る | [シナリオ作成](docs/scenarios/README.md) |
@@ -47,7 +47,7 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ## 開発
 
-アプリはC++23とQt Widgetsで実装しています。CMakeの設定はリポジトリ直下にあります。実装は `src/`、複数のターゲットで共有するヘッダーは `include/`、テストは `tests/`、文書は `docs/` に置きます。`tools/` にはPythonで書いたビルド・配布用の補助スクリプトがあります。
+アプリはC++23とDear ImGui（Win32 / Direct3D 11）で実装しています。CMakeの設定はリポジトリ直下にあります。実装は `src/`、複数のターゲットで共有するヘッダーは `include/`、テストは `tests/`、文書は `docs/` に置きます。`tools/` にはPythonで書いたビルド・配布用の補助スクリプトがあります。
 
 ビルド、CTest、Bridge TestHostとの結合テスト、NDI、Windows ZIPの作成と検証は、[開発ガイド](docs/development/README.md)を参照してください。
 
@@ -55,4 +55,4 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ソースコードは[MITライセンス](LICENSE)です。同梱する依存ライブラリにはそれぞれ別のライセンスが適用されます。[配布時の通知](DISTRIBUTION-NOTICE.txt)と[第三者ライセンスの収集・配布手順](docs/development/distribution.md)を参照してください。
 
-NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。NDI対応の配布物に同梱するランタイムの条件は[NDIの通知](licenses/NDI.md)を参照してください。
+NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。NDI入力を使用する場合、NDI Runtimeを別途インストールする必要があります。配布ZIPには同梱されません。条件は[NDIの通知](licenses/NDI.md)を参照してください。

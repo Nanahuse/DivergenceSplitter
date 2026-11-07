@@ -40,11 +40,11 @@
     {
       "name": "full",
       "inherits": "base",
-      "displayName": "Full application with Qt Widgets",
+      "displayName": "Full application with Dear ImGui",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "DIVERGENCESPLITTER_BUILD_UI": "ON",
-        "VCPKG_MANIFEST_FEATURES": "tests;ui"
+        "VCPKG_MANIFEST_FEATURES": "tests"
       }
     },
     {
@@ -54,13 +54,13 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "DIVERGENCESPLITTER_BUILD_UI": "ON",
-        "VCPKG_MANIFEST_FEATURES": "tests;ui"
+        "VCPKG_MANIFEST_FEATURES": "tests"
       }
     },
     {
       "name": "ci",
       "inherits": "base",
-      "displayName": "CI: Release UI with external Qt",
+      "displayName": "CI: Release UI",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "DIVERGENCESPLITTER_BUILD_UI": "ON",

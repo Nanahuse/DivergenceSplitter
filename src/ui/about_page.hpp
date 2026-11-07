@@ -1,14 +1,12 @@
 #pragma once
 
-#include <QWidget>
-
 namespace divergencesplitter::ui {
 
-class AboutPage final : public QWidget {
-    Q_OBJECT
-
+class AboutPage {
 public:
-    explicit AboutPage(QWidget* parent = nullptr);
+    AboutPage();
+
+    void draw();
 };
 
 }  // namespace divergencesplitter::ui

@@ -16,10 +16,10 @@ install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION licenses)
 # Third-party license bodies belong to the dependencies, not this repository.
 # Collect the actual installed notices only when producing a distribution.
 file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" _license_python)
-set(_license_qt_args)
+set(_license_imgui_args)
 if(DIVERGENCESPLITTER_BUILD_UI)
-    file(TO_CMAKE_PATH "${Qt6_DIR}" _license_qt_dir)
-    set(_license_qt_args "--qt-dir \"${_license_qt_dir}\" --qt-version \"${Qt6_VERSION}\"")
+    file(TO_CMAKE_PATH "${imgui_SOURCE_DIR}" _license_imgui_dir)
+    set(_license_imgui_args "--imgui-source \"${_license_imgui_dir}\"")
 endif()
 install(CODE "
     execute_process(
@@ -28,28 +28,18 @@ install(CODE "
             --vcpkg-share \"${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share\"
             --bridge-source \"${livesplit_bridge_SOURCE_DIR}\"
             --cache \"${CMAKE_BINARY_DIR}/license-cache\"
-            ${_license_qt_args}
+            ${_license_imgui_args}
         COMMAND_ERROR_IS_FATAL ANY
     )
 ")
-if(DIVERGENCESPLITTER_ENABLE_NDI)
-    install(FILES "${NDI_RUNTIME_DLL}" "${NDI_RUNTIME_LICENSE}" DESTINATION .)
-endif()
-
 if(WIN32)
     install(CODE "
         file(GLOB _app_dlls \"${CMAKE_BINARY_DIR}/*.dll\")
         list(FILTER _app_dlls EXCLUDE REGEX \"gtest\")
-        list(FILTER _app_dlls EXCLUDE REGEX \"Qt6Test\")
         list(FILTER _app_dlls EXCLUDE REGEX \"Processing[.]NDI[.]\")
         if(_app_dlls)
             file(COPY \${_app_dlls} DESTINATION \"\${CMAKE_INSTALL_PREFIX}\")
         endif()
-        foreach(_plugin_dir platforms styles imageformats tls networkinformation generic iconengines platforminputcontexts)
-            if(EXISTS \"${CMAKE_BINARY_DIR}/\${_plugin_dir}\")
-                file(COPY \"${CMAKE_BINARY_DIR}/\${_plugin_dir}\" DESTINATION \"\${CMAKE_INSTALL_PREFIX}\")
-            endif()
-        endforeach()
         if(EXISTS \"${CMAKE_BINARY_DIR}/vc_redist.x64.exe\")
             file(COPY \"${CMAKE_BINARY_DIR}/vc_redist.x64.exe\" DESTINATION \"\${CMAKE_INSTALL_PREFIX}\")
         endif()
