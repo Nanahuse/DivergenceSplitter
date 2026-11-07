@@ -120,6 +120,9 @@ int App::run(HINSTANCE instance, int show_command, bool smoke_test) {
     settings_.reset();
     profile_.reset();
     monitor_.reset();
+    if (smoke_test_ && exit_code_ == 0 && !smoke_test_ok()) {
+        exit_code_ = 3;
+    }
     destroy_imgui();
     destroy_device();
     destroy_window();
@@ -199,9 +202,18 @@ LRESULT App::handle_message(HWND window, UINT message, WPARAM wparam, LPARAM lpa
                 const UINT width = LOWORD(lparam);
                 const UINT height = HIWORD(lparam);
                 if (width > 0 && height > 0) {
+                    if (context_) {
+                        context_->OMSetRenderTargets(0, nullptr, nullptr);
+                    }
                     destroy_render_target();
-                    swap_chain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
-                    if (!create_render_target()) {
+                    const HRESULT result = swap_chain_->ResizeBuffers(
+                        0,
+                        width,
+                        height,
+                        DXGI_FORMAT_UNKNOWN,
+                        0
+                    );
+                    if (FAILED(result) || !create_render_target()) {
                         running_ = false;
                     }
                 }
@@ -313,6 +325,9 @@ bool App::create_render_target() {
 }
 
 void App::destroy_render_target() {
+    if (context_) {
+        context_->OMSetRenderTargets(0, nullptr, nullptr);
+    }
     render_target_.Reset();
 }
 

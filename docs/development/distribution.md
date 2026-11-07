@@ -53,11 +53,11 @@ install・package時には[collect_licenses.py](../../tools/collect_licenses.py)
 | 構成 | vc_redist | 圧縮後ZIP | 比較 |
 | --- | --- | ---: | --- |
 | Qt Widgets (`2920fb6`) | なし | 40,538,833 bytes | 基準 |
-| Dear ImGui (今回) | なし | 6,585,390 bytes | 約83.8%削減 |
+| Dear ImGui (今回) | なし | 6,585,595 bytes | 約83.8%削減 |
 | Qt Widgets (`2920fb6`) | あり | 57,603,103 bytes | 基準 |
-| Dear ImGui (今回) | あり | 31,775,362 bytes | 約44.8%削減 |
+| Dear ImGui (今回) | あり | 31,775,455 bytes | 約44.8%削減 |
 
-配布ZIPは1種類で、NDI Runtimeの有無による差はありません。CI実測は31,644,745 bytes（NDI Runtimeなしの単一ZIP）です。
+配布ZIPは1種類で、NDI Runtimeの有無による差はありません。CI実測値はPRを参照してください。
 
 ## NDI Runtimeの扱い
 

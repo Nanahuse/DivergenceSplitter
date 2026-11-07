@@ -47,7 +47,6 @@ private:
     void draw_actions();
     void apply();
 
-    void switch_source(int type);
     void refresh_preview();
     void stop_preview();
     void ensure_camera_devices();

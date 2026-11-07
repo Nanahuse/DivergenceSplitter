@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include "profile_source_ui.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -30,16 +32,6 @@ constexpr FileDialogFilter kScenarioFilters[] = {
     {L"Scenario YAML", L"*.yaml;*.yml"},
     {L"All files", L"*.*"},
 };
-
-int source_index(const SourceConfiguration& source) {
-    if (std::holds_alternative<CameraSourceConfiguration>(source)) return 0;
-    if (std::holds_alternative<VideoSourceConfiguration>(source)) return 1;
-    return 2;
-}
-
-TransformConfiguration source_transform(const SourceConfiguration& source) {
-    return std::visit([](const auto& value) { return value.transform; }, source);
-}
 
 std::string backend_name(CameraBackend backend) {
     return backend == CameraBackend::direct_show ? "DirectShow" : "Media Foundation";
@@ -289,29 +281,6 @@ void ProfilePage::select_camera_mode(int index) {
     next_preview_ = 0.0;
 }
 
-void ProfilePage::switch_source(int type) {
-    const TransformConfiguration transform =
-        source_transform(app_->document().draft.source);
-    if (type == 0 && !std::holds_alternative<CameraSourceConfiguration>(
-                         app_->document().draft.source)) {
-        CameraSourceConfiguration camera;
-        camera.mode.width = 1920;
-        camera.mode.height = 1080;
-        camera.mode.fps = 60.0;
-        camera.transform = transform;
-        app_->document().draft.source = std::move(camera);
-    } else if (type == 1 &&
-               !std::holds_alternative<VideoSourceConfiguration>(
-                   app_->document().draft.source)) {
-        app_->document().draft.source = VideoSourceConfiguration{"", transform};
-    } else if (type == 2 &&
-               !std::holds_alternative<NdiSourceConfiguration>(
-                   app_->document().draft.source)) {
-        app_->document().draft.source = NdiSourceConfiguration{"", transform};
-    }
-    next_preview_ = 0.0;
-}
-
 void ProfilePage::draw() {
     draw_toolbar();
     const float scale = app_->dpi_scale();
@@ -411,20 +380,10 @@ void ProfilePage::draw_input_tab() {
 
 void ProfilePage::draw_source_controls() {
     ImGui::SeparatorText("Input source");
-    const int type = source_index(app_->document().draft.source);
-    if (ImGui::RadioButton("Camera", type == 0)) {
-        switch_source(0);
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Video file", type == 1)) {
-        switch_source(1);
-    }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!ndi_enabled() && type != 2);
-    if (ImGui::RadioButton("NDI", type == 2)) {
-        switch_source(2);
-    }
-    ImGui::EndDisabled();
+    const int type = draw_source_type_radio(
+        app_->document().draft,
+        ndi_enabled()
+    );
     ImGui::Dummy(ImVec2(0.0f, 4.0f * app_->dpi_scale()));
     switch (type) {
         case 0:

@@ -46,8 +46,9 @@ public:
         path = std::move(saved_path);
     }
 
+    // Revert matches the user guide: return the draft to the active (applied) profile.
     void revert_draft(const Profile& applied) {
-        draft = saved.has_value() ? *saved : applied;
+        draft = applied;
     }
 };
 

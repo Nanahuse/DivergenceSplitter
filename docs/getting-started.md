@@ -10,7 +10,7 @@
 
 ## ダウンロードと起動
 
-1. [C++23のActions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、利用するリビジョンの信頼できる実行結果を選びます。成功した実行から `DivergenceSplitter-cpp23-windows-x64` をダウンロードしてください。GitHubへのサインインが必要です。NDI有効ジョブが成功していない場合や、保存期間が切れている場合は取得できません。その場合は[ソースからビルド](development/building.md)します。
+1. [C++23のActions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、利用するリビジョンの信頼できる実行結果を選びます。成功した実行から `DivergenceSplitter-cpp23-windows-x64` をダウンロードしてください。GitHubへのサインインが必要です。Windowsジョブが成功していない場合や、保存期間が切れている場合は取得できません。その場合は[ソースからビルド](development/building.md)します。
 2. ダウンロードしたファイルを展開し、中にあるアプリ本体のZIPも、書き込み可能なローカルフォルダーへ展開します。DLLとライセンスは、展開後の配置を保ってください。公式ZIPにはNDI Runtimeは含まれません。NDI入力を使用する場合は別途インストールしてください。
 3. `DivergenceSplitter.exe` を起動します。初回は映像入力が未設定です。以前に開いたProfileのファイルが残っていれば、起動時に自動で読み込んで適用します。その場合は、映像とBridgeの準備が整うと、保存済みのシナリオによるタイマー操作が始まることがあります。
 

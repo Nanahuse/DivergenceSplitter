@@ -7,12 +7,12 @@ Qt Widgets版の4画面をDear ImGuiへ置き換え、Diagnostics画面は今回
 | 4画面 | Monitor / Profile / Settings / Aboutを実装。Windows上で起動と画面描画を確認。 |
 | Windows標準ファイルピッカー | ProfileのOpen/Save、Scenario YAML、動画ファイルに `IFileOpenDialog` / `IFileSaveDialog` を使用。保存時は `FOS_OVERWRITEPROMPT`。日本語パスはUTF-8で保存し、内部では `std::filesystem::path` へ変換。 |
 | draft / saved / applied | ProfileDocumentで分離。SaveはRuntimeを変更せず、Applyはファイルを保存せず、Apply成功だけでは未保存表示を消さない。UIテストで確認。 |
-| Core / Runtimeテスト | Debug構成とRelease構成で149/149成功（CIはTestHostを含む150/150）。 |
+| Core / Runtimeテスト | Debug構成とRelease構成で151/151成功（CIはTestHostを含む152/152）。 |
 | Camera / Video / NDIプレビュー | ProfilePreviewのワーカー、Crop/Resize、入力再利用、エラー復旧をUIテストで確認。実機のCamera・外部NDIは手動確認項目として残す。 |
 | 日本語IME / DPI / 終了処理 | 日本語フォントを読み込み、Win32のIMEメッセージをImGuiバックエンドへ渡す。WM_DPICHANGEDでスタイルとフォントを再構築。終了時にプレビュー、NDI検索、Session、D3D11、COMを解放。実IME変換と実モニター間移動は手動確認項目。 |
 | Windows CI | 単一のWindowsジョブ。ImGuiはFetchContentで固定タグを取得し、Qtのインストール手順を削除。NDI RuntimeテストはSecretがある場合のみ実行し、fork PRではスキップ。 |
 | Qt依存の削除 | 製品GUI、CMake、vcpkg manifest、配布ZIPからQtを削除。ZIP検証はQt6Core.dllとplatforms/qwindows.dllを拒否。 |
-| 圧縮後ZIP容量 | 同一比較条件（Qt 2920fb6、NDI Runtimeなし、DEFLATE level 6）で、vc_redistなし Qt 40,538,833 / Dear ImGui 6,585,390 bytes（約83.8%削減）、vc_redistあり Qt 57,603,103 / Dear ImGui 31,775,362 bytes（約44.8%削減）。配布ZIPは1種類。詳細は[配布](distribution.md#配布zip容量の比較)。 |
+| 圧縮後ZIP容量 | 同一比較条件（Qt 2920fb6、NDI Runtimeなし、DEFLATE level 6）で、vc_redistなし Qt 40,538,833 / Dear ImGui 6,585,595 bytes（約83.8%削減）、vc_redistあり Qt 57,603,103 / Dear ImGui 31,775,455 bytes（約44.8%削減）。配布ZIPは1種類。詳細は[配布](distribution.md#配布zip容量の比較)。 |
 
 NDI Runtimeがない環境ではNDIループバックテストをスキップします。Runtimeがある環境では初期化・受信を確認済みです。カメラ・動画・NDIの物理入力、実LiveSplit、実IME、DPIの実画面確認は、自動テストだけで完了扱いにしません。
 

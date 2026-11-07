@@ -111,6 +111,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/profile_document.hpp
         ui/profile_page.hpp
         ui/profile_preview.hpp
+        ui/profile_source_ui.hpp
         ui/settings_page.hpp
         ui/theme.hpp
         ui/ui_helpers.hpp
@@ -124,6 +125,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/ndi_discovery.cpp
         ui/profile_page.cpp
         ui/profile_preview.cpp
+        ui/profile_source_ui.cpp
         ui/settings_page.cpp
         ui/theme.cpp
         ui/ui_helpers.cpp

@@ -18,7 +18,7 @@ Scenario and split indexes in diagnostics are zero-based.
 input FPS and can vary between instances sharing the same input. **Current
 evaluation** summarizes current conditions, their status, and evaluated detector
 thresholds and latest scores. Hover over the summary for additional lines. This version does not
-include a separate Monitor screen; current conditions are shown on Monitor. See
+include a separate Diagnostics screen; current conditions are shown on Monitor. See
 [control confirmation](troubleshooting.en.md#control-confirmation-and-reset-failures)
 for Pending and Waiting for Reset confirmation.
 

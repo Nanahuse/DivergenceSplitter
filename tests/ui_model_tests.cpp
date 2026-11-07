@@ -21,6 +21,7 @@
 #include "ndi_discovery.hpp"
 #include "profile_document.hpp"
 #include "profile_preview.hpp"
+#include "profile_source_ui.hpp"
 
 namespace divergencesplitter::ui {
 namespace {
@@ -120,8 +121,9 @@ TEST(ProfileDocument, TracksDraftSavedAndNewStates) {
     document.draft.instances[0].connection.port = 54002;
     EXPECT_TRUE(document.dirty());
     document.revert_draft(profile);
-    EXPECT_FALSE(document.dirty());
-    EXPECT_EQ(document.draft.instances[0].connection.port, 54001);
+    EXPECT_TRUE(document.dirty());
+    EXPECT_EQ(document.draft.instances[0].connection.port, 54000);
+    EXPECT_EQ(document.saved->instances[0].connection.port, 54001);
 
     document.start_new(std::filesystem::path{L"C:/profiles/new.json"});
     EXPECT_TRUE(document.dirty());
@@ -296,6 +298,86 @@ TEST(ImGuiLabels, ResetButtonKeepsStableIdWhileCountingDown) {
     ImGui::DestroyContext(context);
     EXPECT_EQ(idle, holding);
     EXPECT_EQ(idle, triggered);
+}
+
+
+TEST(ProfileSourceSwitching, SwitchesAllTypesAndPreservesTransform) {
+    Profile profile;
+    profile.source = VideoSourceConfiguration{
+        "video.mp4",
+        {CropConfiguration{1, 2, 3, 4},
+         ResizeConfiguration{5, 6, ResizeInterpolation::cubic, true}},
+    };
+    const TransformConfiguration transform =
+        std::get<VideoSourceConfiguration>(profile.source).transform;
+
+    switch_profile_source_type(profile, 0);
+    EXPECT_EQ(source_type_index(profile.source), 0);
+    EXPECT_EQ(std::get<CameraSourceConfiguration>(profile.source).transform, transform);
+
+    switch_profile_source_type(profile, 2);
+    EXPECT_EQ(source_type_index(profile.source), 2);
+    EXPECT_EQ(std::get<NdiSourceConfiguration>(profile.source).transform, transform);
+
+    switch_profile_source_type(profile, 1);
+    EXPECT_EQ(source_type_index(profile.source), 1);
+    EXPECT_EQ(std::get<VideoSourceConfiguration>(profile.source).transform, transform);
+
+    std::get<VideoSourceConfiguration>(profile.source).path = "keep.mp4";
+    switch_profile_source_type(profile, 1);
+    EXPECT_EQ(std::get<VideoSourceConfiguration>(profile.source).path, "keep.mp4");
+}
+
+TEST(ProfileSourceSwitching, RadioClickReturnsNewTypeInTheSameFrame) {
+    ImGuiContext* context = ImGui::CreateContext();
+    ImGui::SetCurrentContext(context);
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(800.0f, 600.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    io.Fonts->AddFontDefault();
+    io.Fonts->Build();
+
+    Profile profile;
+    profile.source = CameraSourceConfiguration{};
+    SourceTypeRadioLayout layout;
+
+    const auto frame = [&](bool mouse_down, bool mouse_up) {
+        if (mouse_down) {
+            io.AddMouseButtonEvent(0, true);
+        }
+        if (mouse_up) {
+            io.AddMouseButtonEvent(0, false);
+        }
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+        ImGui::SetNextWindowSize(ImVec2(400.0f, 200.0f));
+        ImGui::Begin("source_type_test");
+        const int type = draw_source_type_radio(profile, true, &layout);
+        ImGui::End();
+        ImGui::EndFrame();
+        return type;
+    };
+
+    (void)frame(false, false);
+    const ImVec2 video_center(
+        (layout.video_min.x + layout.video_max.x) * 0.5f,
+        (layout.video_min.y + layout.video_max.y) * 0.5f
+    );
+    io.AddMousePosEvent(video_center.x, video_center.y);
+    (void)frame(true, false);
+    EXPECT_EQ(frame(false, true), 1);
+    EXPECT_TRUE(std::holds_alternative<VideoSourceConfiguration>(profile.source));
+
+    const ImVec2 ndi_center(
+        (layout.ndi_min.x + layout.ndi_max.x) * 0.5f,
+        (layout.ndi_min.y + layout.ndi_max.y) * 0.5f
+    );
+    io.AddMousePosEvent(ndi_center.x, ndi_center.y);
+    (void)frame(true, false);
+    EXPECT_EQ(frame(false, true), 2);
+    EXPECT_TRUE(std::holds_alternative<NdiSourceConfiguration>(profile.source));
+
+    ImGui::DestroyContext(context);
 }
 
 }  // namespace divergencesplitter::ui
