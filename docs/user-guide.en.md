@@ -99,7 +99,6 @@ values into the Settings fields. Reapply the profile for runtime settings
 from profiles in `%APPDATA%/DivergenceSplitter/settings.json`; the complete schema
 is in [configuration](configuration.en.md#application-settings).
 
-## About and command line
+## About
 
-About shows the application version and project/license links. For headless
-validation and execution, see [troubleshooting](troubleshooting.en.md#command-line-checks).
+About shows the application version and project/license links. The license tables list bundled third-party components with their license names and links to the original notices. Transitive dependencies appear in a separate table. Full license texts and notices are included in licenses/ and DISTRIBUTION-NOTICE.txt. NDI Runtime is shown as an external component and is not bundled; check its detection status in Profile's NDI input settings.

@@ -30,7 +30,7 @@ ctest --preset full --output-on-failure
 .\build\full\DivergenceSplitter.exe
 ```
 
-初回は依存ライブラリとDear ImGuiの取得・ビルドに時間がかかります。生成されたDLLは実行ファイルの隣に置かれたまま使ってください。Qtプラグインの配置は不要です。CLIは `build/full/divergencesplitter-cli.exe` です。[トラブルシューティング](../troubleshooting.md#cliでの確認)も参照してください。
+依存関係、特にDear ImGuiの取得・ビルドに時間がかかります。ビルドされたDLLは実行ファイルの隣に置かれたまま使ってください。Qtプラグインの配置は不要です。問題が起きた場合は[トラブルシューティング](../troubleshooting.md)を参照してください。
 
 UIなしでcore・runtimeを開発する場合は次を使います。
 
@@ -63,14 +63,14 @@ ctest --preset core --output-on-failure
 
 Bridgeクライアントのソースが手元にある場合は、`-DFETCHCONTENT_SOURCE_DIR_LIVESPLIT_BRIDGE=C:/src/livesplit-bridge-client-cpp` で指定できます。再現性を確認するときは、指定されている固定バージョンのソースを使ってください。
 
-アプリ側のターゲットは `divergencesplitter_core`、`divergencesplitter_runtime`、`divergencesplitter_cli` です。UIが有効な場合、`divergencesplitter_imgui`、`divergencesplitter_ui`、`DivergenceSplitter` もビルドします。
+アプリ側のターゲットは `divergencesplitter_core`、`divergencesplitter_runtime` です。UIを有効な場合、`divergencesplitter_imgui`、`divergencesplitter_ui`、`DivergenceSplitter` がビルドされます。製品CLIは削除済みで、テスト実行ファイルとGUIの起動試験だけを残します。
 
 ## NDI Runtime（実行時の任意依存）
 
 NDI入力を使用する場合だけ、NDI RuntimeをNDI公式サイトからインストールしてください。DivergenceSplitterは起動時にインストール済みRuntimeを検出し、見つからない場合はNDI入力だけを無効にします。Camera・Video入力とその他の機能は通常どおり動作します。
 
 - Runtimeの検索には `NDILIB_REDIST_FOLDER`（通常は `NDI_RUNTIME_DIR_V6`）と `NDILIB_LIBRARY_NAME` を使用し、一般的なインストール先も確認します。
-- DLLの読み込み、`NDIlib_v5_load`、初期化の成功を確認します。失敗した場合は理由をAbout/Profileに表示します。
+- DLLの読み込み、`NDIlib_v5_load`、初期化の成功を確認します。失敗した場合は理由をProfileに表示します。
 - 起動後にRuntimeをインストールした場合、再起動後に再判定します。
 - 配布ZIPには `Processing.NDI.Lib.x64.dll` を含めません。アプリのディレクトリへDLLを置く運用は前提にしていません。
 
@@ -81,6 +81,6 @@ NDIの初期化・受信を自動テストする場合、CIは固定SDKからRun
 - コンパイラーやWindows SDKがない場合、x64 Developer PowerShellを開き直してください。
 - toolchainがない場合、`VCPKG_ROOT` とbootstrapを確認してからconfigureします。
 - Dear ImGuiの取得に失敗する場合、gitとGitHubへの接続を確認するか、`-DDIVERGENCESPLITTER_IMGUI_TAG` を利用可能な固定タグへ変更します。取得済みソースを使う場合は `-DFETCHCONTENT_SOURCE_DIR_IMGUI=<path>` を指定できます。
-- NDI入力が利用できない場合、NDI Runtimeがインストールされているか、`NDI_RUNTIME_DIR_V6` が正しいかを確認し、アプリを再起動してください。`divergencesplitter-cli --ndi-check` で状態を確認できます。
+- NDI入力を利用できない場合、NDI Runtimeがインストールされているか、`NDI_RUNTIME_DIR_V6` が正しいか確認し、アプリを再起動してください。ProfileのNDI入力設定で状態を確認できます。
 
 依存関係、コンパイラー、SDKを変える場合は別のビルドディレクトリか新しいプリセットを使い、古いキャッシュの混入を避けてください。パッケージ化に必要な追加の通知は[配布ガイド](distribution.md)を参照してください。

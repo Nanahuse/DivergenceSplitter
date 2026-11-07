@@ -68,6 +68,6 @@ SaveでSettingsの内容を保存します。Reloadは、アプリが記憶し�
 
 SettingsはProfileとは別のファイル `%APPDATA%/DivergenceSplitter/settings.json` に保存します。全項目の形式は[設定リファレンス](configuration.md#アプリケーション設定)を参照してください。
 
-## AboutとCLI
+## About
 
-Aboutにはアプリのバージョンとプロジェクト・ライセンスへのリンクを表示します。画面を使わない設定の検証と実行は[CLIでの確認](troubleshooting.md#cliでの確認)を参照してください。
+Aboutにはアプリのバージョン、プロジェクトとライセンスへのリンクを表示します。ライセンス表には、同梱する第三者コンポーネントのコンポーネント名、ライセンス、ライセンス原文へのリンクを表示します。推移的な依存関係は別の表にまとまります。ライセンス全文と通知は `licenses/` と `DISTRIBUTION-NOTICE.txt` に含まれます。NDI Runtimeは外部コンポーネントとして表示され、ランタイム本体は同梱されません。NDI Runtimeの検出状態はProfileのNDI入力設定で確認してください。

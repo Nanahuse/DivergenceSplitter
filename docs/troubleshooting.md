@@ -16,9 +16,9 @@
 | 動画を開けない・デコードできない | 絶対パスとアクセス権を確認し、そのOpenCVビルドが扱えるコーデックの録画を試します。ファイル選択画面の拡張子は再生対応の保証ではありません。 |
 | 動画の末尾に達した | 末尾では停止します。ループしないため、Applyで先頭から再生し直してください。 |
 | Cropの余白が収まらない | Resize前の入力寸法に合わせて余白を減らします。 |
-| このビルドでNDIを使えない | 公式のNDI対応ZIPを使うか、[SDKを有効にしてビルド](development/building.md#ndi対応ビルド)してください。 |
+| このビルドでNDIを使えない | NDI Runtimeを公式サイトからインストールし、アプリを再起動してください。配布ZIPにはRuntimeを含みません。 |
 | NDI送信元が見つからない・映像が来ない | 送信元を起動し、公開名、ネットワーク接続、ファイアウォール設定を確認してSearch againを押します。保存済みの名前はオフラインでも残ります。通常のタイムアウトは致命的なエラーではなく、送信元が戻ると受信を再開できます。 |
-| NDI Runtimeを初期化できない | NDI Runtimeがインストールされているか、`NDI_RUNTIME_DIR_V6` が正しいかを確認し、アプリを再起動してください。`--ndi-check` でも状態を確認できます。 |
+| NDI Runtimeを初期化できない | NDI Runtimeがインストールされているか、`NDI_RUNTIME_DIR_V6` が正しいかを確認し、アプリを再起動してください。状態はProfileのNDI入力設定で確認できます。 |
 
 カメラを開く処理や読み取りで、再試行できるエラーが起きた場合は、自動でやり直します。一方、モードの不一致、デコード、画像変換、回復できないSDKエラーでは、取得を止める場合があります。Profileを修正してApplyしたら、映像が表示されるだけでなく、フレーム数も増えていることを確認してください。
 
@@ -67,22 +67,3 @@ Pause／Resumeのように区間を移動しない操作では、条件がtrue�
 主なログ項目は `profile.apply`、`capture.error`、`instance.state`、`instance.ready`、`instance.action` です。Conditionの判定エラーはMonitorで数えますが、Detectorの詳しい例外メッセージがログに残るとは限りません。
 
 問題を報告するときは、アプリのリビジョン・ビルド、ProfileとYAML、入力の種類、Crop／Resize後の寸法、判定結果・スコア、問題が起きた前後のログを添えてください。必要に応じて、個人的なファイルパスや送信元の名前を取り除いてください。
-
-## CLIでの確認
-
-展開したアプリケーションのフォルダーで、環境に合わせたProfileを指定します。
-
-```powershell
-.\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --check
-.\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --seconds 10
-.\divergencesplitter-cli.exe --ndi-check
-.\divergencesplitter-cli.exe --ndi-list
-```
-
-`--check` は、Profile、各シナリオ、参照画像を読み込んで設定を検証します。設定されていれば参照画像のResizeも行います。映像入力は開かず、Bridgeにも接続しないため、タイマー操作は送りません。実際の映像とROIが合うかどうかは、この方法では確認できません。
-
-`--seconds` を指定した実行では実際に映像を取得してシナリオを動かし、LiveSplitを操作します。正の秒数を指定しなければ、Ctrl+Cを押すまで続きます。`--ndi-check` はNDIランタイムの初期化を確認し、`--ndi-list` は送信元の検索も行います。
-
-CLIの設定ファイルは `--settings C:/DivergenceSplitter/settings.json` で指定します。省略した場合は既定値を使い、GUIの設定ファイルを自動では読み込みません。
-
-終了コードは、成功または検証完了が `0`、引数の誤りが `2`、設定・起動・NDIで捕捉したエラーが `3`、実行中のSessionのエラーが `4` です。時間を指定した実行では、個々のBridge接続が失敗しても `0` で終了する場合があります。終了コードだけでなく、表示された各インスタンスの状態も確認してください。

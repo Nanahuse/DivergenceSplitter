@@ -10,14 +10,14 @@ when to start, split, reset, and perform other timer actions.
 
 User documentation is available in Japanese and English. Developer, design, build,
 test, CI, distribution, and verification documents are available only in Japanese.
-Configuration keys, UI labels, and commands retain their implementation names.
+Configuration keys, UI labels, and file paths retain their implementation names.
 
 - Native Dear ImGui interface with a live monitor and condition summaries.
 - Camera / capture card input through DirectShow or Media Foundation, local video
   files supported by OpenCV, and NDI® network sources when the NDI Runtime is installed.
 - Crop and resize processing, nine image detectors, and stateful conditions.
 - One shared input feeding independent scenarios and LiveSplit instances.
-- A headless command-line runner for validation and automated checks.
+- About lists bundled third-party components and transitive dependency licenses.
 
 ## Installation
 

@@ -18,11 +18,11 @@ python tools/verify_windows_zip.py --build-dir build/full-release
 
 CPackが作るファイル名は `DivergenceSplitter-<version>-windows-x64.zip` です。ZIP展開時は全体を囲むフォルダーがなく、実行ファイルなどが直接入っています。使うときは、ZIPの内容をすべて同じ場所へ展開してください。
 
-GUI配布物には、`DivergenceSplitter.exe`、`divergencesplitter-cli.exe`、OpenCVなどのランタイムDLL、`vc_redist.x64.exe`、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/` を含めます。Dear ImGuiは静的リンクするためDLLは不要です。QtのDLLやプラグイン、NDI Runtime DLL、NDI Runtimeのインストーラーは含めません。文書とサンプルは含めないため、対応するリビジョンのソースから取得してください。
+GUI配布物には、`DivergenceSplitter.exe`、OpenCVなどのランタイムDLL、`vc_redist.x64.exe`、`LICENSE.txt`、`DISTRIBUTION-NOTICE.txt`、`licenses/`（`components.json`を含む）を含めます。Dear ImGuiは静的リンクするためDLLは不要です。QtのDLLやプラグイン、NDI Runtime DLL、NDI Runtimeのインストーラーは含めません。設定とサンプルは含めないため、対応するリポジトリのソースを取得してください。
 
 CIはパッケージ化の前にMicrosoft公式の `vc_redist.x64.exe` をビルドディレクトリへダウンロードします。ローカルで同じZIPを作る場合も、`build/<preset>/vc_redist.x64.exe` を用意してください。
 
-検証スクリプトはZIPを展開し、必要な実行ファイルと通知があること、Qtのランタイムが残っていないこと、NDI Runtime DLLやNDIのインストーラーが含まれていないこと、SDKの開発用ファイルが混ざっていないことを調べます。その後、CLIの `--help` とGUIの `--smoke-test` で、NDI Runtimeがない環境でも起動することを確認します。
+検証スクリプトはZIPを展開し、必要な実行ファイルと通知を確認すること、Qtのランタイムが残っていないこと、NDI Runtime DLLやNDIのインストーラーが含まれていないこと、SDKの開発用ファイルが含まれていないことを調べます。その後、GUIの `--smoke-test` で、NDI Runtimeがない環境でも起動し、Aboutのライセンス表を描画できることを確認します。配布物に製品CLIは含めません。テスト実行ファイルとGUI起動試験はビルドディレクトリとCIで使用します。
 
 ## CI workflow
 
@@ -40,7 +40,7 @@ CIはパッケージ化の前にMicrosoft公式の `vc_redist.x64.exe` をビル
 
 アプリのソースは[MIT](../../LICENSE)です。[DISTRIBUTION-NOTICE.txt](../../DISTRIBUTION-NOTICE.txt) にDear ImGui、OpenCV、Boost、rapidyaml（ryml）、c4core、nlohmann/json、Bridgeクライアント、カメラ列挙の移植部分などを記載します。それぞれ別のライセンスが適用されます。
 
-install・package時には[collect_licenses.py](../../tools/collect_licenses.py)が、使用したvcpkgパッケージの通知、取得したBridgeのライセンス、FetchContentで取得したDear ImGuiの `LICENSE.txt` を集めます。カメラ列挙部分の許諾ライセンスは、[third-party-license-lock.json](../../tools/third-party-license-lock.json)に記録した固定コミットから取得します。取得した本文は、Git管理外のビルドキャッシュに保存します。
+[licenses/components.json](../../licenses/components.json)をコンポーネントとライセンスの正本とし、About画面、収集スクリプト、ZIP検証で共有します。install・package時には[collect_licenses.py](../../tools/collect_licenses.py)が、この一覧に従ってvcpkgパッケージの通知、取得したBridgeのライセンス、FetchContentで取得したDear ImGuiの `LICENSE.txt`、同梱するNDIヘッダーの通知を集めます。カメラ列挙部分の許諾ライセンスは、[third-party-license-lock.json](../../tools/third-party-license-lock.json)に記録した固定コミットから取得します。取得した本文は、Git管理外のビルドキャッシュに保存します。
 
 必要な通知がない場合、取得した本文が固定内容と違う場合、パッケージ化に失敗します。rymlとc4coreの通知は、`licenses/ryml.txt` と `licenses/c4core.txt` として必ず含め、ZIP検証でも確認します。他のライブラリが依存するライブラリの通知も、`licenses/vcpkg/` に含めます。
 
@@ -53,11 +53,11 @@ install・package時には[collect_licenses.py](../../tools/collect_licenses.py)
 | 構成 | vc_redist | 圧縮後ZIP | 比較 |
 | --- | --- | ---: | --- |
 | Qt Widgets (`2920fb6`) | なし | 40,538,833 bytes | 基準 |
-| Dear ImGui (今回) | なし | 6,585,595 bytes | 約83.8%削減 |
+| Dear ImGui (今回) | なし | 5,902,954 bytes | 約85.4%削減 |
 | Qt Widgets (`2920fb6`) | あり | 57,603,103 bytes | 基準 |
-| Dear ImGui (今回) | あり | 31,775,455 bytes | 約44.8%削減 |
+| Dear ImGui (今回) | あり | 31,108,776 bytes | 約46.0%削減 |
 
-配布ZIPは1種類で、NDI Runtimeの有無による差はありません。CI実測は31,644,799 bytes（NDI Runtimeなしの単一ZIP）です。
+配布ZIPは1種類で、NDI Runtimeの有無による差はありません。今回のローカル実測は31,108,776 bytes（NDI Runtimeなしの単一ZIP）です。
 
 ## NDI Runtimeの扱い
 

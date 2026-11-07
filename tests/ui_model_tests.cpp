@@ -380,4 +380,51 @@ TEST(ProfileSourceSwitching, RadioClickReturnsNewTypeInTheSameFrame) {
     ImGui::DestroyContext(context);
 }
 
+TEST(ProfileSourceSwitching, UnavailableNdiKeepsSavedSourceAndDisablesSwitch) {
+    ImGuiContext* context = ImGui::CreateContext();
+    ImGui::SetCurrentContext(context);
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(800.0f, 600.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    io.Fonts->AddFontDefault();
+    io.Fonts->Build();
+
+    Profile profile;
+    profile.source = CameraSourceConfiguration{};
+    SourceTypeRadioLayout layout;
+
+    const auto frame = [&](bool mouse_down, bool mouse_up) {
+        if (mouse_down) {
+            io.AddMouseButtonEvent(0, true);
+        }
+        if (mouse_up) {
+            io.AddMouseButtonEvent(0, false);
+        }
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+        ImGui::SetNextWindowSize(ImVec2(400.0f, 200.0f));
+        ImGui::Begin("unavailable_ndi_test");
+        const int type = draw_source_type_radio(profile, false, &layout);
+        ImGui::End();
+        ImGui::EndFrame();
+        return type;
+    };
+
+    (void)frame(false, false);
+    const ImVec2 ndi_center(
+        (layout.ndi_min.x + layout.ndi_max.x) * 0.5f,
+        (layout.ndi_min.y + layout.ndi_max.y) * 0.5f
+    );
+    io.AddMousePosEvent(ndi_center.x, ndi_center.y);
+    (void)frame(true, false);
+    EXPECT_EQ(frame(false, true), 0);
+    EXPECT_TRUE(std::holds_alternative<CameraSourceConfiguration>(profile.source));
+
+    profile.source = NdiSourceConfiguration{"offline", {}};
+    EXPECT_EQ(frame(false, false), 2);
+    EXPECT_EQ(std::get<NdiSourceConfiguration>(profile.source).name, "offline");
+
+    ImGui::DestroyContext(context);
+}
+
 }  // namespace divergencesplitter::ui

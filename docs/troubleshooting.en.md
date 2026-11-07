@@ -22,7 +22,7 @@ phase, split, condition status, and score.
 | Crop margins do not fit | Reduce margins relative to the raw input dimensions, before Resize. |
 | NDI input not available | Install the NDI Runtime separately from <https://ndi.video/> and restart the application. The distribution ZIP does not include it. |
 | NDI source absent or no frames | Start the sender; check its advertised name, network reachability, and firewall rules; Search again. A saved offline name is retained. An ordinary timeout is not fatal and the receiver can recover when the sender returns. |
-| NDI runtime initialization fails | Check the installed runtime and the `NDI_RUNTIME_DIR_V6` path, then restart the application. Use `--ndi-check` below. |
+| NDI runtime initialization fails | Check the installed runtime and the `NDI_RUNTIME_DIR_V6` path, then restart the application. Check the status in Profile's NDI input settings. |
 
 Camera open/read errors marked retryable are retried by capture. Mode, decoding,
 normalization, and fatal SDK errors can stop capture. Correct the profile and
@@ -103,27 +103,3 @@ in Monitor; detailed detector exception messages are not guaranteed in the
 log. When reporting a problem, include the application revision/build, relevant
 profile/YAML, input type, normalized dimensions, diagnostic status/score, and the
 log around the event. Remove private paths or source names if necessary.
-
-## Command-line checks
-
-From the extracted application directory, with a customized profile:
-
-```powershell
-.\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --check
-.\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --seconds 10
-.\divergencesplitter-cli.exe --ndi-check
-.\divergencesplitter-cli.exe --ndi-list
-```
-
-`--check` loads the profile and every scenario/reference, applying reference
-resize options. It does **not** open input, check frame/ROI compatibility, connect
-to Bridge, or send controls. The timed command runs a real session and can control
-LiveSplit. Without a positive `--seconds`, it runs until interrupted with Ctrl+C.
-`--ndi-check` initializes the runtime; `--ndi-list` also performs source discovery.
-
-The CLI accepts `--settings C:/DivergenceSplitter/settings.json`. Without this
-option it uses default settings rather than automatically loading the GUI's
-settings file. Exit codes are `0` for successful completion/check, `2` for usage
-errors, `3` for caught configuration/startup/NDI failures, and `4` for a reported
-session runtime error. Inspect printed instance states too: a failed Bridge
-instance need not make the timed command exit nonzero.

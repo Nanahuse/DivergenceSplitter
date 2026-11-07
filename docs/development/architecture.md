@@ -17,7 +17,7 @@ CMakeプロジェクトのルートはリポジトリ直下です。実装は `s
 | CMakeファイル | 責務 |
 | --- | --- |
 | [CMakeLists.txt](../../CMakeLists.txt) | Project、オプション、依存関係の発見、Dear ImGuiのFetchContent、ルートでのテスト有効化、サブディレクトリ登録。 |
-| [src/CMakeLists.txt](../../src/CMakeLists.txt) | Core・Runtime・CLI・Dear ImGui・UIターゲット。 |
+| [src/CMakeLists.txt](../../src/CMakeLists.txt) | Core・Runtime・Dear ImGui・UIターゲット。 |
 | [tests/CMakeLists.txt](../../tests/CMakeLists.txt) | GoogleTest、UI、NDI、TestHostのテスト登録。 |
 | [cmake/Packaging.cmake](../../cmake/Packaging.cmake) | インストール、依存ライセンス収集、Windows ZIPとCPack。 |
 
@@ -46,7 +46,7 @@ Camera / Video / NDI
 | Session・configuration | [session.cpp](../../src/runtime/session.cpp)、[configuration.cpp](../../src/runtime/configuration.cpp)：JSON、入力の作成、任意の参照Resize、Sessionの置き換えと停止。 |
 | Bridge | [livesplit_client.cpp](../../src/runtime/livesplit_client.cpp)、[livesplit_adapter.cpp](../../src/runtime/livesplit_adapter.cpp)：クライアントとの型変換、Query・Eventによる同期、ローカルの状態とRunリビジョン。 |
 | GUI | [src/ui/](../../src/ui)：Dear ImGui、Win32ウィンドウ、Direct3D 11、AppController、ProfileDocument。タイマーRPCはGUIスレッドで待たない。 |
-| CLI | [src/cli/main.cpp](../../src/cli/main.cpp)：Profile・シナリオの検証、時間指定のSession、NDIの初期化・検索確認。 |
+| About・ライセンス | [about_page.cpp](../../src/ui/about_page.cpp)、[license_inventory.cpp](../../src/ui/license_inventory.cpp)：`licenses/components.json` を読み、直接依存と推移的依存のライセンスを表示する。収集とZIP検証も同じ一覧を使う。 |
 
 ## フレームと所有関係
 

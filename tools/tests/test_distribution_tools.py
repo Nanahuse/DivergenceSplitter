@@ -248,7 +248,7 @@ class LicenseTests(unittest.TestCase):
                 with self.subTest(port=port), self.assertRaisesRegex(
                     RuntimeError, "Required dependency notice missing"
                 ):
-                    collect_licenses.collect(output, share, bridge, None, cache)
+                    collect_licenses.collect(output, share, bridge, imgui, cache)
                 notice.write_text(port, encoding="utf-8")
 
 
@@ -258,11 +258,15 @@ class PackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         names = [
+            "DivergenceSplitter.exe",
             "opencv_core4.dll",
             "vc_redist.x64.exe",
             "LICENSE.txt",
             "DISTRIBUTION-NOTICE.txt",
+            "licenses/components.json",
+            "licenses/ndi-headers.txt",
             "licenses/NDI-TERMS.txt",
+            "licenses/vcpkg/zlib.txt",
         ]
         names += [
             f"licenses/{name}.txt"
@@ -280,7 +284,11 @@ class PackageTests(unittest.TestCase):
         for name in names:
             file = self.root / name
             file.parent.mkdir(parents=True, exist_ok=True)
-            file.write_bytes(b"test")
+            if name == "licenses/components.json":
+                source = Path(__file__).resolve().parents[2] / "licenses/components.json"
+                file.write_bytes(source.read_bytes())
+            else:
+                file.write_bytes(b"test")
         self.lock = {
             "runtime_sha256": hashlib.sha256(b"runtime").hexdigest(),
             "runtime_licenses_sha256": hashlib.sha256(b"notices").hexdigest(),
@@ -343,6 +351,27 @@ class PackageTests(unittest.TestCase):
 
     def test_package_accepts_missing_optional_runtime(self):
         verify_windows_zip.verify_contents(self.root, self.lock)
+
+    def test_cli_is_rejected(self):
+        file = self.root / "divergencesplitter-cli.exe"
+        file.write_bytes(b"test")
+        with self.assertRaisesRegex(RuntimeError, "removed product CLI"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
+        file.unlink()
+
+    def test_empty_license_notice_is_rejected(self):
+        file = self.root / "licenses/opencv.txt"
+        file.write_bytes(b"")
+        with self.assertRaisesRegex(RuntimeError, "missing or empty"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
+        file.write_bytes(b"test")
+
+    def test_transitive_license_notice_is_required(self):
+        file = self.root / "licenses/vcpkg/zlib.txt"
+        file.unlink()
+        with self.assertRaisesRegex(RuntimeError, "transitive vcpkg"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
+        file.write_bytes(b"test")
 
 
 if __name__ == "__main__":

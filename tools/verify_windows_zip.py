@@ -12,31 +12,24 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import collect_licenses
+
 
 def verify_contents(root: Path, lock: dict[str, str]) -> None:
     required = [
+        "DivergenceSplitter.exe",
         "opencv_core4.dll",
         "vc_redist.x64.exe",
         "LICENSE.txt",
         "DISTRIBUTION-NOTICE.txt",
+        "licenses/components.json",
         "licenses/NDI-TERMS.txt",
-    ]
-    required += [
-        f"licenses/{name}.txt"
-        for name in (
-            "imgui",
-            "opencv",
-            "boost",
-            "ryml",
-            "c4core",
-            "nlohmann-json",
-            "livesplit-bridge-client-cpp",
-            "windows-capture-device-list",
-        )
     ]
     for name in required:
         if not (root / name).is_file() or not (root / name).stat().st_size:
             raise RuntimeError(f"ZIP missing required distribution file: {name}")
+    if (root / "divergencesplitter-cli.exe").exists():
+        raise RuntimeError("ZIP still contains the removed product CLI")
     for name in ("Qt6Core.dll", "platforms/qwindows.dll"):
         if (root / name).exists():
             raise RuntimeError(f"ZIP still contains Qt runtime: {name}")
@@ -45,6 +38,11 @@ def verify_contents(root: Path, lock: dict[str, str]) -> None:
             raise RuntimeError(f"ZIP contains the optional NDI runtime: {name}")
     if (root / "licenses/ndi-sdk").exists():
         raise RuntimeError("ZIP contains the SDK agreement directory")
+
+    inventory = collect_licenses.load_inventory(root)
+    collect_licenses.validate_application(root, inventory)
+    collect_licenses.validate_destination(root / "licenses", inventory)
+
     for file in root.rglob("*"):
         if not file.is_file():
             continue
@@ -69,18 +67,14 @@ def launch(root: Path) -> None:
     system = Path(environment["SYSTEMROOT"])
     environment["PATH"] = os.pathsep.join(map(str, (root, system / "System32", system)))
     hidden = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
-    for executable, arguments in (
-        ("divergencesplitter-cli.exe", ["--help"]),
-        ("DivergenceSplitter.exe", ["--smoke-test"]),
-    ):
-        subprocess.run(
-            [str(root / executable), *arguments],
-            cwd=root,
-            env=environment,
-            check=True,
-            timeout=30,
-            **hidden,
-        )
+    subprocess.run(
+        [str(root / "DivergenceSplitter.exe"), "--smoke-test"],
+        cwd=root,
+        env=environment,
+        check=True,
+        timeout=30,
+        **hidden,
+    )
 
 
 def main() -> None:
@@ -101,7 +95,7 @@ def main() -> None:
             package.extractall(root)
         verify_contents(root, lock)
         launch(root)
-    print("Verified ZIP notices, SDK exclusions and CLI/GUI startup without NDI runtime")
+    print("Verified ZIP licenses, SDK exclusions and GUI startup without NDI runtime")
 
 
 if __name__ == "__main__":

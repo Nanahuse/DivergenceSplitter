@@ -72,15 +72,6 @@ endif()
 
 
 # ---------------------------------------------------------------------------
-# CLI (headless runner used by CI and verification).
-# ---------------------------------------------------------------------------
-
-add_executable(divergencesplitter_cli cli/main.cpp)
-target_compile_features(divergencesplitter_cli PRIVATE cxx_std_23)
-target_link_libraries(divergencesplitter_cli PRIVATE divergencesplitter::runtime)
-set_target_properties(divergencesplitter_cli PROPERTIES OUTPUT_NAME divergencesplitter-cli)
-
-# ---------------------------------------------------------------------------
 # Dear ImGui UI (Win32 window, Direct3D 11 renderer).
 # ---------------------------------------------------------------------------
 
@@ -105,6 +96,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/app_controller.hpp
         ui/file_dialog.hpp
         ui/image_texture.hpp
+        ui/license_inventory.hpp
         ui/monitor_model.hpp
         ui/monitor_page.hpp
         ui/ndi_discovery.hpp
@@ -120,6 +112,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/app_controller.cpp
         ui/file_dialog.cpp
         ui/image_texture.cpp
+        ui/license_inventory.cpp
         ui/monitor_model.cpp
         ui/monitor_page.cpp
         ui/ndi_discovery.cpp
@@ -154,5 +147,18 @@ if(DIVERGENCESPLITTER_BUILD_UI)
     set_target_properties(DivergenceSplitter PROPERTIES
         WIN32_EXECUTABLE TRUE
         OUTPUT_NAME "DivergenceSplitter"
+    )
+    add_custom_command(
+        TARGET DivergenceSplitter POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "${PROJECT_SOURCE_DIR}/licenses"
+            "$<TARGET_FILE_DIR:DivergenceSplitter>/licenses"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${PROJECT_SOURCE_DIR}/LICENSE"
+            "$<TARGET_FILE_DIR:DivergenceSplitter>/LICENSE.txt"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt"
+            "$<TARGET_FILE_DIR:DivergenceSplitter>/DISTRIBUTION-NOTICE.txt"
+        COMMENT "Copying license inventory next to DivergenceSplitter"
     )
 endif()

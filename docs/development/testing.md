@@ -98,7 +98,7 @@ Remove-Item Env:NDI_RUNTIME_DIR_V6
 
 継続時間は最大3600秒にできます。ただし、CTestのタイムアウトは90秒なので、長時間試す場合は上記のようにテストの実行ファイルを直接呼んでください。
 
-Runtimeをインストールしていない環境でも、`DivergenceSplitter.exe --smoke-test` とCamera・Videoのテストは実行できます。NDI Runtimeがない状態でNDI入力を選んだ場合は、Profile/Aboutにインストール案内が表示され、NDI入力だけが利用不可になります。
+Runtimeをインストールしていない環境でも、`DivergenceSplitter.exe --smoke-test` とCamera・Videoのテストは実行できます。`--smoke-test` はMonitorに続いてAboutを描画し、ライセンス表の読み込みも確認します。NDI Runtimeがない状態でNDI入力を選んだ場合は、ProfileのNDI入力設定にインストール案内が表示され、NDI入力だけが利用不可になります。
 
 [NDI Tools](https://ndi.video/tools/) などの独立した送信元も対象ネットワークに確認してください。選択、プレビュー、判定、停止・再開後の復帰、保存Profileの再読込、継続受信を調べます。送受信側のバージョン、時間、フレーム数、エラー、ネットワーク構成を記録してください。ローカルループバックだけでは別の送信元やネットワークを検証できません。
 
@@ -108,14 +108,14 @@ Runtimeをインストールしていない環境でも、`DivergenceSplitter.ex
 python -m unittest discover -s tools/tests -v
 ```
 
-SDK取得とZIP検証ヘルパーを検査します。実際のZIPは[配布](distribution.md)で別途確認してください。
+SDK取得、ライセンス収集、ZIP検証ヘルパーを検査します。`licenses/components.json` の必須通知、製品CLIの不在、推移的vcpkg通知も確認します。実際のZIPは[配布](distribution.md)で別途確認してください。パッケージ版のAbout画面では、コンポーネント表、推移的依存、アプリケーションライセンスが表示され、各Licenseリンクから原文を開けることを確認します。
 
 ## ドキュメントと例の検証
 
-[profile.example.json](../../examples/profile.example.json) の動画・シナリオの絶対パスを変更し、ビルドしたCLIの `--profile <path> --check` を実行します。実際のC++ローダーでProfileとシナリオ、参照Resizeを確認し、タイマー操作は送りません。
+[profile.example.json](../../examples/profile.example.json) の動画・シナリオの絶対パスを変更し、既存のローダーテスト、またはGUIのApplyで実際のC++ローダーを通してProfileとシナリオ、参照Resizeを確認します。タイマー操作は送りません。
 
 [シナリオ例](../scenarios/examples.md)のYAMLも、参照画像と一緒に保存し、Profileの参照先を変えて確認してください。ConditionやDetectorだけを示した例は、それだけではシナリオとして読み込めません。完全なシナリオの中に埋め込んで試します。
 
-JSONやYAMLの文法として正しいだけでは、アプリの設定として有効とは限りません。また、`--check` は動画ファイルをデコードせず、映像とDetectorの寸法も比べません。それらはMonitorで実際の映像を表示するか、フレームを使うテストで確認してください。
+JSONやYAMLの文法として正しいだけでは、アプリの設定として有効とは限りません。また、ローダーテストは動画ファイルをデコードせず、映像とDetectorの寸法も比べません。それらはMonitorで実際の映像を表示するか、フレームを使うテストで確認してください。
 
 ソースへのパスとMarkdownアンカーを確認し、`git diff --check` と `git diff --name-only` で文法・例だけの変更であることも確認します。

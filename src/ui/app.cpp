@@ -456,6 +456,9 @@ void App::tick(double now) {
 }
 
 void App::draw() {
+    if (smoke_test_) {
+        page_ = smoke_frames_ < 10 ? AppPage::monitor : AppPage::about;
+    }
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);

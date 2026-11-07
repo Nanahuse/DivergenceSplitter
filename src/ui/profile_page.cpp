@@ -49,6 +49,15 @@ std::string camera_mode_label(const CameraModeInfo& mode) {
            ")";
 }
 
+void draw_ndi_runtime_help() {
+    text_muted(ndi_runtime_status().message);
+    ImGui::TextUnformatted("Install NDI Runtime from");
+    ImGui::SameLine();
+    ImGui::TextLinkOpenURL("ndi.video", "https://ndi.video/");
+    ImGui::SameLine();
+    ImGui::TextUnformatted("and restart DivergenceSplitter.");
+}
+
 bool source_ready_for_preview(const SourceConfiguration& source) {
     if (std::holds_alternative<CameraSourceConfiguration>(source)) {
         const auto& camera = std::get<CameraSourceConfiguration>(source);
@@ -385,6 +394,12 @@ void ProfilePage::draw_source_controls() {
         ndi_enabled()
     );
     ImGui::Dummy(ImVec2(0.0f, 4.0f * app_->dpi_scale()));
+    if (!ndi_enabled() && type != 2) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        draw_ndi_runtime_help();
+        ImGui::PopTextWrapPos();
+        ImGui::Dummy(ImVec2(0.0f, 4.0f * app_->dpi_scale()));
+    }
     switch (type) {
         case 0:
             draw_camera_source();
@@ -554,10 +569,7 @@ void ProfilePage::draw_ndi_source() {
 
     if (!ndi_enabled()) {
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        text_muted(ndi_runtime_status().message);
-        text_muted(
-            "Install NDI Runtime from https://ndi.video/ and restart DivergenceSplitter."
-        );
+        draw_ndi_runtime_help();
         ImGui::PopTextWrapPos();
     } else if (!ndi_notice_.empty()) {
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);

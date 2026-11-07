@@ -2,14 +2,15 @@
 # Install / ZIP distribution.
 # ---------------------------------------------------------------------------
 
+if(NOT TARGET DivergenceSplitter)
+    return()
+endif()
+
 include(GNUInstallDirs)
 
 if(TARGET DivergenceSplitter)
     install(TARGETS DivergenceSplitter RUNTIME DESTINATION .)
-else()
-    install(TARGETS divergencesplitter_cli RUNTIME DESTINATION .)
 endif()
-install(TARGETS divergencesplitter_cli RUNTIME DESTINATION .)
 install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION . RENAME LICENSE.txt)
 install(FILES "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt" DESTINATION .)
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION licenses)
