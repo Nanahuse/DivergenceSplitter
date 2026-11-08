@@ -9,6 +9,7 @@
 #include "divergencesplitter/capture/configured_source.hpp"
 #include "divergencesplitter/runtime/instance_runtime.hpp"
 #include "divergencesplitter/runtime/session.hpp"
+#include "divergencesplitter/text.hpp"
 #include "test_support.hpp"
 
 using namespace divergencesplitter;
@@ -291,4 +292,24 @@ TEST(VideoFileSource, NonMjpegInputFallsBackToOtherBackends) {
     ASSERT_FALSE(decoded.empty());
     EXPECT_EQ(decoded.size(), (cv::Size{128, 128}));
     EXPECT_NEAR(cv::mean(decoded)[0], 128.0, 3.0);
+}
+
+
+TEST(VideoFileSource, OpensJapaneseUtf8Path) {
+    const auto source_file =
+        std::filesystem::path{__FILE__}.parent_path() / "data" / "fallback-h264.mp4";
+    const auto directory =
+        std::filesystem::temp_directory_path() / path_from_utf8(reinterpret_cast<const char*>(u8"DivergenceSplitter-日本語"));
+    std::filesystem::create_directories(directory);
+    const auto japanese = directory / path_from_utf8(reinterpret_cast<const char*>(u8"動画-テスト.mp4"));
+    std::filesystem::copy_file(
+        source_file, japanese, std::filesystem::copy_options::overwrite_existing
+    );
+    VideoFileFrameSource source{{path_to_utf8(japanese)}};
+    source.open();
+    MonotonicTime at;
+    const auto frame = source.read(at);
+    EXPECT_FALSE(frame.empty());
+    source.close();
+    std::filesystem::remove_all(directory);
 }

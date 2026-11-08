@@ -26,12 +26,6 @@
     "ryml"
   ],
   "features": {
-    "ui": {
-      "description": "Qt Widgets desktop interface",
-      "dependencies": [
-        "qtbase"
-      ]
-    },
     "tests": {
       "description": "GoogleTest unit and integration tests",
       "dependencies": [

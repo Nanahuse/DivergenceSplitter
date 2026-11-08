@@ -6,7 +6,7 @@ This is an English translation. The Japanese version is the original and takes p
 
 [Scenario authoring](README.en.md) · [Conditions](conditions.en.md#detected) · [Examples](examples.en.md)
 
-A Detector analyzes an image and returns a numeric score. A [`detected`](conditions.en.md#detected) condition becomes true when the score is at least `minimum_score`. All nine methods return scores in `[0, 1]`. Depending on the method, a higher score means a stronger match, greater brightness, or more color coverage. Scores are not probabilities, and thresholds are not interchangeable between methods. Compare desired and undesired frames in Diagnostics when choosing a threshold.
+A Detector analyzes an image and returns a numeric score. A [`detected`](conditions.en.md#detected) condition becomes true when the score is at least `minimum_score`. All nine methods return scores in `[0, 1]`. Depending on the method, a higher score means a stronger match, greater brightness, or more color coverage. Scores are not probabilities, and thresholds are not interchangeable between methods. Compare desired and undesired frames in Monitor when choosing a threshold.
 
 In the formulas below, `clamp` means limiting the value to `[0, 1]`.
 

@@ -1,12 +1,28 @@
 #include "theme.hpp"
 
-#include <QApplication>
-#include <QPalette>
-#include <QStyle>
-#include <QStyleFactory>
+#include <algorithm>
+#include <cctype>
+#include <string>
 
 namespace divergencesplitter::ui::theme {
 namespace {
+
+ImVec4 from_hex(const char* value) {
+    const auto channel = [value](int offset) {
+        const auto digit = [](char character) {
+            if (character >= '0' && character <= '9') return character - '0';
+            if (character >= 'a' && character <= 'f') return character - 'a' + 10;
+            return character - 'A' + 10;
+        };
+        return static_cast<float>(digit(value[offset]) * 16 + digit(value[offset + 1])) / 255.0f;
+    };
+    return ImVec4(channel(1), channel(3), channel(5), 1.0f);
+}
+
+ImVec4 with_alpha(ImVec4 color, float alpha) {
+    color.w = alpha;
+    return color;
+}
 
 struct Palette {
     const char* background;
@@ -31,47 +47,15 @@ struct Palette {
 };
 
 constexpr Palette light_palette{
-    "#F7F5F1",
-    "#EFEBE4",
-    "#FFFFFF",
-    "#F4F1EB",
-    "#EAE5DC",
-    "#DDD7CC",
-    "#B8B0A2",
-    "#1D1C19",
-    "#676158",
-    "#F08A35",
-    "#FFFFFF",
-    "#4CAF50",
-    "#FFB300",
-    "#FFB300",
-    "#E53935",
-    "#9E9E9E",
-    "#FFB300",
-    "#E53935",
-    "#9E9E9E",
+    "#F7F5F1", "#EFEBE4", "#FFFFFF", "#F4F1EB", "#EAE5DC", "#DDD7CC", "#B8B0A2",
+    "#1D1C19", "#676158", "#F08A35", "#FFFFFF", "#4CAF50", "#FFB300", "#FFB300",
+    "#E53935", "#9E9E9E", "#FFB300", "#E53935", "#9E9E9E",
 };
 
 constexpr Palette dark_palette{
-    "#111512",
-    "#0B0E0C",
-    "#1A201B",
-    "#151A16",
-    "#212921",
-    "#354039",
-    "#5E6A60",
-    "#E7E1D3",
-    "#B4B2A8",
-    "#F08A35",
-    "#251207",
-    "#78C99A",
-    "#78C99A",
-    "#D4AD54",
-    "#E06B64",
-    "#7D8981",
-    "#D4AD54",
-    "#E06B64",
-    "#7D8981",
+    "#111512", "#0B0E0C", "#1A201B", "#151A16", "#212921", "#354039", "#5E6A60",
+    "#E7E1D3", "#B4B2A8", "#F08A35", "#251207", "#78C99A", "#78C99A", "#D4AD54",
+    "#E06B64", "#7D8981", "#D4AD54", "#E06B64", "#7D8981",
 };
 
 [[nodiscard]] const Palette& palette_for(Mode mode) {
@@ -80,350 +64,118 @@ constexpr Palette dark_palette{
 
 }  // namespace
 
-Mode mode_from_string(QStringView value) {
-    return value.compare(QStringLiteral("dark"), Qt::CaseInsensitive) == 0
-        ? Mode::dark
-        : Mode::light;
+Mode mode_from_string(std::string_view value) {
+    std::string lowered{value};
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return lowered == "dark" ? Mode::dark : Mode::light;
 }
 
-Mode current_mode() {
-    return QApplication::palette().color(QPalette::Window).lightness() < 128
-        ? Mode::dark
-        : Mode::light;
+std::string_view mode_name(Mode mode) {
+    return mode == Mode::dark ? "dark" : "light";
 }
 
-QString mode_name(Mode mode) {
-    return mode == Mode::dark ? QStringLiteral("dark") : QStringLiteral("light");
-}
-
-SemanticColors colors(Mode mode) {
+Colors colors(Mode mode) {
     const auto& palette = palette_for(mode);
-    return SemanticColors{
-        QColor(QString::fromLatin1(palette.active)),
-        QColor(QString::fromLatin1(palette.ready)),
-        QColor(QString::fromLatin1(palette.connecting)),
-        QColor(QString::fromLatin1(palette.failed)),
-        QColor(QString::fromLatin1(palette.stopped)),
-        QColor(QString::fromLatin1(palette.error)),
-        QColor(QString::fromLatin1(palette.warning)),
-        QColor(QString::fromLatin1(palette.primary)),
-        QColor(QString::fromLatin1(palette.on_primary)),
-        QColor(QString::fromLatin1(palette.muted)),
-        QColor(QString::fromLatin1(palette.background)),
-        QColor(QString::fromLatin1(palette.background_deep)),
-        QColor(QString::fromLatin1(palette.surface)),
-        QColor(QString::fromLatin1(palette.surface_low)),
-        QColor(QString::fromLatin1(palette.surface_high)),
-        QColor(QString::fromLatin1(palette.divider)),
-        QColor(QString::fromLatin1(palette.outline)),
-        QColor(QString::fromLatin1(palette.text)),
-        QColor(QString::fromLatin1(palette.text_secondary)),
+    return Colors{
+        from_hex(palette.active),
+        from_hex(palette.ready),
+        from_hex(palette.connecting),
+        from_hex(palette.failed),
+        from_hex(palette.stopped),
+        from_hex(palette.error),
+        from_hex(palette.warning),
+        from_hex(palette.primary),
+        from_hex(palette.on_primary),
+        from_hex(palette.muted),
+        from_hex(palette.background),
+        from_hex(palette.background_deep),
+        from_hex(palette.surface),
+        from_hex(palette.surface_low),
+        from_hex(palette.surface_high),
+        from_hex(palette.divider),
+        from_hex(palette.outline),
+        from_hex(palette.text),
+        from_hex(palette.text_secondary),
     };
 }
 
-QString stylesheet(Mode mode) {
-    const auto& palette = palette_for(mode);
-    const auto color = [](const char* value) { return QString::fromLatin1(value); };
-    QString result = QStringLiteral(R"(
-QWidget {
-    color: %1;
-    selection-background-color: %2;
-    selection-color: %3;
-}
-QMainWindow, QWidget#appRoot, QWidget#page, QWidget#navPanel, QWidget#contentPanel,
-QScrollArea, QScrollArea > QWidget > QWidget, QStackedWidget, QDialog {
-    background-color: %4;
-}
-QFrame#card, QFrame#profileHeader, QGroupBox {
-    background-color: %5;
-    border: 1px solid %6;
-    border-radius: 10px;
-}
-QFrame#profileHeader {
-    border-radius: 0px;
-    border-left: 0px;
-    border-right: 0px;
-    border-top: 0px;
-}
-QGroupBox {
-    margin-top: 18px;
-    padding: 12px;
-    font-weight: 600;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 12px;
-    padding: 0px 4px;
-    color: %7;
-}
-QLabel#pageTitle {
-    font-size: 22px;
-    font-weight: 600;
-}
-QLabel#sectionTitle {
-    font-size: 15px;
-    font-weight: 600;
-}
-QLabel#cardTitle {
-    font-size: 15px;
-    font-weight: 600;
-}
-QLabel#muted, QLabel#hint {
-    color: %7;
-}
-QLabel#dirtyMarker {
-    color: %8;
-    font-weight: 600;
-}
-QLabel#errorBanner {
-    background-color: %5;
-    border: 1px solid %9;
-    border-radius: 8px;
-    color: %9;
-    padding: 8px;
-}
-QPushButton {
-    background-color: %10;
-    border: 1px solid %11;
-    border-radius: 7px;
-    padding: 6px 12px;
-    min-height: 20px;
-}
-QPushButton:hover {
-    border-color: %2;
-}
-QPushButton:pressed {
-    background-color: %6;
-}
-QPushButton:default, QPushButton#primaryButton {
-    background-color: %2;
-    border-color: %2;
-    color: %3;
-    font-weight: 600;
-}
-QPushButton:default:hover, QPushButton#primaryButton:hover {
-    background-color: %12;
-    border-color: %12;
-}
-QPushButton:disabled {
-    color: %13;
-    background-color: %5;
-    border-color: %6;
-}
-QToolButton#navButton {
-    border: 0px;
-    border-radius: 8px;
-    padding: 8px;
-    color: %7;
-    background-color: transparent;
-    text-align: left;
-}
-QToolButton#navButton:hover {
-    background-color: %6;
-}
-QToolButton#navButton:checked {
-    background-color: %5;
-    color: %2;
-    font-weight: 600;
-}
-QToolButton#navToggle {
-    border: 0px;
-    border-radius: 8px;
-    color: %7;
-    background-color: transparent;
-}
-QToolButton#navToggle:hover {
-    background-color: %6;
-}
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextBrowser, QTextEdit {
-    background-color: %14;
-    border: 1px solid %11;
-    border-radius: 7px;
-    padding: 5px 7px;
-}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-    border-color: %2;
-}
-QLineEdit:read-only {
-    color: %7;
-}
-QComboBox::drop-down, QSpinBox::up-button, QSpinBox::down-button,
-QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
-    border: 0px;
-    width: 18px;
-}
-QAbstractItemView {
-    background-color: %5;
-    border: 1px solid %6;
-    border-radius: 7px;
-    selection-background-color: %2;
-    selection-color: %3;
-    alternate-background-color: %14;
-}
-QHeaderView::section {
-    background-color: %14;
-    color: %7;
-    border: 0px;
-    border-bottom: 1px solid %6;
-    padding: 6px;
-}
-QTableWidget, QTreeWidget, QTableView, QTreeView {
-    background-color: %5;
-    border: 1px solid %6;
-    border-radius: 7px;
-    gridline-color: %6;
-}
-QTabWidget::pane {
-    border: 1px solid %6;
-    border-radius: 8px;
-    background-color: %5;
-    top: -1px;
-}
-QTabBar::tab {
-    background-color: transparent;
-    color: %7;
-    padding: 8px 16px;
-    margin-right: 4px;
-    border-bottom: 2px solid transparent;
-}
-QTabBar::tab:selected {
-    color: %2;
-    border-bottom: 2px solid %2;
-    font-weight: 600;
-}
-QTabBar::tab:hover {
-    color: %1;
-}
-QScrollBar:vertical {
-    background: transparent;
-    width: 10px;
-    margin: 0px;
-}
-QScrollBar::handle:vertical {
-    background: %11;
-    min-height: 28px;
-    border-radius: 5px;
-}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    height: 0px;
-}
-QScrollBar:horizontal {
-    background: transparent;
-    height: 10px;
-}
-QScrollBar::handle:horizontal {
-    background: %11;
-    min-width: 28px;
-    border-radius: 5px;
-}
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-    width: 0px;
-}
-QSplitter::handle, QMainWindow::separator {
-    background-color: %6;
-}
-QStatusBar {
-    background-color: %4;
-    color: %7;
-}
-QStatusBar::item {
-    border: 0px;
-}
-QToolTip {
-    background-color: %5;
-    color: %1;
-    border: 1px solid %11;
-    padding: 4px;
-}
-QFrame#toast {
-    background-color: %5;
-    border: 1px solid %6;
-    border-radius: 9px;
-}
-QFrame#toast[error="true"] {
-    border-color: %9;
-}
-QFrame#scenarioCard {
-    background-color: %5;
-    border: 1px solid %6;
-    border-radius: 10px;
-}
-QFrame#scenarioCard:hover {
-    border-color: %11;
-}
-QFrame#dividerHorizontal {
-    background-color: %6;
-    border: 0px;
-    max-height: 1px;
-}
-QFrame#dividerVertical {
-    background-color: %6;
-    border: 0px;
-    max-width: 1px;
-}
-QLabel#stateReady { color: %15; font-weight: 600; }
-QLabel#stateConnecting { color: %16; font-weight: 600; }
-QLabel#stateFailed { color: %9; font-weight: 600; }
-QLabel#stateStopped { color: %13; font-weight: 600; }
-QLabel[role="error"] { color: %9; }
-QLabel[role="muted"] { color: %7; }
-QLabel[role="ready"] { color: %15; font-weight: 600; }
-QLabel[role="warning"] { color: %8; font-weight: 600; }
-QLabel[role="failed"] { color: %9; font-weight: 600; }
-QLabel[role="stopped"] { color: %13; }
-)");
-
-    const auto replace = [&result, &color](const char* token, const char* value) {
-        result.replace(QLatin1String(token), color(value));
-    };
-    replace("%16", palette.connecting);
-    replace("%15", palette.ready);
-    replace("%14", palette.surface_low);
-    replace("%13", palette.muted);
-    replace("%12", palette.active);
-    replace("%11", palette.outline);
-    replace("%10", palette.surface_high);
-    replace("%9", palette.error);
-    replace("%8", palette.warning);
-    replace("%7", palette.text_secondary);
-    replace("%6", palette.divider);
-    replace("%5", palette.surface);
-    replace("%4", palette.background);
-    replace("%3", palette.on_primary);
-    replace("%2", palette.primary);
-    replace("%1", palette.text);
-    return result;
-}
-
-void apply(QApplication& application, Mode mode) {
-    application.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
-    QPalette palette;
-    const auto tokens = colors(mode);
-    palette.setColor(QPalette::Window, tokens.background);
-    palette.setColor(QPalette::WindowText, tokens.text);
-    palette.setColor(QPalette::Base, tokens.surface_low);
-    palette.setColor(QPalette::AlternateBase, tokens.surface);
-    palette.setColor(QPalette::Text, tokens.text);
-    palette.setColor(QPalette::Button, tokens.surface_high);
-    palette.setColor(QPalette::ButtonText, tokens.text);
-    palette.setColor(QPalette::Highlight, tokens.primary);
-    palette.setColor(QPalette::HighlightedText, tokens.on_primary);
-    palette.setColor(QPalette::ToolTipBase, tokens.surface);
-    palette.setColor(QPalette::ToolTipText, tokens.text);
-    palette.setColor(QPalette::PlaceholderText, tokens.muted);
-    palette.setColor(QPalette::Disabled, QPalette::Text, tokens.muted);
-    palette.setColor(QPalette::Disabled, QPalette::ButtonText, tokens.muted);
-    application.setPalette(palette);
-    application.setStyleSheet(stylesheet(mode));
-}
-
-void repolish(QWidget* widget) {
-    if (widget == nullptr) {
-        return;
+void apply(Mode mode, float scale) {
+    ImGuiStyle style;
+    if (mode == Mode::dark) {
+        ImGui::StyleColorsDark(&style);
+    } else {
+        ImGui::StyleColorsLight(&style);
     }
-    widget->style()->unpolish(widget);
-    widget->style()->polish(widget);
-    widget->update();
+
+    style.WindowPadding = ImVec2(16.0f, 14.0f);
+    style.FramePadding = ImVec2(8.0f, 6.0f);
+    style.CellPadding = ImVec2(6.0f, 4.0f);
+    style.ItemSpacing = ImVec2(8.0f, 6.0f);
+    style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
+    style.ScrollbarSize = 14.0f;
+    style.GrabMinSize = 10.0f;
+    style.WindowRounding = 10.0f;
+    style.ChildRounding = 10.0f;
+    style.FrameRounding = 7.0f;
+    style.PopupRounding = 8.0f;
+    style.ScrollbarRounding = 8.0f;
+    style.GrabRounding = 6.0f;
+    style.TabRounding = 6.0f;
+    style.WindowBorderSize = 1.0f;
+    style.ChildBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
+    style.IndentSpacing = 18.0f;
+
+    const auto palette = colors(mode);
+    auto& c = style.Colors;
+    c[ImGuiCol_Text] = palette.text;
+    c[ImGuiCol_TextDisabled] = palette.muted;
+    c[ImGuiCol_WindowBg] = palette.background;
+    c[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_PopupBg] = palette.surface;
+    c[ImGuiCol_Border] = palette.divider;
+    c[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_FrameBg] = palette.surface_low;
+    c[ImGuiCol_FrameBgHovered] = palette.surface_high;
+    c[ImGuiCol_FrameBgActive] = palette.surface_high;
+    c[ImGuiCol_TitleBg] = palette.background_deep;
+    c[ImGuiCol_TitleBgActive] = palette.background_deep;
+    c[ImGuiCol_TitleBgCollapsed] = palette.background_deep;
+    c[ImGuiCol_MenuBarBg] = palette.surface;
+    c[ImGuiCol_ScrollbarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_ScrollbarGrab] = palette.outline;
+    c[ImGuiCol_ScrollbarGrabHovered] = palette.text_secondary;
+    c[ImGuiCol_ScrollbarGrabActive] = palette.primary;
+    c[ImGuiCol_CheckMark] = palette.primary;
+    c[ImGuiCol_SliderGrab] = palette.primary;
+    c[ImGuiCol_SliderGrabActive] = palette.active;
+    c[ImGuiCol_Button] = palette.surface_high;
+    c[ImGuiCol_ButtonHovered] = palette.surface;
+    c[ImGuiCol_ButtonActive] = palette.divider;
+    c[ImGuiCol_Header] = with_alpha(palette.primary, 0.18f);
+    c[ImGuiCol_HeaderHovered] = with_alpha(palette.primary, 0.28f);
+    c[ImGuiCol_HeaderActive] = with_alpha(palette.primary, 0.38f);
+    c[ImGuiCol_Separator] = palette.divider;
+    c[ImGuiCol_SeparatorHovered] = palette.primary;
+    c[ImGuiCol_SeparatorActive] = palette.primary;
+    c[ImGuiCol_ResizeGrip] = with_alpha(palette.outline, 0.6f);
+    c[ImGuiCol_ResizeGripHovered] = palette.primary;
+    c[ImGuiCol_ResizeGripActive] = palette.active;
+    c[ImGuiCol_Tab] = palette.surface_low;
+    c[ImGuiCol_TabHovered] = with_alpha(palette.primary, 0.28f);
+    c[ImGuiCol_TabActive] = palette.surface;
+    c[ImGuiCol_TabUnfocused] = palette.surface_low;
+    c[ImGuiCol_TabUnfocusedActive] = palette.surface;
+    c[ImGuiCol_PlotLines] = palette.primary;
+    c[ImGuiCol_PlotHistogram] = palette.primary;
+    c[ImGuiCol_TextSelectedBg] = with_alpha(palette.primary, 0.35f);
+    c[ImGuiCol_DragDropTarget] = palette.primary;
+    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.35f);
+
+    style.ScaleAllSizes(scale);
+    ImGui::GetStyle() = style;
 }
 
 }  // namespace divergencesplitter::ui::theme

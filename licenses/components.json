@@ -1,0 +1,69 @@
+{
+  "application": {
+    "name": "DivergenceSplitter",
+    "license": "MIT",
+    "license_file": "LICENSE.txt"
+  },
+  "components": [
+    {
+      "name": "Dear ImGui",
+      "license": "MIT",
+      "license_file": "imgui.txt",
+      "source": "imgui"
+    },
+    {
+      "name": "OpenCV",
+      "license": "Apache-2.0",
+      "license_file": "opencv.txt",
+      "source": "vcpkg:opencv4"
+    },
+    {
+      "name": "Boost",
+      "license": "BSL-1.0",
+      "license_file": "boost.txt",
+      "source": "vcpkg:boost-asio"
+    },
+    {
+      "name": "rapidyaml",
+      "license": "MIT",
+      "license_file": "ryml.txt",
+      "source": "vcpkg:ryml"
+    },
+    {
+      "name": "c4core",
+      "license": "MIT / BSD-2-Clause / BSL-1.0",
+      "license_file": "c4core.txt",
+      "source": "vcpkg:c4core"
+    },
+    {
+      "name": "nlohmann/json",
+      "license": "MIT",
+      "license_file": "nlohmann-json.txt",
+      "source": "vcpkg:nlohmann-json"
+    },
+    {
+      "name": "livesplit-bridge-client-cpp",
+      "license": "MIT",
+      "license_file": "livesplit-bridge-client-cpp.txt",
+      "source": "bridge"
+    },
+    {
+      "name": "windows-capture-device-list",
+      "license": "MIT",
+      "license_file": "windows-capture-device-list.txt",
+      "source": "pinned:camera"
+    },
+    {
+      "name": "NDI SDK Headers",
+      "license": "MIT (per header)",
+      "license_file": "ndi-headers.txt",
+      "source": "checked-in"
+    },
+    {
+      "name": "NDI Runtime",
+      "license": "External dependency; NDI license applies",
+      "url": "https://ndi.link/ndisdk_license",
+      "source": "external"
+    }
+  ]
+}

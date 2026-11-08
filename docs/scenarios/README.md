@@ -18,7 +18,7 @@ Profileでは、このファイル、映像入力、同じPCで動くLiveSplit�
 1. [はじめに](../getting-started.md)の手順で[最小シナリオ](../../examples/minimal-scenario.yaml)を試します。
 2. [YAMLリファレンス](yaml-reference.md)で構造、Action、評価順序、パス、アンカー、リセットを確認します。
 3. [Detector](detectors.md)を選び、`detected` と必要な[Condition](conditions.md)で条件を組み立てます。
-4. [例](examples.md)を調整してApplyし、[Diagnostics](../user-guide.md#diagnostics)でスコアを確認します。
+4. [例](examples.md)を調整してApplyし、[Monitor](../user-guide.md#monitor)でスコアを確認します。
 
 画像の位置を指定するときは、Crop／Resize後の画像を基準にしてください。DetectorのROIはその画像のどこを調べるかを指定するものです。参照画像自体のサイズを変える設定は別にあります。詳しくは[設定リファレンス](../configuration.md#cropresize参照画像)を参照してください。
 

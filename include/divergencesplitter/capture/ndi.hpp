@@ -58,6 +58,20 @@ private:
     std::shared_ptr<NdiApi> api_;
 };
 
+enum class NdiAvailability {
+    available,
+    not_installed,
+    failed,
+};
+
+struct NdiRuntimeStatus {
+    NdiAvailability availability{NdiAvailability::not_installed};
+    std::string message;
+};
+
+// Detection is performed once per process. Installing the runtime later
+// requires an application restart.
+[[nodiscard]] const NdiRuntimeStatus& ndi_runtime_status() noexcept;
 [[nodiscard]] bool ndi_enabled() noexcept;
 // All default finders and receivers share a single initialized runtime.
 [[nodiscard]] std::shared_ptr<NdiRuntime> acquire_ndi_runtime();

@@ -16,12 +16,10 @@ This is an English translation. The Japanese version is the original and takes p
   files together; replace the demo pattern with an actual game reference before
   using the scenario with game video. This is also a one-segment example.
 
-Use [Getting started](../docs/getting-started.en.md) for the GUI walkthrough, or check
-a customized profile without opening input or connecting to Bridge:
-
-```powershell
-.\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --check
-```
+Use [Getting started](../docs/getting-started.en.md) for the GUI walkthrough. To
+check a customized profile, open it on the Profile page and click Apply. Apply
+loads the scenario and reference images and validates the input settings. Use
+Preview input to inspect the input video.
 
 The JSON template's example paths are syntactically valid Windows paths, but the
 files must exist at your chosen locations for scenario validation and playback.

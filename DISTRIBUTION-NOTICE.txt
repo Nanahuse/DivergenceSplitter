@@ -3,37 +3,30 @@ DivergenceSplitter
 
 Copyright (c) Nanahuse. Distributed under the MIT License. See LICENSE.txt.
 
-This distribution bundles or links the following third-party components:
-
-The license texts below are collected from dependency build inputs or verified
-upstream sources when this ZIP is produced. Additional transitive dependency
+The machine-readable component and license inventory is
+licenses/components.json. The same inventory is shown in the About screen.
+Third-party license texts are collected from dependency build inputs or
+verified upstream sources when this ZIP is produced. Transitive dependency
 notices are included under licenses/vcpkg/.
 
-- Qt 6 (Widgets, Core, Gui, Test) - LGPL-3.0 / GPL-3.0 / commercial.
-  The full Qt licensing text is in licenses/qtbase.txt.
-- OpenCV 4 - Apache-2.0. See licenses/opencv.txt.
-- Boost (Asio, Beast and dependencies) - Boost Software License 1.0.
-  See licenses/boost.txt.
-- rapidyaml (ryml) - MIT. See licenses/ryml.txt.
-- c4core - MIT, BSD-2-Clause and Boost Software License 1.0.
-  See licenses/c4core.txt.
+Third-party components:
+
+- Dear ImGui - MIT. See licenses/imgui.txt.
+- OpenCV - Apache-2.0. See licenses/opencv.txt.
+- Boost - BSL-1.0. See licenses/boost.txt.
+- rapidyaml - MIT. See licenses/ryml.txt.
+- c4core - MIT / BSD-2-Clause / BSL-1.0. See licenses/c4core.txt.
 - nlohmann/json - MIT. See licenses/nlohmann-json.txt.
 - livesplit-bridge-client-cpp - MIT. See
   licenses/livesplit-bridge-client-cpp.txt.
 - windows-capture-device-list - MIT. Camera enumeration code is adapted from
   this project. See licenses/windows-capture-device-list.txt.
+- NDI SDK Headers - MIT (per header). See licenses/ndi-headers.txt. The headers
+  are used to build the dynamically loaded NDI adapter.
+- NDI Runtime - External dependency; NDI license applies. The runtime is not
+  bundled. Install it separately to use NDI input. See
+  https://ndi.link/ndisdk_license and licenses/NDI-TERMS.txt.
 
-NDI®
----
-Official NDI-enabled Windows ZIPs bundle Processing.NDI.Lib.x64.dll and
-Processing.NDI.Lib.Licenses.txt. The runtime is separately licensed by NDI,
-Inc. / Vizrt NDI AB; it is not covered by DivergenceSplitter's MIT License.
-The runtime's use terms are part of this distribution's terms of use:
-see licenses/NDI-TERMS.txt, licenses/NDI.md and the official SDK agreement at
-https://ndi.link/ndisdk_license. The SDK agreement PDF is not bundled.
-SDK-disabled development builds omit NDI binaries.
-NDI website: https://ndi.video/
-NDI® is a registered trademark of Vizrt NDI AB.
-
-Source code and build files for the LGPL-licensed Qt components are available
-from https://github.com/Nanahuse/DivergenceSplitter and from the Qt project.
+NDI® is a registered trademark of Vizrt NDI AB. NDI website:
+https://ndi.video/. The NDI runtime is separately licensed by NDI, Inc. /
+Vizrt NDI AB and is not covered by DivergenceSplitter's MIT License.

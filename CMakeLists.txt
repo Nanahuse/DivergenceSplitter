@@ -8,20 +8,21 @@ project(
     LANGUAGES CXX
 )
 
-option(DIVERGENCESPLITTER_BUILD_UI "Build the Qt Widgets desktop UI" ON)
+option(DIVERGENCESPLITTER_BUILD_UI "Build the Dear ImGui Win32 desktop UI" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTS "Build the CTest suite" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS "Build the optional LiveSplit.Bridge TestHost smoke test" OFF)
 option(DIVERGENCESPLITTER_FETCH_BRIDGE "Fetch the LiveSplit Bridge C++ client" ON)
-option(DIVERGENCESPLITTER_ENABLE_NDI "Build NDI input (requires the official Windows x64 SDK)" OFF)
-set(NDI_SDK_DIR "" CACHE PATH "Extracted official NDI SDK root")
-
-include(cmake/NdiSdk.cmake)
-
 set(
     DIVERGENCESPLITTER_BRIDGE_TAG
     "v0.1.0"
     CACHE STRING
     "livesplit-bridge-client-cpp tag or commit to fetch"
+)
+set(
+    DIVERGENCESPLITTER_IMGUI_TAG
+    "v1.91.9b"
+    CACHE STRING
+    "Dear ImGui tag or commit to fetch"
 )
 
 if(MSVC)
@@ -53,10 +54,17 @@ if(NOT TARGET livesplit_bridge::livesplit_bridge)
     message(FATAL_ERROR "livesplit_bridge::livesplit_bridge is required")
 endif()
 
-# Discover dependencies here so imported targets and version information are
-# available to source, test, and packaging configuration.
 if(DIVERGENCESPLITTER_BUILD_UI)
-    find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
+    if(NOT WIN32)
+        message(FATAL_ERROR "DIVERGENCESPLITTER_BUILD_UI requires Windows (Win32/Direct3D 11)")
+    endif()
+    FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG ${DIVERGENCESPLITTER_IMGUI_TAG}
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(imgui)
 endif()
 if(DIVERGENCESPLITTER_BUILD_TESTS)
     enable_testing()

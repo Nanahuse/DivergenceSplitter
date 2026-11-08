@@ -1,11 +1,8 @@
 #pragma once
 
-#include <QColor>
-#include <QString>
-#include <QStringView>
-#include <QWidget>
+#include <imgui.h>
 
-class QApplication;
+#include <string_view>
 
 namespace divergencesplitter::ui::theme {
 
@@ -14,34 +11,31 @@ enum class Mode {
     dark,
 };
 
-struct SemanticColors {
-    QColor active;
-    QColor ready;
-    QColor connecting;
-    QColor failed;
-    QColor stopped;
-    QColor error;
-    QColor warning;
-    QColor primary;
-    QColor on_primary;
-    QColor muted;
-    QColor background;
-    QColor background_deep;
-    QColor surface;
-    QColor surface_low;
-    QColor surface_high;
-    QColor divider;
-    QColor outline;
-    QColor text;
-    QColor text_secondary;
+struct Colors {
+    ImVec4 active;
+    ImVec4 ready;
+    ImVec4 connecting;
+    ImVec4 failed;
+    ImVec4 stopped;
+    ImVec4 error;
+    ImVec4 warning;
+    ImVec4 primary;
+    ImVec4 on_primary;
+    ImVec4 muted;
+    ImVec4 background;
+    ImVec4 background_deep;
+    ImVec4 surface;
+    ImVec4 surface_low;
+    ImVec4 surface_high;
+    ImVec4 divider;
+    ImVec4 outline;
+    ImVec4 text;
+    ImVec4 text_secondary;
 };
 
-[[nodiscard]] Mode mode_from_string(QStringView value);
-[[nodiscard]] Mode current_mode();
-[[nodiscard]] QString mode_name(Mode mode);
-[[nodiscard]] SemanticColors colors(Mode mode);
-[[nodiscard]] QString stylesheet(Mode mode);
-void apply(QApplication& application, Mode mode);
-void repolish(QWidget* widget);
+[[nodiscard]] Mode mode_from_string(std::string_view value);
+[[nodiscard]] std::string_view mode_name(Mode mode);
+[[nodiscard]] Colors colors(Mode mode);
+void apply(Mode mode, float scale);
 
 }  // namespace divergencesplitter::ui::theme

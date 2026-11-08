@@ -1,878 +1,950 @@
 #include "profile_page.hpp"
 
-#include <QCheckBox>
-#include <QComboBox>
-#include <QDoubleSpinBox>
-#include <QFileDialog>
-#include <QFormLayout>
-#include <QFrame>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QLabel>
-#include <QLineEdit>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QSignalBlocker>
-#include <QSpinBox>
-#include <QStackedWidget>
-#include <QTabWidget>
-#include <QTableWidget>
-#include <QTableWidgetItem>
-#include <QVBoxLayout>
-#include <QThread>
-#include <QTimer>
-#include <QShowEvent>
-#include <QHideEvent>
+#include <imgui.h>
+
+#include "profile_source_ui.hpp"
 
 #include <algorithm>
-
+#include <chrono>
+#include <cmath>
+#include <cstdio>
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <variant>
 
-#include "divergencesplitter/scenario/scenario.hpp"
+#include "app.hpp"
 #include "divergencesplitter/capture/ndi.hpp"
-#include "app_controller.hpp"
-#include "image_view.hpp"
+#include "divergencesplitter/scenario/scenario.hpp"
+#include "divergencesplitter/text.hpp"
+#include "theme.hpp"
+#include "ui_helpers.hpp"
 
 namespace divergencesplitter::ui {
 namespace {
 
-QString path_text(const std::string& path) {
-    return QString::fromStdString(path);
+constexpr FileDialogFilter kVideoFilters[] = {
+    {L"Video files", L"*.mp4;*.mkv;*.avi;*.mov"},
+    {L"All files", L"*.*"},
+};
+
+constexpr FileDialogFilter kScenarioFilters[] = {
+    {L"Scenario YAML", L"*.yaml;*.yml"},
+    {L"All files", L"*.*"},
+};
+
+std::string backend_name(CameraBackend backend) {
+    return backend == CameraBackend::direct_show ? "DirectShow" : "Media Foundation";
 }
 
-std::string to_std(const QString& text) {
-    return text.toStdString();
+std::string camera_device_label(const CameraDeviceInfo& device) {
+    return device.name + " [" + backend_name(device.backend) + "]";
+}
+
+std::string camera_mode_label(const CameraModeInfo& mode) {
+    char fps[32]{};
+    std::snprintf(fps, sizeof(fps), "%.3f", mode.fps);
+    return std::to_string(mode.width) + "x" + std::to_string(mode.height) + " @ " + fps +
+           " " + mode.format + " (" + (mode.subtype_selectable ? "exact subtype" : "size/FPS") +
+           ")";
+}
+
+void draw_ndi_runtime_help() {
+    text_muted(ndi_runtime_status().message);
+    ImGui::TextUnformatted("Install NDI Runtime from");
+    ImGui::SameLine();
+    ImGui::TextLinkOpenURL("ndi.video", "https://ndi.video/");
+    ImGui::SameLine();
+    ImGui::TextUnformatted("and restart DivergenceSplitter.");
+}
+
+bool source_ready_for_preview(const SourceConfiguration& source) {
+    if (std::holds_alternative<CameraSourceConfiguration>(source)) {
+        const auto& camera = std::get<CameraSourceConfiguration>(source);
+        return !camera.device.name.empty() && camera.mode.width > 0 &&
+               camera.mode.height > 0 && camera.mode.fps > 0.0;
+    }
+    if (std::holds_alternative<VideoSourceConfiguration>(source)) {
+        return !std::get<VideoSourceConfiguration>(source).path.empty();
+    }
+    return ndi_enabled() && !std::get<NdiSourceConfiguration>(source).name.empty();
 }
 
 }  // namespace
 
-ProfilePage::ProfilePage(AppController* controller, QWidget* parent, NdiDiscovery ndi_discovery,
-                         ProfilePreview::SourceFactory preview_factory)
-    : QWidget(parent), controller_(controller), preview_worker_(std::move(preview_factory)),
-      ndi_discovery_(std::move(ndi_discovery)) {
+ProfilePage::ProfilePage(App* app, NdiDiscovery ndi_discovery)
+    : app_(app),
+      ndi_discovery_(std::move(ndi_discovery)),
+      ndi_worker_([this] { return ndi_discovery_(); }) {
     ndi_discovery_available_ = ndi_enabled() || static_cast<bool>(ndi_discovery_);
-    if (!ndi_discovery_) ndi_discovery_ = [] { return discover_ndi_sources(); };
-    setObjectName(QStringLiteral("page"));
-    auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(16, 14, 16, 14);
-    outer->setSpacing(10);
-
-    auto* title = new QLabel(tr("Profile"), this);
-    title->setObjectName(QStringLiteral("pageTitle"));
-    outer->addWidget(title);
-
-    auto* draft_label = new QLabel(
-        tr("Changes are kept as a draft. Apply restarts the runtime with the draft values."),
-        this
-    );
-    draft_label->setWordWrap(true);
-    draft_label->setProperty("role", QStringLiteral("muted"));
-    outer->addWidget(draft_label);
-
-    auto* tabs = new QTabWidget(this);
-    tabs->setObjectName(QStringLiteral("profileTabs"));
-    outer->addWidget(tabs, 1);
-
-    auto* input_tab = new QWidget(tabs);
-    input_tab->setObjectName(QStringLiteral("page"));
-    auto* input_tab_layout = new QVBoxLayout(input_tab);
-    input_tab_layout->setContentsMargins(0, 0, 0, 0);
-    auto* scroll = new QScrollArea(input_tab);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    auto* content = new QWidget(scroll);
-    content->setObjectName(QStringLiteral("page"));
-    auto* layout = new QVBoxLayout(content);
-    layout->setContentsMargins(12, 12, 12, 12);
-    layout->setSpacing(12);
-    scroll->setWidget(content);
-    input_tab_layout->addWidget(scroll);
-    tabs->addTab(input_tab, tr("Input"));
-
-    auto* scenarios_tab = new QWidget(tabs);
-    scenarios_tab->setObjectName(QStringLiteral("page"));
-    auto* scenarios_layout = new QVBoxLayout(scenarios_tab);
-    scenarios_layout->setContentsMargins(12, 12, 12, 12);
-    scenarios_layout->setSpacing(12);
-    tabs->addTab(scenarios_tab, tr("Scenarios && Connections"));
-
-    auto* top_row = new QHBoxLayout;
-    top_row->setSpacing(16);
-
-    auto* source_group = new QGroupBox(tr("Input source"), content);
-    auto* source_layout = new QVBoxLayout(source_group);
-    source_type_ = new QComboBox(source_group);
-    source_type_->setObjectName(QStringLiteral("sourceType"));
-    source_type_->addItems({tr("Camera"), tr("Video file"), tr("NDI®")});
-    source_layout->addWidget(source_type_);
-
-    source_stack_ = new QStackedWidget(source_group);
-
-    auto* camera_page = new QWidget(source_stack_);
-    auto* camera_form = new QFormLayout(camera_page);
-    camera_device_combo_ = new QComboBox(camera_page);
-    camera_device_combo_->setMinimumWidth(260);
-    camera_mode_combo_ = new QComboBox(camera_page);
-    camera_detect_button_ = new QPushButton(tr("Detect cameras"), camera_page);
-    camera_name_ = new QLineEdit(camera_page);
-    camera_subtype_ = new QLineEdit(camera_page);
-    camera_note_ = new QLabel(camera_page);
-    camera_note_->setWordWrap(true);
-    camera_index_ = new QSpinBox(camera_page);
-    camera_index_->setRange(0, 64);
-    camera_backend_ = new QComboBox(camera_page);
-    camera_backend_->addItem(tr("Media Foundation"), QStringLiteral("media_foundation"));
-    camera_backend_->addItem(tr("DirectShow"), QStringLiteral("direct_show"));
-    camera_width_ = new QSpinBox(camera_page);
-    camera_width_->setRange(1, 16384);
-    camera_width_->setValue(1920);
-    camera_height_ = new QSpinBox(camera_page);
-    camera_height_->setRange(1, 16384);
-    camera_height_->setValue(1080);
-    camera_fps_ = new QDoubleSpinBox(camera_page);
-    camera_fps_->setRange(0.1, 240.0);
-    camera_fps_->setValue(60.0);
-    camera_request_60_ = new QCheckBox(tr("Request 60 fps"), camera_page);
-    auto* device_row = new QHBoxLayout;
-    device_row->addWidget(camera_device_combo_, 1);
-    device_row->addWidget(camera_detect_button_);
-    camera_form->addRow(tr("Device"), device_row);
-    camera_form->addRow(tr("Device name"), camera_name_);
-    camera_form->addRow(tr("Mode"), camera_mode_combo_);
-    camera_form->addRow(tr("Backend"), camera_backend_);
-    camera_form->addRow(tr("Device index"), camera_index_);
-    camera_form->addRow(tr("Width"), camera_width_);
-    camera_form->addRow(tr("Height"), camera_height_);
-    camera_form->addRow(tr("FPS"), camera_fps_);
-    camera_form->addRow(tr("Subtype GUID"), camera_subtype_);
-    camera_form->addRow(camera_request_60_);
-    camera_form->addRow(camera_note_);
-    source_stack_->addWidget(camera_page);
-
-    auto* video_page = new QWidget(source_stack_);
-    auto* video_layout = new QHBoxLayout(video_page);
-    video_path_ = new QLineEdit(video_page);
-    video_path_->setObjectName(QStringLiteral("videoPath"));
-    auto* video_browse = new QPushButton(tr("Browse..."), video_page);
-    video_layout->addWidget(video_path_, 1);
-    video_layout->addWidget(video_browse);
-    source_stack_->addWidget(video_page);
-
-    auto* ndi_page = new QWidget(source_stack_);
-    auto* ndi_layout = new QVBoxLayout(ndi_page);
-    ndi_name_ = new QComboBox(ndi_page);
-    ndi_name_->setEditable(true);
-    ndi_name_->setObjectName(QStringLiteral("ndiSourceName"));
-    ndi_name_->lineEdit()->setPlaceholderText(tr("Advertised source name (kept when offline)"));
-    ndi_refresh_ = new QPushButton(tr("Search again"), ndi_page);
-    ndi_refresh_->setObjectName(QStringLiteral("ndiRefresh"));
-    ndi_refresh_->setEnabled(ndi_discovery_available_);
-    ndi_notice_ = new QLabel(ndi_enabled() ? tr("Select a source or enter its saved name.") :
-        tr("NDI input is not available in this build."), ndi_page);
-    ndi_notice_->setObjectName(QStringLiteral("ndiDiscoveryStatus"));
-    ndi_notice_->setWordWrap(true);
-    ndi_layout->addWidget(ndi_name_);
-    ndi_layout->addWidget(ndi_refresh_);
-    ndi_layout->addWidget(ndi_notice_);
-    auto* ndi_link = new QLabel(tr(
-        "<a href=\"https://ndi.video/\">NDI® — ndi.video</a><br>"
-        "NDI® is a registered trademark of Vizrt NDI AB.<br>"
-        "The bundled NDI runtime is separately licensed. "
-        "See licenses/NDI-TERMS.txt in the distribution for its use terms."), ndi_page);
-    ndi_link->setOpenExternalLinks(true);
-    ndi_link->setWordWrap(true);
-    ndi_layout->addWidget(ndi_link);
-    connect(ndi_refresh_, &QPushButton::clicked, this, &ProfilePage::refresh_ndi_sources);
-    auto* ndi_timer = new QTimer(this);
-    ndi_timer->setInterval(5000);
-    connect(ndi_timer, &QTimer::timeout, this, [this] {
-        if (isVisible() && source_type_->currentIndex() == 2) refresh_ndi_sources();
-    });
-    ndi_timer->start();
-    source_stack_->addWidget(ndi_page);
-
-    source_layout->addWidget(source_stack_);
-    top_row->addWidget(source_group, 1);
-
-    auto* transform_group = new QGroupBox(tr("Frame Processing"), content);
-    auto* transform_layout = new QVBoxLayout(transform_group);
-    auto* crop_row = new QHBoxLayout;
-    crop_enabled_ = new QCheckBox(tr("Crop margins"), transform_group);
-    crop_enabled_->setObjectName(QStringLiteral("cropEnabled"));
-    crop_left_ = new QSpinBox(transform_group);
-    crop_right_ = new QSpinBox(transform_group);
-    crop_top_ = new QSpinBox(transform_group);
-    crop_bottom_ = new QSpinBox(transform_group);
-    crop_left_->setObjectName(QStringLiteral("cropLeft"));
-    crop_right_->setObjectName(QStringLiteral("cropRight"));
-    crop_top_->setObjectName(QStringLiteral("cropTop"));
-    crop_bottom_->setObjectName(QStringLiteral("cropBottom"));
-    for (auto* spin : {crop_left_, crop_right_, crop_top_, crop_bottom_}) {
-        spin->setRange(0, 16384);
-        spin->setPrefix(tr("px "));
+    if (!ndi_discovery_) {
+        ndi_discovery_ = [] { return discover_ndi_sources(); };
     }
-    crop_row->addWidget(crop_enabled_);
-    crop_row->addWidget(new QLabel(tr("L"), transform_group));
-    crop_row->addWidget(crop_left_);
-    crop_row->addWidget(new QLabel(tr("R"), transform_group));
-    crop_row->addWidget(crop_right_);
-    crop_row->addWidget(new QLabel(tr("T"), transform_group));
-    crop_row->addWidget(crop_top_);
-    crop_row->addWidget(new QLabel(tr("B"), transform_group));
-    crop_row->addWidget(crop_bottom_);
-    crop_row->addStretch(1);
-    transform_layout->addLayout(crop_row);
-
-    auto* resize_row = new QHBoxLayout;
-    resize_enabled_ = new QCheckBox(tr("Resize"), transform_group);
-    resize_enabled_->setObjectName(QStringLiteral("resizeEnabled"));
-    resize_width_ = new QSpinBox(transform_group);
-    resize_width_->setObjectName(QStringLiteral("resizeWidth"));
-    resize_width_->setRange(1, 16384);
-    resize_width_->setValue(1280);
-    resize_height_ = new QSpinBox(transform_group);
-    resize_height_->setObjectName(QStringLiteral("resizeHeight"));
-    resize_height_->setRange(1, 16384);
-    resize_height_->setValue(720);
-    resize_interpolation_ = new QComboBox(transform_group);
-    resize_interpolation_->addItems(
-        {QStringLiteral("area"), QStringLiteral("nearest"), QStringLiteral("linear"),
-         QStringLiteral("cubic"), QStringLiteral("lanczos4")}
-    );
-    resize_row->addWidget(resize_enabled_);
-    resize_row->addWidget(new QLabel(tr("W"), transform_group));
-    resize_row->addWidget(resize_width_);
-    resize_row->addWidget(new QLabel(tr("H"), transform_group));
-    resize_row->addWidget(resize_height_);
-    resize_row->addWidget(new QLabel(tr("Interpolation"), transform_group));
-    resize_row->addWidget(resize_interpolation_);
-    resize_row->addStretch(1);
-    transform_layout->addLayout(resize_row);
-    resize_references_ = new QCheckBox(tr("Resize reference images"), transform_group);
-    resize_references_->setObjectName(QStringLiteral("resizeReferences"));
-    resize_references_->setEnabled(false);
-    connect(resize_enabled_, &QCheckBox::toggled, resize_references_, &QWidget::setEnabled);
-    transform_layout->addWidget(resize_references_);
-
-    auto* preview_group = new QGroupBox(tr("Input Preview"), content);
-    auto* preview_layout = new QVBoxLayout(preview_group);
-    preview_enabled_ = new QCheckBox(tr("Preview input"), preview_group);
-    preview_enabled_->setObjectName(QStringLiteral("previewEnabled"));
-    preview_enabled_->setChecked(true);
-    preview_view_ = new ImageView(preview_group);
-    preview_view_->setObjectName(QStringLiteral("draftPreview"));
-    preview_view_->setMaximumHeight(270);
-    preview_status_ = new QLabel(preview_group);
-    preview_status_->setObjectName(QStringLiteral("draftPreviewStatus"));
-    preview_status_->setWordWrap(true);
-    preview_layout->addWidget(preview_enabled_);
-    preview_layout->addWidget(preview_view_);
-    preview_layout->addWidget(preview_status_);
-    preview_stop_session_ = new QPushButton(tr("Stop Session and preview draft"), preview_group);
-    preview_stop_session_->setObjectName(QStringLiteral("previewStopSession"));
-    preview_layout->addWidget(preview_stop_session_);
-    connect(preview_stop_session_, &QPushButton::clicked, controller_, &AppController::stop);
-    top_row->addWidget(preview_group, 1);
-    layout->addLayout(top_row);
-    layout->addWidget(transform_group);
-    connect(preview_enabled_, &QCheckBox::toggled, this, &ProfilePage::refresh_preview);
-    connect(controller_, &AppController::sessionStarting, this, [this] {
-        preview_suspended_ = true;
-        stop_preview();
-    });
-    connect(controller_, &AppController::sessionChanged, this, [this] {
-        preview_suspended_ = false;
-        refresh_preview();
-    });
-    auto* preview_timer = new QTimer(this);
-    preview_timer->setInterval(100);
-    connect(preview_timer, &QTimer::timeout, this, &ProfilePage::refresh_preview);
-    preview_timer->start();
-    connect(tabs, &QTabWidget::currentChanged, this, [this](int index) {
-        if (index == 0) {
-            refresh_preview();
-        } else {
-            stop_preview();
-        }
-    });
-
-    auto* instances_group = new QGroupBox(tr("LiveSplit Instances"), scenarios_tab);
-    auto* instances_layout = new QVBoxLayout(instances_group);
-    instance_table_ = new QTableWidget(instances_group);
-    instance_table_->setObjectName(QStringLiteral("instanceTable"));
-    instance_table_->setColumnCount(2);
-    instance_table_->setHorizontalHeaderLabels({tr("Bridge port"), tr("Scenario YAML")});
-    instance_table_->horizontalHeader()->setStretchLastSection(true);
-    instance_table_->verticalHeader()->setVisible(false);
-    instance_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    instances_layout->addWidget(instance_table_);
-    auto* instance_buttons = new QHBoxLayout;
-    auto* add_button = new QPushButton(tr("Add instance"), instances_group);
-    auto* remove_button = new QPushButton(tr("Remove instance"), instances_group);
-    auto* browse_button = new QPushButton(tr("Browse scenario..."), instances_group);
-    instance_buttons->addWidget(add_button);
-    instance_buttons->addWidget(remove_button);
-    instance_buttons->addWidget(browse_button);
-    instance_buttons->addStretch(1);
-    instances_layout->addLayout(instance_buttons);
-    scenarios_layout->addWidget(instances_group, 1);
-
-    status_label_ = new QLabel(tr("No profile applied."), this);
-    status_label_->setWordWrap(true);
-    status_label_->setProperty("role", QStringLiteral("muted"));
-    outer->addWidget(status_label_);
-
-    auto* actions = new QHBoxLayout;
-    auto* reload_button = new QPushButton(tr("Revert draft"), this);
-    auto* apply_button = new QPushButton(tr("Apply"), this);
-    apply_button->setObjectName(QStringLiteral("primaryButton"));
-    apply_button->setDefault(true);
-    actions->addWidget(reload_button);
-    actions->addStretch(1);
-    actions->addWidget(apply_button);
-    outer->addLayout(actions);
-
-    connect(source_type_, &QComboBox::currentIndexChanged, this, &ProfilePage::source_type_changed);
-    connect(camera_detect_button_, &QPushButton::clicked, this, [this]() {
-        refresh_camera_devices();
-    });
-    connect(camera_device_combo_, &QComboBox::currentIndexChanged, this, &ProfilePage::camera_device_changed);
-    connect(camera_mode_combo_, &QComboBox::currentIndexChanged, this, &ProfilePage::camera_mode_changed);
-    connect(video_browse, &QPushButton::clicked, this, &ProfilePage::browse_video);
-    connect(add_button, &QPushButton::clicked, this, &ProfilePage::add_instance);
-    connect(remove_button, &QPushButton::clicked, this, &ProfilePage::remove_instance);
-    connect(browse_button, &QPushButton::clicked, this, &ProfilePage::browse_scenario);
-    connect(apply_button, &QPushButton::clicked, this, &ProfilePage::apply);
-    connect(reload_button, &QPushButton::clicked, this, &ProfilePage::reload_from_controller);
-
-    update_source_stack();
-    reload_from_controller();
-}
-
-void ProfilePage::reload_from_controller() {
-    load_profile(controller_->profile());
-    status_label_->setText(tr("Draft loaded from the active profile."));
-}
-
-void ProfilePage::load_draft(const Profile& profile) {
-    load_profile(profile);
-    status_label_->setText(tr("New profile draft. Save or Apply to continue."));
-    refresh_preview();
-}
-
-void ProfilePage::load_profile(const Profile& profile) {
-    std::visit(
-        [this](const auto& source) {
-            using Source = std::decay_t<decltype(source)>;
-            if constexpr (std::is_same_v<Source, CameraSourceConfiguration>) {
-                source_type_->setCurrentIndex(0);
-                camera_index_->setValue(source.device.index);
-                const int backend_index = camera_backend_->findData(
-                    QString::fromStdString(std::string{to_string(source.device.backend)})
-                );
-                camera_backend_->setCurrentIndex(std::max(0, backend_index));
-                camera_name_->setText(QString::fromStdString(source.device.name));
-                camera_subtype_->setText(QString::fromStdString(source.mode.subtype_guid));
-                camera_width_->setValue(source.mode.width);
-                camera_height_->setValue(source.mode.height);
-                camera_fps_->setValue(source.mode.fps);
-                camera_request_60_->setChecked(source.request_60_fps);
-                populate_camera_devices(source.device, source.mode);
-            } else if constexpr (std::is_same_v<Source, VideoSourceConfiguration>) {
-                source_type_->setCurrentIndex(1);
-                video_path_->setText(path_text(source.path));
-            } else {
-                source_type_->setCurrentIndex(2);
-                ndi_name_->setEditText(path_text(source.name));
-            }
-            const auto& transform = source.transform;
-            crop_enabled_->setChecked(transform.crop.has_value());
-            crop_left_->setValue(transform.crop ? transform.crop->left : 0);
-            crop_right_->setValue(transform.crop ? transform.crop->right : 0);
-            crop_top_->setValue(transform.crop ? transform.crop->top : 0);
-            crop_bottom_->setValue(transform.crop ? transform.crop->bottom : 0);
-            resize_enabled_->setChecked(transform.resize.has_value());
-            resize_references_->setChecked(
-                transform.resize && transform.resize->resize_references
-            );
-            resize_width_->setValue(transform.resize ? transform.resize->width : 1280);
-            resize_height_->setValue(transform.resize ? transform.resize->height : 720);
-            if (transform.resize.has_value()) {
-                const int index = resize_interpolation_->findText(
-                    QString::fromStdString(std::string{to_string(transform.resize->interpolation)})
-                );
-                resize_interpolation_->setCurrentIndex(std::max(0, index));
-            }
-        },
-        profile.source
-    );
-    update_source_stack();
-
-    instance_table_->setRowCount(static_cast<int>(profile.instances.size()));
-    for (int row = 0; row < static_cast<int>(profile.instances.size()); ++row) {
-        const auto& instance = profile.instances[static_cast<std::size_t>(row)];
-        auto* port_item = new QTableWidgetItem(QString::number(instance.connection.port));
-        auto* scenario_item = new QTableWidgetItem(path_text(instance.scenario));
-        instance_table_->setItem(row, 0, port_item);
-        instance_table_->setItem(row, 1, scenario_item);
-    }
-}
-
-Profile ProfilePage::draft_profile() const {
-    Profile result;
-    result.version = 2;
-
-    TransformConfiguration transform;
-    if (crop_enabled_->isChecked()) {
-        transform.crop = CropConfiguration{
-            crop_left_->value(),
-            crop_right_->value(),
-            crop_top_->value(),
-            crop_bottom_->value(),
-        };
-    }
-    if (resize_enabled_->isChecked()) {
-        ResizeConfiguration resize;
-        resize.width = resize_width_->value();
-        resize.height = resize_height_->value();
-        resize.resize_references = resize_references_->isChecked();
-        resize.interpolation = parse_interpolation_string(
-            to_std(resize_interpolation_->currentText())
-        );
-        transform.resize = resize;
-    }
-
-    switch (source_type_->currentIndex()) {
-        case 0: {
-            CameraSourceConfiguration source;
-            source.device.backend = parse_camera_backend(
-                to_std(camera_backend_->currentData().toString())
-            ).value_or(CameraBackend::media_foundation);
-            source.device.index = camera_index_->value();
-            source.device.name = to_std(camera_name_->text());
-            source.mode.width = camera_width_->value();
-            source.mode.height = camera_height_->value();
-            source.mode.fps = camera_fps_->value();
-            source.mode.subtype_guid = to_std(camera_subtype_->text());
-            source.request_60_fps = camera_request_60_->isChecked();
-            source.transform = transform;
-            result.source = source;
-            break;
-        }
-        case 1:
-            result.source = VideoSourceConfiguration{
-                to_std(video_path_->text()),
-                transform,
-            };
-            break;
-        default:
-            result.source = NdiSourceConfiguration{to_std(ndi_name_->currentText()), transform};
-            break;
-    }
-
-    for (int row = 0; row < instance_table_->rowCount(); ++row) {
-        const auto* port_item = instance_table_->item(row, 0);
-        const auto* scenario_item = instance_table_->item(row, 1);
-        InstanceConfiguration instance;
-        bool ok = false;
-        instance.connection.port = port_item ? port_item->text().toInt(&ok) : 0;
-        if (!ok) {
-            instance.connection.port = 0;
-        }
-        instance.scenario = scenario_item ? to_std(scenario_item->text()) : std::string{};
-        result.instances.push_back(std::move(instance));
-    }
-    return result;
-}
-
-void ProfilePage::apply() {
-    const auto profile = draft_profile();
-    auto fail = [this](const QString& message) {
-        status_label_->setText(message);
-        QMessageBox::critical(this, tr("Profile"), message);
-    };
-
-    if (std::holds_alternative<CameraSourceConfiguration>(profile.source)) {
-        const auto& camera = std::get<CameraSourceConfiguration>(profile.source);
-        if (camera.device.name.empty()) {
-            fail(tr("A camera device name is required. Use Detect cameras to select one."));
-            return;
-        }
-        if (camera.mode.width <= 0 || camera.mode.height <= 0 || camera.mode.fps <= 0.0) {
-            fail(tr("A camera capture mode is required. Use Detect cameras to select one."));
-            return;
-        }
-        if (camera.mode.subtype_guid.empty()) {
-            fail(tr("A camera subtype GUID is required. Use Detect cameras to select a mode."));
-            return;
-        }
-    }
-    if (std::holds_alternative<NdiSourceConfiguration>(profile.source)) {
-        if (!ndi_enabled()) {
-            fail(tr("NDI input is not available in this build."));
-            return;
-        }
-        if (std::get<NdiSourceConfiguration>(profile.source).name.empty()) {
-            fail(tr("An NDI source name is required."));
-            return;
-        }
-    }
-    if (std::holds_alternative<VideoSourceConfiguration>(profile.source)) {
-        const auto& video = std::get<VideoSourceConfiguration>(profile.source);
-        if (video.path.empty()) {
-            fail(tr("A video file path is required."));
-            return;
-        }
-        if (!std::filesystem::path{video.path}.is_absolute()) {
-            fail(tr("The video file path must be absolute."));
-            return;
-        }
-    }
-
-    if (profile.instances.empty()) {
-        fail(tr("Add at least one LiveSplit instance."));
-        return;
-    }
-    for (const auto& instance : profile.instances) {
-        if (instance.connection.port < 1 || instance.connection.port > 65535) {
-            fail(tr("Bridge ports must be between 1 and 65535."));
-            return;
-        }
-        const std::filesystem::path scenario{instance.scenario};
-        if (instance.scenario.empty() || !scenario.is_absolute()) {
-            fail(tr("Every scenario path must be absolute."));
-            return;
-        }
-        if (scenario.extension() == ".py") {
-            fail(tr("Python scenario modules are not supported: %1")
-                .arg(QString::fromStdString(scenario.string())));
-            return;
-        }
-        try {
-            (void)load_profile_scenario(scenario, profile.source);
-        } catch (const std::exception& error) {
-            fail(tr("Scenario validation failed: %1").arg(QString::fromUtf8(error.what())));
-            return;
-        }
-    }
-
-    QString error;
-    if (!controller_->apply_profile(profile, &error)) {
-        fail(tr("Could not apply profile: %1").arg(error));
-        return;
-    }
-    status_label_->setText(tr("Profile applied."));
-    emit profileApplied();
-}
-
-void ProfilePage::add_instance() {
-    const int row = instance_table_->rowCount();
-    instance_table_->insertRow(row);
-    instance_table_->setItem(row, 0, new QTableWidgetItem(QString::number(54000 + row)));
-    instance_table_->setItem(row, 1, new QTableWidgetItem(QString{}));
-}
-
-void ProfilePage::remove_instance() {
-    const int row = instance_table_->currentRow();
-    if (row >= 0) {
-        instance_table_->removeRow(row);
-    }
-}
-
-void ProfilePage::browse_scenario() {
-    const int row = instance_table_->currentRow();
-    if (row < 0) {
-        return;
-    }
-    const QString path = QFileDialog::getOpenFileName(
-        this,
-        tr("Select scenario"),
-        {},
-        tr("Scenario YAML (*.yaml *.yml)")
-    );
-    if (path.isEmpty()) {
-        return;
-    }
-    if (auto* item = instance_table_->item(row, 1); item != nullptr) {
-        item->setText(path);
-    }
-}
-
-void ProfilePage::browse_video() {
-    const QString path = QFileDialog::getOpenFileName(
-        this,
-        tr("Select video"),
-        {},
-        tr("Video files (*.mp4 *.mkv *.avi *.mov);;All files (*.*)")
-    );
-    if (!path.isEmpty()) {
-        video_path_->setText(path);
-    }
-}
-
-void ProfilePage::source_type_changed(int) {
-    update_source_stack();
-    if (source_type_->currentIndex() == 2) refresh_ndi_sources();
-}
-
-void ProfilePage::update_source_stack() {
-    source_stack_->setCurrentIndex(source_type_->currentIndex());
+    load_draft(app_->document().draft);
 }
 
 ProfilePage::~ProfilePage() {
     stop_preview();
-    // The worker performs bounded discovery and never accesses widgets. Waiting
-    // here makes queued delivery safe even if the profile page is closed early.
-    if (ndi_worker_) {
-        ndi_worker_->wait();
-        delete ndi_worker_;
-    }
+    ndi_worker_.stop();
 }
 
-void ProfilePage::showEvent(QShowEvent* event) {
-    QWidget::showEvent(event);
-    refresh_preview();
+Profile ProfilePage::draft_profile() const {
+    return app_->document().draft;
 }
 
-void ProfilePage::hideEvent(QHideEvent* event) {
+void ProfilePage::load_draft(const Profile& profile) {
     stop_preview();
-    QWidget::hideEvent(event);
+    app_->document().draft = profile;
+    camera_devices_loaded_ = false;
+    camera_devices_.clear();
+    camera_modes_.clear();
+    camera_note_.clear();
+    next_preview_ = 0.0;
+}
+
+void ProfilePage::reload_draft() {
+    load_draft(app_->document().draft);
+}
+
+void ProfilePage::suspend_preview() {
+    preview_suspended_ = true;
+    stop_preview();
+    preview_status_ = "Preview paused while the Session starts.";
+}
+
+void ProfilePage::resume_preview() {
+    preview_suspended_ = false;
+    next_preview_ = 0.0;
+}
+
+void ProfilePage::update(bool visible, double now) {
+    if (!visible) {
+        if (visible_) {
+            stop_preview();
+        }
+        visible_ = false;
+        return;
+    }
+    if (!visible_) {
+        visible_ = true;
+        next_preview_ = 0.0;
+    }
+    poll_ndi_discovery();
+    if (std::holds_alternative<CameraSourceConfiguration>(app_->document().draft.source) &&
+        !camera_devices_loaded_) {
+        refresh_camera_devices();
+    }
+    if (now >= next_preview_) {
+        next_preview_ = now + 0.1;
+        refresh_preview();
+    }
+    if (std::holds_alternative<NdiSourceConfiguration>(app_->document().draft.source) &&
+        ndi_discovery_available_ && !ndi_worker_.busy() && now - ndi_last_search_ >= 5.0) {
+        refresh_ndi_sources();
+    }
 }
 
 void ProfilePage::stop_preview() {
     preview_worker_.stop();
-    preview_view_->clear();
+    preview_texture_.clear();
+    preview_status_ = "Preview stopped.";
 }
 
 void ProfilePage::refresh_preview() {
-    preview_stop_session_->setVisible(controller_->session().running());
-    if (!isVisible() || !preview_view_->isVisible() || !preview_enabled_->isChecked() ||
-        preview_suspended_ || controller_->session().running()) {
+    const auto& session = app_->controller().session();
+    if (!visible_ || !preview_enabled_ || preview_suspended_ || session.running()) {
         stop_preview();
-        preview_status_->setText(controller_->session().running() || preview_suspended_
-            ? tr("Preview stopped while a Session is active. Stop the Session to preview draft settings.")
-            : tr("Preview stopped."));
+        if (session.running() || preview_suspended_) {
+            preview_status_ =
+                "Preview stopped while a Session is active. Stop the Session to preview "
+                "draft settings.";
+        }
         return;
     }
-    preview_worker_.configure(draft_profile().source);
-    const auto preview = preview_worker_.snapshot();
-    if (!preview.error.empty()) {
-        preview_view_->clear();
-        preview_status_->setText(tr("Preview: %1. Edit the source or toggle Preview input to retry.")
-            .arg(QString::fromStdString(preview.error)));
-    } else if (preview.image.isNull()) {
-        preview_view_->clear();
-        preview_status_->setText(tr("Opening input / waiting for a frame…"));
-    } else {
-        preview_view_->set_image(preview.image);
-        const QString reported_fps = preview.input.fps > 0
-            ? tr("%1 fps reported").arg(preview.input.fps, 0, 'f', 2)
-            : tr("backend FPS unavailable");
-        preview_status_->setText(tr("Opened input: %1 × %2, %3 | %4 fps received | Output: %5 × %6")
-            .arg(preview.input.width).arg(preview.input.height).arg(reported_fps)
-            .arg(preview.measured_fps, 0, 'f', 1)
-            .arg(preview.image.width()).arg(preview.image.height()));
+    if (!source_ready_for_preview(app_->document().draft.source)) {
+        stop_preview();
+        preview_status_ = "Select an input source to preview.";
+        return;
     }
+    preview_worker_.configure(app_->document().draft.source);
+    const auto snapshot = preview_worker_.snapshot();
+    if (!snapshot.error.empty()) {
+        preview_texture_.clear();
+        preview_status_ = "Preview: " + snapshot.error +
+                          ". Edit the source or toggle Preview input to retry.";
+        return;
+    }
+    if (snapshot.image.empty()) {
+        preview_texture_.clear();
+        preview_status_ = "Opening input / waiting for a frame...";
+        return;
+    }
+    if (!preview_texture_.update(app_->device(), app_->context(), snapshot.image)) {
+        preview_status_ = "Could not upload the preview image.";
+        return;
+    }
+    char text[256]{};
+    std::snprintf(
+        text,
+        sizeof(text),
+        "Opened input: %d x %d, %.2f fps reported | %.1f fps received | Output: %d x %d",
+        snapshot.input.width,
+        snapshot.input.height,
+        snapshot.input.fps,
+        snapshot.measured_fps,
+        snapshot.image.cols,
+        snapshot.image.rows
+    );
+    preview_status_ = text;
 }
 
-void ProfilePage::refresh_ndi_sources() {
-    if (!ndi_discovery_available_ || (ndi_worker_ && ndi_worker_->isRunning())) return;
-    if (ndi_worker_) {
-        ndi_worker_->wait();
-        delete ndi_worker_;
+void ProfilePage::ensure_camera_devices() {
+    if (!camera_devices_loaded_) {
+        refresh_camera_devices();
     }
-    ndi_refresh_->setEnabled(false);
-    ndi_notice_->setText(tr("Searching for NDI sources…"));
-    ndi_worker_ = QThread::create([this] {
-        QStringList names;
-        QString error;
-        try {
-            for (const auto& name : ndi_discovery_()) names.append(QString::fromStdString(name));
-        } catch (const std::exception& failure) {
-            error = QString::fromUtf8(failure.what());
-        }
-        QMetaObject::invokeMethod(this, [this, names, error] {
-            // Read the current draft now, so typing / loading a different profile
-            // during discovery cannot be overwritten by an old saved value.
-            const auto selected = ndi_name_->currentText();
-            const QSignalBlocker blocker{ndi_name_};
-            ndi_name_->clear();
-            ndi_name_->addItems(names);
-            ndi_name_->setEditText(selected);
-            ndi_refresh_->setEnabled(true);
-            if (!error.isEmpty()) ndi_notice_->setText(tr("NDI discovery failed: %1").arg(error));
-            else if (names.isEmpty()) ndi_notice_->setText(tr("No NDI sources found. The saved name is retained."));
-            else if (!selected.isEmpty() && !names.contains(selected))
-                ndi_notice_->setText(tr("Saved source is currently offline: %1").arg(selected));
-            else ndi_notice_->setText(tr("%1 NDI source(s) found.").arg(names.size()));
-        }, Qt::QueuedConnection);
-    });
-    ndi_worker_->start();
 }
 
 void ProfilePage::refresh_camera_devices() {
-    std::optional<CameraDeviceConfiguration> configured;
-    if (!camera_name_->text().isEmpty()) {
-        CameraDeviceConfiguration device;
-        device.backend = parse_camera_backend(
-            to_std(camera_backend_->currentData().toString())
-        ).value_or(CameraBackend::media_foundation);
-        device.name = to_std(camera_name_->text());
-        device.index = camera_index_->value();
-        configured = device;
-    }
-    std::optional<CameraModeConfiguration> mode;
-    if (camera_width_->value() > 0 && camera_height_->value() > 0 && camera_fps_->value() > 0) {
-        mode = CameraModeConfiguration{
-            camera_width_->value(),
-            camera_height_->value(),
-            camera_fps_->value(),
-            to_std(camera_subtype_->text()),
-        };
-    }
-    populate_camera_devices(configured, mode);
-}
-
-void ProfilePage::populate_camera_devices(
-    const std::optional<CameraDeviceConfiguration>& device,
-    const std::optional<CameraModeConfiguration>& mode
-) {
     try {
         camera_devices_ = list_camera_devices();
+        camera_devices_loaded_ = true;
     } catch (const std::exception& error) {
         camera_devices_.clear();
-        camera_note_->setText(
-            tr("Could not enumerate cameras: %1").arg(QString::fromUtf8(error.what()))
-        );
+        camera_modes_.clear();
+        camera_devices_loaded_ = true;
+        camera_note_ = std::string{"Could not enumerate cameras: "} + error.what();
+        return;
     }
-    QSignalBlocker devices_block{camera_device_combo_};
-    QSignalBlocker modes_block{camera_mode_combo_};
-    camera_device_combo_->clear();
-    camera_mode_combo_->clear();
     if (camera_devices_.empty()) {
-        camera_note_->setText(tr("No camera devices were found."));
+        camera_modes_.clear();
+        camera_note_ = "No camera devices were found.";
         return;
     }
-    for (std::size_t index = 0; index < camera_devices_.size(); ++index) {
-        const auto& entry = camera_devices_[index];
-        camera_device_combo_->addItem(
-            QStringLiteral("%1 [%2]")
-                .arg(QString::fromStdString(entry.name))
-                .arg(QString::fromStdString(std::string{to_string(entry.backend)})),
-            static_cast<int>(index)
-        );
-    }
-
-    int selected = -1;
-    if (device.has_value()) {
-        const auto resolved = resolve_camera_device(*device, camera_devices_);
-        if (resolved.has_value()) {
-            for (std::size_t index = 0; index < camera_devices_.size(); ++index) {
-                if (camera_devices_[index].backend == resolved->backend &&
-                    camera_devices_[index].index == resolved->index) {
-                    selected = static_cast<int>(index);
-                    break;
-                }
-            }
-        } else {
-            camera_note_->setText(tr("The configured camera is not connected."));
-        }
-    }
-    camera_device_combo_->setCurrentIndex(selected);
-    if (selected < 0) {
+    if (!std::holds_alternative<CameraSourceConfiguration>(app_->document().draft.source)) {
         return;
     }
-    populate_camera_modes(camera_devices_[static_cast<std::size_t>(selected)].modes, mode);
+    const auto& camera = std::get<CameraSourceConfiguration>(app_->document().draft.source);
+    const auto resolved = resolve_camera_device(camera.device, camera_devices_);
+    if (!resolved.has_value()) {
+        camera_modes_.clear();
+        camera_note_ = "The configured camera is not connected.";
+        return;
+    }
+    populate_camera_modes(resolved->modes, camera.mode);
 }
 
 void ProfilePage::populate_camera_modes(
     const std::vector<CameraModeInfo>& modes,
     const std::optional<CameraModeConfiguration>& configured
 ) {
-    QSignalBlocker block{camera_mode_combo_};
     camera_modes_ = modes;
-    camera_mode_combo_->clear();
-    for (std::size_t index = 0; index < modes.size(); ++index) {
-        const auto& mode = modes[index];
-        camera_mode_combo_->addItem(
-            QStringLiteral("%1x%2 @ %3 %4 (%5)")
-                .arg(mode.width)
-                .arg(mode.height)
-                .arg(mode.fps, 0, 'f', 3)
-                .arg(QString::fromStdString(mode.format))
-                .arg(mode.subtype_selectable ? tr("exact subtype") : tr("size/FPS")),
-            static_cast<int>(index)
-        );
+    camera_note_.clear();
+    if (modes.empty()) {
+        camera_note_ = "The selected camera reports no capture modes.";
+        return;
     }
-    int selected = -1;
     if (configured.has_value()) {
         const auto resolved = try_resolve_camera_mode(*configured, modes);
-        if (resolved.has_value()) {
-            for (std::size_t index = 0; index < modes.size(); ++index) {
-                if (modes[index] == *resolved) {
-                    selected = static_cast<int>(index);
-                    break;
-                }
-            }
-        } else {
-            camera_note_->setText(tr("The configured capture mode is unavailable."));
+        if (!resolved.has_value()) {
+            camera_note_ = "The configured capture mode is unavailable.";
+            return;
         }
-    }
-    camera_mode_combo_->setCurrentIndex(selected);
-    if (selected >= 0) {
-        const auto& mode = modes[static_cast<std::size_t>(selected)];
-        camera_note_->setText(
-            mode.subtype_selectable
-                ? tr("The capture backend can select and verify this exact subtype.")
-                : tr("This mode verifies width/height/FPS only; OpenCV does not expose "
-                     "exact subtype selection for this backend.")
-        );
+        camera_note_ = resolved->subtype_selectable
+            ? "The capture backend can select and verify this exact subtype."
+            : "This mode verifies width/height/FPS only; OpenCV does not expose exact "
+              "subtype selection for this backend.";
     }
 }
 
-void ProfilePage::camera_device_changed(int index) {
+void ProfilePage::select_camera_device(int index) {
     if (index < 0 || index >= static_cast<int>(camera_devices_.size())) {
         return;
     }
+    auto& camera = std::get<CameraSourceConfiguration>(app_->document().draft.source);
     const auto& device = camera_devices_[static_cast<std::size_t>(index)];
-    camera_name_->setText(QString::fromStdString(device.name));
-    camera_index_->setValue(device.index);
-    const int backend_index = camera_backend_->findData(
-        QString::fromStdString(std::string{to_string(device.backend)})
-    );
-    camera_backend_->setCurrentIndex(std::max(0, backend_index));
-    CameraModeConfiguration configured{
-        camera_width_->value(),
-        camera_height_->value(),
-        camera_fps_->value(),
-        to_std(camera_subtype_->text()),
-    };
-    populate_camera_modes(device.modes, configured);
-    if (camera_mode_combo_->currentIndex() < 0 && !device.modes.empty()) {
-        camera_mode_combo_->setCurrentIndex(0);
-        camera_mode_changed(0);
+    camera.device.name = device.name;
+    camera.device.index = device.index;
+    camera.device.backend = device.backend;
+    populate_camera_modes(device.modes, camera.mode);
+    if (!try_resolve_camera_mode(camera.mode, device.modes).has_value() &&
+        !device.modes.empty()) {
+        select_camera_mode(0);
     }
-    camera_note_->clear();
+    next_preview_ = 0.0;
 }
 
-void ProfilePage::camera_mode_changed(int index) {
+void ProfilePage::select_camera_mode(int index) {
     if (index < 0 || index >= static_cast<int>(camera_modes_.size())) {
         return;
     }
+    auto& camera = std::get<CameraSourceConfiguration>(app_->document().draft.source);
     const auto& mode = camera_modes_[static_cast<std::size_t>(index)];
-    camera_width_->setValue(mode.width);
-    camera_height_->setValue(mode.height);
-    camera_fps_->setValue(mode.fps);
-    camera_subtype_->setText(QString::fromStdString(mode.subtype_guid));
-    camera_note_->setText(
-        mode.subtype_selectable
-            ? tr("The capture backend can select and verify this exact subtype.")
-            : tr("This mode verifies width/height/FPS only; OpenCV does not expose "
-                 "exact subtype selection for this backend.")
+    camera.mode.width = mode.width;
+    camera.mode.height = mode.height;
+    camera.mode.fps = mode.fps;
+    camera.mode.subtype_guid = mode.subtype_guid;
+    camera_note_ = mode.subtype_selectable
+        ? "The capture backend can select and verify this exact subtype."
+        : "This mode verifies width/height/FPS only; OpenCV does not expose exact subtype "
+          "selection for this backend.";
+    next_preview_ = 0.0;
+}
+
+void ProfilePage::draw() {
+    draw_toolbar();
+    const float scale = app_->dpi_scale();
+    const float actions_height = 76.0f * scale;
+    const float tab_height =
+        std::max(120.0f * scale, ImGui::GetContentRegionAvail().y - actions_height);
+    ImGui::BeginChild("##profile_tab_area", ImVec2(0.0f, tab_height), false);
+    if (ImGui::BeginTabBar("##profile_tabs")) {
+        if (ImGui::BeginTabItem("Input")) {
+            draw_input_tab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Scenarios & Connections")) {
+            draw_scenarios_tab();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::EndChild();
+    draw_actions();
+}
+
+void ProfilePage::draw_toolbar() {
+    const auto palette = theme::colors(app_->theme_mode());
+    const float scale = app_->dpi_scale();
+    ImGui::Indent(12.0f * scale);
+    ImGui::Dummy(ImVec2(0.0f, 6.0f * scale));
+    ImGui::PushStyleColor(ImGuiCol_Text, palette.text);
+    ImGui::TextUnformatted("Profile");
+    ImGui::PopStyleColor();
+    if (app_->document().dirty()) {
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, palette.warning);
+        ImGui::TextUnformatted("Unsaved changes");
+        ImGui::PopStyleColor();
+    }
+
+    std::string path_text = app_->document().path.has_value()
+        ? path_to_utf8(*app_->document().path)
+        : "No profile selected";
+    const float buttons_width = 300.0f * scale;
+    ImGui::SetNextItemWidth(
+        std::max(180.0f * scale, ImGui::GetContentRegionAvail().x - buttons_width)
     );
+    input_text("##profile_path", path_text, ImGuiInputTextFlags_ReadOnly);
+    ImGui::SameLine();
+    if (ImGui::Button("New")) {
+        app_->new_profile();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open")) {
+        app_->open_profile();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save")) {
+        app_->save_profile();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save As")) {
+        app_->save_profile_as();
+    }
+    ImGui::Dummy(ImVec2(0.0f, 4.0f * scale));
+    ImGui::Unindent(12.0f * scale);
+}
+
+void ProfilePage::draw_input_tab() {
+    ImGui::BeginChild("##input_scroll", ImVec2(0.0f, 0.0f), false);
+    const auto palette = theme::colors(app_->theme_mode());
+    const float scale = app_->dpi_scale();
+    const float gap = 12.0f * scale;
+    ImGui::Indent(12.0f * scale);
+    const float available = ImGui::GetContentRegionAvail().x;
+    const float source_width = std::max(320.0f * scale, (available - gap) * 0.55f);
+    const float panel_height = 430.0f * scale;
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, palette.surface);
+    ImGui::BeginChild("##source_panel", ImVec2(source_width, panel_height), true);
+    ImGui::PopStyleColor();
+    ImGui::Indent(8.0f * scale);
+    draw_source_controls();
+    ImGui::Unindent(8.0f * scale);
+    ImGui::EndChild();
+
+    ImGui::SameLine(0.0f, gap);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, palette.surface);
+    ImGui::BeginChild("##preview_panel", ImVec2(0.0f, panel_height), true);
+    ImGui::PopStyleColor();
+    ImGui::Indent(8.0f * scale);
+    draw_preview();
+    ImGui::Unindent(8.0f * scale);
+    ImGui::EndChild();
+
+    draw_transform_controls();
+    ImGui::Unindent(12.0f * scale);
+    ImGui::EndChild();
+}
+
+void ProfilePage::draw_source_controls() {
+    ImGui::SeparatorText("Input source");
+    const int type = draw_source_type_radio(
+        app_->document().draft,
+        ndi_enabled()
+    );
+    ImGui::Dummy(ImVec2(0.0f, 4.0f * app_->dpi_scale()));
+    if (!ndi_enabled() && type != 2) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        draw_ndi_runtime_help();
+        ImGui::PopTextWrapPos();
+        ImGui::Dummy(ImVec2(0.0f, 4.0f * app_->dpi_scale()));
+    }
+    switch (type) {
+        case 0:
+            draw_camera_source();
+            break;
+        case 1:
+            draw_video_source();
+            break;
+        default:
+            draw_ndi_source();
+            break;
+    }
+}
+
+void ProfilePage::draw_camera_source() {
+    auto& camera = std::get<CameraSourceConfiguration>(app_->document().draft.source);
+    ensure_camera_devices();
+
+    int selected_device = -1;
+    const auto resolved = resolve_camera_device(camera.device, camera_devices_);
+    if (resolved.has_value()) {
+        for (std::size_t index = 0; index < camera_devices_.size(); ++index) {
+            if (camera_devices_[index].backend == resolved->backend &&
+                camera_devices_[index].index == resolved->index) {
+                selected_device = static_cast<int>(index);
+                break;
+            }
+        }
+    }
+    const std::string device_label = selected_device >= 0
+        ? camera_device_label(camera_devices_[static_cast<std::size_t>(selected_device)])
+        : "Select a camera";
+    const float detect_width =
+        ImGui::CalcTextSize("Detect cameras").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    ImGui::SetNextItemWidth(
+        std::max(
+            160.0f * app_->dpi_scale(),
+            ImGui::GetContentRegionAvail().x - detect_width -
+                ImGui::GetStyle().ItemSpacing.x
+        )
+    );
+    if (ImGui::BeginCombo("Device", device_label.c_str())) {
+        for (int index = 0; index < static_cast<int>(camera_devices_.size()); ++index) {
+            const bool selected = index == selected_device;
+            const std::string label = camera_device_label(
+                camera_devices_[static_cast<std::size_t>(index)]
+            );
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                select_camera_device(index);
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::Button("Detect cameras")) {
+        refresh_camera_devices();
+    }
+
+    input_text("Device name", camera.device.name);
+
+    int selected_mode = -1;
+    const auto resolved_mode = try_resolve_camera_mode(camera.mode, camera_modes_);
+    if (resolved_mode.has_value()) {
+        for (std::size_t index = 0; index < camera_modes_.size(); ++index) {
+            if (camera_modes_[index] == *resolved_mode) {
+                selected_mode = static_cast<int>(index);
+                break;
+            }
+        }
+    }
+    const std::string mode_label = selected_mode >= 0
+        ? camera_mode_label(camera_modes_[static_cast<std::size_t>(selected_mode)])
+        : "Select a mode";
+    if (ImGui::BeginCombo("Mode", mode_label.c_str())) {
+        for (int index = 0; index < static_cast<int>(camera_modes_.size()); ++index) {
+            const bool selected = index == selected_mode;
+            const std::string label = camera_mode_label(
+                camera_modes_[static_cast<std::size_t>(index)]
+            );
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                select_camera_mode(index);
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    const int backend_index = camera.device.backend == CameraBackend::direct_show ? 1 : 0;
+    const char* backends[] = {"Media Foundation", "DirectShow"};
+    if (ImGui::BeginCombo("Backend", backends[backend_index])) {
+        for (int index = 0; index < 2; ++index) {
+            const bool selected = index == backend_index;
+            if (ImGui::Selectable(backends[index], selected)) {
+                camera.device.backend = index == 1 ? CameraBackend::direct_show
+                                                   : CameraBackend::media_foundation;
+                next_preview_ = 0.0;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::SetNextItemWidth(120.0f * app_->dpi_scale());
+    ImGui::InputInt("Device index", &camera.device.index);
+    camera.device.index = std::max(0, camera.device.index);
+
+    ImGui::SetNextItemWidth(120.0f * app_->dpi_scale());
+    ImGui::InputInt("Width", &camera.mode.width);
+    camera.mode.width = std::max(1, camera.mode.width);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120.0f * app_->dpi_scale());
+    ImGui::InputInt("Height", &camera.mode.height);
+    camera.mode.height = std::max(1, camera.mode.height);
+
+    ImGui::SetNextItemWidth(120.0f * app_->dpi_scale());
+    ImGui::InputDouble("FPS", &camera.mode.fps, 1.0, 10.0, "%.3f");
+    camera.mode.fps = std::max(0.1, camera.mode.fps);
+
+    input_text("Subtype GUID", camera.mode.subtype_guid);
+    ImGui::Checkbox("Request 60 fps", &camera.request_60_fps);
+
+    if (!camera_note_.empty()) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        text_muted(camera_note_);
+        ImGui::PopTextWrapPos();
+    }
+}
+
+void ProfilePage::draw_video_source() {
+    auto& video = std::get<VideoSourceConfiguration>(app_->document().draft.source);
+    ImGui::SetNextItemWidth(
+        std::max(180.0f * app_->dpi_scale(), ImGui::GetContentRegionAvail().x - 90.0f * app_->dpi_scale())
+    );
+    if (input_text("##video_path", video.path, 0, "Absolute path to a video file")) {
+        next_preview_ = 0.0;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...")) {
+        browse_video();
+    }
+}
+
+void ProfilePage::draw_ndi_source() {
+    auto& ndi = std::get<NdiSourceConfiguration>(app_->document().draft.source);
+    ImGui::SetNextItemWidth(
+        std::max(220.0f * app_->dpi_scale(), ImGui::GetContentRegionAvail().x - 110.0f * app_->dpi_scale())
+    );
+    if (input_text(
+            "##ndi_name",
+            ndi.name,
+            0,
+            "Advertised source name (kept when offline)"
+        )) {
+        next_preview_ = 0.0;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!ndi_discovery_available_ || ndi_worker_.busy());
+    if (ImGui::Button("Search again")) {
+        refresh_ndi_sources();
+    }
+    ImGui::EndDisabled();
+
+    if (!ndi_enabled()) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        draw_ndi_runtime_help();
+        ImGui::PopTextWrapPos();
+    } else if (!ndi_notice_.empty()) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        text_muted(ndi_notice_);
+        ImGui::PopTextWrapPos();
+    } else {
+        text_muted("Select a source or enter its saved name.");
+    }
+
+    if (!ndi_sources_.empty()) {
+        ImGui::BeginChild("##ndi_sources", ImVec2(0.0f, 120.0f * app_->dpi_scale()), true);
+        for (const auto& name : ndi_sources_) {
+            const bool selected = ndi.name == name;
+            if (ImGui::Selectable(name.c_str(), selected)) {
+                ndi.name = name;
+                next_preview_ = 0.0;
+            }
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+    text_muted(
+        "NDI® is a registered trademark of Vizrt NDI AB. The NDI runtime is not "
+        "bundled and is separately licensed. See licenses/NDI-TERMS.txt in the "
+        "distribution for its use terms."
+    );
+    ImGui::PopTextWrapPos();
+}
+
+void ProfilePage::draw_transform_controls() {
+    ImGui::SeparatorText("Frame Processing");
+    auto& transform = std::visit(
+        [](auto& source) -> TransformConfiguration& { return source.transform; },
+        app_->document().draft.source
+    );
+
+    bool crop = transform.crop.has_value();
+    if (ImGui::Checkbox("Crop margins", &crop)) {
+        if (crop) {
+            transform.crop = CropConfiguration{};
+        } else {
+            transform.crop.reset();
+        }
+        next_preview_ = 0.0;
+    }
+    if (transform.crop.has_value()) {
+        ImGui::SameLine();
+        const float width = 80.0f * app_->dpi_scale();
+        ImGui::TextUnformatted("L");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(width);
+        ImGui::InputInt("##crop_left", &transform.crop->left, 0, 0);
+        ImGui::SameLine();
+        ImGui::TextUnformatted("R");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(width);
+        ImGui::InputInt("##crop_right", &transform.crop->right, 0, 0);
+        ImGui::SameLine();
+        ImGui::TextUnformatted("T");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(width);
+        ImGui::InputInt("##crop_top", &transform.crop->top, 0, 0);
+        ImGui::SameLine();
+        ImGui::TextUnformatted("B");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(width);
+        ImGui::InputInt("##crop_bottom", &transform.crop->bottom, 0, 0);
+        transform.crop->left = std::max(0, transform.crop->left);
+        transform.crop->right = std::max(0, transform.crop->right);
+        transform.crop->top = std::max(0, transform.crop->top);
+        transform.crop->bottom = std::max(0, transform.crop->bottom);
+        next_preview_ = 0.0;
+    }
+
+    bool resize = transform.resize.has_value();
+    if (ImGui::Checkbox("Resize", &resize)) {
+        if (resize) {
+            transform.resize = ResizeConfiguration{1280, 720};
+        } else {
+            transform.resize.reset();
+        }
+        next_preview_ = 0.0;
+    }
+    if (transform.resize.has_value()) {
+        ImGui::SameLine();
+        ImGui::TextUnformatted("W");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f * app_->dpi_scale());
+        ImGui::InputInt("##resize_width", &transform.resize->width, 0, 0);
+        ImGui::SameLine();
+        ImGui::TextUnformatted("H");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f * app_->dpi_scale());
+        ImGui::InputInt("##resize_height", &transform.resize->height, 0, 0);
+        transform.resize->width = std::max(1, transform.resize->width);
+        transform.resize->height = std::max(1, transform.resize->height);
+
+        ImGui::SameLine();
+        const char* interpolations[] = {"area", "nearest", "linear", "cubic", "lanczos4"};
+        const int current = std::clamp(
+            static_cast<int>(transform.resize->interpolation),
+            0,
+            4
+        );
+        if (ImGui::BeginCombo("Interpolation", interpolations[current])) {
+            for (int index = 0; index < 5; ++index) {
+                const bool selected = index == current;
+                if (ImGui::Selectable(interpolations[index], selected)) {
+                    transform.resize->interpolation =
+                        static_cast<ResizeInterpolation>(index);
+                    next_preview_ = 0.0;
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::Checkbox(
+                "Resize reference images",
+                &transform.resize->resize_references
+            )) {
+            next_preview_ = 0.0;
+        }
+    }
+}
+
+void ProfilePage::draw_preview() {
+    ImGui::SeparatorText("Input Preview");
+    if (ImGui::Checkbox("Preview input", &preview_enabled_)) {
+        next_preview_ = 0.0;
+    }
+    image_fit(preview_texture_, 270.0f * app_->dpi_scale(), "No input");
+    if (!preview_status_.empty()) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        text_muted(preview_status_);
+        ImGui::PopTextWrapPos();
+    }
+    if (app_->controller().session().running()) {
+        if (ImGui::Button("Stop Session and preview draft")) {
+            app_->controller().stop();
+            next_preview_ = 0.0;
+            app_->notify("Session stopped.");
+        }
+    }
+}
+
+void ProfilePage::draw_scenarios_tab() {
+    ImGui::BeginChild("##scenarios_scroll", ImVec2(0.0f, 0.0f), false);
+    ImGui::Indent(12.0f * app_->dpi_scale());
+    ImGui::SeparatorText("LiveSplit Instances");
+
+    auto& instances = app_->document().draft.instances;
+    int remove_index = -1;
+    if (ImGui::BeginTable(
+            "##instances",
+            4,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable
+        )) {
+        ImGui::TableSetupColumn("Bridge port", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+        ImGui::TableSetupColumn("Scenario YAML", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Browse", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn("Remove", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableHeadersRow();
+        for (std::size_t index = 0; index < instances.size(); ++index) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputInt(
+                ("##port_" + std::to_string(index)).c_str(),
+                &instances[index].connection.port
+            );
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-1.0f);
+            input_text(
+                ("##scenario_" + std::to_string(index)).c_str(),
+                instances[index].scenario,
+                0,
+                "Absolute path to scenario YAML"
+            );
+            ImGui::TableNextColumn();
+            if (ImGui::Button(("Browse##" + std::to_string(index)).c_str())) {
+                browse_scenario(index);
+            }
+            ImGui::TableNextColumn();
+            if (ImGui::Button(("Remove##" + std::to_string(index)).c_str())) {
+                remove_index = static_cast<int>(index);
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (remove_index >= 0 && remove_index < static_cast<int>(instances.size())) {
+        instances.erase(instances.begin() + remove_index);
+    }
+    if (ImGui::Button("Add instance")) {
+        InstanceConfiguration instance;
+        instance.connection.port = 54000 + static_cast<int>(instances.size());
+        instances.push_back(std::move(instance));
+    }
+    ImGui::Unindent(12.0f * app_->dpi_scale());
+    ImGui::EndChild();
+}
+
+void ProfilePage::draw_actions() {
+    ImGui::Indent(12.0f * app_->dpi_scale());
+    if (!status_.empty()) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        text_muted(status_);
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::Dummy(ImVec2(0.0f, 2.0f * app_->dpi_scale()));
+    if (ImGui::Button("Revert draft")) {
+        auto& document = app_->document();
+        document.revert_draft(app_->controller().profile());
+        load_draft(document.draft);
+        status_ = "Draft reverted.";
+    }
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(
+        std::max(0.0f, ImGui::GetContentRegionAvail().x - 100.0f * app_->dpi_scale()),
+        0.0f
+    ));
+    ImGui::SameLine();
+    if (primary_button("Apply")) {
+        apply();
+    }
+    ImGui::Dummy(ImVec2(0.0f, 6.0f * app_->dpi_scale()));
+    ImGui::Unindent(12.0f * app_->dpi_scale());
+}
+
+void ProfilePage::apply() {
+    const Profile profile = draft_profile();
+    const auto fail = [this](const std::string& message) {
+        status_ = message;
+        app_->notify(message, true);
+    };
+
+    if (std::holds_alternative<CameraSourceConfiguration>(profile.source)) {
+        const auto& camera = std::get<CameraSourceConfiguration>(profile.source);
+        if (camera.device.name.empty()) {
+            fail("A camera device name is required. Use Detect cameras to select one.");
+            return;
+        }
+        if (camera.mode.width <= 0 || camera.mode.height <= 0 || camera.mode.fps <= 0.0) {
+            fail("A camera capture mode is required. Use Detect cameras to select one.");
+            return;
+        }
+        if (camera.mode.subtype_guid.empty()) {
+            fail("A camera subtype GUID is required. Use Detect cameras to select a mode.");
+            return;
+        }
+    }
+    if (std::holds_alternative<NdiSourceConfiguration>(profile.source)) {
+        if (!ndi_enabled()) {
+            fail("NDI Runtime is unavailable: " + ndi_runtime_status().message);
+            return;
+        }
+        if (std::get<NdiSourceConfiguration>(profile.source).name.empty()) {
+            fail("An NDI source name is required.");
+            return;
+        }
+    }
+    if (std::holds_alternative<VideoSourceConfiguration>(profile.source)) {
+        const auto& video = std::get<VideoSourceConfiguration>(profile.source);
+        if (video.path.empty()) {
+            fail("A video file path is required.");
+            return;
+        }
+        if (!path_from_utf8(video.path).is_absolute()) {
+            fail("The video file path must be absolute.");
+            return;
+        }
+    }
+
+    if (profile.instances.empty()) {
+        fail("Add at least one LiveSplit instance.");
+        return;
+    }
+    for (const auto& instance : profile.instances) {
+        if (instance.connection.port < 1 || instance.connection.port > 65535) {
+            fail("Bridge ports must be between 1 and 65535.");
+            return;
+        }
+        const std::filesystem::path scenario = path_from_utf8(instance.scenario);
+        if (instance.scenario.empty() || !scenario.is_absolute()) {
+            fail("Every scenario path must be absolute.");
+            return;
+        }
+        if (scenario.extension() == ".py") {
+            fail("Python scenario modules are not supported: " + instance.scenario);
+            return;
+        }
+        try {
+            (void)load_profile_scenario(scenario, profile.source);
+        } catch (const std::exception& error) {
+            fail(std::string{"Scenario validation failed: "} + error.what());
+            return;
+        }
+    }
+
+    stop_preview();
+    preview_suspended_ = false;
+    std::string error;
+    if (!app_->controller().apply_profile(profile, &error)) {
+        fail("Could not apply profile: " + error);
+        next_preview_ = 0.0;
+        return;
+    }
+    status_ = "Profile applied.";
+    app_->notify("Profile applied.");
+    next_preview_ = 0.0;
+}
+
+void ProfilePage::browse_video() {
+    auto& video = std::get<VideoSourceConfiguration>(app_->document().draft.source);
+    std::optional<std::filesystem::path> initial;
+    if (!video.path.empty()) {
+        initial = path_from_utf8(video.path);
+    }
+    const auto path = app_->pick_open_file(L"Select video", kVideoFilters, initial);
+    if (path.has_value()) {
+        video.path = path_to_utf8(*path);
+        next_preview_ = 0.0;
+    }
+}
+
+void ProfilePage::browse_scenario(std::size_t index) {
+    auto& instances = app_->document().draft.instances;
+    if (index >= instances.size()) {
+        return;
+    }
+    std::optional<std::filesystem::path> initial;
+    if (!instances[index].scenario.empty()) {
+        initial = path_from_utf8(instances[index].scenario);
+    }
+    const auto path = app_->pick_open_file(L"Select scenario", kScenarioFilters, initial);
+    if (path.has_value()) {
+        instances[index].scenario = path_to_utf8(*path);
+    }
+}
+
+void ProfilePage::refresh_ndi_sources() {
+    if (!ndi_discovery_available_ || ndi_worker_.busy()) {
+        return;
+    }
+    ndi_last_search_ = ImGui::GetTime();
+    ndi_notice_ = "Searching for NDI sources...";
+    ndi_worker_.start();
+}
+
+void ProfilePage::poll_ndi_discovery() {
+    auto result = ndi_worker_.take_result();
+    if (!result.has_value()) {
+        return;
+    }
+    ndi_sources_ = std::move(result->sources);
+    if (!result->error.empty()) {
+        ndi_notice_ = "NDI discovery failed: " + result->error;
+        return;
+    }
+    const auto& draft = app_->document().draft;
+    const std::string selected = std::holds_alternative<NdiSourceConfiguration>(draft.source)
+        ? std::get<NdiSourceConfiguration>(draft.source).name
+        : std::string{};
+    if (ndi_sources_.empty()) {
+        ndi_notice_ = "No NDI sources found. The saved name is retained.";
+    } else if (!selected.empty() &&
+               std::find(ndi_sources_.begin(), ndi_sources_.end(), selected) ==
+                   ndi_sources_.end()) {
+        ndi_notice_ = "Saved source is currently offline: " + selected;
+    } else {
+        ndi_notice_ = std::to_string(ndi_sources_.size()) + " NDI source(s) found.";
+    }
 }
 
 }  // namespace divergencesplitter::ui

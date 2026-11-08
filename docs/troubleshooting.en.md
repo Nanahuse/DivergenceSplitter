@@ -7,7 +7,7 @@ This is an English translation. The Japanese version is the original and takes p
 [Documentation home](../README.en.md)
 
 Start in Monitor: check whether frames arrive, whether each instance is Ready,
-and whether a last action/error is shown. Then inspect Diagnostics for the active
+and whether a last action/error is shown. Then inspect Monitor for the active
 phase, split, condition status, and score.
 
 ## Input problems
@@ -20,9 +20,9 @@ phase, split, condition status, and score.
 | Video cannot open or decode | Check the absolute path and permissions, and try a recording using a codec supported by this OpenCV build. A file-picker extension is not a decoder guarantee. |
 | Reached end of video | Expected at EOF: playback does not loop. Apply to start again. |
 | Crop margins do not fit | Reduce margins relative to the raw input dimensions, before Resize. |
-| NDI input not available in this build | Use the official NDI-enabled ZIP or [enable the SDK at build time (Japanese)](development/building.md#ndi対応ビルド). |
+| NDI input not available | Install the NDI Runtime separately from <https://ndi.video/> and restart the application. The distribution ZIP does not include it. |
 | NDI source absent or no frames | Start the sender; check its advertised name, network reachability, and firewall rules; Search again. A saved offline name is retained. An ordinary timeout is not fatal and the receiver can recover when the sender returns. |
-| NDI runtime initialization fails | Extract the entire ZIP and keep its DLL beside the executable. The loader uses the application directory, not PATH or the working directory. Use `--ndi-check` below. |
+| NDI runtime initialization fails | Check the installed runtime and the `NDI_RUNTIME_DIR_V6` path, then restart the application. Check the status in Profile's NDI input settings. |
 
 Camera open/read errors marked retryable are retried by capture. Mode, decoding,
 normalization, and fatal SDK errors can stop capture. Correct the profile and
@@ -69,7 +69,7 @@ Status, ports, and logs. After Reset All, check every instance's result separate
 
 1. Verify the normalized image in Monitor. ROI coordinates refer to the image
    after Crop/Resize, not raw capture coordinates.
-2. In Diagnostics, inspect the active phase and zero-based split index. A `null`
+2. In Monitor, inspect the active phase and zero-based split index. A `null`
    split has no automatic rules. A YAML split list longer than the LiveSplit run
    invalidates evaluation (with a special allowance for an empty stopped run).
 3. Check rule errors and condition status. An out-of-bounds ROI, incompatible
@@ -99,31 +99,7 @@ does not emit.
 
 Useful events include `profile.apply`, `capture.error`, `instance.state`,
 `instance.ready`, and `instance.action`. Condition evaluation errors are counted
-in Diagnostics; detailed detector exception messages are not guaranteed in the
+in Monitor; detailed detector exception messages are not guaranteed in the
 log. When reporting a problem, include the application revision/build, relevant
 profile/YAML, input type, normalized dimensions, diagnostic status/score, and the
 log around the event. Remove private paths or source names if necessary.
-
-## Command-line checks
-
-From the extracted application directory, with a customized profile:
-
-```powershell
-.\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --check
-.\divergencesplitter-cli.exe --profile C:/DivergenceSplitter/profile.json --seconds 10
-.\divergencesplitter-cli.exe --ndi-check
-.\divergencesplitter-cli.exe --ndi-list
-```
-
-`--check` loads the profile and every scenario/reference, applying reference
-resize options. It does **not** open input, check frame/ROI compatibility, connect
-to Bridge, or send controls. The timed command runs a real session and can control
-LiveSplit. Without a positive `--seconds`, it runs until interrupted with Ctrl+C.
-`--ndi-check` initializes the runtime; `--ndi-list` also performs source discovery.
-
-The CLI accepts `--settings C:/DivergenceSplitter/settings.json`. Without this
-option it uses default settings rather than automatically loading the GUI's
-settings file. Exit codes are `0` for successful completion/check, `2` for usage
-errors, `3` for caught configuration/startup/NDI failures, and `4` for a reported
-session runtime error. Inspect printed instance states too: a failed Bridge
-instance need not make the timed command exit nonzero.

@@ -1,86 +1,142 @@
 #include "about_page.hpp"
 
-#include <QCoreApplication>
-#include <QFrame>
-#include <QLabel>
-#include <QTextBrowser>
-#include <QVBoxLayout>
-#include <QUrl>
+#include <imgui.h>
 
-#include "divergencesplitter/capture/ndi.hpp"
+#include <filesystem>
+#include <string>
+
+#include "license_inventory.hpp"
+#include "ui_helpers.hpp"
 
 namespace divergencesplitter::ui {
+namespace {
 
-AboutPage::AboutPage(QWidget* parent) : QWidget(parent) {
-    setObjectName(QStringLiteral("page"));
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(24, 20, 24, 20);
-    layout->setSpacing(8);
+void draw_details(const LicenseComponent& component) {
+    if (!component.license_file.empty()) {
+        const std::string relative = "licenses/" + component.license_file;
+        if (std::filesystem::is_regular_file(application_directory() / relative)) {
+            if (ImGui::SmallButton(("License##" + component.name).c_str())) {
+                (void)open_file(relative);
+            }
+        } else {
+            text_muted("Not bundled in this build");
+        }
+    } else if (!component.url.empty()) {
+        const std::string label = "License##" + component.name;
+        ImGui::TextLinkOpenURL(label.c_str(), component.url.c_str());
+    } else {
+        text_muted("-");
+    }
+}
 
-    auto* title = new QLabel(tr("DivergenceSplitter"), this);
-    title->setObjectName(QStringLiteral("pageTitle"));
-    layout->addWidget(title);
+}  // namespace
 
-    const QString version_text = QCoreApplication::applicationVersion().isEmpty()
-        ? QStringLiteral(DIVERGENCESPLITTER_VERSION)
-        : QCoreApplication::applicationVersion();
-    auto* version = new QLabel(tr("Version %1").arg(version_text), this);
-    version->setProperty("role", QStringLiteral("muted"));
-    layout->addWidget(version);
+AboutPage::AboutPage()
+    : inventory_(load_license_inventory()),
+      additional_notices_(license_notice_files(inventory_ ? &*inventory_ : nullptr)) {}
 
-    auto* links = new QLabel(
-        tr("<a href=\"https://github.com/Nanahuse/DivergenceSplitter\">GitHub</a>"
-           " &nbsp;&nbsp; "
-           "<a href=\"https://ndi.video/\">NDI website</a>"),
-        this
+void AboutPage::draw() {
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+    ImGui::Indent(16.0f);
+    ImGui::TextUnformatted("DivergenceSplitter");
+    text_muted("Version " DIVERGENCESPLITTER_VERSION);
+    ImGui::TextLinkOpenURL("GitHub", "https://github.com/Nanahuse/DivergenceSplitter");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::BeginChild("##about_scroll", ImVec2(0.0f, 0.0f), false);
+    ImGui::Indent(16.0f);
+
+    ImGui::SeparatorText("Application license");
+    if (inventory_.has_value()) {
+        ImGui::Text("DivergenceSplitter - %s", inventory_->application_license.c_str());
+        const auto relative = inventory_->application_license_file;
+        if (std::filesystem::is_regular_file(application_directory() / relative)) {
+            if (ImGui::SmallButton("License##application")) {
+                (void)open_file(relative);
+            }
+        } else {
+            text_muted("Not bundled in this build");
+        }
+    } else {
+        ImGui::TextUnformatted("DivergenceSplitter - MIT");
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Third-party Components");
+    if (!inventory_.has_value()) {
+        text_muted("License inventory is not available in this build.");
+    } else if (ImGui::BeginTable(
+                   "##components",
+                   3,
+                   ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                       ImGuiTableFlags_SizingStretchProp
+               )) {
+        ImGui::TableSetupColumn("Component", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("License", ImGuiTableColumnFlags_WidthFixed, 260.0f);
+        ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+        ImGui::TableHeadersRow();
+        for (const auto& component : inventory_->components) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(component.name.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(component.license.c_str());
+            ImGui::TableNextColumn();
+            draw_details(component);
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Additional license notices");
+    text_muted(
+        "Collected vcpkg notices for transitive and build/test-only dependencies. "
+        "This list is not a runtime component list."
     );
-    links->setOpenExternalLinks(true);
-    layout->addWidget(links);
+    if (additional_notices_.empty()) {
+        text_muted("No additional license notices are installed in this build.");
+    } else if (ImGui::BeginTable(
+                   "##notices",
+                   2,
+                   ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                       ImGuiTableFlags_SizingStretchProp
+               )) {
+        ImGui::TableSetupColumn("Notice", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+        ImGui::TableHeadersRow();
+        for (const auto& file : additional_notices_) {
+            const auto name = std::filesystem::path{file}.stem().string();
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(name.c_str());
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton(("License##" + file).c_str())) {
+                (void)open_file(file);
+            }
+        }
+        ImGui::EndTable();
+    }
 
-    auto* trademark = new QLabel(
-        tr("NDI® is a registered trademark of Vizrt NDI AB."), this
+    ImGui::Spacing();
+    ImGui::TextWrapped(
+        "Full license texts and third-party notices are included in the licenses/ "
+        "directory. Redistribution details are in DISTRIBUTION-NOTICE.txt."
     );
-    trademark->setProperty("role", QStringLiteral("muted"));
-    trademark->setWordWrap(true);
-    layout->addWidget(trademark);
+    if (std::filesystem::is_regular_file(application_directory() / "DISTRIBUTION-NOTICE.txt")) {
+        if (ImGui::SmallButton("Open DISTRIBUTION-NOTICE.txt")) {
+            (void)open_file("DISTRIBUTION-NOTICE.txt");
+        }
+    }
+    ImGui::Spacing();
+    text_muted("NDI® is a registered trademark of Vizrt NDI AB.");
 
-    auto* divider = new QFrame(this);
-    divider->setObjectName(QStringLiteral("dividerHorizontal"));
-    divider->setFrameShape(QFrame::HLine);
-    divider->setFixedHeight(1);
-    layout->addWidget(divider);
-
-    auto* browser = new QTextBrowser(this);
-    browser->setOpenExternalLinks(true);
-    browser->setFrameShape(QFrame::NoFrame);
-    browser->setHtml(tr(
-        "<h3>Components</h3>"
-        "<ul>"
-        "<li>Qt Widgets interface</li>"
-        "<li>OpenCV image processing</li>"
-        "<li>livesplit-bridge-client-cpp (LiveSplit.Bridge JSON protocol)</li>"
-        "<li>rapidyaml (ryml) scenario loading</li>"
-        "</ul>"
-        "<h3>NDI®</h3>"
-        "<p>%1</p>"
-        "<p>NDI® is a registered trademark of Vizrt NDI AB. The bundled NDI runtime is "
-        "separately licensed by NDI, Inc. / Vizrt NDI AB. "
-        "Its <a href=\"%2\">use terms</a> form part of this distribution's terms of use. "
-        "See also Processing.NDI.Lib.Licenses.txt and the "
-        "<a href=\"https://ndi.link/ndisdk_license\">official NDI SDK License Agreement</a>. "
-        "The SDK agreement PDF is not bundled.</p>"
-        "<h3>License</h3>"
-        "<p>DivergenceSplitter is distributed under the MIT License. Third-party license "
-        "notices are included in the distribution under <code>licenses/</code> and "
-        "<code>DISTRIBUTION-NOTICE.txt</code>.</p>"
-    ).arg(
-        ndi_enabled() ? tr("NDI input is enabled; the Windows ZIP includes its runtime.")
-                      : tr("NDI input is disabled in this development build."),
-        QUrl::fromLocalFile(
-            QCoreApplication::applicationDirPath() + "/licenses/NDI-TERMS.txt"
-        ).toString()
-    ));
-    layout->addWidget(browser, 1);
+    ImGui::Unindent(16.0f);
+    ImGui::EndChild();
+    ImGui::Unindent(16.0f);
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
 }
 
 }  // namespace divergencesplitter::ui

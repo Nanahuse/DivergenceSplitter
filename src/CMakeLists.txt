@@ -8,6 +8,7 @@ add_library(divergencesplitter_core STATIC
     core/conditions.cpp
     core/rules.cpp
     core/scenario_loader.cpp
+    core/text.cpp
 )
 
 add_library(divergencesplitter::core ALIAS divergencesplitter_core)
@@ -52,13 +53,8 @@ add_library(divergencesplitter_runtime STATIC
 add_library(divergencesplitter::runtime ALIAS divergencesplitter_runtime)
 
 target_compile_features(divergencesplitter_runtime PUBLIC cxx_std_23)
-target_compile_definitions(divergencesplitter_runtime PUBLIC
-    DIVERGENCESPLITTER_ENABLE_NDI=$<BOOL:${DIVERGENCESPLITTER_ENABLE_NDI}>)
-if(DIVERGENCESPLITTER_ENABLE_NDI)
-    target_include_directories(divergencesplitter_runtime SYSTEM PRIVATE "${NDI_SDK_DIR}/Include")
-    # Dynamic-load function table only; no NDI import library is linked.
-    configure_file("${NDI_RUNTIME_DLL}" "${CMAKE_BINARY_DIR}/Processing.NDI.Lib.x64.dll" COPYONLY)
-endif()
+target_include_directories(divergencesplitter_runtime SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/ndi/include")
 target_link_libraries(divergencesplitter_runtime
     PUBLIC
         divergencesplitter::core
@@ -76,98 +72,93 @@ endif()
 
 
 # ---------------------------------------------------------------------------
-# CLI (headless runner used by CI and verification).
-# ---------------------------------------------------------------------------
-
-add_executable(divergencesplitter_cli cli/main.cpp)
-target_compile_features(divergencesplitter_cli PRIVATE cxx_std_23)
-target_link_libraries(divergencesplitter_cli PRIVATE divergencesplitter::runtime)
-set_target_properties(divergencesplitter_cli PROPERTIES OUTPUT_NAME divergencesplitter-cli)
-
-# ---------------------------------------------------------------------------
-# Qt Widgets UI.
+# Dear ImGui UI (Win32 window, Direct3D 11 renderer).
 # ---------------------------------------------------------------------------
 
 if(DIVERGENCESPLITTER_BUILD_UI)
-    qt_standard_project_setup()
+    add_library(divergencesplitter_imgui STATIC
+        "${imgui_SOURCE_DIR}/imgui.cpp"
+        "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+        "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+        "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp"
+    )
+    target_include_directories(divergencesplitter_imgui SYSTEM PUBLIC
+        "${imgui_SOURCE_DIR}"
+        "${imgui_SOURCE_DIR}/backends"
+    )
+    target_link_libraries(divergencesplitter_imgui PUBLIC d3d11 dxgi)
 
     add_library(divergencesplitter_ui STATIC
         ui/about_page.hpp
+        ui/app.hpp
         ui/app_controller.hpp
-        ui/diagnostics_page.hpp
-        ui/image_view.hpp
-        ui/main_window.hpp
+        ui/file_dialog.hpp
+        ui/image_texture.hpp
+        ui/license_inventory.hpp
+        ui/monitor_model.hpp
         ui/monitor_page.hpp
-        ui/navigation_bar.hpp
-        ui/notification_toast.hpp
-        ui/profile_header.hpp
+        ui/ndi_discovery.hpp
+        ui/profile_document.hpp
         ui/profile_page.hpp
         ui/profile_preview.hpp
-        ui/reset_all_button.hpp
+        ui/profile_source_ui.hpp
         ui/settings_page.hpp
         ui/theme.hpp
+        ui/ui_helpers.hpp
+        ui/about_page.cpp
+        ui/app.cpp
         ui/app_controller.cpp
-        ui/main_window.cpp
+        ui/file_dialog.cpp
+        ui/image_texture.cpp
+        ui/license_inventory.cpp
+        ui/monitor_model.cpp
         ui/monitor_page.cpp
-        ui/navigation_bar.cpp
-        ui/notification_toast.cpp
-        ui/profile_header.cpp
-        ui/diagnostics_page.cpp
+        ui/ndi_discovery.cpp
         ui/profile_page.cpp
         ui/profile_preview.cpp
+        ui/profile_source_ui.cpp
         ui/settings_page.cpp
-        ui/about_page.cpp
-        ui/reset_all_button.cpp
-        ui/image_view.cpp
         ui/theme.cpp
+        ui/ui_helpers.cpp
     )
     add_library(divergencesplitter::ui ALIAS divergencesplitter_ui)
 
     target_compile_features(divergencesplitter_ui PUBLIC cxx_std_23)
     target_compile_definitions(divergencesplitter_ui
         PUBLIC DIVERGENCESPLITTER_VERSION="${PROJECT_VERSION}"
+        PRIVATE _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX
     )
     target_link_libraries(divergencesplitter_ui
         PUBLIC
             divergencesplitter::runtime
-            Qt6::Widgets
+        PRIVATE
+            divergencesplitter_imgui
+            d3d11 dxgi shell32 ole32 uuid
     )
     # UI headers are internal; only the application and UI tests need this path.
     target_include_directories(divergencesplitter_ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
-    set_target_properties(divergencesplitter_ui PROPERTIES AUTOMOC ON)
 
     add_executable(DivergenceSplitter WIN32 ui/main.cpp)
-    target_link_libraries(DivergenceSplitter PRIVATE divergencesplitter::ui)
+    target_link_libraries(DivergenceSplitter PRIVATE divergencesplitter::ui divergencesplitter_imgui)
+    target_compile_definitions(DivergenceSplitter PRIVATE _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX)
 
     set_target_properties(DivergenceSplitter PROPERTIES
         WIN32_EXECUTABLE TRUE
         OUTPUT_NAME "DivergenceSplitter"
     )
-
-    if(WIN32)
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            add_custom_command(
-                TARGET DivergenceSplitter POST_BUILD
-                COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                    "${VCPKG_INSTALLED_DIR}/x64-windows/debug/Qt6/plugins"
-                    "$<TARGET_FILE_DIR:DivergenceSplitter>"
-                COMMENT "Copying Qt debug plugins next to DivergenceSplitter"
-            )
-        else()
-            get_target_property(_qmake Qt6::qmake IMPORTED_LOCATION)
-            get_filename_component(_qt_bin "${_qmake}" DIRECTORY)
-            find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin}")
-            if(WINDEPLOYQT_EXECUTABLE)
-                add_custom_command(
-                    TARGET DivergenceSplitter POST_BUILD
-                    COMMAND "${WINDEPLOYQT_EXECUTABLE}"
-                        --no-translations
-                        --no-system-d3d-compiler
-                        --no-opengl-sw
-                        "$<TARGET_FILE:DivergenceSplitter>"
-                    COMMENT "Deploying Qt release runtime next to DivergenceSplitter"
-                )
-            endif()
-        endif()
-    endif()
+    add_custom_command(
+        TARGET DivergenceSplitter POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "${PROJECT_SOURCE_DIR}/licenses"
+            "$<TARGET_FILE_DIR:DivergenceSplitter>/licenses"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${PROJECT_SOURCE_DIR}/LICENSE"
+            "$<TARGET_FILE_DIR:DivergenceSplitter>/LICENSE.txt"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt"
+            "$<TARGET_FILE_DIR:DivergenceSplitter>/DISTRIBUTION-NOTICE.txt"
+        COMMENT "Copying license inventory next to DivergenceSplitter"
+    )
 endif()

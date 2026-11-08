@@ -17,13 +17,13 @@ Scenario and split indexes in diagnostics are zero-based.
 **Processing FPS** measures each instance's evaluation rate. It differs from
 input FPS and can vary between instances sharing the same input. **Current
 evaluation** summarizes current conditions, their status, and evaluated detector
-thresholds and latest scores. Hover over the summary for additional lines. Diagnostics
-retains the complete condition tree and maximum scores. See
+thresholds and latest scores. Hover over the summary for additional lines. This version does not
+include a separate Diagnostics screen; current conditions are shown on Monitor. See
 [control confirmation](troubleshooting.en.md#control-confirmation-and-reset-failures)
 for Pending and Waiting for Reset confirmation.
 
 **Ready** means that the instance has synchronized with Bridge. Check input and
-Diagnostics as well; Ready alone does not mean that a condition is true or that
+Monitor as well; Ready alone does not mean that a condition is true or that
 the configured split count is valid. While disconnected, that instance cannot
 evaluate actions. Other instances have independent connections.
 
@@ -50,8 +50,8 @@ defined in the [configuration reference](configuration.en.md).
 | Edit fields | Changes the draft; the active runtime continues with its applied values. |
 | Apply | Validates scenario/reference loading and source selection, then replaces the session with the draft. Capture and instance state restart; video files reopen from the beginning. It does not save the profile JSON. |
 | Revert draft | Replaces the draft with the active profile. It does not reload the file or undo actions already sent to LiveSplit. |
-| File > Open Profile... | Loads a JSON file and immediately applies it, then replaces the draft. |
-| File > Save Profile As... | Writes the current draft to JSON and remembers its path. It does not apply or fully validate that draft. |
+| the **Open** button in Profile | Loads a JSON file and immediately applies it, then replaces the draft. |
+| the **Save As** button in Profile | Writes the current draft to JSON and remembers its path. It does not apply or fully validate that draft. |
 
 Saving a draft before Apply can therefore save settings that are not yet active
 or valid. Edit, check the draft preview, Apply, check Monitor, then save. Capture
@@ -72,7 +72,7 @@ the same source, including transforms of the last image while a sender is paused
 
 This preview checks input and image transforms. It does not evaluate scenarios or
 send Bridge controls. It also does not preview reference-image conversion by
-**Resize reference images**; check detection in Diagnostics after Apply.
+**Resize reference images**; check detection in Monitor after Apply.
 
 The draft preview does not open an input while a Session is running. Click
 **Stop Session and preview draft** to stop it and inspect edits, then Apply to
@@ -80,25 +80,6 @@ resume scenario execution. Leaving Profile, disabling Preview input, or starting
 a Session releases the preview source. Videos also play in preview; Apply reopens
 them from the beginning. After a preview error, edit the source or toggle Preview
 input to retry.
-
-## Diagnostics
-
-Expand the scenario tree to inspect Run, Start, Reset, Incomplete, and each Split.
-Rules show their action; a sequence shows its active step. Condition rows show
-status and, for `detected`, the latest score, maximum score since reset, and
-threshold. Evaluation details include evaluation count, last evaluation time in
-milliseconds, and rule error count.
-
-| Status | Meaning |
-| --- | --- |
-| `not_evaluated` | Newly loaded or reset; no evaluation since then. |
-| `true` / `false` | Most recent normal evaluation result. |
-| `skipped` | This condition's result was not used in the latest evaluation. |
-| `error` | Evaluation threw an error, such as an incompatible reference shape. |
-
-Only the active rule groups are evaluated. Inactive groups may retain their last
-status; a displayed score is not necessarily from the newest frame. The
-[YAML reference](scenarios/yaml-reference.en.md) explains phase selection and resets.
 
 ## Settings
 
@@ -112,13 +93,12 @@ status; a displayed score is not necessarily from the newest frame. The
   detector threshold or a guarantee of exact timer timing.
 - **Theme**: Light or Dark; saved changes update the theme immediately.
 
-Click **Save** to persist settings. **Reload** restores the controller's saved
+Click **Apply** to persist settings and apply the theme. **Reload** restores the controller's saved
 values into the Settings fields. Reapply the profile for runtime settings
 (reaction time and logging level) to take effect. Settings are stored separately
 from profiles in `%APPDATA%/DivergenceSplitter/settings.json`; the complete schema
 is in [configuration](configuration.en.md#application-settings).
 
-## About and command line
+## About
 
-About shows the application version and project/license links. For headless
-validation and execution, see [troubleshooting](troubleshooting.en.md#command-line-checks).
+About shows the application version and project/license links. The license tables list bundled third-party components with their license names and links to the original notices. Additional license notices appear in a separate table. Full license texts and notices are included in licenses/ and DISTRIBUTION-NOTICE.txt. NDI Runtime is shown as an external component and is not bundled; check its detection status in Profile's NDI input settings.

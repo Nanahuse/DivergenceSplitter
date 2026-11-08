@@ -1,14 +1,22 @@
 #pragma once
 
-#include <QWidget>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "license_inventory.hpp"
 
 namespace divergencesplitter::ui {
 
-class AboutPage final : public QWidget {
-    Q_OBJECT
-
+class AboutPage {
 public:
-    explicit AboutPage(QWidget* parent = nullptr);
+    AboutPage();
+
+    void draw();
+
+private:
+    std::optional<LicenseInventory> inventory_;
+    std::vector<std::string> additional_notices_;
 };
 
 }  // namespace divergencesplitter::ui

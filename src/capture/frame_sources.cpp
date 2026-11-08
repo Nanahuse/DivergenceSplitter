@@ -5,12 +5,19 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
+#include "divergencesplitter/text.hpp"
 
 namespace divergencesplitter {
 
@@ -42,6 +49,146 @@ std::optional<int> fourcc_from_guid(std::string_view guid) {
     }
     return cv::VideoWriter::fourcc(fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
 }
+
+#ifdef _WIN32
+bool is_ascii(std::wstring_view value) {
+    return std::all_of(value.begin(), value.end(), [](wchar_t character) {
+        return character >= 0 && character <= 0x7f;
+    });
+}
+
+std::string narrow_ascii(std::wstring_view value) {
+    std::string result;
+    result.reserve(value.size());
+    for (const wchar_t character : value) {
+        result.push_back(static_cast<char>(character));
+    }
+    return result;
+}
+
+std::optional<std::filesystem::path> ascii_short_path(
+    const std::filesystem::path& path
+) {
+    const DWORD size = GetShortPathNameW(path.c_str(), nullptr, 0);
+    if (size == 0) {
+        return std::nullopt;
+    }
+    std::wstring buffer(size, L'\0');
+    const DWORD written = GetShortPathNameW(path.c_str(), buffer.data(), size);
+    if (written == 0 || written >= size) {
+        return std::nullopt;
+    }
+    buffer.resize(written);
+    if (!is_ascii(buffer)) {
+        return std::nullopt;
+    }
+    return std::filesystem::path{buffer};
+}
+
+std::string narrow_acp(std::wstring_view value) {
+    if (value.empty()) {
+        return {};
+    }
+    const int size = WideCharToMultiByte(
+        CP_ACP,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+    if (size <= 0) {
+        return {};
+    }
+    std::string result(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(
+        CP_ACP,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        result.data(),
+        size,
+        nullptr,
+        nullptr
+    );
+    return result;
+}
+
+void remove_temporary_links(std::vector<std::filesystem::path>& links) {
+    std::error_code ignored;
+    for (const auto& link : links) {
+        std::filesystem::remove(link, ignored);
+    }
+    links.clear();
+}
+
+// OpenCV on Windows treats narrow paths as the active code page. For non-ASCII
+// paths, try an ASCII short path or a temporary hard link before falling back.
+struct VideoOpenPaths {
+    VideoOpenPaths() = default;
+    VideoOpenPaths(const VideoOpenPaths&) = delete;
+    VideoOpenPaths& operator=(const VideoOpenPaths&) = delete;
+    VideoOpenPaths(VideoOpenPaths&&) = default;
+    VideoOpenPaths& operator=(VideoOpenPaths&&) = default;
+
+    std::vector<std::string> candidates;
+    std::vector<std::filesystem::path> links;
+    bool keep_links{false};
+
+    ~VideoOpenPaths() {
+        if (!keep_links) {
+            remove_temporary_links(links);
+        }
+    }
+};
+
+VideoOpenPaths video_open_paths(const std::string& utf8_path) {
+    VideoOpenPaths result;
+    const auto path = path_from_utf8(utf8_path);
+    const auto wide_path = path.wstring();
+    if (is_ascii(wide_path)) {
+        result.candidates.push_back(utf8_path);
+        return result;
+    }
+
+    if (const auto short_path = ascii_short_path(path)) {
+        result.candidates.push_back(narrow_ascii(short_path->wstring()));
+    }
+
+    const auto extension = path.extension().wstring();
+    const std::wstring unique = std::to_wstring(GetCurrentProcessId()) + L"-" +
+                                std::to_wstring(GetTickCount64());
+    const auto try_link = [&](const std::filesystem::path& link) {
+        if (CreateHardLinkW(link.c_str(), path.c_str(), nullptr) == 0) {
+            return;
+        }
+        result.links.push_back(link);
+        if (is_ascii(link.wstring())) {
+            result.candidates.push_back(narrow_ascii(link.wstring()));
+        } else if (const auto short_link = ascii_short_path(link)) {
+            result.candidates.push_back(narrow_ascii(short_link->wstring()));
+        }
+    };
+
+    std::error_code error;
+    const auto temporary = std::filesystem::temp_directory_path(error);
+    if (!error) {
+        try_link(temporary / (L"ds-video-" + unique + extension));
+    }
+    try_link(path.parent_path() / (L".ds-video-" + unique + extension));
+
+    const auto fallback = narrow_acp(wide_path);
+    if (!fallback.empty()) {
+        result.candidates.push_back(fallback);
+    }
+    if (result.candidates.empty()) {
+        result.candidates.push_back(utf8_path);
+    }
+    return result;
+}
+#endif
 }
 
 struct CameraFrameSource::Impl {
@@ -176,6 +323,7 @@ struct VideoFileFrameSource::Impl {
     double fps{kDefaultVideoFps};
     std::chrono::steady_clock::time_point playback_started{};
     std::uint64_t frames_read{};
+    std::vector<std::filesystem::path> temporary_links;
 };
 
 VideoFileFrameSource::VideoFileFrameSource(VideoFileSourceOptions options)
@@ -193,11 +341,31 @@ void VideoFileFrameSource::open() {
     // CAP_ANY tries MSMF first on Windows; even tiny local MJPEG recordings can
     // then block in hardware/codec discovery before the first frame or Stop.
     // Let other video formats retain the normal platform backend fallback.
-    if (!impl_->capture.open(options_.path, cv::CAP_OPENCV_MJPEG) &&
-        !impl_->capture.open(options_.path, cv::CAP_ANY)) {
+    bool opened = false;
+#ifdef _WIN32
+    VideoOpenPaths paths = video_open_paths(options_.path);
+    for (const auto& candidate : paths.candidates) {
+        if (impl_->capture.open(candidate, cv::CAP_OPENCV_MJPEG)) {
+            opened = true;
+            break;
+        }
+        impl_->capture.release();
+        if (impl_->capture.open(candidate, cv::CAP_ANY)) {
+            opened = true;
+            break;
+        }
+        impl_->capture.release();
+    }
+#else
+    opened = impl_->capture.open(options_.path, cv::CAP_OPENCV_MJPEG) ||
+             impl_->capture.open(options_.path, cv::CAP_ANY);
+#endif
+    if (!opened) {
         impl_->capture.release();
         throw FrameSourceError("cannot open video file: " + options_.path, false);
     }
+    paths.keep_links = true;
+    impl_->temporary_links = std::move(paths.links);
     const double recorded_fps = impl_->capture.get(cv::CAP_PROP_FPS);
     impl_->fps = recorded_fps > 0.0 ? recorded_fps : kDefaultVideoFps;
     impl_->playback_started = std::chrono::steady_clock::now();
@@ -241,6 +409,7 @@ void VideoFileFrameSource::close() noexcept {
     if (impl_) {
         impl_->capture.release();
         impl_->opened = false;
+        remove_temporary_links(impl_->temporary_links);
     }
 }
 

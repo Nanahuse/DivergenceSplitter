@@ -45,6 +45,14 @@ struct FakeApi final : NdiApi {
 };
 }
 
+
+
+TEST(NdiRuntime, AvailabilityIsConsistent) {
+    const auto& status = ndi_runtime_status();
+    EXPECT_EQ(ndi_enabled(), status.availability == NdiAvailability::available);
+    EXPECT_FALSE(status.message.empty());
+}
+
 TEST(Ndi, SharedRuntimeOutlivesFindersAndReceivers) {
     auto api = std::make_shared<FakeApi>();
     {

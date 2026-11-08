@@ -20,11 +20,7 @@ NdiRuntime::NdiRuntime(std::shared_ptr<NdiApi> api) : api_(std::move(api)) {
 NdiRuntime::~NdiRuntime() { api_->destroy(); }
 
 bool ndi_enabled() noexcept {
-#if DIVERGENCESPLITTER_ENABLE_NDI
-    return true;
-#else
-    return false;
-#endif
+    return ndi_runtime_status().availability == NdiAvailability::available;
 }
 
 std::shared_ptr<NdiRuntime> acquire_ndi_runtime() {

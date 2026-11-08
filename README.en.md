@@ -10,22 +10,22 @@ when to start, split, reset, and perform other timer actions.
 
 User documentation is available in Japanese and English. Developer, design, build,
 test, CI, distribution, and verification documents are available only in Japanese.
-Configuration keys, UI labels, and commands retain their implementation names.
+Configuration keys, UI labels, and file paths retain their implementation names.
 
-- Native Qt interface with a live monitor and condition diagnostics.
+- Native Dear ImGui interface with a live monitor and condition summaries.
 - Camera / capture card input through DirectShow or Media Foundation, local video
-  files supported by OpenCV, and NDI® network sources in NDI-enabled builds.
+  files supported by OpenCV, and NDI® network sources when the NDI Runtime is installed.
 - Crop and resize processing, nine image detectors, and stateful conditions.
 - One shared input feeding independent scenarios and LiveSplit instances.
-- A headless command-line runner for validation and automated checks.
+- About lists bundled third-party components and additional license notices.
 
 ## Installation
 
 Download the `DivergenceSplitter-cpp23-windows-x64` artifact from a successful
 [C++23 Actions run](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml).
 GitHub sign-in is required. Extract the artifact and then the Windows ZIP inside
-it into a writable directory. Keep the DLLs, plugins, and licenses alongside
-`DivergenceSplitter.exe`. Availability depends on a successful NDI-enabled job and
+it into a writable directory. Keep the DLLs and licenses alongside
+`DivergenceSplitter.exe`. Availability depends on a successful Windows job and
 artifact retention; otherwise [build from source (Japanese)](docs/development/building.md).
 See [Getting started](docs/getting-started.en.md) for the initial setup.
 
@@ -35,7 +35,7 @@ See [Getting started](docs/getting-started.en.md) for the initial setup.
 2. In Profile, select the video input, YAML scenario, and Bridge port.
 3. Use Draft input preview to check Crop/Resize, then press Apply. Scenario
    evaluation and timer controls begin when input and Bridge are ready.
-4. Inspect Monitor and Diagnostics, then save the Profile.
+4. Inspect Monitor, then save the Profile.
 
 See the [user guide](docs/user-guide.en.md) and [samples](examples/README.en.md)
 for detailed workflows and configuration examples.
@@ -45,7 +45,7 @@ for detailed workflows and configuration examples.
 | I want to… | Read |
 | --- | --- |
 | Install and make my first automatic split | [Getting started](docs/getting-started.en.md) |
-| Use Monitor, Profile, Diagnostics, and Settings | [User guide](docs/user-guide.en.md) |
+| Use Monitor, Profile, Settings, and About | [User guide](docs/user-guide.en.md) |
 | Configure inputs, transforms, and Bridge ports | [Configuration reference](docs/configuration.en.md) |
 | Diagnose input, connection, or detection problems | [Troubleshooting](docs/troubleshooting.en.md) |
 | Write a scenario | [Scenario authoring](docs/scenarios/README.en.md) |
@@ -68,5 +68,5 @@ see the [distribution notice](DISTRIBUTION-NOTICE.txt) and
 [distribution guide (Japanese)](docs/development/distribution.md).
 
 NDI® is a registered trademark of Vizrt NDI AB. [NDI website](https://ndi.video/).
-NDI-enabled distributions include a separately licensed runtime; see
-[NDI notices](licenses/NDI.en.md).
+NDI input requires a separately installed runtime; the distribution does not
+bundle it. See [NDI notices](licenses/NDI.en.md).
