@@ -150,6 +150,12 @@ if(DIVERGENCESPLITTER_BUILD_UI)
     # UI headers are internal; only the application and UI tests need this path.
     target_include_directories(divergencesplitter_ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
 
+    if(DIVERGENCESPLITTER_BUILD_BENCHMARKS)
+        add_executable(monitor_history_benchmark "${PROJECT_SOURCE_DIR}/tools/monitor_history_benchmark.cpp")
+        target_link_libraries(monitor_history_benchmark PRIVATE divergencesplitter::ui divergencesplitter_implot)
+        target_include_directories(monitor_history_benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
+    endif()
+
     add_executable(DivergenceSplitter WIN32 ui/main.cpp)
     target_link_libraries(DivergenceSplitter PRIVATE divergencesplitter::ui divergencesplitter_imgui)
     target_compile_definitions(DivergenceSplitter PRIVATE _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX)

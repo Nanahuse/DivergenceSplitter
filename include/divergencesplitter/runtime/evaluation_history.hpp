@@ -6,10 +6,13 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 #include "divergencesplitter/condition/condition.hpp"
 
 namespace divergencesplitter {
+
+using HistoryPaths = std::unordered_set<std::string>;
 
 enum class HistoryEvent { sample, gap, reset, transition, error };
 
@@ -50,7 +53,7 @@ public:
     void begin_frame(MonotonicTime time);
     void end_frame();
     void clear();
-    [[nodiscard]] std::shared_ptr<const EvaluationHistorySnapshot> snapshot() const;
+    [[nodiscard]] std::shared_ptr<const EvaluationHistorySnapshot> snapshot(const HistoryPaths* paths = nullptr) const;
 
 private:
     struct Series {

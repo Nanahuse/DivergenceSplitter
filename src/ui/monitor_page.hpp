@@ -37,6 +37,7 @@ private:
     void draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card);
     void draw_condition(const ConditionDiagnosticsNode& condition, const ScenarioCardModel& card);
     void draw_details();
+    void select_condition(const ScenarioCardModel& card, const ConditionDiagnosticsNode& node);
     struct InstancePlots {
         std::uint64_t identity{};
         HistoryPlots plots;
@@ -49,6 +50,11 @@ private:
     std::uint64_t selected_identity_{};
     std::string selected_path_;
     std::map<int, std::set<std::string>> comparisons_;
+    std::map<int, std::map<std::string, bool>> current_groups_;
+    PlotViewport detail_view_;
+    PlotViewport comparison_view_;
+    bool comparison_details_{};
+    InstanceHistoryPaths requested_paths_;
 
     App* app_;
     ImageTexture preview_;

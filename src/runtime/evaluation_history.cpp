@@ -127,11 +127,12 @@ void EvaluationHistory::clear() {
     for (auto& series : series_) series.history.samples.clear();
 }
 
-std::shared_ptr<const EvaluationHistorySnapshot> EvaluationHistory::snapshot() const {
+std::shared_ptr<const EvaluationHistorySnapshot> EvaluationHistory::snapshot(const HistoryPaths* paths) const {
     auto result = std::make_shared<EvaluationHistorySnapshot>();
     result->identity = identity_;
     result->sampled_at = clock_->now();
     for (const auto& series : series_) {
+        if (paths && !paths->contains(series.history.path)) continue;
         auto& target = result->conditions.emplace_back();
         target.path = series.history.path;
         for (const auto& sample : series.history.samples)

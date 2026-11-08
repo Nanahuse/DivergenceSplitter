@@ -8,6 +8,7 @@ project(
     LANGUAGES CXX
 )
 
+option(DIVERGENCESPLITTER_BUILD_BENCHMARKS "Build developer Monitor history benchmarks" OFF)
 option(DIVERGENCESPLITTER_BUILD_UI "Build the Dear ImGui Win32 desktop UI" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTS "Build the CTest suite" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS "Build the optional LiveSplit.Bridge TestHost smoke test" OFF)

@@ -115,3 +115,144 @@ TEST(MonitorModel, EvaluationRatesAreIndependentAndResetOnNewHistoryIdentity) {
     second.update(2, 10, 1);
     EXPECT_DOUBLE_EQ(second.fps(), 0);
 }
+
+TEST(MonitorModel, PastSplitsRemainSelectableAcrossSplitEndAndResetTransitions) {
+    InstanceDiagnosticsSnapshot instance;
+    auto& scenario = instance.scenario.emplace();
+    scenario.snapshot = LiveSplitSnapshot{1, 1, 1, TimerPhase::running, 0, 2};
+    const auto make_rule = [](const std::string& path) {
+        RuleDiagnosticsNode rule;
+        rule.path = path + ".r0";
+        rule.condition.path = rule.path + ".cond";
+        rule.condition.type = "detected";
+        return rule;
+    };
+    scenario.start.push_back({"start", {make_rule("start")}});
+    scenario.reset.push_back({"reset", {make_rule("reset")}});
+    scenario.incomplete.push_back({"incomplete", {make_rule("incomplete")}});
+    scenario.splits.push_back({"split.0", 0, true, {make_rule("split.0")}});
+    scenario.splits.push_back({"split.1", 1, true, {make_rule("split.1")}});
+    const auto current = [](const auto& model, const std::string& path) {
+        for (const auto& group : model.rule_groups) if (group.path == path) return group.current;
+        return false;
+    };
+    auto model = card_model(instance);
+    ASSERT_EQ(model.rule_groups.size(), 5);
+    EXPECT_TRUE(current(model, "split.0"));
+    EXPECT_TRUE(current(model, "reset"));
+    EXPECT_FALSE(current(model, "split.1"));
+    scenario.snapshot->split_index = 1;
+    model = card_model(instance);
+    EXPECT_NE(find_condition(model, "split.0.r0.cond"), nullptr);
+    EXPECT_FALSE(current(model, "split.0"));
+    EXPECT_TRUE(current(model, "split.1"));
+    scenario.snapshot->phase = TimerPhase::ended;
+    model = card_model(instance);
+    EXPECT_NE(find_condition(model, "split.0.r0.cond"), nullptr);
+    EXPECT_TRUE(current(model, "incomplete"));
+    EXPECT_FALSE(current(model, "split.1"));
+    scenario.snapshot->phase = TimerPhase::not_running;
+    scenario.snapshot->split_index = -1;
+    model = card_model(instance);
+    EXPECT_NE(find_condition(model, "split.1.r0.cond"), nullptr);
+    EXPECT_TRUE(current(model, "start"));
+    EXPECT_FALSE(current(model, "reset"));
+}
+
+TEST(HistoryPlot, HoldDropsVerticallyAtTheObservedTimeWithoutBridgingGaps) {
+    EvaluationHistorySnapshot history;
+    history.conditions.push_back({"hold", {
+        {{1'000'000'000}, 0.4, ConditionStatus::false_value, HistoryEvent::sample, false},
+        {{2'000'000'000}, 0.0, ConditionStatus::false_value, HistoryEvent::transition, false},
+        {{3'000'000'000}, {}, ConditionStatus::skipped, HistoryEvent::gap, {}},
+        {{4'000'000'000}, 0.0, ConditionStatus::false_value, HistoryEvent::sample, false}
+    }});
+    const auto plots = prepare_history(history, {"hold"});
+    const auto& plot = plots.at("hold");
+    EXPECT_EQ(plot.times, (std::vector<double>{1, 2, 2, 3, 4}));
+    EXPECT_EQ(plot.values[1], 0.4);
+    EXPECT_EQ(plot.values[2], 0.0);
+    ASSERT_EQ(plot.segments.size(), 2);
+    EXPECT_EQ(plot.segments[0].count, 3);
+    EXPECT_EQ(plot.segments[1].begin, 4);
+    EXPECT_EQ(history.conditions[0].samples.size(), 4); // Display geometry only.
+}
+
+namespace {
+struct PlotFixture {
+    ImGuiContext* gui = ImGui::CreateContext();
+    ImPlotContext* plot = ImPlot::CreateContext();
+    HistoryPlots history;
+    ConditionDiagnosticsNode node;
+    PlotFixture() {
+        auto& io = ImGui::GetIO();
+        io.IniFilename = nullptr;
+        io.DisplaySize = ImVec2(1000, 800);
+        io.DeltaTime = 1.0f / 60;
+        unsigned char* pixels; int width, height;
+        io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+        node.path = "score";
+        node.measurement = {0.5, 0.5, "score", false};
+        node.minimum_score = 0.5;
+    }
+    ~PlotFixture() { ImPlot::DestroyContext(plot); ImGui::DestroyContext(gui); }
+    void begin() {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(900, 700));
+        ImGui::Begin("Interaction test", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove);
+    }
+    void end() { ImGui::End(); ImGui::Render(); }
+};
+}
+
+TEST(HistoryPlot, SmallConditionAndComparisonPlotsOpenOnClick) {
+    for (bool comparison : {false, true}) {
+        PlotFixture fixture;
+        const auto draw = [&] {
+            return comparison ? draw_detector_comparison({&fixture.node}, fixture.history, 60, 30, 240, theme::colors(theme::Mode::dark))
+                : draw_history_plot("small", fixture.node, fixture.history, 60, 30, 240, theme::colors(theme::Mode::dark));
+        };
+        fixture.begin();
+        EXPECT_FALSE(draw());
+        const auto min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+        fixture.end();
+        auto& io = ImGui::GetIO();
+        io.AddMousePosEvent((min.x + max.x)/2, (min.y + max.y)/2);
+        fixture.begin(); (void)draw(); fixture.end();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+        fixture.begin();
+        EXPECT_TRUE(draw());
+        fixture.end();
+    }
+}
+
+TEST(HistoryPlot, DetailAndComparisonZoomFreezeTimeAndKeepTheViewportUntilReset) {
+    for (bool comparison : {false, true}) {
+        PlotFixture fixture;
+        PlotViewport view;
+        const auto draw = [&](double now, int seconds) {
+            if (comparison) draw_detector_comparison({&fixture.node}, fixture.history, now, seconds, 240, theme::colors(theme::Mode::dark), &view);
+            else draw_history_plot("detail", fixture.node, fixture.history, now, seconds, 240, theme::colors(theme::Mode::dark), true, false, &view);
+        };
+        fixture.begin(); draw(60, 30);
+        const auto min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+        fixture.end();
+        EXPECT_NEAR(view.x_max - view.x_min, 30, 1e-6);
+        auto& io = ImGui::GetIO();
+        io.AddMousePosEvent((min.x + max.x)/2, (min.y + max.y)/2);
+        fixture.begin(); draw(60, 30); fixture.end();
+        io.AddMouseWheelEvent(0, 1);
+        fixture.begin(); draw(61, 30); fixture.end();
+        EXPECT_FALSE(view.follow);
+        EXPECT_LT(view.x_max - view.x_min, 30);
+        const double left = view.x_min, right = view.x_max, anchor = view.anchor;
+        fixture.begin(); draw(100, 30); fixture.end();
+        EXPECT_DOUBLE_EQ(view.x_min, left);
+        EXPECT_DOUBLE_EQ(view.x_max, right);
+        EXPECT_DOUBLE_EQ(view.anchor, anchor);
+        fixture.begin(); draw(100, 15); fixture.end();
+        EXPECT_TRUE(view.follow);
+        EXPECT_NEAR(view.x_max - view.x_min, 15, 1e-6);
+    }
+}

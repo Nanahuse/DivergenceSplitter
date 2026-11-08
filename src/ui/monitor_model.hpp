@@ -33,6 +33,8 @@ struct EvaluationGroup {
 struct MonitorRuleGroup {
     std::string label;
     std::vector<RuleDiagnosticsNode> rules;
+    std::string path;
+    bool current{};
 };
 
 struct ScenarioCardModel {
@@ -61,5 +63,7 @@ struct ScenarioCardModel {
 );
 [[nodiscard]] std::string scenario_overview(const ScenarioDiagnosticsSnapshot& scenario);
 [[nodiscard]] ScenarioCardModel card_model(const InstanceDiagnosticsSnapshot& instance);
+[[nodiscard]] const ConditionDiagnosticsNode* find_condition(
+    const ScenarioCardModel& card, std::string_view path);
 
 }  // namespace divergencesplitter::ui

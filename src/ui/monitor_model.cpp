@@ -274,28 +274,30 @@ ScenarioCardModel card_model(const InstanceDiagnosticsSnapshot& instance) {
         else if (!scenario.snapshot) data.notice = "Waiting for timer state";
         else if (scenario.reset_pending) data.notice = "Waiting for Reset confirmation";
         else if (scenario.pending_action) data.notice = "Pending: " + std::string{to_string(*scenario.pending_action)};
+        const auto phase = scenario.snapshot ? scenario.snapshot->phase : TimerPhase::unspecified;
+        const bool eligible = scenario.configuration_valid && scenario.snapshot && !scenario.reset_pending;
+        const bool running = phase == TimerPhase::running || phase == TimerPhase::paused;
         if (scenario.snapshot) {
             const auto& timer = *scenario.snapshot;
             data.timer_status = phase_text(timer.phase) + " | Split " +
                 std::to_string(timer.split_index + 1) + " / " + std::to_string(timer.split_count);
-            const auto append = [&](const auto& groups, const char* name) {
-                for (const auto& group : groups)
-                    if (!group.rules.empty()) data.rule_groups.push_back({name, group.rules});
-            };
-            if (scenario.configuration_valid && !scenario.reset_pending) {
-                if (timer.phase == TimerPhase::not_running) append(scenario.start, "Start");
-                else if (timer.phase == TimerPhase::ended) append(scenario.incomplete, "Incomplete");
-                else if (timer.phase == TimerPhase::running || timer.phase == TimerPhase::paused) {
-                    append(scenario.reset, "Reset");
-                    if (timer.split_index >= 0 && static_cast<std::size_t>(timer.split_index) < scenario.splits.size()) {
-                        const auto& split = scenario.splits[static_cast<std::size_t>(timer.split_index)];
-                        auto label = "Split " + std::to_string(split.index + 1);
-                        const auto name = segment_name(instance, split.index);
-                        if (!name.empty()) label += " - " + name;
-                        data.rule_groups.push_back({label, split.rules});
-                    }
-                }
-            }
+        }
+        const auto append = [&](const auto& groups, const char* name, bool current) {
+            for (const auto& group : groups)
+                if (!group.rules.empty()) data.rule_groups.push_back({name, group.rules, group.name, current});
+        };
+        append(scenario.start, "Start", eligible && phase == TimerPhase::not_running);
+        append(scenario.reset, "Reset", eligible && running);
+        append(scenario.incomplete, "Incomplete", eligible && phase == TimerPhase::ended);
+        // Keep all configured splits addressable, including after Ended/Reset or Undo.
+        for (const auto& split : scenario.splits) {
+            if (split.rules.empty()) continue;
+            auto label = "Split " + std::to_string(split.index + 1);
+            const auto name = segment_name(instance, split.index);
+            if (!name.empty()) label += " - " + name;
+            const bool current = eligible && running && scenario.snapshot->split_index >= 0 &&
+                split.index == static_cast<std::size_t>(scenario.snapshot->split_index);
+            data.rule_groups.push_back({label, split.rules, split.path, current});
         }
     }
 
@@ -313,6 +315,25 @@ ScenarioCardModel card_model(const InstanceDiagnosticsSnapshot& instance) {
         data.maximum = "-";
     }
     return data;
+}
+
+const ConditionDiagnosticsNode* find_condition(const ScenarioCardModel& card, std::string_view path) {
+    const auto condition = [&](const auto& self, const ConditionDiagnosticsNode& node) -> const ConditionDiagnosticsNode* {
+        if (node.path == path) return &node;
+        for (const auto& child : node.children)
+            if (const auto* found = self(self, child)) return found;
+        return nullptr;
+    };
+    const auto rule = [&](const auto& self, const RuleDiagnosticsNode& node) -> const ConditionDiagnosticsNode* {
+        if (const auto* found = condition(condition, node.condition)) return found;
+        for (const auto& child : node.sequence_rules)
+            if (const auto* found = self(self, child)) return found;
+        return nullptr;
+    };
+    for (const auto& group : card.rule_groups)
+        for (const auto& node : group.rules)
+            if (const auto* found = rule(rule, node)) return found;
+    return nullptr;
 }
 
 }  // namespace divergencesplitter::ui

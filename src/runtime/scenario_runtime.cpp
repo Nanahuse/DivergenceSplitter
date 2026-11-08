@@ -348,10 +348,10 @@ std::optional<LiveSplitSnapshot> ScenarioRuntime::current_snapshot() const {
     return snapshot_;
 }
 
-ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics(bool include_history) const {
+ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics(bool include_history, const HistoryPaths* paths) const {
     std::scoped_lock lock{mutex_};
     ScenarioDiagnosticsSnapshot result;
-    if (include_history) result.history = history_->snapshot();
+    if (include_history) result.history = history_->snapshot(paths);
     result.snapshot = snapshot_;
     result.configuration_valid = configuration_valid_;
     if (pending_action_.has_value()) {

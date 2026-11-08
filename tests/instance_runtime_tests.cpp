@@ -337,6 +337,11 @@ TEST(InstanceRuntime, HistoryUsesTheInjectedSessionClock) {
     ASSERT_FALSE(history.conditions.front().samples.empty());
     EXPECT_EQ(history.sampled_at, clock->now());
     EXPECT_EQ(history.conditions.front().samples.back().value, 0.0);
+    HistoryPaths none;
+    const auto filtered = runtime.diagnostics(true, &none);
+    ASSERT_TRUE(filtered.scenario && filtered.scenario->history);
+    EXPECT_TRUE(filtered.scenario->history->conditions.empty());
+    EXPECT_EQ(filtered.scenario->history->identity, history.identity);
     runtime.stop();
 }
 

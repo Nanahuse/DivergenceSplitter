@@ -46,7 +46,7 @@ void MonitorPage::update(double now) {
         if (preview && !preview->empty()) preview_.update(app_->device(), app_->context(), *preview);
         else preview_.clear();
     }
-    const auto instances = session.instance_diagnostics(true);
+    const auto instances = session.instance_diagnostics(true, &requested_paths_);
     const auto profile = session.profile();
     const double sampled_at = monotonic_now().nanoseconds / 1e9;
     data_.cards.clear();
@@ -65,19 +65,27 @@ void MonitorPage::update(double now) {
         auto& plots = plots_[instance.index];
         if (plots.identity != identity) {
             comparisons_.erase(instance.index);
+            current_groups_.erase(instance.index);
             if (selected_instance_ == instance.index) details_open_ = false;
         }
-        plots = {identity, history ? prepare_history(*history) : HistoryPlots{}};
+        std::set<std::string> holds;
+        for (const auto& group : card.rule_groups)
+            for (const auto& rule : group.rules)
+                visit_rule(rule, [&](const auto& node) { if (node.type == "hold") holds.insert(node.path); });
+        plots = {identity, history ? prepare_history(*history, holds) : HistoryPlots{}};
         data_.cards.push_back(std::move(card));
     }
     std::erase_if(evaluation_rates_, [&](const auto& entry) { return !live.contains(entry.first); });
     std::erase_if(plots_, [&](const auto& entry) { return !live.contains(entry.first); });
     std::erase_if(comparisons_, [&](const auto& entry) { return !live.contains(entry.first); });
+    std::erase_if(current_groups_, [&](const auto& entry) { return !live.contains(entry.first); });
+    std::erase_if(requested_paths_, [&](const auto& entry) { return !live.contains(entry.first); });
     if (!live.contains(selected_instance_)) details_open_ = false;
 }
 
 void MonitorPage::draw() {
     draw_time_ = monotonic_now().nanoseconds / 1e9;
+    requested_paths_.clear();
     const float scale = app_->dpi_scale();
     ImGui::BeginChild("##monitor", ImVec2(0, 0));
     text_section_title("Global Status");
@@ -169,9 +177,13 @@ void MonitorPage::draw_card(const ScenarioCardModel& card) {
             for (const auto& line : group.lines) ImGui::TextWrapped("%s", line.label.c_str());
     }
     for (const auto& group : card.rule_groups) {
-        ImGui::PushID(group.label.c_str());
-        ImGui::SeparatorText(group.label.c_str());
-        for (const auto& rule : group.rules) draw_rule(rule, card);
+        ImGui::PushID(group.path.c_str());
+        auto& was_current = current_groups_[card.index][group.path];
+        if (group.current != was_current) ImGui::SetNextItemOpen(group.current, ImGuiCond_Always);
+        was_current = group.current;
+        const auto label = group.label + (group.current ? " | Current target" : " | History / inactive") + "###group";
+        if (ImGui::CollapsingHeader(label.c_str(), group.current ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+            for (const auto& rule : group.rules) draw_rule(rule, card);
         ImGui::PopID();
     }
     if (!comparisons_[card.index].empty() && card.history) {
@@ -181,9 +193,18 @@ void MonitorPage::draw_card(const ScenarioCardModel& card) {
                 visit_rule(rule, [&](const auto& node) {
                     if (comparisons_[card.index].contains(node.path)) selected.push_back(&node);
                 });
-        if (!selected.empty() && ImGui::CollapsingHeader("Detector comparison", ImGuiTreeNodeFlags_DefaultOpen))
-            draw_detector_comparison(selected, plots_[card.index].plots, draw_time_,
-                                     window_seconds_, 230 * scale, palette);
+        if (!selected.empty() && ImGui::CollapsingHeader("Detector comparison", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::IsRectVisible(ImVec2(ImGui::GetContentRegionAvail().x, 230 * scale)))
+                for (const auto* node : selected) requested_paths_[card.index].insert(node->path);
+            if (draw_detector_comparison(selected, plots_[card.index].plots, draw_time_,
+                                         window_seconds_, 230 * scale, palette)) {
+                selected_instance_ = card.index;
+                selected_identity_ = card.history->identity;
+                comparison_details_ = true;
+                comparison_view_ = {};
+                details_open_ = true;
+            }
+        }
     }
     ImGui::PopID();
 }
@@ -208,10 +229,7 @@ void MonitorPage::draw_condition(const ConditionDiagnosticsNode& node, const Sce
     ImGui::PushID(node.path.c_str());
     const auto label = node.description + " [" + node.status + "]";
     if (ImGui::Selectable(label.c_str(), details_open_ && selected_instance_ == card.index && selected_path_ == node.path)) {
-        selected_instance_ = card.index;
-        selected_path_ = node.path;
-        selected_identity_ = card.history ? card.history->identity : 0;
-        details_open_ = true;
+        select_condition(card, node);
     }
     if (!node.detector_type.empty()) {
         bool compare = comparisons_[card.index].contains(node.path);
@@ -228,8 +246,11 @@ void MonitorPage::draw_condition(const ConditionDiagnosticsNode& node, const Sce
             ImGui::TextColored(palette.warning, " / Target %.4g", *node.measurement.target);
         }
     } else if (node.measurement.target) ImGui::Text("Target: %.4g %s", *node.measurement.target, node.measurement.unit.c_str());
-    draw_history_plot("##history", node, plots_[card.index].plots,
-                      draw_time_, window_seconds_, 64 * scale, palette);
+    const float plot_height = 64 * scale;
+    if (ImGui::IsRectVisible(ImVec2(ImGui::GetContentRegionAvail().x, plot_height)))
+        requested_paths_[card.index].insert(node.path);
+    if (draw_history_plot("##history", node, plots_[card.index].plots,
+                          draw_time_, window_seconds_, plot_height, palette)) select_condition(card, node);
     if (!node.children.empty()) {
         ImGui::Indent(18 * scale);
         for (const auto& child : node.children) draw_condition(child, card);
@@ -238,29 +259,62 @@ void MonitorPage::draw_condition(const ConditionDiagnosticsNode& node, const Sce
     ImGui::PopID();
 }
 
+void MonitorPage::select_condition(const ScenarioCardModel& card, const ConditionDiagnosticsNode& node) {
+    selected_instance_ = card.index;
+    selected_path_ = node.path;
+    selected_identity_ = card.history ? card.history->identity : 0;
+    comparison_details_ = false;
+    detail_view_ = {};
+    details_open_ = true;
+}
+
 void MonitorPage::draw_details() {
     if (!details_open_) return;
     const ConditionDiagnosticsNode* selected = nullptr;
     const ScenarioCardModel* card = nullptr;
+    bool selected_current = false;
     for (const auto& candidate : data_.cards) {
         if (candidate.index != selected_instance_ || !candidate.history || candidate.history->identity != selected_identity_) continue;
         card = &candidate;
+        selected = find_condition(candidate, selected_path_);
         for (const auto& group : candidate.rule_groups)
-            for (const auto& rule : group.rules)
-                visit_rule(rule, [&](const auto& node) { if (node.path == selected_path_) selected = &node; });
+            if (selected_path_.starts_with(group.path + ".")) selected_current = group.current;
     }
-    if (!selected || !card) { details_open_ = false; return; }
+    if (!card || (!comparison_details_ && !selected)) { details_open_ = false; return; }
+    if (!comparison_details_) requested_paths_[card->index].insert(selected->path);
     ImGui::SetNextWindowSize(ImVec2(800 * app_->dpi_scale(), 700 * app_->dpi_scale()), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Condition details", &details_open_)) {
-        ImGui::Text("Instance %d | %s", card->index, selected->path.c_str());
-        ImGui::TextWrapped("%s [%s]", selected->description.c_str(), selected->status.c_str());
-        if (selected->measurement.value) ImGui::Text("%s: %.4g %s", selected->status == "skipped" ? "Last value" : "Value", *selected->measurement.value, selected->measurement.unit.c_str());
-        if (selected->measurement.target) ImGui::Text("Target: %.4g %s", *selected->measurement.target, selected->measurement.unit.c_str());
+    if (ImGui::Begin("History details", &details_open_)) {
         const auto palette = theme::colors(app_->theme_mode());
-        const double now = draw_time_;
-        draw_history_plot("History", *selected, plots_[card->index].plots, now, window_seconds_, 260 * app_->dpi_scale(), palette, true);
-        draw_history_plot("Result timeline", *selected, plots_[card->index].plots, now, window_seconds_, 180 * app_->dpi_scale(), palette, true, true);
-        text_muted("Blank = not measured | Reset: yellow | Transition: green | Error: red");
+        ImGui::PushID(static_cast<int>(selected_identity_));
+        ImGui::PushID(selected_instance_);
+        ImGui::PushID(comparison_details_ ? "comparison" : selected_path_.c_str());
+        if (comparison_details_) {
+            std::vector<const ConditionDiagnosticsNode*> nodes;
+            for (const auto& group : card->rule_groups)
+                for (const auto& rule : group.rules)
+                    visit_rule(rule, [&](const auto& node) {
+                        if (comparisons_[card->index].contains(node.path)) {
+                            nodes.push_back(&node);
+                            requested_paths_[card->index].insert(node.path);
+                        }
+                    });
+            ImGui::Text("Instance %d | Detector comparison", card->index);
+            draw_detector_comparison(nodes, plots_[card->index].plots, draw_time_, window_seconds_,
+                                     420 * app_->dpi_scale(), palette, &comparison_view_);
+        } else {
+            ImGui::Text("Instance %d | %s", card->index, selected->path.c_str());
+            ImGui::TextDisabled("%s", selected_current ? "Current target" : "History / inactive");
+            ImGui::TextWrapped("%s [%s]", selected->description.c_str(), selected->status.c_str());
+            if (selected->measurement.value) ImGui::Text("%s: %.4g %s", selected->status == "skipped" ? "Last value" : "Value", *selected->measurement.value, selected->measurement.unit.c_str());
+            if (selected->measurement.target) ImGui::Text("Target: %.4g %s", *selected->measurement.target, selected->measurement.unit.c_str());
+            const double now = draw_time_;
+            draw_history_plot("History", *selected, plots_[card->index].plots, now, window_seconds_, 260 * app_->dpi_scale(), palette, true, false, &detail_view_);
+            draw_history_plot("Result timeline", *selected, plots_[card->index].plots, now, window_seconds_, 180 * app_->dpi_scale(), palette, true, true, &detail_view_);
+            text_muted("Blank = not measured | Reset: yellow | Transition: green | Error: red");
+        }
+        ImGui::PopID();
+        ImGui::PopID();
+        ImGui::PopID();
     }
     ImGui::End();
 }

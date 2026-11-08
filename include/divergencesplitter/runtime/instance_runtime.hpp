@@ -46,7 +46,7 @@ public:
 
     [[nodiscard]] int index() const noexcept { return index_; }
     [[nodiscard]] InstanceState state() const;
-    [[nodiscard]] InstanceDiagnosticsSnapshot diagnostics(bool include_history = false) const;
+    [[nodiscard]] InstanceDiagnosticsSnapshot diagnostics(bool include_history = false, const HistoryPaths* paths = nullptr) const;
 
 private:
     void run();

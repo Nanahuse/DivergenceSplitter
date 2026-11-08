@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -11,6 +12,8 @@
 #include "divergencesplitter/runtime/models.hpp"
 
 namespace divergencesplitter {
+
+using InstanceHistoryPaths = std::map<int, HistoryPaths>;
 
 struct ConditionDiagnosticsNode {
     std::string path;

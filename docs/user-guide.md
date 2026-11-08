@@ -10,9 +10,9 @@ MonitorはGlobal Status、折りたたみ可能なInput Preview、Instanceごと
 
 各InstanceにはBridgeの接続先、接続状態、タイマーの状態、Split位置、操作の確認待ち、最後の操作結果、評価時間の平均・最大を表示します。Instance番号は0から、画面上のRule・Split番号は1から始まります。
 
-現在のタイマー状態に応じたStart、Reset、Split、IncompleteのRuleを表示します。Ruleはグラフごと折りたためます。`all`、`any`、`then`などの子Conditionは階層を保って表示され、非アクティブな子にも過去の履歴が残ります。
+Start、Reset、Incompleteの共通Ruleと、すべての設定済みSplitをグループごとに表示します。Current targetは現在の対象で、切り替わったときに自動で展開します。過去のSplitはHistory / inactiveとして折りたたみ状態で残り、開き直せます。Ruleはグラフごと折りたためます。`all`、`any`、`then`などの子Conditionは階層を保って表示され、非アクティブな子にも過去の履歴が残ります。
 
-各Conditionの履歴は同じ時間軸を使います。Historyで15秒・30秒・60秒を切り替え、Condition名を選ぶと軸・凡例・現在値・目標値を含む詳細グラフが開きます。DetectorのCompare detectorを選ぶと、そのInstanceの選択したスコアを同じグラフで比較できます。表示設定は保存しません。
+各Conditionの履歴は同じ時間軸を使います。Historyで15秒・30秒・60秒を切り替え、Condition名または小型グラフを選ぶと軸・凡例・現在値・目標値を含む詳細グラフが開きます。詳細表示はSplitが切り替わっても残ります。DetectorのCompare detectorを選ぶと、そのInstanceの選択したスコアを同じグラフで比較できます。比較グラフもクリックで拡大できます。詳細グラフではホイールでズーム、ドラッグで移動、右ドラッグで範囲選択できます。操作すると表示時刻を固定し、値と状態の時間軸を揃えたまま確認できます。Resume liveやReset view、表示期間の変更でライブ表示に戻ります。保持期間を過ぎた履歴は固定表示中も失われます。表示設定は保存しません。
 
 `detected`はスコアとしきい値、`elapsed`と`hold`は秒数と目標時間、`nth`は観測回数、`then`はステップの進行を表示します。`nth`は内部Conditionがtrueを返すたびに増え、内部Conditionが`rising_edge`の場合にその成立回数を数えます。状態Conditionにはtrue／falseの履歴を表示します。
 

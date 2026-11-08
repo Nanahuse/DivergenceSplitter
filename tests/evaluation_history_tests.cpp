@@ -280,3 +280,24 @@ TEST(EvaluationHistory, SharedFrameDoesNotShareInstanceHistory) {
     EXPECT_EQ(first.series().samples.back().result, true);
     EXPECT_EQ(second.series().samples.back().result, false);
 }
+
+TEST(EvaluationHistory, SelectedSnapshotsDoNotCopyOtherPathsOrDiscardTheirSamples) {
+    HistoryHarness harness{std::make_shared<AllCondition>(std::vector<ConditionPtr>{detected(2.0),
+        std::make_shared<HoldCondition>(detected(), 1s)})};
+    harness.evaluate(255);
+    harness.evaluate(255);
+    HistoryPaths paths{"root.c0"};
+    const auto selected = harness.history->snapshot(&paths);
+    ASSERT_EQ(selected->conditions.size(), 1);
+    EXPECT_EQ(selected->conditions[0].path, "root.c0");
+    const auto full = harness.history->snapshot();
+    EXPECT_EQ(full->identity, selected->identity);
+    EXPECT_EQ(full->conditions.size(), 4);
+    EXPECT_EQ(harness.series("root.c1").samples.size(), 2);
+    paths.clear();
+    EXPECT_TRUE(harness.history->snapshot(&paths)->conditions.empty());
+    paths.insert("root.c1");
+    const auto reopened = harness.history->snapshot(&paths);
+    ASSERT_EQ(reopened->conditions.size(), 1);
+    EXPECT_EQ(reopened->conditions[0].samples.size(), 2);
+}
