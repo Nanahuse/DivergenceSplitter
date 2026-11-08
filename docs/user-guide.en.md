@@ -8,24 +8,15 @@ This is an English translation. The Japanese version is the original and takes p
 
 ## Monitor
 
-Each table row pairs one scenario with a LiveSplit connection; this pair is called an instance. Monitor shows the normalized input image: the same Crop/Resize output used by all
-scenario instances. The input line shows the number of frames made available for
-evaluation, measured capture FPS, and whether capture is running. The table shows each scenario's connection state,
-timer phase, split index, last requested action, and error or action result.
-Scenario and split indexes in diagnostics are zero-based.
+Monitor shows Global Status, a collapsible Input Preview, and a vertical panel for each Instance. The preview shows the shared input after Crop/Resize. Global Status reports capture state, Input FPS, received frames and each Instance's Evaluation FPS. Each panel shows its Bridge endpoint, connection and timer state, split position, pending and last actions, and average/maximum evaluation time.
 
-**Processing FPS** measures each instance's evaluation rate. It differs from
-input FPS and can vary between instances sharing the same input. **Current
-evaluation** summarizes current conditions, their status, and evaluated detector
-thresholds and latest scores. Hover over the summary for additional lines. This version does not
-include a separate Diagnostics screen; current conditions are shown on Monitor. See
-[control confirmation](troubleshooting.en.md#control-confirmation-and-reset-failures)
-for Pending and Waiting for Reset confirmation.
+Rules are grouped by the current timer state (Start, Reset, Split or Incomplete) and can be collapsed with their graphs. Composite Conditions preserve their child hierarchy and inactive children keep their past history. Instance indexes start at zero; displayed Rule and Split numbers start at one.
 
-**Ready** means that the instance has synchronized with Bridge. Check input and
-Monitor as well; Ready alone does not mean that a condition is true or that
-the configured split count is valid. While disconnected, that instance cannot
-evaluate actions. Other instances have independent connections.
+Choose 15, 30 or 60 seconds for the shared time axis. Select a Condition name to open a detailed graph with axes, legend, current value, target and result timeline. Select Compare detector on multiple Conditions to compare their scores within that Instance. Display settings are not saved.
+
+Detected Conditions plot scores and thresholds; elapsed/hold plot seconds and target time; nth plots observed counts as stairs; then plots step progress. Nth counts true child evaluations, so it counts edges only when its child is an edge Condition. Boolean Conditions show state history. Blank intervals mean no measurement, rather than a zero score. Lines break at gaps and resets. Yellow marks resets, green marks transitions, and red marks errors. Numeric state that actually updates during short-circuit evaluation is still recorded; skipped current values are labelled Last value.
+
+History is collected at evaluation time even while Monitor is hidden. It stays in memory for 60 seconds, with at most 8192 samples per Condition. At capacity, thinning prioritizes extrema and state changes. Reconnects, Bridge session changes and Profile applies start fresh histories. Ready means the Bridge connection and timer synchronization succeeded; input, Conditions and split configuration must still be checked separately.
 
 ### Reset All
 

@@ -206,10 +206,12 @@ std::shared_ptr<ScenarioRuntime> InstanceRuntime::runtime() const {
     return runtime_;
 }
 
-InstanceDiagnosticsSnapshot InstanceRuntime::diagnostics() const {
+InstanceDiagnosticsSnapshot InstanceRuntime::diagnostics(bool include_history) const {
     InstanceDiagnosticsSnapshot result;
+    std::shared_ptr<ScenarioRuntime> current_runtime;
     {
-        std::scoped_lock lock{state_mutex_};
+        std::scoped_lock lock{state_mutex_, runtime_mutex_};
+        current_runtime = runtime_;
         result.index = index_;
         result.state = state_;
         result.error = error_;
@@ -219,9 +221,8 @@ InstanceDiagnosticsSnapshot InstanceRuntime::diagnostics() const {
         result.last_action = last_action_;
         result.last_action_result = last_action_result_;
     }
-    const auto current_runtime = runtime();
     if (current_runtime) {
-        result.scenario = current_runtime->diagnostics();
+        result.scenario = current_runtime->diagnostics(include_history);
     }
     return result;
 }
@@ -248,11 +249,11 @@ void InstanceRuntime::run() {
             try {
                 adapter_ = std::make_unique<LiveSplitBridgeAdapter>(*client_);
                 auto initial = adapter_->attach();
-                auto scenario_runtime = std::make_shared<ScenarioRuntime>(scenario_);
+                auto scenario_runtime = std::make_shared<ScenarioRuntime>(scenario_, options_.time_provider);
                 scenario_runtime->apply_update(initial);
-                set_runtime(scenario_runtime);
                 {
-                    std::scoped_lock lock{state_mutex_};
+                    std::scoped_lock lock{state_mutex_, runtime_mutex_};
+                    runtime_ = scenario_runtime;
                     run_ = initial.run_info;
                     error_.clear();
                     ++generation_;

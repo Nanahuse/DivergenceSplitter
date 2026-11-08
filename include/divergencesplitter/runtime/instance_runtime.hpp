@@ -23,6 +23,7 @@ struct InstanceRuntimeOptions {
     std::chrono::milliseconds reaction_time{0};
     std::chrono::milliseconds idle_wait{5};
     std::shared_ptr<Logger> logger;
+    std::shared_ptr<TimeProvider> time_provider;
 };
 
 class InstanceRuntime {
@@ -45,7 +46,7 @@ public:
 
     [[nodiscard]] int index() const noexcept { return index_; }
     [[nodiscard]] InstanceState state() const;
-    [[nodiscard]] InstanceDiagnosticsSnapshot diagnostics() const;
+    [[nodiscard]] InstanceDiagnosticsSnapshot diagnostics(bool include_history = false) const;
 
 private:
     void run();

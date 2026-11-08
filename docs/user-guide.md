@@ -6,13 +6,19 @@
 
 ## Monitor
 
-Monitorでは、各シナリオが判定に使う映像を確認できます。表示するのはCrop／Resize後の画像です。入力欄には判定用に渡されたフレームの数、映像の取得速度（FPS）、取得中かどうかを表示します。
+MonitorはGlobal Status、折りたたみ可能なInput Preview、Instanceごとのパネルを縦に表示します。プレビューは共通入力のCrop／Resize後の画像です。Global StatusにはCapture状態、Input FPS、取得フレーム数とInstance別のEvaluation FPSを表示します。Evaluation FPSは、そのInstanceが1秒あたりに映像を評価した回数です。
 
-表の各行は1つのシナリオとLiveSplitへの接続の組に対応します。この組をインスタンスと呼びます。各行には接続状態、タイマーの状態（Phase）、現在のSplit位置、最後に要求した操作（Action）、エラーや操作結果を表示します。シナリオやSplitの番号は0から始まります。
+各InstanceにはBridgeの接続先、接続状態、タイマーの状態、Split位置、操作の確認待ち、最後の操作結果、評価時間の平均・最大を表示します。Instance番号は0から、画面上のRule・Split番号は1から始まります。
 
-Processing FPSは、各インスタンスが1秒あたりに映像を判定した回数です。映像を受信する速度とは別の値で、同じ映像でもインスタンスごとに異なる場合があります。
+現在のタイマー状態に応じたStart、Reset、Split、IncompleteのRuleを表示します。Ruleはグラフごと折りたためます。`all`、`any`、`then`などの子Conditionは階層を保って表示され、非アクティブな子にも過去の履歴が残ります。
 
-Current evaluationには、現在の判定条件（Condition）と、その状態を表示します。画像の判定（Detector）を実行した場合は、しきい値と最新スコアを表示します。表示中にポインターを置くと、追加の行が確認できます。このバージョンには専用のDiagnostics画面はありません。Condition全体の構造と最大スコアはMonitorのカードに表示されます。PendingやWaiting for Reset confirmationは、[操作の確認待ち](troubleshooting.md#操作の確認待ちとresetの実行)で説明します。
+各Conditionの履歴は同じ時間軸を使います。Historyで15秒・30秒・60秒を切り替え、Condition名を選ぶと軸・凡例・現在値・目標値を含む詳細グラフが開きます。DetectorのCompare detectorを選ぶと、そのInstanceの選択したスコアを同じグラフで比較できます。表示設定は保存しません。
+
+`detected`はスコアとしきい値、`elapsed`と`hold`は秒数と目標時間、`nth`は観測回数、`then`はステップの進行を表示します。`nth`は内部Conditionがtrueを返すたびに増え、内部Conditionが`rising_edge`の場合にその成立回数を数えます。状態Conditionにはtrue／falseの履歴を表示します。
+
+空白は未測定の区間で、スコア0とは区別されます。ResetやSplitによるリセットで線を区切り、黄色の境界線を表示します。遷移は緑、エラーは赤で示します。短絡評価中に実際に更新された時間や回数は記録します。`skipped`の現在値はLast valueと表示します。
+
+履歴はMonitorを閉じている間も評価時に収集し、直近60秒をメモリ上だけに保持します。各Conditionの上限は8192点で、上限時には極値や状態変化を優先して間引きます。再接続、BridgeのSession変更、Profile再適用では新しい履歴になります。PendingやWaiting for Reset confirmationは、[操作の確認待ち](troubleshooting.md#操作の確認待ちとresetの実行)で説明します。
 
 Readyは、Bridgeとの接続とタイマー情報の同期が済んだ状態です。映像が届いているか、条件が成立しているか、シナリオの区間数がLiveSplitと合っているかは、それぞれ別に確認してください。接続が切れているインスタンスでは、タイマー操作の判定を行いません。他のインスタンスはそれぞれの接続状態に従って動作します。
 
@@ -20,7 +26,7 @@ Readyは、Bridgeとの接続とタイマー情報の同期が済んだ状態で
 
 Reset Allを2秒間押し続けると、各インスタンスにタイマーのResetを要求します。2秒経つ前に離すか、ポインターをボタンの外へ動かすとキャンセルできます。
 
-要求を処理できるインスタンスから、Running、Paused、EndedのタイマーにResetを送ります。すでに停止しているタイマーには送りません。すべてのLiveSplitで同時に成功するとは限らないため、各行の操作結果を確認してください。
+要求を処理できるインスタンスから、Running、Paused、EndedのタイマーにResetを送ります。すでに停止しているタイマーには送りません。すべてのLiveSplitで同時に成功するとは限らないため、各Instanceの操作結果を確認してください。
 
 Reset Allはタイマーをリセットする操作です。下書きやProfileファイルを削除しません。リセット後に開始条件が成立すると、Runが再び始まることがあります。
 

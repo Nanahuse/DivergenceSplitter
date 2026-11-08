@@ -1,10 +1,9 @@
 #include "monitor_page.hpp"
 
 #include <imgui.h>
-
 #include <algorithm>
 #include <cstdio>
-#include <string>
+#include <functional>
 
 #include "app.hpp"
 #include "theme.hpp"
@@ -12,189 +11,111 @@
 
 namespace divergencesplitter::ui {
 namespace {
-
+void visit_condition(const ConditionDiagnosticsNode& node, const std::function<void(const ConditionDiagnosticsNode&)>& fn) {
+    fn(node);
+    for (const auto& child : node.children) visit_condition(child, fn);
+}
+void visit_rule(const RuleDiagnosticsNode& rule, const std::function<void(const ConditionDiagnosticsNode&)>& fn) {
+    visit_condition(rule.condition, fn);
+    for (const auto& child : rule.sequence_rules) visit_rule(child, fn);
+}
 ImVec4 status_color(InstanceState state, const theme::Colors& palette) {
     switch (state) {
-        case InstanceState::ready:
-            return palette.ready;
-        case InstanceState::connecting:
-            return palette.connecting;
-        case InstanceState::failed:
-            return palette.failed;
-        case InstanceState::stopped:
-            return palette.stopped;
+        case InstanceState::ready: return palette.ready;
+        case InstanceState::connecting: return palette.connecting;
+        case InstanceState::failed: return palette.failed;
+        case InstanceState::stopped: return palette.stopped;
     }
     return palette.muted;
 }
-
-int line_count(const ScenarioCardModel& card) {
-    int count = 0;
-    for (const auto& group : card.groups) {
-        if (!group.label.empty()) {
-            ++count;
-        }
-        count += static_cast<int>(group.lines.size());
-    }
-    return count;
 }
-
-int group_label_count(const ScenarioCardModel& card) {
-    int count = 0;
-    for (const auto& group : card.groups) {
-        if (!group.label.empty()) {
-            ++count;
-        }
-    }
-    return count;
-}
-
-}  // namespace
 
 MonitorPage::MonitorPage(App* app) : app_(app) {}
 
 void MonitorPage::update(double now) {
-    if (now < next_update_) {
-        return;
-    }
+    if (now < next_update_) return;
     next_update_ = now + 0.1;
-
     const auto& session = app_->controller().session();
-    data_.running = session.running();
     const auto capture = session.capture_stats();
+    data_.running = capture.running;
     data_.frames_published = capture.frames_published;
     data_.measured_fps = capture.measured_fps;
     data_.last_error = app_->controller().last_error();
-
-    const auto preview = session.latest_preview();
-    if (preview && !preview->empty()) {
-        preview_.update(app_->device(), app_->context(), *preview);
-    } else {
-        preview_.clear();
+    if (preview_visible_) {
+        const auto preview = session.latest_preview();
+        if (preview && !preview->empty()) preview_.update(app_->device(), app_->context(), *preview);
+        else preview_.clear();
     }
-
-    const auto instances = session.instance_diagnostics();
-    if (instances.empty()) {
-        evaluation_rates_.clear();
-    }
-    const auto sampled_at = std::chrono::steady_clock::now();
-    double processing_fps = 0.0;
-    for (const auto& instance : instances) {
-        const auto count = instance.scenario ? instance.scenario->evaluation_count : 0;
-        auto [rate_it, inserted] = evaluation_rates_.try_emplace(
-            instance.index, EvaluationRate{instance.generation, count, sampled_at, 0.0}
-        );
-        auto& rate = rate_it->second;
-        if (rate.generation != instance.generation || count < rate.count) {
-            rate = EvaluationRate{instance.generation, count, sampled_at, 0.0};
-        }
-        const double elapsed =
-            std::chrono::duration<double>(sampled_at - rate.sampled_at).count();
-        if (!inserted && elapsed >= 0.5) {
-            rate.fps = static_cast<double>(count - rate.count) / elapsed;
-            rate.count = count;
-            rate.sampled_at = sampled_at;
-        }
-        processing_fps += rate.fps;
-    }
-    data_.processing_fps = processing_fps;
-
+    const auto instances = session.instance_diagnostics(true);
+    const auto profile = session.profile();
+    const double sampled_at = monotonic_now().nanoseconds / 1e9;
     data_.cards.clear();
-    data_.cards.reserve(instances.size());
+    std::set<int> live;
     for (const auto& instance : instances) {
-        data_.cards.push_back(card_model(instance));
+        live.insert(instance.index);
+        const auto count = instance.scenario ? instance.scenario->evaluation_count : 0;
+        const auto history = instance.scenario ? instance.scenario->history : nullptr;
+        const auto identity = history ? history->identity : 0;
+        auto& rate = evaluation_rates_[instance.index];
+        rate.update(identity, count, sampled_at);
+        auto card = card_model(instance);
+        card.evaluation_fps = rate.fps();
+        if (instance.index >= 0 && static_cast<std::size_t>(instance.index) < profile.instances.size())
+            card.endpoint = "localhost:" + std::to_string(profile.instances[static_cast<std::size_t>(instance.index)].connection.port);
+        auto& plots = plots_[instance.index];
+        if (plots.identity != identity) {
+            comparisons_.erase(instance.index);
+            if (selected_instance_ == instance.index) details_open_ = false;
+        }
+        plots = {identity, history ? prepare_history(*history) : HistoryPlots{}};
+        data_.cards.push_back(std::move(card));
     }
+    std::erase_if(evaluation_rates_, [&](const auto& entry) { return !live.contains(entry.first); });
+    std::erase_if(plots_, [&](const auto& entry) { return !live.contains(entry.first); });
+    std::erase_if(comparisons_, [&](const auto& entry) { return !live.contains(entry.first); });
+    if (!live.contains(selected_instance_)) details_open_ = false;
 }
 
 void MonitorPage::draw() {
+    draw_time_ = monotonic_now().nanoseconds / 1e9;
     const float scale = app_->dpi_scale();
-    const float left_width = 380.0f * scale;
-
-    ImGui::BeginChild("##monitor_left", ImVec2(left_width, 0.0f), false);
-    ImGui::Indent(12.0f * scale);
-    ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+    ImGui::BeginChild("##monitor", ImVec2(0, 0));
     text_section_title("Global Status");
     draw_status_rows();
-
-    ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-    text_section_title("Input Preview");
-    image_fit(preview_, 300.0f * scale, "No input");
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-    ImGui::Text(
-        "Input: %llu frames  |  %s",
-        static_cast<unsigned long long>(data_.frames_published),
-        data_.running ? "running" : "stopped"
-    );
-    ImGui::PopStyleColor();
-
-    if (!data_.last_error.empty()) {
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-        text_error_wrapped(data_.last_error);
-    }
-    ImGui::Unindent(12.0f * scale);
-    ImGui::EndChild();
-
-    ImGui::SameLine(0.0f, 0.0f);
-    ImGui::BeginChild("##monitor_right", ImVec2(0.0f, 0.0f), false);
-    ImGui::Indent(12.0f * scale);
-    ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-
-    text_section_title("Scenario Overview");
-    const float button_width = 130.0f * scale;
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(
-        std::max(0.0f, ImGui::GetContentRegionAvail().x - button_width),
-        0.0f
-    ));
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Input Preview")) {
+        preview_visible_ = true;
+        image_fit(preview_, 240 * scale, "No input");
+    } else preview_visible_ = false;
+    if (!data_.last_error.empty()) text_error_wrapped(data_.last_error);
+    ImGui::Spacing();
+    text_section_title("Instances");
     ImGui::SameLine();
     draw_reset_button();
-
-    ImGui::Dummy(ImVec2(0.0f, 4.0f * scale));
-    ImGui::BeginChild("##scenario_cards", ImVec2(0.0f, 0.0f), false);
+    ImGui::TextUnformatted("History");
+    for (const int seconds : {15, 30, 60}) {
+        ImGui::SameLine();
+        const auto label = std::to_string(seconds) + " s";
+        if (ImGui::RadioButton(label.c_str(), window_seconds_ == seconds)) window_seconds_ = seconds;
+    }
     draw_cards();
     ImGui::EndChild();
-    ImGui::Unindent(12.0f * scale);
-    ImGui::EndChild();
+    draw_details();
 }
 
 void MonitorPage::draw_status_rows() {
     const auto palette = theme::colors(app_->theme_mode());
-    const float scale = app_->dpi_scale();
-    const auto row = [&](const char* label, const std::string& value, const ImVec4& color) {
-        ImGui::PushStyleColor(ImGuiCol_Text, palette.text_secondary);
-        ImGui::TextUnformatted(label);
-        ImGui::PopStyleColor();
-        ImGui::SameLine(130.0f * scale);
-        ImGui::PushStyleColor(ImGuiCol_Text, color);
-        ImGui::TextUnformatted(value.c_str());
-        ImGui::PopStyleColor();
-    };
-
-    row("State", data_.running ? "Running" : "Stopped",
-        data_.running ? palette.active : palette.stopped);
-    char input_fps[64]{};
-    if (data_.frames_published > 0) {
-        std::snprintf(input_fps, sizeof(input_fps), "%.1f fps", data_.measured_fps);
-    } else {
-        std::snprintf(input_fps, sizeof(input_fps), "- fps");
+    ImGui::TextColored(data_.running ? palette.active : palette.stopped, "Capture: %s", data_.running ? "Running" : "Stopped");
+    ImGui::SameLine();
+    ImGui::Text(" | Input: %.1f fps | %llu frames", data_.measured_fps, static_cast<unsigned long long>(data_.frames_published));
+    for (const auto& card : data_.cards) {
+        ImGui::Text("Instance %d evaluation: %.1f fps", card.index, card.evaluation_fps);
     }
-    row("Input FPS", input_fps, palette.text);
-    char fps[64]{};
-    std::snprintf(fps, sizeof(fps), "%.1f fps", data_.processing_fps);
-    row(
-        "Processing FPS",
-        data_.cards.empty() ? "- fps" : fps,
-        palette.text
-    );
 }
 
 void MonitorPage::draw_cards() {
-    if (data_.cards.empty()) {
-        text_muted("No scenarios are running.");
-        return;
-    }
-    for (const auto& card : data_.cards) {
-        draw_card(card);
-    }
+    if (data_.cards.empty()) text_muted("No instances are running.");
+    for (const auto& card : data_.cards) draw_card(card);
 }
 
 void MonitorPage::draw_reset_button() {
@@ -228,85 +149,119 @@ void MonitorPage::draw_reset_button() {
     }
 }
 
+
 void MonitorPage::draw_card(const ScenarioCardModel& card) {
     const auto palette = theme::colors(app_->theme_mode());
     const float scale = app_->dpi_scale();
-    const int lines = line_count(card);
-    const int labels = group_label_count(card);
-    const float height =
-        (72.0f + static_cast<float>(lines) * 18.0f +
-         static_cast<float>(labels) * 20.0f + 20.0f) * scale;
-
-    const std::string child_id = "##scenario_" + std::to_string(card.index);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, palette.surface);
-    ImGui::BeginChild(child_id.c_str(), ImVec2(0.0f, height), true);
-    ImGui::PopStyleColor();
-    ImGui::Indent(10.0f * scale);
-
-    const std::string title = "Scenario " + std::to_string(card.index);
-    ImGui::PushStyleColor(ImGuiCol_Text, palette.text);
-    ImGui::TextUnformatted(title.c_str());
-    ImGui::PopStyleColor();
-
-    const std::string status = "\xE2\x97\x8F " + card.status;
-    const float status_width = ImGui::CalcTextSize(status.c_str()).x;
+    ImGui::PushID(card.index);
+    const auto title = "Instance " + std::to_string(card.index) + " | " + card.endpoint;
+    ImGui::Spacing();
+    ImGui::SeparatorText(title.c_str());
+    ImGui::TextColored(status_color(card.state, palette), "%s", card.status.c_str());
     ImGui::SameLine();
-    ImGui::Dummy(ImVec2(
-        std::max(0.0f, ImGui::GetContentRegionAvail().x - status_width),
-        0.0f
-    ));
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Text, status_color(card.state, palette));
-    ImGui::TextUnformatted(status.c_str());
-    ImGui::PopStyleColor();
-    if (!card.error.empty() && ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", card.error.c_str());
+    ImGui::Text(" | %s | Evaluation %.1f fps | Avg %s | Max %s",
+                card.timer_status.c_str(), card.evaluation_fps, card.average.c_str(), card.maximum.c_str());
+    if (!card.error.empty()) text_error_wrapped(card.error);
+    if (!card.notice.empty()) ImGui::TextColored(palette.warning, "%s", card.notice.c_str());
+    if (!card.action_status.empty()) text_muted(card.action_status);
+    if (card.rule_groups.empty()) {
+        for (const auto& group : card.groups)
+            for (const auto& line : group.lines) ImGui::TextWrapped("%s", line.label.c_str());
     }
-
-    text_muted("Evaluating");
-    if (card.groups.empty()) {
-        text_muted("-");
-    } else {
-        for (const auto& group : card.groups) {
-            if (!group.label.empty()) {
-                ImGui::Dummy(ImVec2(0.0f, 2.0f * scale));
-                ImGui::PushStyleColor(ImGuiCol_Text, palette.text);
-                ImGui::TextUnformatted(group.label.c_str());
-                ImGui::PopStyleColor();
-            }
-            for (const auto& line : group.lines) {
-                ImGui::Indent(static_cast<float>(line.depth) * 14.0f * scale);
-                if (line.strong) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, palette.text);
-                }
-                ImGui::TextUnformatted(line.label.c_str());
-                if (line.strong) {
-                    ImGui::PopStyleColor();
-                }
-                if (!line.detail.empty()) {
-                    ImGui::SameLine();
-                    text_muted(line.detail);
-                }
-                ImGui::Unindent(static_cast<float>(line.depth) * 14.0f * scale);
-            }
-        }
+    for (const auto& group : card.rule_groups) {
+        ImGui::PushID(group.label.c_str());
+        ImGui::SeparatorText(group.label.c_str());
+        for (const auto& rule : group.rules) draw_rule(rule, card);
+        ImGui::PopID();
     }
-
-    ImGui::Dummy(ImVec2(0.0f, 2.0f * scale));
-    ImGui::Separator();
-    text_muted("Evaluation");
-    ImGui::SameLine(110.0f * scale);
-    text_muted("Avg");
-    ImGui::SameLine();
-    ImGui::TextUnformatted(card.average.c_str());
-    ImGui::SameLine();
-    text_muted("Max");
-    ImGui::SameLine();
-    ImGui::TextUnformatted(card.maximum.c_str());
-
-    ImGui::Unindent(10.0f * scale);
-    ImGui::EndChild();
-    ImGui::Dummy(ImVec2(0.0f, 4.0f * scale));
+    if (!comparisons_[card.index].empty() && card.history) {
+        std::vector<const ConditionDiagnosticsNode*> selected;
+        for (const auto& group : card.rule_groups)
+            for (const auto& rule : group.rules)
+                visit_rule(rule, [&](const auto& node) {
+                    if (comparisons_[card.index].contains(node.path)) selected.push_back(&node);
+                });
+        if (!selected.empty() && ImGui::CollapsingHeader("Detector comparison", ImGuiTreeNodeFlags_DefaultOpen))
+            draw_detector_comparison(selected, plots_[card.index].plots, draw_time_,
+                                     window_seconds_, 230 * scale, palette);
+    }
+    ImGui::PopID();
 }
 
-}  // namespace divergencesplitter::ui
+void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card) {
+    ImGui::PushID(rule.path.c_str());
+    auto label = "Rule " + std::to_string(rule.index + 1);
+    if (rule.action) label += " -> " + std::string{to_string(*rule.action)};
+    if (rule.active_rule_index) label += " | active " + std::to_string(*rule.active_rule_index + 1);
+    if (ImGui::CollapsingHeader(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (!rule.sequence_rules.empty()) {
+            for (const auto& child : rule.sequence_rules) draw_rule(child, card);
+        } else draw_condition(rule.condition, card);
+    }
+    ImGui::PopID();
+}
+
+void MonitorPage::draw_condition(const ConditionDiagnosticsNode& node, const ScenarioCardModel& card) {
+    if (node.type.empty() || node.type == "none") return;
+    const auto palette = theme::colors(app_->theme_mode());
+    const float scale = app_->dpi_scale();
+    ImGui::PushID(node.path.c_str());
+    const auto label = node.description + " [" + node.status + "]";
+    if (ImGui::Selectable(label.c_str(), details_open_ && selected_instance_ == card.index && selected_path_ == node.path)) {
+        selected_instance_ = card.index;
+        selected_path_ = node.path;
+        selected_identity_ = card.history ? card.history->identity : 0;
+        details_open_ = true;
+    }
+    if (!node.detector_type.empty()) {
+        bool compare = comparisons_[card.index].contains(node.path);
+        if (ImGui::Checkbox("Compare detector", &compare)) {
+            if (compare) comparisons_[card.index].insert(node.path);
+            else comparisons_[card.index].erase(node.path);
+        }
+    }
+    if (node.measurement.value) {
+        ImGui::Text("%s: %.4g %s", node.status == "skipped" ? "Last value" : "Value",
+                    *node.measurement.value, node.measurement.unit.c_str());
+        if (node.measurement.target) {
+            ImGui::SameLine();
+            ImGui::TextColored(palette.warning, " / Target %.4g", *node.measurement.target);
+        }
+    } else if (node.measurement.target) ImGui::Text("Target: %.4g %s", *node.measurement.target, node.measurement.unit.c_str());
+    draw_history_plot("##history", node, plots_[card.index].plots,
+                      draw_time_, window_seconds_, 64 * scale, palette);
+    if (!node.children.empty()) {
+        ImGui::Indent(18 * scale);
+        for (const auto& child : node.children) draw_condition(child, card);
+        ImGui::Unindent(18 * scale);
+    }
+    ImGui::PopID();
+}
+
+void MonitorPage::draw_details() {
+    if (!details_open_) return;
+    const ConditionDiagnosticsNode* selected = nullptr;
+    const ScenarioCardModel* card = nullptr;
+    for (const auto& candidate : data_.cards) {
+        if (candidate.index != selected_instance_ || !candidate.history || candidate.history->identity != selected_identity_) continue;
+        card = &candidate;
+        for (const auto& group : candidate.rule_groups)
+            for (const auto& rule : group.rules)
+                visit_rule(rule, [&](const auto& node) { if (node.path == selected_path_) selected = &node; });
+    }
+    if (!selected || !card) { details_open_ = false; return; }
+    ImGui::SetNextWindowSize(ImVec2(800 * app_->dpi_scale(), 700 * app_->dpi_scale()), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Condition details", &details_open_)) {
+        ImGui::Text("Instance %d | %s", card->index, selected->path.c_str());
+        ImGui::TextWrapped("%s [%s]", selected->description.c_str(), selected->status.c_str());
+        if (selected->measurement.value) ImGui::Text("%s: %.4g %s", selected->status == "skipped" ? "Last value" : "Value", *selected->measurement.value, selected->measurement.unit.c_str());
+        if (selected->measurement.target) ImGui::Text("Target: %.4g %s", *selected->measurement.target, selected->measurement.unit.c_str());
+        const auto palette = theme::colors(app_->theme_mode());
+        const double now = draw_time_;
+        draw_history_plot("History", *selected, plots_[card->index].plots, now, window_seconds_, 260 * app_->dpi_scale(), palette, true);
+        draw_history_plot("Result timeline", *selected, plots_[card->index].plots, now, window_seconds_, 180 * app_->dpi_scale(), palette, true, true);
+        text_muted("Blank = not measured | Reset: yellow | Transition: green | Error: red");
+    }
+    ImGui::End();
+}
+} // namespace divergencesplitter::ui

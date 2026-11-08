@@ -1,4 +1,5 @@
-﻿#include "app.hpp"
+#include <implot.h>
+#include "app.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
@@ -345,6 +346,7 @@ void App::destroy_device() {
 void App::create_imgui() {
     IMGUI_CHECKVERSION();
     imgui_ = ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
@@ -365,6 +367,7 @@ void App::destroy_imgui() {
         imgui_initialized_ = false;
     }
     if (imgui_ != nullptr) {
+        ImPlot::DestroyContext();
         ImGui::DestroyContext(imgui_);
         imgui_ = nullptr;
     }

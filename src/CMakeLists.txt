@@ -35,6 +35,7 @@ target_link_libraries(divergencesplitter_core
 # ---------------------------------------------------------------------------
 
 add_library(divergencesplitter_runtime STATIC
+    runtime/evaluation_history.cpp
     runtime/scenario_runtime.cpp
     runtime/instance_runtime.cpp
     runtime/livesplit_adapter.cpp
@@ -90,6 +91,13 @@ if(DIVERGENCESPLITTER_BUILD_UI)
     )
     target_link_libraries(divergencesplitter_imgui PUBLIC d3d11 dxgi)
 
+    add_library(divergencesplitter_implot STATIC
+        "${implot_SOURCE_DIR}/implot.cpp"
+        "${implot_SOURCE_DIR}/implot_items.cpp"
+    )
+    target_include_directories(divergencesplitter_implot SYSTEM PUBLIC "${implot_SOURCE_DIR}")
+    target_link_libraries(divergencesplitter_implot PUBLIC divergencesplitter_imgui)
+
     add_library(divergencesplitter_ui STATIC
         ui/about_page.hpp
         ui/app.hpp
@@ -113,6 +121,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/file_dialog.cpp
         ui/image_texture.cpp
         ui/license_inventory.cpp
+        ui/history_plot.cpp
         ui/monitor_model.cpp
         ui/monitor_page.cpp
         ui/ndi_discovery.cpp
@@ -135,6 +144,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
             divergencesplitter::runtime
         PRIVATE
             divergencesplitter_imgui
+            divergencesplitter_implot
             d3d11 dxgi shell32 ole32 uuid
     )
     # UI headers are internal; only the application and UI tests need this path.

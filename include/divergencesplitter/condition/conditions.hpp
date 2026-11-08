@@ -122,6 +122,7 @@ public:
     [[nodiscard]] std::string_view type_name() const noexcept override { return "once"; }
     [[nodiscard]] std::vector<const Condition*> children() const override;
     [[nodiscard]] std::string describe() const override { return "once"; }
+    [[nodiscard]] bool completed() const noexcept { return completed_; }
 
 protected:
     [[nodiscard]] std::optional<bool> evaluate_impl(FrameContext& context, bool short_circuited) override;
@@ -223,6 +224,7 @@ public:
     [[nodiscard]] std::vector<const Condition*> children() const override;
     [[nodiscard]] std::string describe() const override;
     [[nodiscard]] std::size_t current_step() const noexcept { return index_; }
+    [[nodiscard]] bool completed() const noexcept { return completed_; }
     [[nodiscard]] std::size_t step_count() const noexcept { return conditions_.size(); }
 
 protected:

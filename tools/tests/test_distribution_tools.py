@@ -235,20 +235,24 @@ class LicenseTests(unittest.TestCase):
             imgui = root / "imgui"
             imgui.mkdir()
             (imgui / "LICENSE.txt").write_text("imgui upstream", encoding="utf-8")
+            implot = root / "implot"
+            implot.mkdir()
+            (implot / "LICENSE").write_text("implot upstream", encoding="utf-8")
             with patch.object(collect_licenses, "pinned_file", return_value=camera):
-                collect_licenses.collect(output, share, bridge, imgui, cache)
+                collect_licenses.collect(output, share, bridge, imgui, cache, implot)
             self.assertEqual((output / "opencv.txt").read_text(), "opencv4")
             self.assertEqual((output / "ryml.txt").read_text(), "ryml")
             self.assertEqual((output / "c4core.txt").read_text(), "c4core")
             self.assertEqual((output / "vcpkg/zlib.txt").read_text(), "zlib")
             self.assertEqual((output / "imgui.txt").read_text(), "imgui upstream")
+            self.assertEqual((output / "implot.txt").read_text(), "implot upstream")
             for port in ("opencv4", "ryml", "c4core"):
                 notice = share / port / "copyright"
                 notice.unlink()
                 with self.subTest(port=port), self.assertRaisesRegex(
                     RuntimeError, "Required dependency notice missing"
                 ):
-                    collect_licenses.collect(output, share, bridge, imgui, cache)
+                    collect_licenses.collect(output, share, bridge, imgui, cache, implot)
                 notice.write_text(port, encoding="utf-8")
 
 
@@ -271,6 +275,7 @@ class PackageTests(unittest.TestCase):
             f"licenses/{name}.txt"
             for name in (
                 "imgui",
+                "implot",
                 "opencv",
                 "boost",
                 "ryml",

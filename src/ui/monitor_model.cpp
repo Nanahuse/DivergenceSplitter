@@ -120,6 +120,20 @@ void append_group(
 
 }  // namespace
 
+void MonitorEvaluationRate::update(std::uint64_t identity, std::uint64_t count, double now) {
+    if (!initialized_ || identity_ != identity || count < count_ || now < sampled_at_) {
+        initialized_ = true;
+        identity_ = identity;
+        count_ = count;
+        sampled_at_ = now;
+        fps_ = 0;
+    } else if (now - sampled_at_ >= 0.5) {
+        fps_ = static_cast<double>(count - count_) / (now - sampled_at_);
+        count_ = count;
+        sampled_at_ = now;
+    }
+}
+
 std::string state_text(InstanceState state) {
     switch (state) {
         case InstanceState::connecting:
@@ -251,7 +265,40 @@ ScenarioCardModel card_model(const InstanceDiagnosticsSnapshot& instance) {
     data.state = instance.state;
     data.status = state_text(instance.state);
     data.error = instance.error;
+    if (instance.last_action) data.action_status = "Last action: " + std::string{to_string(*instance.last_action)} + " | " + instance.last_action_result;
     data.groups = evaluation_groups(instance);
+    if (instance.scenario) {
+        const auto& scenario = *instance.scenario;
+        data.history = scenario.history;
+        if (!scenario.configuration_valid) data.notice = "Scenario / split count mismatch";
+        else if (!scenario.snapshot) data.notice = "Waiting for timer state";
+        else if (scenario.reset_pending) data.notice = "Waiting for Reset confirmation";
+        else if (scenario.pending_action) data.notice = "Pending: " + std::string{to_string(*scenario.pending_action)};
+        if (scenario.snapshot) {
+            const auto& timer = *scenario.snapshot;
+            data.timer_status = phase_text(timer.phase) + " | Split " +
+                std::to_string(timer.split_index + 1) + " / " + std::to_string(timer.split_count);
+            const auto append = [&](const auto& groups, const char* name) {
+                for (const auto& group : groups)
+                    if (!group.rules.empty()) data.rule_groups.push_back({name, group.rules});
+            };
+            if (scenario.configuration_valid && !scenario.reset_pending) {
+                if (timer.phase == TimerPhase::not_running) append(scenario.start, "Start");
+                else if (timer.phase == TimerPhase::ended) append(scenario.incomplete, "Incomplete");
+                else if (timer.phase == TimerPhase::running || timer.phase == TimerPhase::paused) {
+                    append(scenario.reset, "Reset");
+                    if (timer.split_index >= 0 && static_cast<std::size_t>(timer.split_index) < scenario.splits.size()) {
+                        const auto& split = scenario.splits[static_cast<std::size_t>(timer.split_index)];
+                        auto label = "Split " + std::to_string(split.index + 1);
+                        const auto name = segment_name(instance, split.index);
+                        if (!name.empty()) label += " - " + name;
+                        data.rule_groups.push_back({label, split.rules});
+                    }
+                }
+            }
+        }
+    }
+
     if (!data.error.empty()) {
         EvaluationGroup error_group;
         error_group.lines.push_back(EvaluationLine{"Error: " + data.error, {}, 0, false});

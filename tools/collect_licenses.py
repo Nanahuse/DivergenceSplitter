@@ -82,6 +82,7 @@ def collect(
     bridge: Path,
     imgui_source: Path | None,
     cache: Path,
+    implot_source: Path | None = None,
 ) -> None:
     source_root = Path(__file__).resolve().parent.parent
     inventory = load_inventory(source_root)
@@ -104,6 +105,10 @@ def collect(
             if imgui_source is None:
                 raise RuntimeError("Dear ImGui source is required for its license")
             copy_notice(imgui_source / "LICENSE.txt", destination / license_file)
+        elif source == "implot":
+            if implot_source is None:
+                raise RuntimeError("ImPlot source is required for its license")
+            copy_notice(implot_source / "LICENSE", destination / license_file)
         elif source == "checked-in":
             copy_notice(source_root / "licenses" / license_file, destination / license_file)
         elif source in ("external", "bundled"):
@@ -128,6 +133,7 @@ def main() -> None:
     parser.add_argument("--vcpkg-share", type=Path, required=True)
     parser.add_argument("--bridge-source", type=Path, required=True)
     parser.add_argument("--imgui-source", type=Path)
+    parser.add_argument("--implot-source", type=Path)
     parser.add_argument("--cache", type=Path, required=True)
     args = parser.parse_args()
     collect(
@@ -136,6 +142,7 @@ def main() -> None:
         args.bridge_source,
         args.imgui_source,
         args.cache,
+        args.implot_source,
     )
 
 

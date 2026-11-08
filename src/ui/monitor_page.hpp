@@ -6,6 +6,8 @@
 
 #include "image_texture.hpp"
 #include "monitor_model.hpp"
+#include "history_plot.hpp"
+#include <set>
 
 namespace divergencesplitter::ui {
 
@@ -19,18 +21,11 @@ public:
     void draw();
 
 private:
-    struct EvaluationRate {
-        std::uint64_t generation{};
-        std::uint64_t count{};
-        std::chrono::steady_clock::time_point sampled_at;
-        double fps{};
-    };
-
     struct Data {
         bool running{};
         std::uint64_t frames_published{};
         double measured_fps{};
-        double processing_fps{};
+
         std::string last_error;
         std::vector<ScenarioCardModel> cards;
     };
@@ -39,12 +34,28 @@ private:
     void draw_cards();
     void draw_reset_button();
     void draw_card(const ScenarioCardModel& card);
+    void draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card);
+    void draw_condition(const ConditionDiagnosticsNode& condition, const ScenarioCardModel& card);
+    void draw_details();
+    struct InstancePlots {
+        std::uint64_t identity{};
+        HistoryPlots plots;
+    };
+    std::map<int, InstancePlots> plots_;
+    int window_seconds_{30};
+    bool preview_visible_{true};
+    bool details_open_{};
+    int selected_instance_{};
+    std::uint64_t selected_identity_{};
+    std::string selected_path_;
+    std::map<int, std::set<std::string>> comparisons_;
 
     App* app_;
     ImageTexture preview_;
     Data data_;
     double next_update_{};
-    std::map<int, EvaluationRate> evaluation_rates_;
+    double draw_time_{};
+    std::map<int, MonitorEvaluationRate> evaluation_rates_;
     bool reset_holding_{};
     bool reset_triggered_{};
     double reset_started_{};
