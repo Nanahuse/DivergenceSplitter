@@ -508,6 +508,7 @@ std::optional<bool> ThenCondition::evaluate_impl(FrameContext& context, bool sho
         if (within_.has_value() && elapsed > within_->count()) {
             index_ = 0;
             started_at_.reset();
+            record_reset_boundary(context.now());
         }
     }
     bool current = false;

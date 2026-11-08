@@ -45,6 +45,10 @@ public:
     void mark_skipped() const;
 
 protected:
+    // Some composites restart internally without resetting their children.
+    void record_reset_boundary(MonotonicTime time) const noexcept {
+        observe(Observation::reset, {}, time);
+    }
     [[nodiscard]] virtual std::optional<bool> evaluate_impl(
         FrameContext& context,
         bool short_circuited

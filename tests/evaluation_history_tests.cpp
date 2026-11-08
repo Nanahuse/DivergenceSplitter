@@ -172,6 +172,19 @@ TEST(EvaluationHistory, ResetWhenRecordsResetAndReevaluationAtSameTimestamp) {
     EXPECT_EQ(samples[0].time, samples[1].time);
 }
 
+TEST(EvaluationHistory, ThenTimeoutRecordsBoundaryEvenWhenItReentersTheSameStep) {
+    HistoryHarness harness{std::make_shared<ThenCondition>(
+        std::vector<ConditionPtr>{detected(), detected(2.0)}, 200ms)};
+    harness.evaluate(255);
+    harness.evaluate(255, 300ms);
+    const auto samples = harness.series().samples;
+    ASSERT_EQ(samples.size(), 3);
+    EXPECT_EQ(samples[0].value, 1.0);
+    EXPECT_EQ(samples[1].event, HistoryEvent::reset);
+    EXPECT_EQ(samples[2].value, 1.0);
+    EXPECT_EQ(samples[1].time, samples[2].time);
+}
+
 TEST(EvaluationHistory, OnceCompletionPersistsWhileItsChildIsSkipped) {
     HistoryHarness harness{std::make_shared<OnceCondition>(detected())};
     harness.evaluate(255);
