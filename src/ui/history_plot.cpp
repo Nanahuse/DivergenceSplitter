@@ -3,6 +3,7 @@
 #include <implot.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace divergencesplitter::ui {
@@ -128,6 +129,103 @@ HistoryPlots prepare_history(const EvaluationHistorySnapshot& history, const std
         }
     }
     return result;
+}
+
+SparklineGeometry sparkline_geometry(const ConditionDiagnosticsNode& condition,
+    const HistoryPlotData& data, double now, double seconds, ImVec2 size) {
+    SparklineGeometry result;
+    const double start = now - seconds;
+    double minimum = std::min(0.0, condition.measurement.target.value_or(0.0));
+    double maximum = std::max(condition.measurement.unit == "score" ? 1.0 : 0.0,
+                              condition.measurement.target.value_or(1.0));
+    for (std::size_t i = 0; i < data.times.size(); ++i) {
+        if (data.times[i] >= start && data.times[i] <= now) {
+            minimum = std::min(minimum, data.values[i]);
+            maximum = std::max(maximum, data.values[i]);
+        }
+    }
+    const double range = maximum > minimum ? maximum - minimum : 1.0;
+    const auto x = [&](double time) { return static_cast<float>(1 + (time - start) / seconds * (size.x - 2)); };
+    const auto y = [&](double value) { return static_cast<float>((1.0 - (value - minimum) / range) * (size.y - 4) + 2); };
+    if (condition.measurement.target) result.target = y(*condition.measurement.target);
+    for (const auto& segment : data.segments) {
+        auto& points = result.segments.emplace_back().points;
+        // At most first/min/max/last per pixel, preserving extrema and coincident hold drops.
+        std::vector<std::size_t> bucket;
+        int pixel = -1;
+        const auto flush = [&] {
+            if (bucket.empty()) return;
+            auto low = bucket.front(), high = bucket.front();
+            for (const auto i : bucket) {
+                if (data.values[i] < data.values[low]) low = i;
+                if (data.values[i] >= data.values[high]) high = i;
+            }
+            std::array<std::size_t, 4> indices{bucket.front(), low, high, bucket.back()};
+            std::sort(indices.begin(), indices.end());
+            std::optional<std::size_t> previous;
+            for (const auto i : indices) {
+                if (previous == i) continue;
+                const ImVec2 point{x(data.times[i]), y(data.values[i])};
+                if (condition.measurement.stairs && !points.empty())
+                    points.emplace_back(point.x, points.back().y);
+                points.push_back(point);
+                previous = i;
+            }
+            bucket.clear();
+        };
+        for (int offset = 0; offset < segment.count; ++offset) {
+            const auto i = static_cast<std::size_t>(segment.begin + offset);
+            if (data.times[i] < start || data.times[i] > now) continue;
+            const int next = static_cast<int>(x(data.times[i]));
+            if (next != pixel) { flush(); pixel = next; }
+            bucket.push_back(i);
+        }
+        flush();
+        if (points.empty()) result.segments.pop_back();
+    }
+    const auto events = [&](const auto& times, auto& target) {
+        for (const auto time : times) if (time >= start && time <= now) target.push_back(x(time));
+    };
+    events(data.resets, result.resets);
+    events(data.errors, result.errors);
+    events(data.transitions, result.transitions);
+    return result;
+}
+
+bool draw_sparkline(const char* id, const ConditionDiagnosticsNode& condition,
+    const HistoryPlots& history, double now, double seconds, ImVec2 size,
+    const theme::Colors& palette) {
+    const auto origin = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton(id, size);
+    const bool clicked = ImGui::IsItemClicked();
+    if (!ImGui::IsItemVisible()) return clicked;
+    auto* draw = ImGui::GetWindowDrawList();
+    const ImVec2 end{origin.x + size.x, origin.y + size.y};
+    draw->AddRectFilled(origin, end, ImGui::GetColorU32(palette.surface_low), 3);
+    draw->PushClipRect(origin, end, true);
+    const auto found = history.find(condition.path);
+    static const HistoryPlotData empty;
+    auto geometry = sparkline_geometry(condition, found == history.end() ? empty : found->second,
+                                        now, seconds, size);
+    if (geometry.target) draw->AddLine(ImVec2(origin.x, origin.y + *geometry.target),
+        ImVec2(end.x, origin.y + *geometry.target), ImGui::GetColorU32(palette.warning));
+    for (auto& segment : geometry.segments) {
+        for (auto& point : segment.points) { point.x += origin.x; point.y += origin.y; }
+        if (segment.points.size() == 1)
+            draw->AddCircleFilled(segment.points.front(), 1.5f, ImGui::GetColorU32(palette.primary));
+        else draw->AddPolyline(segment.points.data(), static_cast<int>(segment.points.size()),
+                               ImGui::GetColorU32(palette.primary), ImDrawFlags_None, 1.2f);
+    }
+    const auto events = [&](const auto& positions, const ImVec4& color) {
+        for (const auto pos : positions) draw->AddLine(ImVec2(origin.x + pos, origin.y),
+            ImVec2(origin.x + pos, end.y), ImGui::GetColorU32(color));
+    };
+    events(geometry.resets, palette.warning);
+    events(geometry.transitions, palette.active);
+    events(geometry.errors, palette.error);
+    draw->PopClipRect();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to inspect history");
+    return clicked;
 }
 
 bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition,

@@ -35,7 +35,7 @@ struct ConditionMeasurement {
 
 struct ConditionHistory {
     std::string path;
-    std::deque<EvaluationSample> samples;
+    std::vector<EvaluationSample> samples;
 };
 
 struct EvaluationHistorySnapshot {
@@ -56,8 +56,14 @@ public:
     [[nodiscard]] std::shared_ptr<const EvaluationHistorySnapshot> snapshot(const HistoryPaths* paths = nullptr) const;
 
 private:
+    // Collection and retention keep the original bounded deque. UI snapshots are
+    // contiguous so dense lists do not allocate one MSVC deque block per sample.
+    struct Buffer {
+        std::string path;
+        std::deque<EvaluationSample> samples;
+    };
     struct Series {
-        ConditionHistory history;
+        Buffer history;
         std::uint64_t frame{};
     };
     void record(std::size_t index, const Condition& condition, Condition::Observation event,

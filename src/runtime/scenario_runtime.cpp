@@ -31,6 +31,10 @@ ConditionDiagnosticsNode make_condition_node(
         node.minimum_score = detected->minimum_score();
     }
     node.measurement = condition_measurement(*condition);
+    if (const auto* sequence = dynamic_cast<const ThenCondition*>(condition)) {
+        node.completed = sequence->completed();
+        if (!node.completed) node.active_step = sequence->current_step();
+    }
     node.latest_score = condition->latest_score();
     node.max_score = condition->max_score();
     const auto& children = condition->children();

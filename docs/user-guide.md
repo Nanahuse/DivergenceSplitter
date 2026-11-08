@@ -6,13 +6,15 @@
 
 ## Monitor
 
-MonitorはGlobal Status、折りたたみ可能なInput Preview、Instanceごとのパネルを縦に表示します。プレビューは共通入力のCrop／Resize後の画像です。Global StatusにはCapture状態、Input FPS、取得フレーム数とInstance別のEvaluation FPSを表示します。Evaluation FPSは、そのInstanceが1秒あたりに映像を評価した回数です。
+MonitorはGlobal Status、折りたたみ可能なInput Preview、Instanceごとのパネルを縦に表示します。プレビューは共通入力のCrop／Resize後の画像です。Global StatusにはCapture状態、Input FPS、取得フレーム数を表示します。各Instanceの先頭には接続状態とEvaluation FPSを表示します。Evaluation FPSは、そのInstanceが1秒あたりに映像を評価した回数です。
 
-各InstanceにはBridgeの接続先、接続状態、タイマーの状態、Split位置、操作の確認待ち、最後の操作結果、評価時間の平均・最大を表示します。Instance番号は0から、画面上のRule・Split番号は1から始まります。
+Instance detailsを開くと、Bridgeの接続先、タイマーの状態、Split位置、操作の確認待ち、最後の操作結果、評価時間の平均・最大を確認できます。Instance番号は0から、画面上のRule・Split番号は1から始まります。
 
-Start、Reset、Incompleteの共通Ruleと、すべての設定済みSplitをグループごとに表示します。Current targetは現在の対象で、切り替わったときに自動で展開します。過去のSplitはHistory / inactiveとして折りたたみ状態で残り、開き直せます。Ruleはグラフごと折りたためます。`all`、`any`、`then`などの子Conditionは階層を保って表示され、非アクティブな子にも過去の履歴が残ります。
+Start、Reset、Incompleteの共通Ruleと、すべての設定済みSplitをグループごとに保持します。Current targetは現在の対象で、切り替わったときに自動で展開します。過去のSplitや現在対象外のRuleはHistory / inactive rulesから開き直せます。Ruleはグラフごと折りたためます。RuleSequenceは現在のRuleを優先して表示します。
 
-各Conditionの履歴は同じ時間軸を使います。Historyで15秒・30秒・60秒を切り替え、Condition名または小型グラフを選ぶと軸・凡例・現在値・目標値を含む詳細グラフが開きます。詳細表示はSplitが切り替わっても残ります。DetectorのCompare detectorを選ぶと、そのInstanceの選択したスコアを同じグラフで比較できます。比較グラフもクリックで拡大できます。詳細グラフではホイールでズーム、ドラッグで移動、右ドラッグで範囲選択できます。操作すると表示時刻を固定し、値と状態の時間軸を揃えたまま確認できます。Resume liveやReset view、表示期間の変更でライブ表示に戻ります。保持期間を過ぎた履歴は固定表示中も失われます。表示設定は保存しません。
+通常のConditionは状態アイコン、種類、小型グラフを1行に表示します。`hold · detected`などの単一子Conditionは1行へ集約し、`all`と`any`は子を階層表示します。`then`は進行表示と現在のステップだけを展開し、完了時は完了状態を表示します。`reset_when`はConditionとResetを区別します。数値やDetectorの詳しい情報は詳細表示へ移し、しきい値・目標値は小型グラフ内の線で示します。
+
+各Conditionの履歴は同じ時間軸を使います。Historyで15秒・30秒・60秒を切り替え、Condition名または小型グラフを選ぶと軸・凡例・現在値・目標値を含む詳細画面が開きます。Inspectからも開けます。左側の構造ツリーでは、集約した子Conditionや`then`の全ステップを選択できます。Rule選択には過去のSplitやRuleSequenceの全Ruleも含まれます。詳細表示はSplitが切り替わっても残ります。Compare detectorsでは、そのInstanceの複数Detectorを選んでスコアを比較できます。詳細グラフではホイールでズーム、ドラッグで移動、右ドラッグで範囲選択できます。操作すると表示時刻を固定し、値と状態の時間軸を揃えたまま確認できます。Resume liveやReset view、表示期間の変更でライブ表示に戻ります。保持期間を過ぎた履歴は固定表示中も失われます。表示設定は保存しません。
 
 `detected`はスコアとしきい値、`elapsed`と`hold`は秒数と目標時間、`nth`は観測回数、`then`はステップの進行を表示します。`nth`は内部Conditionがtrueを返すたびに増え、内部Conditionが`rising_edge`の場合にその成立回数を数えます。状態Conditionにはtrue／falseの履歴を表示します。
 

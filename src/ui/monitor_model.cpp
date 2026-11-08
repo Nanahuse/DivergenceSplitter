@@ -336,4 +336,88 @@ const ConditionDiagnosticsNode* find_condition(const ScenarioCardModel& card, st
     return nullptr;
 }
 
+CompactConditionRow compact_condition_row(const ConditionDiagnosticsNode& node) {
+    CompactConditionRow row;
+    row.anchor = &node;
+    const auto unary = [](std::string_view type) {
+        return type == "hold" || type == "nth" || type == "once" || type == "not" ||
+               type == "rising_edge" || type == "falling_edge";
+    };
+    const ConditionDiagnosticsNode* current = &node;
+    while (true) {
+        if (!row.label.empty()) row.label += " \xC2\xB7 ";
+        row.label += current->type;
+        if (!row.graph && unary(current->type) && current->type != "not") row.graph = current;
+        if (!unary(current->type) || current->children.size() != 1) break;
+        current = &current->children.front();
+    }
+    if (!current->children.empty()) row.branch = current;
+    if (!row.graph && !row.branch) row.graph = current;
+    if (current->type == "then") {
+        const auto count = current->children.size();
+        row.label += current->completed ? " | Complete " : " | ";
+        const auto step = current->completed ? count : std::min(current->active_step.value_or(0) + 1, count);
+        row.label += std::to_string(step) + " / " + std::to_string(count);
+    }
+    return row;
+}
+
+std::vector<CompactConditionChild> compact_condition_children(const CompactConditionRow& row) {
+    std::vector<CompactConditionChild> result;
+    if (!row.branch) return result;
+    const auto& branch = *row.branch;
+    if (branch.type == "then") {
+        if (!branch.completed) {
+            const auto step = branch.active_step.value_or(0);
+            if (step < branch.children.size()) result.push_back({&branch.children[step], {}});
+        }
+    } else {
+        for (std::size_t i = 0; i < branch.children.size(); ++i) {
+            std::string role;
+            if (branch.type == "reset_when") role = i == 0 ? "Condition" : "Reset";
+            result.push_back({&branch.children[i], std::move(role)});
+        }
+    }
+    return result;
+}
+
+const RuleDiagnosticsNode* compact_sequence_rule(const RuleDiagnosticsNode& rule) {
+    if (!rule.active_rule_index || *rule.active_rule_index >= rule.sequence_rules.size()) return nullptr;
+    return &rule.sequence_rules[*rule.active_rule_index];
+}
+
+std::vector<InspectorRuleRoot> inspector_rule_roots(const ScenarioCardModel& card) {
+    std::vector<InspectorRuleRoot> result;
+    const auto append = [&](const auto& self, const RuleDiagnosticsNode& rule,
+                            const std::string& label, bool current) -> void {
+        const auto name = label + " / Rule " + std::to_string(rule.index + 1);
+        if (!rule.sequence_rules.empty()) {
+            for (std::size_t i = 0; i < rule.sequence_rules.size(); ++i)
+                self(self, rule.sequence_rules[i], name,
+                     current && rule.active_rule_index == i);
+        } else if (!rule.condition.type.empty() && rule.condition.type != "none") {
+            result.push_back({&rule.condition, name, current});
+        }
+    };
+    for (const auto& group : card.rule_groups)
+        for (const auto& rule : group.rules) append(append, rule, group.label, group.current);
+    return result;
+}
+
+bool condition_is_current(const ScenarioCardModel& card, std::string_view path) {
+    const auto visit = [&](const auto& self, const ConditionDiagnosticsNode& node,
+                           bool current) -> std::optional<bool> {
+        if (node.path == path) return current;
+        for (std::size_t i = 0; i < node.children.size(); ++i) {
+            const bool active = current && (node.type != "then" ||
+                (!node.completed && node.active_step == i));
+            if (const auto found = self(self, node.children[i], active)) return found;
+        }
+        return {};
+    };
+    for (const auto& root : inspector_rule_roots(card))
+        if (const auto found = visit(visit, *root.condition, root.current)) return *found;
+    return false;
+}
+
 }  // namespace divergencesplitter::ui

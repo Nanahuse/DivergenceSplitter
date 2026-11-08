@@ -124,6 +124,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/history_plot.cpp
         ui/monitor_model.cpp
         ui/monitor_page.cpp
+        ui/monitor_row.cpp
         ui/ndi_discovery.cpp
         ui/profile_page.cpp
         ui/profile_preview.cpp

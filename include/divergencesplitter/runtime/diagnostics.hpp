@@ -26,6 +26,8 @@ struct ConditionDiagnosticsNode {
     std::optional<double> minimum_score;
     ConditionMeasurement measurement;
     std::vector<ConditionDiagnosticsNode> children;
+    std::optional<std::size_t> active_step;
+    bool completed{};
 };
 
 struct RuleDiagnosticsNode {

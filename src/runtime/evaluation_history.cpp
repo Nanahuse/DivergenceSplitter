@@ -135,6 +135,7 @@ std::shared_ptr<const EvaluationHistorySnapshot> EvaluationHistory::snapshot(con
         if (paths && !paths->contains(series.history.path)) continue;
         auto& target = result->conditions.emplace_back();
         target.path = series.history.path;
+        target.samples.reserve(series.history.samples.size());
         for (const auto& sample : series.history.samples)
             if (sample.time >= result->sampled_at - std::chrono::seconds{60})
                 target.samples.push_back(sample);

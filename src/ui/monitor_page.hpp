@@ -35,7 +35,11 @@ private:
     void draw_reset_button();
     void draw_card(const ScenarioCardModel& card);
     void draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card);
-    void draw_condition(const ConditionDiagnosticsNode& condition, const ScenarioCardModel& card);
+    void draw_condition(const ConditionDiagnosticsNode& condition, const ScenarioCardModel& card,
+                        int depth = 0, std::string_view role = {});
+    void draw_structure(const ConditionDiagnosticsNode& node, const ScenarioCardModel& card,
+                        const std::string& label, bool expand_selection);
+    void open_inspector(const ScenarioCardModel& card);
     void draw_details();
     void select_condition(const ScenarioCardModel& card, const ConditionDiagnosticsNode& node);
     struct InstancePlots {
@@ -55,6 +59,9 @@ private:
     PlotViewport comparison_view_;
     bool comparison_details_{};
     InstanceHistoryPaths requested_paths_;
+    std::string inspector_root_path_;
+    bool inspector_selection_changed_{};
+    std::set<int> instance_details_;
 
     App* app_;
     ImageTexture preview_;

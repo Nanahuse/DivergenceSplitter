@@ -301,3 +301,41 @@ TEST(EvaluationHistory, SelectedSnapshotsDoNotCopyOtherPathsOrDiscardTheirSample
     ASSERT_EQ(reopened->conditions.size(), 1);
     EXPECT_EQ(reopened->conditions[0].samples.size(), 2);
 }
+
+TEST(EvaluationHistory, ThenDiagnosticsExposeCurrentCompletionTimeoutAndResetWithoutReevaluation) {
+    auto clock = std::make_shared<test::ManualTimeProvider>();
+    Scenario scenario;
+    scenario.start_condition = std::make_shared<ThenCondition>(
+        std::vector<ConditionPtr>{detected(), std::make_shared<ElapsedCondition>(100ms)}, std::nullopt);
+    ScenarioRuntime runtime{scenario, clock};
+    runtime.apply_update(state(TimerPhase::not_running, -1));
+    const auto inspect = [&] { return runtime.diagnostics().start[0].rules[0].condition; };
+    const auto evaluate = [&](int gray) {
+        return runtime.evaluate(test::make_context(test::solid(2, 2, gray), *clock));
+    };
+    EXPECT_EQ(inspect().active_step, 0);
+    (void)evaluate(255);
+    EXPECT_EQ(inspect().active_step, 1);
+    clock->advance(50ms);
+    (void)evaluate(255);
+    EXPECT_FALSE(inspect().completed);
+    clock->advance(100ms);
+    EXPECT_TRUE(evaluate(255));
+    EXPECT_TRUE(inspect().completed);
+    EXPECT_FALSE(inspect().active_step);
+    runtime.apply_update(state(TimerPhase::running, 0, 1, 2));
+    runtime.apply_update(state(TimerPhase::not_running, -1, 1, 3));
+    EXPECT_FALSE(inspect().completed);
+    EXPECT_EQ(inspect().active_step, 0);
+
+    Scenario timed;
+    timed.start_condition = std::make_shared<ThenCondition>(
+        std::vector<ConditionPtr>{detected(), detected(2.0)}, 200ms);
+    ScenarioRuntime timeout{timed, clock};
+    timeout.apply_update(state(TimerPhase::not_running, -1));
+    (void)timeout.evaluate(test::make_context(test::solid(2, 2, 255), *clock));
+    EXPECT_EQ(timeout.diagnostics().start[0].rules[0].condition.active_step, 1);
+    clock->advance(300ms);
+    (void)timeout.evaluate(test::make_context(test::solid(2, 2, 0), *clock));
+    EXPECT_EQ(timeout.diagnostics().start[0].rules[0].condition.active_step, 0);
+}

@@ -4,6 +4,7 @@
 
 #include "history_plot.hpp"
 #include "monitor_model.hpp"
+#include "monitor_row.hpp"
 
 using namespace divergencesplitter;
 using namespace divergencesplitter::ui;
@@ -255,4 +256,171 @@ TEST(HistoryPlot, DetailAndComparisonZoomFreezeTimeAndKeepTheViewportUntilReset)
         EXPECT_TRUE(view.follow);
         EXPECT_NEAR(view.x_max - view.x_min, 15, 1e-6);
     }
+}
+
+TEST(MonitorModel, UnaryConditionsMergeIntoOneRowWithoutDiscardingTheChild) {
+    for (const auto* type : {"hold", "nth", "once", "rising_edge", "falling_edge", "not"}) {
+        ConditionDiagnosticsNode root;
+        root.type = type;
+        root.path = "root";
+        root.description = "hidden numeric configuration 0.95";
+        root.children.resize(1);
+        root.children[0].type = "detected";
+        root.children[0].path = "root.c0";
+        root.children[0].detector_type = "mean_brightness";
+        const auto row = compact_condition_row(root);
+        EXPECT_EQ(row.anchor, &root);
+        EXPECT_EQ(row.label.find("0.95"), std::string::npos);
+        EXPECT_EQ(row.label.find("mean_brightness"), std::string::npos);
+        EXPECT_NE(row.label.find("detected"), std::string::npos);
+        EXPECT_TRUE(compact_condition_children(row).empty());
+        EXPECT_EQ(row.graph, root.type == "not" ? &root.children[0] : &root);
+        EXPECT_EQ(root.children.size(), 1);
+    }
+}
+
+TEST(MonitorModel, CompactThenShowsOnlyItsCurrentStepAndNoChildrenWhenComplete) {
+    ConditionDiagnosticsNode node;
+    node.type = "then";
+    node.active_step = 1;
+    node.children.resize(3);
+    node.children[0].type = "detected";
+    node.children[1].type = "all";
+    node.children[1].children.resize(2);
+    node.children[2].type = "elapsed";
+    auto row = compact_condition_row(node);
+    EXPECT_EQ(row.graph, nullptr);
+    EXPECT_NE(row.label.find("2 / 3"), std::string::npos);
+    auto children = compact_condition_children(row);
+    ASSERT_EQ(children.size(), 1);
+    EXPECT_EQ(children[0].condition, &node.children[1]);
+    EXPECT_EQ(compact_condition_children(compact_condition_row(*children[0].condition)).size(), 2);
+    node.completed = true;
+    node.active_step.reset();
+    row = compact_condition_row(node);
+    EXPECT_TRUE(compact_condition_children(row).empty());
+    EXPECT_NE(row.label.find("Complete 3 / 3"), std::string::npos);
+    node.completed = false;
+    node.active_step = 0;
+    EXPECT_EQ(compact_condition_children(compact_condition_row(node))[0].condition, &node.children[0]);
+}
+
+TEST(MonitorModel, WrapperAroundABranchKeepsHierarchyAndResetWhenRoles) {
+    ConditionDiagnosticsNode hold;
+    hold.type = "hold";
+    hold.children.resize(1);
+    hold.children[0].type = "any";
+    hold.children[0].children.resize(2);
+    const auto row = compact_condition_row(hold);
+    EXPECT_EQ(row.graph, &hold);
+    EXPECT_EQ(compact_condition_children(row).size(), 2);
+    ConditionDiagnosticsNode reset;
+    reset.type = "reset_when";
+    reset.children.resize(2);
+    const auto roles = compact_condition_children(compact_condition_row(reset));
+    ASSERT_EQ(roles.size(), 2);
+    EXPECT_EQ(roles[0].role, "Condition");
+    EXPECT_EQ(roles[1].role, "Reset");
+}
+
+TEST(MonitorModel, InspectorRetainsPastSequenceRulesAndAllThenSteps) {
+    ScenarioCardModel card;
+    RuleDiagnosticsNode sequence;
+    sequence.path = "split.0.r0";
+    sequence.active_rule_index = 1;
+    for (int i = 0; i < 3; ++i) {
+        RuleDiagnosticsNode rule;
+        rule.index = static_cast<std::size_t>(i);
+        rule.condition.type = "then";
+        rule.condition.path = sequence.path + ".s" + std::to_string(i) + ".cond";
+        rule.condition.active_step = 1;
+        for (int j = 0; j < 3; ++j) {
+            ConditionDiagnosticsNode child;
+            child.type = "detected";
+            child.path = rule.condition.path + ".c" + std::to_string(j);
+            rule.condition.children.push_back(child);
+        }
+        sequence.sequence_rules.push_back(rule);
+    }
+    card.rule_groups.push_back({"Split 1", {sequence}, "split.0", true});
+    const auto& source = card.rule_groups[0].rules[0];
+    EXPECT_EQ(compact_sequence_rule(source), &source.sequence_rules[1]);
+    const auto roots = inspector_rule_roots(card);
+    ASSERT_EQ(roots.size(), 3);
+    EXPECT_FALSE(roots[0].current);
+    EXPECT_TRUE(roots[1].current);
+    EXPECT_NE(find_condition(card, roots[0].condition->children[0].path), nullptr);
+    EXPECT_FALSE(condition_is_current(card, roots[0].condition->children[1].path));
+    EXPECT_FALSE(condition_is_current(card, roots[1].condition->children[0].path));
+    EXPECT_TRUE(condition_is_current(card, roots[1].condition->children[1].path));
+    EXPECT_FALSE(condition_is_current(card, roots[1].condition->children[2].path));
+}
+
+TEST(HistoryPlot, SparklineRetainsGapsResetsErrorsAndVerticalHoldDrops) {
+    EvaluationHistorySnapshot history;
+    history.conditions.push_back({"hold", {
+        {{1'000'000'000}, 0.5, ConditionStatus::false_value, HistoryEvent::sample, false},
+        {{2'000'000'000}, 0.0, ConditionStatus::false_value, HistoryEvent::transition, false},
+        {{3'000'000'000}, {}, ConditionStatus::skipped, HistoryEvent::gap, {}},
+        {{4'000'000'000}, 0.2, ConditionStatus::false_value, HistoryEvent::sample, false},
+        {{5'000'000'000}, {}, ConditionStatus::not_evaluated, HistoryEvent::reset, {}},
+        {{6'000'000'000}, {}, ConditionStatus::error, HistoryEvent::error, {}}
+    }});
+    ConditionDiagnosticsNode node;
+    node.path = "hold";
+    node.measurement.target = 1.0;
+    const auto plots = prepare_history(history, {"hold"});
+    const auto geometry = sparkline_geometry(node, plots.at("hold"), 6, 6, ImVec2(140, 22));
+    ASSERT_EQ(geometry.segments.size(), 2);
+    const auto& points = geometry.segments[0].points;
+    ASSERT_GE(points.size(), 3);
+    EXPECT_FLOAT_EQ(points[1].x, points[2].x);
+    EXPECT_LT(points[1].y, points[2].y);
+    EXPECT_EQ(geometry.resets.size(), 1);
+    EXPECT_EQ(geometry.errors.size(), 1);
+    EXPECT_TRUE(geometry.target.has_value());
+}
+
+TEST(HistoryPlot, CompactRowsStayWithinOneLineAndTheSparklineIsClickable) {
+    PlotFixture fixture;
+    ConditionDiagnosticsNode hold;
+    hold.type = "hold";
+    hold.path = "hold";
+    hold.status = "false";
+    hold.children.resize(1);
+    hold.children[0].type = "detected";
+    ImVec2 hit;
+    const auto draw = [&] {
+        fixture.begin();
+        const float top = ImGui::GetCursorScreenPos().y;
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4, 1));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
+        const ConditionDiagnosticsNode* selected = nullptr;
+        if (ImGui::BeginTable("rows", 3)) {
+            ImGui::TableSetupColumn("state", ImGuiTableColumnFlags_WidthFixed, 18);
+            ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("history", ImGuiTableColumnFlags_WidthFixed, 140);
+            for (int i = 0; i < 10; ++i) {
+                ImGui::PushID(i);
+                auto action = draw_compact_condition_row(compact_condition_row(hold), false, 0, {}, false,
+                    fixture.history, 60, 30, theme::colors(theme::Mode::dark), 1);
+                if (i == 0) {
+                    const auto min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+                    hit = ImVec2((min.x + max.x)/2, (min.y + max.y)/2);
+                }
+                if (action.selected) selected = action.selected;
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        ImGui::PopStyleVar(2);
+        EXPECT_LE(ImGui::GetCursorScreenPos().y - top, 260);
+        fixture.end();
+        return selected;
+    };
+    EXPECT_EQ(draw(), nullptr);
+    ImGui::GetIO().AddMousePosEvent(hit.x, hit.y);
+    (void)draw();
+    ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+    EXPECT_EQ(draw(), &hold);
 }

@@ -15,6 +15,7 @@ Configure a Windows Release UI build with
 cmake --build build/full --target monitor_history_benchmark
 build/full/monitor_history_benchmark.exe
 build/full/monitor_history_benchmark.exe selected
+build/full/monitor_history_benchmark.exe render
 ```
 
 The tool is not installed or included in the distribution ZIP. The first command
@@ -61,3 +62,40 @@ ability to reopen a past Condition. It is a retrieval optimization, not another
 history manager. Expensive detector work and exceptionally many simultaneously
 selected comparison series can still increase latency and need profiling with
 the user's actual profile.
+
+## Compact Monitor: contiguous snapshots
+
+The compact view keeps the path filter. Snapshot sample storage now uses a
+reserved vector, avoiding MSVC's many small deque allocations during copies.
+The collector itself still uses the original bounded deque; collection and
+retention are unchanged. Repeating `selected` with six paths gave these results:
+
+| Splits / shared nodes | Retained samples | Snapshot P50 / P95 | Preparation P50 / P95 | Evaluation P95 / max |
+| --- | ---: | ---: | ---: | ---: |
+| 20 / 10 | 72,800 | 0.53 / 0.91 | 0.31 / 1.06 | 0.12 / 0.21 |
+| 100 / 10 | 76,000 | 1.08 / 2.11 | 0.45 / 0.91 | 0.28 / 0.46 |
+| 100 / 1000 | 3,640,990 | 1.50 / 3.47 | 0.25 / 0.49 | 1.21 / 2.06 |
+
+## Compact graph renderer comparison
+
+`render` compares 140 × 22 logical-pixel mini graphs using the same 3600-point
+prepared score history, including gaps, resets and errors. It also measures the
+complete table row with state icon and label. Every tested row is deliberately
+visible, even at 100 rows. Five warmup frames precede thirty measured frames.
+These timings include CPU geometry generation and ImGui/ImPlot submission, not
+GPU rendering, history retrieval or plot preparation.
+
+| Visible rows | Renderer | CPU P50 / P95 (ms) | Vertices per frame |
+| ---: | --- | ---: | ---: |
+| 20 | ImPlot | 0.637 / 0.736 | 142,418 |
+| 20 | ImDrawList | 0.493 / 0.531 | 27,618 |
+| 20 | Complete compact rows | 0.497 / 0.523 | 28,578 |
+| 100 | ImPlot | 3.257 / 4.173 | 712,018 |
+| 100 | ImDrawList | 2.414 / 2.538 | 138,018 |
+| 100 | Complete compact rows | 2.491 / 2.873 | 142,818 |
+
+The mini graph therefore uses ImDrawList with a per-pixel first/min/max/last
+envelope within each continuous segment. At 100 rows this reduced median CPU
+time by about 26% and vertices by about 81% versus ImPlot. Interactive detailed
+graphs retain ImPlot. Actual window clipping normally shows fewer than 100 rows;
+this synthetic comparison does not replace profiling a user's real scenario.

@@ -55,6 +55,30 @@ struct ScenarioCardModel {
     std::string maximum;
 };
 
+struct CompactConditionRow {
+    const ConditionDiagnosticsNode* anchor{};
+    const ConditionDiagnosticsNode* graph{};
+    const ConditionDiagnosticsNode* branch{};
+    std::string label;
+};
+
+struct CompactConditionChild {
+    const ConditionDiagnosticsNode* condition{};
+    std::string role;
+};
+
+[[nodiscard]] CompactConditionRow compact_condition_row(const ConditionDiagnosticsNode& node);
+[[nodiscard]] std::vector<CompactConditionChild> compact_condition_children(const CompactConditionRow& row);
+[[nodiscard]] const RuleDiagnosticsNode* compact_sequence_rule(const RuleDiagnosticsNode& rule);
+
+struct InspectorRuleRoot {
+    const ConditionDiagnosticsNode* condition{};
+    std::string label;
+    bool current{};
+};
+[[nodiscard]] std::vector<InspectorRuleRoot> inspector_rule_roots(const ScenarioCardModel& card);
+[[nodiscard]] bool condition_is_current(const ScenarioCardModel& card, std::string_view path);
+
 [[nodiscard]] std::string state_text(InstanceState state);
 [[nodiscard]] std::string phase_text(TimerPhase phase);
 [[nodiscard]] std::string latency_text(double milliseconds, bool measured);

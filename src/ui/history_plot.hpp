@@ -35,6 +35,20 @@ struct PlotViewport {
 
 [[nodiscard]] HistoryPlots prepare_history(const EvaluationHistorySnapshot& history,
     const std::set<std::string>& hold_paths = {});
+
+struct SparklineSegment { std::vector<ImVec2> points; };
+struct SparklineGeometry {
+    std::vector<SparklineSegment> segments;
+    std::vector<float> resets;
+    std::vector<float> errors;
+    std::vector<float> transitions;
+    std::optional<float> target;
+};
+[[nodiscard]] SparklineGeometry sparkline_geometry(const ConditionDiagnosticsNode& condition,
+    const HistoryPlotData& data, double now, double seconds, ImVec2 size);
+bool draw_sparkline(const char* id, const ConditionDiagnosticsNode& condition,
+    const HistoryPlots& history, double now, double seconds, ImVec2 size,
+    const theme::Colors& palette);
 // Small plots return true when clicked. Detailed plots allow pan/zoom and pause live time.
 bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition,
     const HistoryPlots& history, double now, double seconds, float height,
