@@ -411,6 +411,50 @@ TEST(HistoryPlot, SparklineRetainsGapsResetsErrorsAndVerticalHoldDrops) {
     EXPECT_TRUE(geometry.target.has_value());
 }
 
+TEST(HistoryPlot, StatusIconsHaveDistinctShapesInBothThemesWithoutAddingHeight) {
+    for (const auto mode : {theme::Mode::dark, theme::Mode::light}) {
+        for (const float scale : {1.0f, 1.5f}) {
+            PlotFixture fixture;
+            ConditionDiagnosticsNode node;
+            node.type = "detected";
+            node.path = "condition";
+            const auto draw = [&](const char* status) {
+                node.status = status;
+                fixture.begin();
+                ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4 * scale, scale));
+                std::vector<std::pair<float, float>> geometry;
+                if (ImGui::BeginTable("states", 2)) {
+                    ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("history", ImGuiTableColumnFlags_WidthFixed, 140 * scale);
+                    auto* draw_list = ImGui::GetWindowDrawList();
+                    const int first = draw_list->VtxBuffer.Size;
+                    const float top = ImGui::GetCursorScreenPos().y;
+                    draw_compact_condition_row(compact_condition_row(node), false, 0, {}, false,
+                        {}, 60, 30, theme::colors(mode), scale);
+                    for (int i = first; i < draw_list->VtxBuffer.Size; ++i) {
+                        const auto& pos = draw_list->VtxBuffer[i].pos;
+                        geometry.emplace_back(pos.x, pos.y);
+                    }
+                    ImGui::EndTable();
+                    EXPECT_LE(ImGui::GetCursorScreenPos().y - top, 28 * scale);
+                }
+                ImGui::PopStyleVar();
+                fixture.end();
+                return geometry;
+            };
+            (void)draw("false"); // Stabilize ImGui table sizing before comparing geometry.
+            (void)draw("false");
+            std::vector<std::vector<std::pair<float, float>>> shapes;
+            for (const auto* status : {"true", "false", "not_evaluated", "skipped", "error"}) {
+                auto shape = draw(status);
+                ASSERT_FALSE(shape.empty());
+                for (const auto& previous : shapes) EXPECT_NE(shape, previous) << status;
+                shapes.push_back(std::move(shape));
+            }
+        }
+    }
+}
+
 TEST(HistoryPlot, CompactRowsStayWithinOneLineAndTheSparklineIsClickable) {
     PlotFixture fixture;
     ConditionDiagnosticsNode hold;

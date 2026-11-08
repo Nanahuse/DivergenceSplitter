@@ -239,7 +239,7 @@ void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardM
             const auto row = compact_condition_row(node);
             const auto label = role.empty() ? row.label : std::string{role} + ": " + row.label;
             const auto children = compact_condition_children(row);
-            float width = ImGui::CalcTextSize(label.c_str()).x + (24 + depth * 12) * scale;
+            float width = ImGui::CalcTextSize(label.c_str()).x + (40 + depth * 12) * scale;
             if (depth > 0 && children.empty()) width += ImGui::GetTreeNodeToLabelSpacing();
             for (const auto& child : children)
                 width = std::max(width, self(self, *child.condition, depth + 1, child.role));
