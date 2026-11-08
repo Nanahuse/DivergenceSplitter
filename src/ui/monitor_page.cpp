@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <algorithm>
 #include <cstdio>
+#include <cfloat>
 #include <functional>
 
 #include "app.hpp"
@@ -66,8 +67,6 @@ void MonitorPage::update(double now) {
         auto& plots = plots_[instance.index];
         if (plots.identity != identity) {
             comparisons_.erase(instance.index);
-            current_groups_.erase(instance.index);
-            instance_details_.erase(instance.index);
             if (selected_instance_ == instance.index) details_open_ = false;
         }
         std::set<std::string> holds;
@@ -80,8 +79,6 @@ void MonitorPage::update(double now) {
     std::erase_if(evaluation_rates_, [&](const auto& entry) { return !live.contains(entry.first); });
     std::erase_if(plots_, [&](const auto& entry) { return !live.contains(entry.first); });
     std::erase_if(comparisons_, [&](const auto& entry) { return !live.contains(entry.first); });
-    std::erase_if(instance_details_, [&](int index) { return !live.contains(index); });
-    std::erase_if(current_groups_, [&](const auto& entry) { return !live.contains(entry.first); });
     std::erase_if(requested_paths_, [&](const auto& entry) { return !live.contains(entry.first); });
     if (!live.contains(selected_instance_)) details_open_ = false;
 }
@@ -91,40 +88,67 @@ void MonitorPage::draw() {
     requested_paths_.clear();
     const float scale = app_->dpi_scale();
     ImGui::BeginChild("##monitor", ImVec2(0, 0));
-    text_section_title("Global Status");
-    draw_status_rows();
-    ImGui::Separator();
-    if (ImGui::CollapsingHeader("Input Preview")) {
-        preview_visible_ = true;
-        image_fit(preview_, 240 * scale, "No input");
-    } else preview_visible_ = false;
+    draw_toolbar();
     if (!data_.last_error.empty()) text_error_wrapped(data_.last_error);
     ImGui::Spacing();
-    text_section_title("Instances");
-    ImGui::SameLine();
-    draw_reset_button();
-    ImGui::TextUnformatted("History");
-    for (const int seconds : {15, 30, 60}) {
-        ImGui::SameLine();
-        const auto label = std::to_string(seconds) + " s";
-        if (ImGui::RadioButton(label.c_str(), window_seconds_ == seconds)) window_seconds_ = seconds;
-    }
     draw_cards();
     ImGui::EndChild();
+    if (preview_visible_) {
+        ImGui::SetNextWindowSize(ImVec2(480 * scale, 340 * scale), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Input preview", &preview_visible_))
+            image_fit(preview_, ImGui::GetContentRegionAvail().y, "No input");
+        ImGui::End();
+    }
     draw_details();
 }
 
-void MonitorPage::draw_status_rows() {
+void MonitorPage::draw_toolbar() {
     const auto palette = theme::colors(app_->theme_mode());
-    ImGui::TextColored(data_.running ? palette.active : palette.stopped, "Capture: %s", data_.running ? "Running" : "Stopped");
+    const float scale = app_->dpi_scale();
+    const bool two_lines = ImGui::GetContentRegionAvail().x < 470 * scale;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextColored(data_.running ? palette.active : palette.stopped,
+                       "Capture  %.1f FPS", data_.measured_fps);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s | %llu frames", data_.running ? "Running" : "Stopped",
+        static_cast<unsigned long long>(data_.frames_published));
+    if (!two_lines) ImGui::SameLine(0, 20 * scale);
+    ImGui::SetNextItemWidth(70 * scale);
+    const auto period = std::to_string(window_seconds_) + " s";
+    if (ImGui::BeginCombo("##history_window", period.c_str())) {
+        for (const int seconds : {15, 30, 60}) {
+            const auto label = std::to_string(seconds) + " s";
+            if (ImGui::Selectable(label.c_str(), window_seconds_ == seconds)) window_seconds_ = seconds;
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("History window");
     ImGui::SameLine();
-    ImGui::Text(" | Input: %.1f fps | %llu frames", data_.measured_fps, static_cast<unsigned long long>(data_.frames_published));
-
+    if (ImGui::Button("Preview")) preview_visible_ = !preview_visible_;
+    ImGui::SameLine();
+    draw_reset_button();
 }
 
 void MonitorPage::draw_cards() {
-    if (data_.cards.empty()) text_muted("No instances are running.");
-    for (const auto& card : data_.cards) draw_card(card);
+    if (data_.cards.empty()) { text_muted("No instances are running."); return; }
+    const float scale = app_->dpi_scale();
+    const int columns = monitor_card_columns(ImGui::GetContentRegionAvail().x, scale, data_.cards.size());
+    const float max_height = std::max(120 * scale, ImGui::GetContentRegionAvail().y);
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(6 * scale, 6 * scale));
+    if (ImGui::BeginTable("##instance_cards", columns, ImGuiTableFlags_SizingStretchSame)) {
+        for (const auto& card : data_.cards) {
+            ImGui::TableNextColumn();
+            ImGui::PushID(card.index);
+            ImGui::SetNextWindowSizeConstraints(ImVec2(0, 112 * scale), ImVec2(FLT_MAX, max_height));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::colors(app_->theme_mode()).surface_low);
+            if (ImGui::BeginChild("##instance", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY))
+                draw_card(card);
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::PopStyleVar();
 }
 
 void MonitorPage::draw_reset_button() {
@@ -138,7 +162,7 @@ void MonitorPage::draw_reset_button() {
         std::snprintf(text, sizeof(text), "Hold... %.1f s###reset_all", remaining);
         label = text;
     }
-    if (ImGui::Button(label.c_str(), ImVec2(130.0f * scale, 34.0f * scale))) {
+    if (ImGui::Button(label.c_str(), ImVec2(88.0f * scale, ImGui::GetFrameHeight()))) {
         // A completed hold performs the reset below.
     }
     if (ImGui::IsItemActivated()) {
@@ -162,85 +186,72 @@ void MonitorPage::draw_reset_button() {
 void MonitorPage::draw_card(const ScenarioCardModel& card) {
     const auto palette = theme::colors(app_->theme_mode());
     const float scale = app_->dpi_scale();
-    ImGui::PushID(card.index);
-    ImGui::Separator();
+    ImGui::AlignTextToFramePadding();
     ImGui::Text("Instance %d", card.index);
     ImGui::SameLine();
     ImGui::TextColored(status_color(card.state, palette), "%s", card.status.c_str());
     ImGui::SameLine();
-    ImGui::Text("| %.1f fps", card.evaluation_fps);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Inspect")) open_inspector(card);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Instance details")) {
-        if (instance_details_.contains(card.index)) instance_details_.erase(card.index);
-        else instance_details_.insert(card.index);
-    }
-    if (instance_details_.contains(card.index)) {
-        ImGui::Text("%s | %s", card.endpoint.c_str(), card.timer_status.c_str());
-        ImGui::Text("Evaluation: Avg %s | Max %s", card.average.c_str(), card.maximum.c_str());
-        if (!card.action_status.empty()) text_muted(card.action_status);
-    }
+    ImGui::TextDisabled("%.1f FPS", card.evaluation_fps);
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - 58 * scale));
+    if (ImGui::SmallButton("Details")) open_inspector(card);
     if (!card.error.empty()) text_error_wrapped(card.error);
     if (!card.notice.empty()) ImGui::TextColored(palette.warning, "%s", card.notice.c_str());
-    if (card.rule_groups.empty()) {
-        for (const auto& group : card.groups)
-            for (const auto& line : group.lines) ImGui::TextWrapped("%s", line.label.c_str());
-    }
-    const auto group_ui = [&](const MonitorRuleGroup& group) {
-        ImGui::PushID(group.path.c_str());
-        auto& was_current = current_groups_[card.index][group.path];
-        if (group.current != was_current) ImGui::SetNextItemOpen(group.current, ImGuiCond_Always);
-        was_current = group.current;
-        const auto label = group.label + (group.current ? " | Current target" : " | History / inactive") + "###group";
-        if (ImGui::CollapsingHeader(label.c_str(), group.current ? ImGuiTreeNodeFlags_DefaultOpen : 0))
-            for (const auto& rule : group.rules) draw_rule(rule, card);
+    const auto groups = current_monitor_groups(card);
+    for (const auto& group : groups) {
+        ImGui::PushID(group.source->path.c_str());
+        ImGui::TextColored(palette.primary, "%s", group.label.c_str());
+        for (const auto& rule : group.source->rules)
+            draw_rule(rule, card, group.source->rules.size() > 1);
         ImGui::PopID();
-    };
-    for (const auto& group : card.rule_groups) if (group.current) group_ui(group);
-    if (ImGui::CollapsingHeader("History / inactive rules"))
-        for (const auto& group : card.rule_groups) if (!group.current) group_ui(group);
-    if (!comparisons_[card.index].empty()) {
-        const auto label = "Compare detectors (" + std::to_string(comparisons_[card.index].size()) + ")";
-        if (ImGui::SmallButton(label.c_str())) {
-            selected_instance_ = card.index;
-            selected_identity_ = card.history ? card.history->identity : 0;
-            comparison_details_ = true;
-            comparison_view_ = {};
-            details_open_ = true;
-        }
     }
-    ImGui::PopID();
+    if (groups.empty()) text_muted("No current rule");
 }
 
-void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card) {
+void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card, bool show_label) {
     ImGui::PushID(rule.path.c_str());
-    auto label = "Rule " + std::to_string(rule.index + 1);
-    if (rule.action) label += " -> " + std::string{to_string(*rule.action)};
-
+    if (show_label) {
+        auto label = "Rule " + std::to_string(rule.index + 1);
+        if (rule.action) label += " -> " + std::string{to_string(*rule.action)};
+        if (!ImGui::TreeNodeEx("##rule", ImGuiTreeNodeFlags_NoTreePushOnOpen |
+            ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth, "%s", label.c_str())) {
+            ImGui::PopID();
+            return;
+        }
+    }
     if (!rule.sequence_rules.empty()) {
-        const auto current = compact_sequence_rule(rule);
-        label += current ? " | " + std::to_string(*rule.active_rule_index + 1) + " / " +
-                           std::to_string(rule.sequence_rules.size()) : " | Complete";
-        if (ImGui::CollapsingHeader(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (current) draw_rule(*current, card);
-            else if (ImGui::Selectable("Complete - inspect rule history")) {
-                const auto roots = inspector_rule_roots(card);
-                for (const auto& root : roots) {
-                    if (root.condition->path.starts_with(rule.path + ".")) {
-                        select_condition(card, *root.condition);
-                        break;
-                    }
+        const auto* current = compact_sequence_rule(rule);
+        const auto label = current ? "Sequence " + std::to_string(*rule.active_rule_index + 1) + " / " +
+            std::to_string(rule.sequence_rules.size()) : "Sequence complete";
+        if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_None, ImVec2(0, 0))) {
+            for (const auto& root : inspector_rule_roots(card)) {
+                if (root.condition->path.starts_with(rule.path + ".")) {
+                    select_condition(card, current ? current->condition : *root.condition);
+                    break;
                 }
             }
         }
-    } else if (ImGui::CollapsingHeader(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4 * app_->dpi_scale(), app_->dpi_scale()));
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * app_->dpi_scale(), 2 * app_->dpi_scale()));
-        if (ImGui::BeginTable("##conditions", 3, ImGuiTableFlags_SizingStretchProp)) {
-            ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 18 * app_->dpi_scale());
-            ImGui::TableSetupColumn("Condition", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthFixed, 140 * app_->dpi_scale());
+        if (current) draw_rule(*current, card);
+    } else {
+        const float scale = app_->dpi_scale();
+        // Fit the name column to its projected text, keeping graphs next to names.
+        const auto label_width = [&](const auto& self, const ConditionDiagnosticsNode& node, int depth,
+                                     std::string_view role) -> float {
+            const auto row = compact_condition_row(node);
+            const auto label = role.empty() ? row.label : std::string{role} + ": " + row.label;
+            const auto children = compact_condition_children(row);
+            float width = ImGui::CalcTextSize(label.c_str()).x + (24 + depth * 12) * scale;
+            if (depth > 0 && children.empty()) width += ImGui::GetTreeNodeToLabelSpacing();
+            for (const auto& child : children)
+                width = std::max(width, self(self, *child.condition, depth + 1, child.role));
+            return width;
+        };
+        const float width = std::max(60 * scale, std::min(label_width(label_width, rule.condition, 0, {}),
+            ImGui::GetContentRegionAvail().x - 160 * scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4 * scale, scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * scale, 2 * scale));
+        if (ImGui::BeginTable("##conditions", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
+            ImGui::TableSetupColumn("Condition", ImGuiTableColumnFlags_WidthFixed, width);
+            ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthFixed, 140 * scale);
             draw_condition(rule.condition, card);
             ImGui::EndTable();
         }
@@ -267,7 +278,13 @@ void MonitorPage::open_inspector(const ScenarioCardModel& card) {
     const auto roots = inspector_rule_roots(card);
     for (const auto& root : roots)
         if (root.current) { select_condition(card, *root.condition); return; }
-    if (!roots.empty()) select_condition(card, *roots.front().condition);
+    if (!roots.empty()) { select_condition(card, *roots.front().condition); return; }
+    selected_instance_ = card.index;
+    selected_identity_ = card.history ? card.history->identity : 0;
+    selected_path_.clear();
+    inspector_root_path_.clear();
+    comparison_details_ = false;
+    details_open_ = true;
 }
 
 void MonitorPage::select_condition(const ScenarioCardModel& card, const ConditionDiagnosticsNode& node) {
@@ -317,10 +334,17 @@ void MonitorPage::draw_details() {
     if (!details_open_) return;
     const ScenarioCardModel* card = nullptr;
     for (const auto& candidate : data_.cards)
-        if (candidate.index == selected_instance_ && candidate.history && candidate.history->identity == selected_identity_)
+        if (candidate.index == selected_instance_ && (candidate.history ? candidate.history->identity : 0) == selected_identity_)
             card = &candidate;
     if (!card) { details_open_ = false; return; }
     const float scale = app_->dpi_scale();
+    const auto* viewport = ImGui::GetMainViewport();
+    const ImVec2 limit{std::max(320.0f, viewport->WorkSize.x - 24 * scale),
+                       std::max(240.0f, viewport->WorkSize.y - 24 * scale)};
+    ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(640 * scale, limit.x), std::min(400 * scale, limit.y)), limit);
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x / 2,
+                                 viewport->WorkPos.y + viewport->WorkSize.y / 2),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1040 * scale, 760 * scale), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("History details", &details_open_)) {
         const auto palette = theme::colors(app_->theme_mode());
@@ -338,6 +362,9 @@ void MonitorPage::draw_details() {
             }
         }
         ImGui::TextDisabled("%s | Avg %s | Max %s", card->timer_status.c_str(), card->average.c_str(), card->maximum.c_str());
+        if (!card->action_status.empty()) text_muted(card->action_status);
+        if (!card->error.empty()) text_error_wrapped(card->error);
+        if (!card->notice.empty()) text_muted(card->notice);
         ImGui::Separator();
         ImGui::BeginChild("##structure", ImVec2(250 * scale, 0), true);
         if (comparison_details_) {

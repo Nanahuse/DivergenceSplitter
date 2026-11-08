@@ -336,6 +336,23 @@ const ConditionDiagnosticsNode* find_condition(const ScenarioCardModel& card, st
     return nullptr;
 }
 
+std::vector<CurrentMonitorGroup> current_monitor_groups(const ScenarioCardModel& card) {
+    std::vector<CurrentMonitorGroup> result;
+    for (const auto& group : card.rule_groups) {
+        if (!group.current) continue;
+        auto label = group.label;
+        if (label.starts_with("Split ")) label = label.substr(0, label.find(" - "));
+        result.push_back({&group, std::move(label)});
+    }
+    return result;
+}
+
+int monitor_card_columns(float available_width, float scale, std::size_t count) {
+    if (count == 0) return 1;
+    const auto columns = std::max(1, static_cast<int>((available_width + 12 * scale) / (372 * scale)));
+    return std::min(columns, static_cast<int>(count));
+}
+
 CompactConditionRow compact_condition_row(const ConditionDiagnosticsNode& node) {
     CompactConditionRow row;
     row.anchor = &node;
@@ -347,18 +364,22 @@ CompactConditionRow compact_condition_row(const ConditionDiagnosticsNode& node) 
     while (true) {
         if (!row.label.empty()) row.label += " \xC2\xB7 ";
         row.label += current->type;
+        if (current->type == "then") {
+            const auto count = current->children.size();
+            row.label += current->completed ? " | Complete " : " ";
+            const auto step = current->completed ? count : std::min(current->active_step.value_or(0) + 1, count);
+            row.label += std::to_string(step) + " / " + std::to_string(count);
+            if (!current->completed && current->active_step && *current->active_step < count) {
+                current = &current->children[*current->active_step];
+                continue;
+            }
+        }
         if (!row.graph && unary(current->type) && current->type != "not") row.graph = current;
         if (!unary(current->type) || current->children.size() != 1) break;
         current = &current->children.front();
     }
     if (!current->children.empty()) row.branch = current;
     if (!row.graph && !row.branch) row.graph = current;
-    if (current->type == "then") {
-        const auto count = current->children.size();
-        row.label += current->completed ? " | Complete " : " | ";
-        const auto step = current->completed ? count : std::min(current->active_step.value_or(0) + 1, count);
-        row.label += std::to_string(step) + " / " + std::to_string(count);
-    }
     return row;
 }
 

@@ -138,8 +138,7 @@ void render_benchmark() {
             if (table) {
                 ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4, 1));
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
-                ImGui::BeginTable("rows", 3);
-                ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 18);
+                ImGui::BeginTable("rows", 2);
                 ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthFixed, 140);
             }

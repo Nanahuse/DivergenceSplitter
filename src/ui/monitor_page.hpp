@@ -30,11 +30,11 @@ private:
         std::vector<ScenarioCardModel> cards;
     };
 
-    void draw_status_rows();
+    void draw_toolbar();
     void draw_cards();
     void draw_reset_button();
     void draw_card(const ScenarioCardModel& card);
-    void draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card);
+    void draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card, bool show_label = false);
     void draw_condition(const ConditionDiagnosticsNode& condition, const ScenarioCardModel& card,
                         int depth = 0, std::string_view role = {});
     void draw_structure(const ConditionDiagnosticsNode& node, const ScenarioCardModel& card,
@@ -48,20 +48,18 @@ private:
     };
     std::map<int, InstancePlots> plots_;
     int window_seconds_{30};
-    bool preview_visible_{true};
+    bool preview_visible_{};
     bool details_open_{};
     int selected_instance_{};
     std::uint64_t selected_identity_{};
     std::string selected_path_;
     std::map<int, std::set<std::string>> comparisons_;
-    std::map<int, std::map<std::string, bool>> current_groups_;
     PlotViewport detail_view_;
     PlotViewport comparison_view_;
     bool comparison_details_{};
     InstanceHistoryPaths requested_paths_;
     std::string inspector_root_path_;
     bool inspector_selection_changed_{};
-    std::set<int> instance_details_;
 
     App* app_;
     ImageTexture preview_;

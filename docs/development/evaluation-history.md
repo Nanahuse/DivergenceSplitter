@@ -56,9 +56,11 @@ and actual ImPlot draw calls in both theme palettes. UI navigation state stays o
 of runtime tests.
 
 All configured Split trees remain addressable across Split, Ended and Reset
-transitions. The current group opens automatically when its target changes;
-inactive groups are initially folded and explicitly labelled. Detail lookup is
-independent of which groups are expanded. Small plots open inspectors on click. Inspectors allow pan/zoom and pause their time reference
+transitions. Ordinary responsive cards show only current groups, with a short
+Start/Reset/Split caption and no single-Rule heading. The toolbar occupies one or
+two lines and opens Preview separately. Inactive groups stay in the model for the
+inspector's Rule selector, not the ordinary view. Small plots open inspectors on
+click. Inspectors allow pan/zoom and pause their time reference
 during interaction; Reset view or a 15/30/60-second change resumes the live view.
 Value and result plots share the inspector's X range. Hold failures insert a
 display-only vertex at the observation time to show a vertical drop to zero.
@@ -67,7 +69,8 @@ See [Monitor performance](monitor-performance.md) for the reproducible snapshot,
 plot-preparation and evaluator-contention measurements that motivated filtering.
 
 The compact view projects the full diagnostics tree into one-row unary chains,
-all/any branches, separate reset_when roles and the active then step. Read-only
+all/any branches and separate reset_when roles. Then progress and its active step
+share a row, so then → all does not introduce two structural headings. Read-only
 then diagnostics expose its current step and completion state without evaluation.
 RuleSequence shows its active rule. The inspector retains the full tree and all
 rule roots, so hidden children and past steps remain selectable. Numeric values,

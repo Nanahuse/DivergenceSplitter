@@ -67,6 +67,13 @@ struct CompactConditionChild {
     std::string role;
 };
 
+struct CurrentMonitorGroup {
+    const MonitorRuleGroup* source{};
+    std::string label;
+};
+[[nodiscard]] std::vector<CurrentMonitorGroup> current_monitor_groups(const ScenarioCardModel& card);
+[[nodiscard]] int monitor_card_columns(float available_width, float scale, std::size_t count);
+
 [[nodiscard]] CompactConditionRow compact_condition_row(const ConditionDiagnosticsNode& node);
 [[nodiscard]] std::vector<CompactConditionChild> compact_condition_children(const CompactConditionRow& row);
 [[nodiscard]] const RuleDiagnosticsNode* compact_sequence_rule(const RuleDiagnosticsNode& rule);

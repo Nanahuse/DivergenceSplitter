@@ -80,22 +80,30 @@ retention are unchanged. Repeating `selected` with six paths gave these results:
 
 `render` compares 140 × 22 logical-pixel mini graphs using the same 3600-point
 prepared score history, including gaps, resets and errors. It also measures the
-complete table row with state icon and label. Every tested row is deliberately
+complete two-column table row with a status-colored label and adjacent graph. Every tested row is deliberately
 visible, even at 100 rows. Five warmup frames precede thirty measured frames.
 These timings include CPU geometry generation and ImGui/ImPlot submission, not
 GPU rendering, history retrieval or plot preparation.
 
 | Visible rows | Renderer | CPU P50 / P95 (ms) | Vertices per frame |
 | ---: | --- | ---: | ---: |
-| 20 | ImPlot | 0.637 / 0.736 | 142,418 |
-| 20 | ImDrawList | 0.493 / 0.531 | 27,618 |
-| 20 | Complete compact rows | 0.497 / 0.523 | 28,578 |
-| 100 | ImPlot | 3.257 / 4.173 | 712,018 |
-| 100 | ImDrawList | 2.414 / 2.538 | 138,018 |
-| 100 | Complete compact rows | 2.491 / 2.873 | 142,818 |
+| 20 | ImPlot | 0.638 / 0.659 | 142,418 |
+| 20 | ImDrawList | 0.498 / 0.864 | 27,618 |
+| 20 | Complete compact rows | 0.496 / 0.522 | 28,258 |
+| 100 | ImPlot | 3.271 / 3.537 | 712,018 |
+| 100 | ImDrawList | 2.424 / 2.573 | 138,018 |
+| 100 | Complete compact rows | 2.530 / 2.718 | 141,218 |
 
 The mini graph therefore uses ImDrawList with a per-pixel first/min/max/last
 envelope within each continuous segment. At 100 rows this reduced median CPU
 time by about 26% and vertices by about 81% versus ImPlot. Interactive detailed
 graphs retain ImPlot. Actual window clipping normally shows fewer than 100 rows;
 this synthetic comparison does not replace profiling a user's real scenario.
+
+The ordinary Monitor now lays Instance cards out responsively with a minimum
+width of 360 logical pixels plus spacing. A 1186-pixel-wide native window showed
+two simple Instance cards side by side, each 112 pixels high, below one toolbar
+row. The main content occupied roughly 160 vertical pixels. At a 900-pixel window
+width, the cards stacked into one column. A nested then → all → detected +
+hold(detected) fixture used one progress/branch row and two condition rows per
+card. Both fixtures used live synthetic video and independent TestHosts.

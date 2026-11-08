@@ -279,6 +279,33 @@ TEST(MonitorModel, UnaryConditionsMergeIntoOneRowWithoutDiscardingTheChild) {
     }
 }
 
+TEST(MonitorModel, CurrentCardsExcludeHistoryWithoutRemovingInspectorRoots) {
+    ScenarioCardModel card;
+    for (int i = 0; i < 3; ++i) {
+        RuleDiagnosticsNode rule;
+        rule.condition.type = "detected";
+        rule.condition.path = "split." + std::to_string(i) + ".r0.cond";
+        card.rule_groups.push_back({"Split " + std::to_string(i + 1) + " - Segment name",
+            {rule}, "split." + std::to_string(i), i == 1});
+    }
+    const auto current = current_monitor_groups(card);
+    ASSERT_EQ(current.size(), 1);
+    EXPECT_EQ(current[0].label, "Split 2");
+    EXPECT_EQ(current[0].source, &card.rule_groups[1]);
+    EXPECT_EQ(inspector_rule_roots(card).size(), 3);
+    EXPECT_NE(find_condition(card, "split.0.r0.cond"), nullptr);
+    card.rule_groups[1].current = false;
+    EXPECT_TRUE(current_monitor_groups(card).empty());
+}
+
+TEST(MonitorModel, CardsUseAvailableWidthAndRespectDpiAndInstanceCount) {
+    EXPECT_EQ(monitor_card_columns(980, 1, 2), 2);
+    EXPECT_EQ(monitor_card_columns(600, 1, 2), 1);
+    EXPECT_EQ(monitor_card_columns(980, 1, 1), 1);
+    EXPECT_EQ(monitor_card_columns(1470, 1.5, 2), 2);
+    EXPECT_EQ(monitor_card_columns(900, 1.5, 2), 1);
+}
+
 TEST(MonitorModel, CompactThenShowsOnlyItsCurrentStepAndNoChildrenWhenComplete) {
     ConditionDiagnosticsNode node;
     node.type = "then";
@@ -292,9 +319,10 @@ TEST(MonitorModel, CompactThenShowsOnlyItsCurrentStepAndNoChildrenWhenComplete) 
     EXPECT_EQ(row.graph, nullptr);
     EXPECT_NE(row.label.find("2 / 3"), std::string::npos);
     auto children = compact_condition_children(row);
-    ASSERT_EQ(children.size(), 1);
-    EXPECT_EQ(children[0].condition, &node.children[1]);
-    EXPECT_EQ(compact_condition_children(compact_condition_row(*children[0].condition)).size(), 2);
+    ASSERT_EQ(children.size(), 2);
+    EXPECT_EQ(row.branch, &node.children[1]);
+    EXPECT_EQ(children[0].condition, &node.children[1].children[0]);
+    EXPECT_NE(row.label.find("all"), std::string::npos);
     node.completed = true;
     node.active_step.reset();
     row = compact_condition_row(node);
@@ -302,7 +330,9 @@ TEST(MonitorModel, CompactThenShowsOnlyItsCurrentStepAndNoChildrenWhenComplete) 
     EXPECT_NE(row.label.find("Complete 3 / 3"), std::string::npos);
     node.completed = false;
     node.active_step = 0;
-    EXPECT_EQ(compact_condition_children(compact_condition_row(node))[0].condition, &node.children[0]);
+    row = compact_condition_row(node);
+    EXPECT_TRUE(compact_condition_children(row).empty());
+    EXPECT_EQ(row.graph, &node.children[0]);
 }
 
 TEST(MonitorModel, WrapperAroundABranchKeepsHierarchyAndResetWhenRoles) {
@@ -396,8 +426,7 @@ TEST(HistoryPlot, CompactRowsStayWithinOneLineAndTheSparklineIsClickable) {
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4, 1));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
         const ConditionDiagnosticsNode* selected = nullptr;
-        if (ImGui::BeginTable("rows", 3)) {
-            ImGui::TableSetupColumn("state", ImGuiTableColumnFlags_WidthFixed, 18);
+        if (ImGui::BeginTable("rows", 2)) {
             ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("history", ImGuiTableColumnFlags_WidthFixed, 140);
             for (int i = 0; i < 10; ++i) {
