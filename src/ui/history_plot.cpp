@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 
 namespace divergencesplitter::ui {
 namespace {
@@ -197,9 +198,33 @@ private:
 };
 }
 
+struct SharedTraceMesh {
+    ImVector<ImDrawVert> vertices;
+    ImVector<ImDrawIdx> indices;
+    ImVector<ImDrawCmd> commands;
+    const ImDrawListSharedData* shared{};
+    bool valid{};
+    double anchor{};
+    double pixels_per_second{};
+    float height{};
+    float right{};
+    float bottom{};
+    float scale{};
+    float alpha{};
+    float fringe{};
+    bool light{};
+    ImDrawListFlags flags{};
+    ImTextureID texture{};
+};
+
 SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& sources,
-    MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets) {
+    MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets,
+    SharedHistoryChart previous) {
     SharedHistoryChart result;
+    if (previous.trace_mesh && previous.trace_mesh.use_count() == 1) {
+        result.trace_mesh = std::move(previous.trace_mesh);
+        result.trace_mesh->valid = false;
+    }
     result.seconds = static_cast<double>(window.count());
     if (window <= std::chrono::seconds::zero()) return result;
     const auto cutoff = sampled_at - window;
@@ -215,6 +240,7 @@ SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& 
     for (const auto time : timer_resets)
         if (time >= cutoff && time <= sampled_at) marker(time, SharedMarkerKind::timer_reset);
 
+    result.series.reserve(sources.size());
     for (const auto& source : sources) {
         const auto& node = *source.condition;
         const auto& history = *source.history;
@@ -298,6 +324,139 @@ ImVec4 shared_series_color(std::string_view path, const theme::Colors& palette) 
     return color;
 }
 
+
+namespace {
+ImU32 shared_trace_ink(const SharedHistorySeries& line, const theme::Colors& palette) {
+    auto color = shared_series_color(line.path, palette);
+    color.w = line.current ? 1.0f : 0.48f;
+    return ImGui::GetColorU32(color);
+}
+
+void capture_trace_mesh(SharedTraceMesh& mesh, const ImDrawList& draw,
+    int first_vertex, int first_index, int first_command) {
+    const auto vertices = draw.VtxBuffer.Size - first_vertex;
+    const auto indices = draw.IdxBuffer.Size - first_index;
+    mesh.vertices.resize(vertices);
+    mesh.indices.resize(indices);
+    mesh.commands.resize(0);
+    if (indices == 0) return;
+
+    std::memcpy(mesh.vertices.Data, draw.VtxBuffer.Data + first_vertex, vertices * sizeof(ImDrawVert));
+    std::memcpy(mesh.indices.Data, draw.IdxBuffer.Data + first_index, indices * sizeof(ImDrawIdx));
+    for (int i = first_command; i < draw.CmdBuffer.Size; ++i) {
+        const auto& source = draw.CmdBuffer[i];
+        const auto start = std::max<unsigned int>(first_index, source.IdxOffset);
+        const auto end = source.IdxOffset + source.ElemCount;
+        if (start >= end) continue;
+        ImDrawCmd command;
+        command.IdxOffset = start - first_index;
+        command.ElemCount = end - start;
+        if (source.VtxOffset >= static_cast<unsigned int>(first_vertex)) {
+            command.VtxOffset = source.VtxOffset - first_vertex;
+        } else {
+            // The first batch can share an existing window draw command.
+            const auto prefix = first_vertex - source.VtxOffset;
+            for (unsigned int j = command.IdxOffset; j < command.IdxOffset + command.ElemCount; ++j)
+                mesh.indices[j] = static_cast<ImDrawIdx>(mesh.indices[j] - prefix);
+        }
+        mesh.commands.push_back(command);
+    }
+}
+
+void append_trace_mesh(ImDrawList& draw, const SharedTraceMesh& mesh, float x, float y) {
+    // The source commands share a texture and clip rect. Each splits the mesh
+    // at an ImDrawIdx boundary, so PrimReserve can rebase it in the live list.
+    for (int i = 0; i < mesh.commands.Size; ++i) {
+        const auto& command = mesh.commands[i];
+        if (command.ElemCount == 0) continue;
+        const auto end = i + 1 < mesh.commands.Size ? mesh.commands[i + 1].VtxOffset : mesh.vertices.Size;
+        const auto count = static_cast<int>(end - command.VtxOffset);
+        draw.PrimReserve(command.ElemCount, count);
+        const auto* source = mesh.vertices.Data + command.VtxOffset;
+        for (int j = 0; j < count; ++j) {
+            auto vertex = source[j];
+            vertex.pos.x += x;
+            vertex.pos.y += y;
+            draw._VtxWritePtr[j] = vertex;
+        }
+        const auto* indices = mesh.indices.Data + command.IdxOffset;
+        const auto base = draw._VtxCurrentIdx;
+        if (base == 0) {
+            std::memcpy(draw._IdxWritePtr, indices, command.ElemCount * sizeof(ImDrawIdx));
+        } else {
+            for (unsigned int j = 0; j < command.ElemCount; ++j)
+                draw._IdxWritePtr[j] = static_cast<ImDrawIdx>(base + indices[j]);
+        }
+        draw._VtxWritePtr += count;
+        draw._VtxCurrentIdx += count;
+        draw._IdxWritePtr += command.ElemCount;
+    }
+}
+
+void draw_shared_traces(ImDrawList& draw, const SharedHistoryChart& chart, double now,
+    double seconds, double pixels_per_second, float right, float bottom, float height,
+    const theme::Colors& palette, float scale) {
+    const auto alpha = ImGui::GetStyle().Alpha;
+    const bool light = palette.surface_low.x > 0.5f;
+    const auto texture = draw._CmdHeader.TextureId;
+    const auto shared = ImGui::GetDrawListSharedData();
+    auto& cached = chart.trace_mesh;
+    if (!cached || !cached->valid || cached->shared != shared || now < cached->anchor ||
+        cached->pixels_per_second != pixels_per_second || cached->height != height ||
+        cached->scale != scale || cached->alpha != alpha || cached->light != light ||
+        cached->flags != draw.Flags || cached->texture != texture || cached->fringe != draw._FringeScale) {
+        if (!cached || cached.use_count() != 1 || cached->shared != shared)
+            cached = std::make_shared<SharedTraceMesh>();
+        auto& mesh = *cached;
+        mesh.shared = shared;
+        mesh.anchor = now;
+        mesh.right = right;
+        mesh.bottom = bottom;
+        mesh.pixels_per_second = pixels_per_second;
+        mesh.height = height;
+        mesh.scale = scale;
+        mesh.alpha = alpha;
+        mesh.light = light;
+        mesh.flags = draw.Flags;
+        mesh.texture = texture;
+        mesh.fringe = draw._FringeScale;
+        const int first_vertex = draw.VtxBuffer.Size;
+        const int first_index = draw.IdxBuffer.Size;
+        const int first_command = draw.CmdBuffer.Size - 1;
+
+        std::vector<ImVec2> points;
+        for (const auto& line : chart.series) {
+            if (line.last_observation < now - seconds || line.segments.empty()) continue;
+            const auto ink = shared_trace_ink(line, palette);
+            // Whole-pixel strokes use ImGui's baked antialiasing texture.
+            const auto stroke = std::max(1.0f, std::round((line.current ? 1.6f : 1.0f) * scale));
+            for (const auto& segment : line.segments) {
+                if (segment.back().time.nanoseconds / 1e9 < now - seconds) continue;
+                points.clear();
+                for (const auto point : segment) {
+                    const ImVec2 pixel{right + static_cast<float>((point.time.nanoseconds / 1e9 - now) * pixels_per_second),
+                        bottom - point.value * height / progress_limit};
+                    // Collapse horizontal edges only in the drawing mesh.
+                    if (points.size() >= 2 && pixel.y == points.back().y && pixel.y == points[points.size() - 2].y &&
+                        pixel.x >= points.back().x && points.back().x >= points[points.size() - 2].x)
+                        points.back() = pixel;
+                    else
+                        points.push_back(pixel);
+                }
+                if (points.size() == 1) draw.AddCircleFilled(points.front(), 1.8f * scale, ink);
+                else draw.AddPolyline(points.data(), static_cast<int>(points.size()), ink, ImDrawFlags_None, stroke);
+            }
+        }
+        capture_trace_mesh(mesh, draw, first_vertex, first_index, first_command);
+        mesh.valid = true;
+        return;
+    }
+    const auto& mesh = *chart.trace_mesh;
+    append_trace_mesh(draw, mesh, right - mesh.right + static_cast<float>((mesh.anchor - now) * pixels_per_second),
+        bottom - mesh.bottom);
+}
+}
+
 SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& chart, double now,
     double seconds, ImVec2 size, const theme::Colors& palette, float scale) {
     const auto origin = ImGui::GetCursorScreenPos();
@@ -333,32 +492,23 @@ SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& char
         if (distance <= nearest) { nearest = distance; hovered_path = path; }
     };
     const bool matching_window = chart.seconds == seconds;
-    std::vector<ImVec2> pixels;
+    if (matching_window)
+        draw_shared_traces(*draw, chart, now, seconds, pixels_per_second, right, bottom, bottom - top, palette, scale);
     for (const auto& line : chart.series) {
         if (!matching_window || line.last_observation < now - seconds) continue;
         if (result.path.empty() || line.current) result.path = line.path;
-        auto color = shared_series_color(line.path, palette);
-        color.w = line.current ? 1.0f : 0.48f;
-        const auto ink = ImGui::GetColorU32(color);
-        // Whole-pixel strokes use ImGui's baked antialiasing texture.
-        const auto stroke = std::max(1.0f, std::round((line.current ? 1.6f : 1.0f) * scale));
-        for (const auto& segment : line.segments) {
-            if (x_at(segment.back().time) < left || x_at(segment.front().time) > right) continue;
-            pixels.clear();
+        if (hovered) for (const auto& segment : line.segments) {
+            if (x_at(segment.back().time) < std::max(left, mouse.x - 12 * scale) ||
+                x_at(segment.front().time) > std::min(right, mouse.x + 12 * scale)) continue;
+            ImVec2 previous{x_at(segment.front().time), y_at(segment.front().value)};
             for (const auto point : segment) {
                 const ImVec2 pixel{x_at(point.time), y_at(point.value)};
-                hit(pixels.empty() ? pixel : pixels.back(), pixel, line.path);
-                // Keep cached bucket endpoints intact and avoid drawing redundant flat edges.
-                if (pixels.size() >= 2 && pixel.y == pixels.back().y && pixel.y == pixels[pixels.size() - 2].y &&
-                    pixel.x >= pixels.back().x && pixels.back().x >= pixels[pixels.size() - 2].x)
-                    pixels.back() = pixel;
-                else
-                    pixels.push_back(pixel);
+                hit(previous, pixel, line.path);
+                previous = pixel;
             }
-            if (pixels.size() == 1) draw->AddCircleFilled(pixels.front(), 1.8f * scale, ink);
-            else draw->AddPolyline(pixels.data(), static_cast<int>(pixels.size()), ink,
-                                   ImDrawFlags_None, stroke);
         }
+        if (line.states.empty()) continue;
+        const auto ink = shared_trace_ink(line, palette);
         for (const auto state : line.states) {
             const auto x = x_at(state.time);
             if (x < left || x > right) continue;

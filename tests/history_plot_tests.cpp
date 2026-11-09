@@ -616,12 +616,63 @@ TEST(HistoryPlot, SharedDrawFramesTranslateTheSameCachedTrace) {
     };
     (void)draw(60);
     const auto first = draw(60);
+    const auto* cache = chart.trace_mesh.get();
+    ASSERT_TRUE(cache);
     const auto next = draw(60.05);
+    EXPECT_EQ(chart.trace_mesh.get(), cache);
     ASSERT_GE(first.size(), 3);
     ASSERT_EQ(first.size(), next.size());
     for (std::size_t i = 0; i < first.size(); ++i) {
         EXPECT_NEAR(first[i].x - next[i].x, (300 - 14) * 0.05 / 30, 0.001);
         EXPECT_NEAR(first[i].y, next[i].y, 0.001);
+    }
+
+    ConditionDiagnosticsNode node;
+    node.path = "clocked";
+    node.type = "detected";
+    node.measurement.target = 1;
+    ConditionHistory history;
+    history.samples = {{{40'000'000'000}, 0.3}, {{45'000'000'000}, 0.7},
+        {{50'000'000'000}, 0.2}, {{60'100'000'000}, 0.9}};
+    chart = prepare_shared_chart({{&node, &history, true}}, {60'100'000'000},
+        std::chrono::seconds{30}, {}, std::move(chart));
+    EXPECT_GT(draw(60.1).size(), next.size());
+    EXPECT_EQ(chart.trace_mesh.get(), cache);
+}
+
+TEST(HistoryPlot, CachedTraceDrawsKeepIndicesValidAcrossVertexOffsets) {
+    PlotFixture fixture;
+    ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+    SharedHistoryChart chart;
+    chart.seconds = 30;
+    for (int series = 0; series < 300; ++series) {
+        auto& line = chart.series.emplace_back();
+        line.path = "score." + std::to_string(series);
+        line.current = true;
+        line.last_observation = 59;
+        auto& points = line.segments.emplace_back();
+        for (int i = 0; i < 120; ++i)
+            points.push_back({{32'000'000'000 + i * 200'000'000LL}, i % 2 ? 0.8f : 0.2f});
+    }
+    for (const double now : {60.0, 60.05}) {
+        fixture.begin();
+        draw_shared_chart("shared", chart, now, 30, {300, 120}, theme::colors(theme::Mode::dark), 1);
+        fixture.end();
+        const auto* data = ImGui::GetDrawData();
+        ASSERT_GT(data->TotalVtxCount, 65536);
+        bool used_offset = false;
+        bool valid_indices = true;
+        for (int i = 0; i < data->CmdListsCount; ++i) {
+            const auto& draw = *data->CmdLists[i];
+            for (const auto& command : draw.CmdBuffer) {
+                used_offset |= command.VtxOffset > 0;
+                for (unsigned int index = 0; index < command.ElemCount; ++index)
+                    valid_indices &= command.VtxOffset + draw.IdxBuffer[command.IdxOffset + index] <
+                        static_cast<unsigned int>(draw.VtxBuffer.Size);
+            }
+        }
+        EXPECT_TRUE(used_offset);
+        EXPECT_TRUE(valid_indices);
     }
 }
 

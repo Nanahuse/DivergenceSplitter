@@ -69,13 +69,16 @@ void MonitorPage::update(double now) {
         if (plots.identity != identity) {
             comparisons_.erase(instance.index);
             if (selected_instance_ == instance.index) details_open_ = false;
+            plots = {};
         }
-        plots = {};
+        plots.plots.clear();
         plots.identity = identity;
         if (history) {
             const auto sources = shared_history_groups(card, window);
-            plots.normal = prepare_shared_chart(sources.normal, history->sampled_at, window, history->timer_resets);
-            plots.reset = prepare_shared_chart(sources.reset, history->sampled_at, window, history->timer_resets);
+            plots.normal = prepare_shared_chart(sources.normal, history->sampled_at, window, history->timer_resets,
+                std::move(plots.normal));
+            plots.reset = prepare_shared_chart(sources.reset, history->sampled_at, window, history->timer_resets,
+                std::move(plots.reset));
             if (const auto requested = requested_paths_.find(instance.index); requested != requested_paths_.end()) {
                 std::set<std::string> holds;
                 for (const auto& path : requested->second)

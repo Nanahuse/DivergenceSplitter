@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 #include <set>
@@ -59,16 +60,20 @@ struct SharedHistoryMarker {
     bool operator==(const SharedHistoryMarker&) const = default;
 };
 
+struct SharedTraceMesh;
+
 struct SharedHistoryChart {
     double seconds{};
     std::vector<SharedHistorySeries> series;
     std::vector<SharedHistoryMarker> markers;
+    mutable std::shared_ptr<SharedTraceMesh> trace_mesh;
 };
 
 struct SharedPlotClick { bool clicked{}; std::string_view path; };
 
 [[nodiscard]] SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& sources,
-    MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets);
+    MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets,
+    SharedHistoryChart previous = {});
 [[nodiscard]] ImVec4 shared_series_color(std::string_view path, const theme::Colors& palette);
 SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& chart, double now,
     double seconds, ImVec2 size, const theme::Colors& palette, float scale);

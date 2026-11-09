@@ -140,7 +140,7 @@ query for dense histories.
 | 1000 | 28.58 | 3.08 |
 
 
-## Stable shared chart measurements
+## Stable shared chart measurements at `278a1a6`
 
 The preview index and chart geometry use fixed 500 ms buckets on the monotonic
 clock. Series count, snapshot time and Inspector selection no longer select a
@@ -159,3 +159,27 @@ series, 0.46 ms for 100 and 6.15 ms for 1,000. The 1,000-series case keeps more
 points than the earlier series-count-dependent policy, which measured 3.08 ms.
 Its snapshot and preparation can exceed one 60 FPS frame budget. These are CPU
 measurements on the same Windows MSVC Release fixture.
+
+
+## Shared trace mesh cache
+
+The renderer submits each numeric trace on the first frame after a snapshot,
+then stores the submitted vertices and indices. Scroll frames translate the
+cached mesh into the current clip rectangle. The next snapshot reuses the
+cache buffers. Resizing, DPI and theme changes regenerate the mesh for the new
+display settings. The cache adds a vertex and index buffer per visible chart.
+
+The `render` fixture runs at 60 draw frames per second of synthetic time and
+refreshes the chart every six frames. CPU P95 values below exclude snapshot
+retrieval and chart preparation.
+
+| Synthetic series | Refresh draw P95 (ms) | Scroll draw P95 (ms) |
+| ---: | ---: | ---: |
+| 20 | 0.15 | 0.04 |
+| 100 | 0.75 | 0.16 |
+| 1000 | 6.99 | 1.53 |
+
+At 1,000 series, the earlier renderer measured 6.15 ms P95 while tessellating
+the trace every frame. Capturing the mesh adds work on refresh frames and
+reduces the work on the five scroll frames between refreshes. Snapshot retrieval
+and preparation can still exceed one 60 FPS frame budget in the stress case.

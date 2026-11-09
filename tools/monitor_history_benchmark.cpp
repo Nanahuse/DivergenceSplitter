@@ -136,26 +136,32 @@ void render_benchmark() {
             }
             sources.push_back({&node, &history, n % 2 == 0});
         }
-        std::vector<double> preparation, timings;
+        std::vector<double> preparation, refresh, scroll;
+        SharedHistoryChart chart;
         int vertices = 0;
-        for (int frame = 0; frame < 35; ++frame) {
+        for (int frame = 0; frame < 66; ++frame) {
             auto started = std::chrono::steady_clock::now();
-            const auto chart = prepare_shared_chart(sources, {60'000'000'000}, 60s, {});
-            if (frame >= 5) preparation.push_back(ms(started));
+            const bool refresh_frame = frame % 6 == 0;
+            const MonotonicTime now{60'000'000'000 + static_cast<std::int64_t>(frame) * 1'000'000'000 / 60};
+            if (refresh_frame) {
+                chart = prepare_shared_chart(sources, now, 60s, {}, std::move(chart));
+                if (frame >= 6) preparation.push_back(ms(started));
+            }
             started = std::chrono::steady_clock::now();
             ImGui::NewFrame();
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(500, 160));
             ImGui::Begin("Shared plot benchmark", nullptr, ImGuiWindowFlags_NoTitleBar);
-            draw_shared_chart("shared", chart, 60, 60, {460, 112}, palette, 1);
+            draw_shared_chart("shared", chart, now.nanoseconds / 1e9, 60, {460, 112}, palette, 1);
             ImGui::End();
             ImGui::Render();
-            if (frame >= 5) timings.push_back(ms(started));
+            if (frame >= 6) (refresh_frame ? refresh : scroll).push_back(ms(started));
             vertices = ImGui::GetDrawData()->TotalVtxCount;
         }
         std::cout << "shared_series=" << count << " source_samples_per_series=3600 vertices=" << vertices << ' ';
         stats("prepare", preparation);
-        stats("render_cpu", timings);
+        stats("refresh_draw_cpu", refresh);
+        stats("scroll_draw_cpu", scroll);
         std::cout << std::endl;
     }
     ImPlot::DestroyContext(plot);
