@@ -136,17 +136,17 @@ HistoryPlots prepare_history(const EvaluationHistorySnapshot& history, const std
 namespace {
 constexpr float progress_limit = 1.25f;
 
-struct EnvelopePoint { ImVec2 point; std::size_t index{}; };
+struct EnvelopePoint { SharedHistoryPoint point; std::size_t index{}; };
 
 // Each bucket retains endpoints and extrema in sample order. A gap flushes
 // the bucket and ends the polyline even when both sides land in one bucket.
 class ProgressEnvelope {
 public:
-    ProgressEnvelope(SharedHistorySeries& series, float seconds, int buckets, bool stairs)
-        : series_(series), seconds_(seconds), buckets_(buckets), stairs_(stairs) {}
+    ProgressEnvelope(SharedHistorySeries& series, bool stairs)
+        : series_(series), stairs_(stairs) {}
 
-    void add(ImVec2 point) {
-        const int bucket = static_cast<int>((point.x + seconds_) * buckets_ / seconds_);
+    void add(SharedHistoryPoint point) {
+        const auto bucket = history_preview_bucket(point.time);
         if (bucket != bucket_) flush();
         const EnvelopePoint sample{point, next_index_++};
         if (!has_bucket_) {
@@ -155,8 +155,8 @@ public:
             has_bucket_ = true;
         }
         extrema_[3] = sample;
-        if (point.y < extrema_[1].point.y) extrema_[1] = sample;
-        if (point.y >= extrema_[2].point.y) extrema_[2] = sample;
+        if (point.value < extrema_[1].point.value) extrema_[1] = sample;
+        if (point.value >= extrema_[2].point.value) extrema_[2] = sample;
     }
 
     void finish_segment() {
@@ -170,29 +170,28 @@ private:
         if (!segment_open_) series_.segments.emplace_back();
         segment_open_ = true;
         auto& points = series_.segments.back();
-        std::ranges::sort(extrema_, {}, &EnvelopePoint::index);
-        std::optional<std::size_t> previous;
-        for (const auto& sample : extrema_) {
-            if (previous == sample.index) continue;
-            previous = sample.index;
+        const auto emit = [&](const EnvelopePoint& sample) {
             const auto point = sample.point;
-            if (!points.empty() && stairs_ && points.back().y != point.y)
-                points.emplace_back(point.x, points.back().y);
-            if (points.size() >= 2 && points.back().y == point.y && points[points.size() - 2].y == point.y)
-                points.back() = point;
-            else
-                points.push_back(point);
-        }
+            if (!points.empty() && stairs_ && points.back().value != point.value)
+                points.push_back({point.time, points.back().value});
+            points.push_back(point);
+        };
+        const auto& first = extrema_.front();
+        const auto& last = extrema_.back();
+        const auto [earlier, later] = std::minmax(extrema_[1], extrema_[2],
+            [](const auto& a, const auto& b) { return a.index < b.index; });
+        emit(first);
+        if (earlier.index > first.index && earlier.index < last.index) emit(earlier);
+        if (later.index != earlier.index && later.index > first.index && later.index < last.index) emit(later);
+        if (last.index != first.index) emit(last);
         has_bucket_ = false;
     }
 
     SharedHistorySeries& series_;
-    float seconds_;
-    int buckets_;
     bool stairs_;
     bool segment_open_{};
     bool has_bucket_{};
-    int bucket_{-1};
+    std::int64_t bucket_{};
     std::size_t next_index_{};
     std::array<EnvelopePoint, 4> extrema_{};
 };
@@ -201,23 +200,21 @@ private:
 SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& sources,
     MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets) {
     SharedHistoryChart result;
-    result.sampled_at = sampled_at.nanoseconds / 1e9;
     result.seconds = static_cast<double>(window.count());
     if (window <= std::chrono::seconds::zero()) return result;
     const auto cutoff = sampled_at - window;
-    constexpr int marker_buckets = 256;
-    std::array<std::array<bool, marker_buckets + 1>, 4> seen{};
-    const auto marker = [&](float x, SharedMarkerKind kind) {
-        const auto index = static_cast<std::size_t>((x + result.seconds) * marker_buckets / result.seconds);
-        auto& present = seen[static_cast<std::size_t>(kind)][std::min<std::size_t>(index, marker_buckets)];
-        if (!present) result.markers.push_back({x, kind});
-        present = true;
+    const auto preview_start = history_preview_start(cutoff);
+    const auto first_bucket = history_preview_bucket(cutoff);
+    using MarkerBucket = std::array<std::optional<MonotonicTime>, 4>;
+    std::vector<MarkerBucket> markers(history_preview_bucket(sampled_at) - first_bucket + 1);
+    const auto marker = [&](MonotonicTime time, SharedMarkerKind kind) {
+        if (time < cutoff) return;
+        auto& first = markers[history_preview_bucket(time) - first_bucket][static_cast<std::size_t>(kind)];
+        if (!first || time < *first) first = time;
     };
     for (const auto time : timer_resets)
-        if (time >= cutoff && time <= sampled_at)
-            marker(static_cast<float>((time - sampled_at).count() / 1e9), SharedMarkerKind::timer_reset);
+        if (time >= cutoff && time <= sampled_at) marker(time, SharedMarkerKind::timer_reset);
 
-    const int buckets = static_cast<int>(std::clamp<std::size_t>(12000 / std::max<std::size_t>(1, sources.size()), 12, 240));
     for (const auto& source : sources) {
         const auto& node = *source.condition;
         const auto& history = *source.history;
@@ -227,35 +224,35 @@ SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& 
         line.path = node.path;
         line.current = source.current;
         line.last_observation = history.last_observation.value_or(sampled_at).nanoseconds / 1e9;
-        ProgressEnvelope envelope{line, static_cast<float>(result.seconds), buckets, node.measurement.stairs};
+        ProgressEnvelope envelope{line, node.measurement.stairs};
         std::optional<double> previous_value;
         std::optional<bool> previous_state;
-        std::optional<ImVec2> state_end;
+        std::optional<SharedHistoryPoint> state_end;
         const auto finish_state = [&] {
             if (state_end) line.states.push_back(*state_end);
             state_end.reset();
             previous_state.reset();
         };
-        for (const auto& sample : history.samples) {
-            if (sample.time < cutoff || sample.time > sampled_at) {
+        const auto& samples = history.preview_samples ? *history.preview_samples : history.samples;
+        for (const auto& sample : samples) {
+            if (sample.time < preview_start || sample.time > sampled_at) {
                 envelope.finish_segment();
                 previous_value.reset();
                 finish_state();
                 continue;
             }
-            const auto x = static_cast<float>((sample.time - sampled_at).count() / 1e9);
-            if (sample.event == HistoryEvent::reset) marker(x, SharedMarkerKind::reset);
-            if (sample.event == HistoryEvent::error) marker(x, SharedMarkerKind::error);
+            if (sample.event == HistoryEvent::reset) marker(sample.time, SharedMarkerKind::reset);
+            if (sample.event == HistoryEvent::error) marker(sample.time, SharedMarkerKind::error);
             if (sample.event == HistoryEvent::transition ||
                 (previous_state && sample.result && *previous_state != *sample.result))
-                marker(x, SharedMarkerKind::transition);
+                marker(sample.time, SharedMarkerKind::transition);
 
             const bool boundary = sample.event == HistoryEvent::gap ||
                 sample.event == HistoryEvent::reset || sample.event == HistoryEvent::error;
             if (numeric && !boundary && sample.value && std::isfinite(*sample.value)) {
                 if (node.type == "hold" && *sample.value == 0 && previous_value.value_or(0) > 0)
-                    envelope.add(ImVec2(x, static_cast<float>(std::clamp(*previous_value / target, 0.0, double(progress_limit)))));
-                envelope.add(ImVec2(x, static_cast<float>(std::clamp(*sample.value / target, 0.0, double(progress_limit)))));
+                    envelope.add({sample.time, static_cast<float>(std::clamp(*previous_value / target, 0.0, double(progress_limit)))});
+                envelope.add({sample.time, static_cast<float>(std::clamp(*sample.value / target, 0.0, double(progress_limit)))});
                 previous_value = sample.value;
             } else {
                 envelope.finish_segment();
@@ -265,7 +262,7 @@ SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& 
             if (boundary || !sample.result) {
                 finish_state();
             } else if (!numeric) {
-                const ImVec2 point{x, *sample.result ? 1.0f : 0.0f};
+                const SharedHistoryPoint point{sample.time, *sample.result ? 1.0f : 0.0f};
                 if (previous_state != sample.result) {
                     finish_state();
                     line.states.push_back(point);
@@ -278,6 +275,9 @@ SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& 
         envelope.finish_segment();
         finish_state();
     }
+    for (const auto& bucket : markers)
+        for (std::size_t i = 0; i < bucket.size(); ++i)
+            if (bucket[i]) result.markers.push_back({*bucket[i], static_cast<SharedMarkerKind>(i)});
     std::stable_partition(result.series.begin(), result.series.end(), [](const auto& line) { return !line.current; });
     return result;
 }
@@ -309,8 +309,9 @@ SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& char
     const float left = origin.x + 7 * scale, right = end.x - 7 * scale;
     const float top = origin.y + 6 * scale, bottom = end.y - (ImGui::GetFontSize() + 15 * scale);
     const float axis = end.y - ImGui::GetFontSize() - 2 * scale;
-    const auto x_at = [&](float x) {
-        return right + static_cast<float>((x + chart.sampled_at - now) / seconds) * (right - left);
+    const double pixels_per_second = (right - left) / seconds;
+    const auto x_at = [&](MonotonicTime time) {
+        return right + static_cast<float>((time.nanoseconds / 1e9 - now) * pixels_per_second);
     };
     const auto y_at = [&](float progress) { return bottom - progress * (bottom - top) / progress_limit; };
     draw->AddRectFilled(origin, end, ImGui::GetColorU32(palette.background_deep), 4 * scale);
@@ -339,29 +340,36 @@ SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& char
         auto color = shared_series_color(line.path, palette);
         color.w = line.current ? 1.0f : 0.48f;
         const auto ink = ImGui::GetColorU32(color);
+        // Whole-pixel strokes use ImGui's baked antialiasing texture.
+        const auto stroke = std::max(1.0f, std::round((line.current ? 1.6f : 1.0f) * scale));
         for (const auto& segment : line.segments) {
-            if (x_at(segment.back().x) < left || x_at(segment.front().x) > right) continue;
+            if (x_at(segment.back().time) < left || x_at(segment.front().time) > right) continue;
             pixels.clear();
             for (const auto point : segment) {
-                const ImVec2 pixel{x_at(point.x), y_at(point.y)};
+                const ImVec2 pixel{x_at(point.time), y_at(point.value)};
                 hit(pixels.empty() ? pixel : pixels.back(), pixel, line.path);
-                pixels.push_back(pixel);
+                // Keep cached bucket endpoints intact and avoid drawing redundant flat edges.
+                if (pixels.size() >= 2 && pixel.y == pixels.back().y && pixel.y == pixels[pixels.size() - 2].y &&
+                    pixel.x >= pixels.back().x && pixels.back().x >= pixels[pixels.size() - 2].x)
+                    pixels.back() = pixel;
+                else
+                    pixels.push_back(pixel);
             }
             if (pixels.size() == 1) draw->AddCircleFilled(pixels.front(), 1.8f * scale, ink);
             else draw->AddPolyline(pixels.data(), static_cast<int>(pixels.size()), ink,
-                                   ImDrawFlags_None, (line.current ? 1.6f : 1.0f) * scale);
+                                   ImDrawFlags_None, stroke);
         }
         for (const auto state : line.states) {
-            const auto x = x_at(state.x);
+            const auto x = x_at(state.time);
             if (x < left || x > right) continue;
-            const ImVec2 pixel{x, bottom + (state.y == 1 ? 3 : 8) * scale};
+            const ImVec2 pixel{x, bottom + (state.value == 1 ? 3 : 8) * scale};
             hit(pixel, pixel, line.path);
-            if (state.y == 1) draw->AddCircleFilled(pixel, 2 * scale, ink);
+            if (state.value == 1) draw->AddCircleFilled(pixel, 2 * scale, ink);
             else draw->AddLine(ImVec2(x - 2 * scale, pixel.y), ImVec2(x + 2 * scale, pixel.y), ink, scale);
         }
     }
     if (matching_window) for (const auto& marker : chart.markers) {
-        const float x = x_at(marker.x);
+        const float x = x_at(marker.time);
         if (x < left || x > right) continue;
         const bool timer = marker.kind == SharedMarkerKind::timer_reset;
         auto color = marker.kind == SharedMarkerKind::error ? palette.error :

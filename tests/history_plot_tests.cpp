@@ -407,21 +407,93 @@ TEST(HistoryPlot, SharedChartNormalizesSeparateSeriesAndPreservesBoundaries) {
     ASSERT_EQ(chart.series[0].segments.size(), 2);
     const auto& drop = chart.series[0].segments[0];
     ASSERT_EQ(drop.size(), 3);
-    EXPECT_FLOAT_EQ(drop[0].y, 0.5f);
-    EXPECT_FLOAT_EQ(drop[1].x, drop[2].x);
-    EXPECT_FLOAT_EQ(drop[2].y, 0);
-    EXPECT_FLOAT_EQ(chart.series[0].segments[1][0].y, 1);
+    EXPECT_FLOAT_EQ(drop[0].value, 0.5f);
+    EXPECT_EQ(drop[1].time, drop[2].time);
+    EXPECT_FLOAT_EQ(drop[2].value, 0);
+    EXPECT_FLOAT_EQ(chart.series[0].segments[1][0].value, 1);
     EXPECT_EQ(chart.series[1].path, "score");
-    EXPECT_FLOAT_EQ(chart.series[1].segments[0][0].y, 0.5f);
-    EXPECT_FLOAT_EQ(chart.series[1].segments[0].back().y, 1.25f);
+    EXPECT_FLOAT_EQ(chart.series[1].segments[0][0].value, 0.5f);
+    EXPECT_FLOAT_EQ(chart.series[1].segments[0].back().value, 1.25f);
     EXPECT_EQ(d.samples.back().value, 0.9);
     EXPECT_TRUE(chart.series[2].segments.empty());
     ASSERT_EQ(chart.series[2].states.size(), 2);
-    EXPECT_EQ(chart.series[2].states[0].y, 0);
-    EXPECT_EQ(chart.series[2].states[1].y, 1);
+    EXPECT_EQ(chart.series[2].states[0].value, 0);
+    EXPECT_EQ(chart.series[2].states[1].value, 1);
     for (const auto kind : {SharedMarkerKind::reset, SharedMarkerKind::error,
                             SharedMarkerKind::transition, SharedMarkerKind::timer_reset})
         EXPECT_NE(std::ranges::find(chart.markers, kind, &SharedHistoryMarker::kind), chart.markers.end());
+}
+
+TEST(HistoryPlot, SharedRepresentativesStayFixedAcrossPollsAndSeriesCount) {
+    using namespace std::chrono_literals;
+    ConditionDiagnosticsNode score;
+    score.type = "detected";
+    score.path = "score";
+    score.measurement.target = 1;
+    ConditionHistory history;
+    history.path = score.path;
+    const MonotonicTime bucket_start{20'000'000'000};
+    const auto record = [&](std::chrono::milliseconds offset, double value) {
+        history.samples.push_back({bucket_start + offset, value, ConditionStatus::false_value, HistoryEvent::sample, false});
+    };
+    record(20ms, 0.4);
+    record(65ms, 0.8);
+    record(130ms, 0.6);
+    record(210ms, 0.1);
+    record(450ms, 0.5);
+    history.samples.push_back({bucket_start + 470ms, {}, ConditionStatus::not_evaluated, HistoryEvent::reset, {}});
+    const std::vector<SharedHistorySource> sources{{&score, &history, true}};
+    const auto first = prepare_shared_chart(sources, bucket_start + 600ms, 15s, {});
+    ASSERT_EQ(first.series.front().segments.size(), 1);
+    const std::vector<SharedHistoryPoint> expected{{bucket_start + 20ms, 0.4f}, {bucket_start + 65ms, 0.8f},
+        {bucket_start + 210ms, 0.1f}, {bucket_start + 450ms, 0.5f}};
+    EXPECT_EQ(first.series.front().segments.front(), expected);
+    const auto later = prepare_shared_chart(sources, bucket_start + 770ms, 15s, {});
+    EXPECT_EQ(later.series.front().segments, first.series.front().segments);
+    EXPECT_EQ(later.markers, first.markers);
+    const auto at_left_edge = prepare_shared_chart(sources, bucket_start + 15s + 200ms, 15s, {});
+    EXPECT_EQ(at_left_edge.series.front().segments, first.series.front().segments);
+
+    auto crowded = sources;
+    std::vector<ConditionDiagnosticsNode> peers(80, score);
+    for (std::size_t i = 0; i < peers.size(); ++i) {
+        peers[i].path = "peer." + std::to_string(i);
+        crowded.push_back({&peers[i], &history, true});
+    }
+    const auto more = prepare_shared_chart(crowded, bucket_start + 770ms, 15s, {});
+    EXPECT_EQ(more.series.front().segments, first.series.front().segments);
+    EXPECT_EQ(more.markers, first.markers);
+
+    record(810ms, 0.2);
+    const auto appended = prepare_shared_chart(sources, bucket_start + 900ms, 15s, {});
+    ASSERT_EQ(appended.series.front().segments.size(), 2);
+    EXPECT_EQ(appended.series.front().segments.front(), expected);
+    EXPECT_EQ(appended.series.front().segments.back().back(), (SharedHistoryPoint{bucket_start + 810ms, 0.2f}));
+}
+
+TEST(HistoryPlot, SharedWindowsUseTheSameAbsolutePointsAndKeepNthStepsVertical) {
+    using namespace std::chrono_literals;
+    ConditionDiagnosticsNode nth;
+    nth.type = "nth";
+    nth.path = "nth";
+    nth.measurement = {{}, 10, "count", true};
+    ConditionHistory history;
+    history.path = nth.path;
+    for (const auto [seconds, count] : {std::pair{10, 1.0}, {35, 3.0}, {50, 5.0}, {59, 6.0}})
+        history.samples.push_back({MonotonicTime{} + std::chrono::seconds{seconds}, count,
+            ConditionStatus::false_value, HistoryEvent::sample, false});
+    const std::vector<SharedHistorySource> sources{{&nth, &history, true}};
+    for (const auto [window, first] : {std::pair{15s, 50s}, {30s, 35s}, {60s, 10s}}) {
+        const auto chart = prepare_shared_chart(sources, MonotonicTime{} + 60s, window, {});
+        EXPECT_EQ(chart.seconds, window.count());
+        const auto& points = chart.series.front().segments.front();
+        ASSERT_GE(points.size(), 3);
+        EXPECT_EQ(points.front().time, MonotonicTime{} + first);
+        EXPECT_EQ(points[points.size() - 2].time, MonotonicTime{} + 59s);
+        EXPECT_EQ(points.back().time, MonotonicTime{} + 59s);
+        EXPECT_FLOAT_EQ(points[points.size() - 2].value, 0.5f);
+        EXPECT_FLOAT_EQ(points.back().value, 0.6f);
+    }
 }
 
 TEST(MonitorModel, SharedChartKeepsPastStartAndThenStepWhileResetStaysSeparate) {
@@ -454,11 +526,16 @@ TEST(MonitorModel, SharedChartKeepsPastStartAndThenStepWhileResetStaysSeparate) 
     const auto before = shared_history_groups(card, 15s);
     ASSERT_EQ(before.normal.size(), 3);
     EXPECT_TRUE(before.normal.front().current);
+    const auto before_chart = prepare_shared_chart(before.normal, history->sampled_at, 15s, {});
     const auto color = shared_series_color(before.normal.front().condition->path, palette);
     card.rule_groups[0].current = false;
     card.rule_groups[1].current = true;
     card.rule_groups[1].rules[0].condition.active_step = 1;
     card.rule_groups[2].current = true;
+    // The active step may skip a frame while another branch short-circuits.
+    auto& step_two = history->conditions.back();
+    step_two.samples.push_back({{30'000'000'000}, {}, ConditionStatus::skipped, HistoryEvent::gap, {}});
+    card.rule_groups[1].rules[0].condition.children[1].status = "skipped";
     const auto after = shared_history_groups(card, 15s);
     ASSERT_EQ(after.normal.size(), 3);
     ASSERT_EQ(after.reset.size(), 1);
@@ -466,6 +543,12 @@ TEST(MonitorModel, SharedChartKeepsPastStartAndThenStepWhileResetStaysSeparate) 
     EXPECT_FALSE(after.normal[0].current);
     EXPECT_FALSE(after.normal[1].current);
     EXPECT_TRUE(after.normal[2].current);
+    const auto after_chart = prepare_shared_chart(after.normal, history->sampled_at, 15s, {});
+    for (const auto& line : before_chart.series) {
+        const auto found = std::ranges::find(after_chart.series, line.path, &SharedHistorySeries::path);
+        ASSERT_NE(found, after_chart.series.end());
+        EXPECT_EQ(found->segments, line.segments);
+    }
     const auto same_color = shared_series_color(after.normal.front().condition->path, palette);
     EXPECT_FLOAT_EQ(color.x, same_color.x);
     EXPECT_FLOAT_EQ(color.y, same_color.y);
@@ -514,14 +597,41 @@ TEST(HistoryPlot, StatusIconsHaveDistinctShapesInBothThemesWithoutAddingHeight) 
     }
 }
 
+TEST(HistoryPlot, SharedDrawFramesTranslateTheSameCachedTrace) {
+    PlotFixture fixture;
+    SharedHistoryChart chart;
+    chart.seconds = 30;
+    chart.series = {{"clocked", true, 60,
+        {{{{40'000'000'000}, 0.3f}, {{45'000'000'000}, 0.7f}, {{50'000'000'000}, 0.2f}}}, {}}};
+    const auto palette = theme::colors(theme::Mode::dark);
+    const auto ink = ImGui::ColorConvertFloat4ToU32(shared_series_color("clocked", palette));
+    const auto draw = [&](double now) {
+        fixture.begin();
+        draw_shared_chart("shared", chart, now, 30, {300, 120}, palette, 1);
+        std::vector<ImVec2> vertices;
+        for (const auto& vertex : ImGui::GetWindowDrawList()->VtxBuffer)
+            if (vertex.col == ink) vertices.push_back(vertex.pos);
+        fixture.end();
+        return vertices;
+    };
+    (void)draw(60);
+    const auto first = draw(60);
+    const auto next = draw(60.05);
+    ASSERT_GE(first.size(), 3);
+    ASSERT_EQ(first.size(), next.size());
+    for (std::size_t i = 0; i < first.size(); ++i) {
+        EXPECT_NEAR(first[i].x - next[i].x, (300 - 14) * 0.05 / 30, 0.001);
+        EXPECT_NEAR(first[i].y, next[i].y, 0.001);
+    }
+}
+
 TEST(HistoryPlot, SharedGraphClickSelectsAVisibleHistoricalTrace) {
     using namespace std::chrono_literals;
     PlotFixture fixture;
     SharedHistoryChart chart;
-    chart.sampled_at = 60;
     chart.seconds = 30;
-    chart.series = {{"past", false, 60, {{{-25, 0.5f}, {-5, 0.5f}}}, {}},
-                    {"current", true, 60, {{{-25, 1.2f}, {-5, 1.2f}}}, {}}};
+    chart.series = {{"past", false, 60, {{{{35'000'000'000}, 0.5f}, {{55'000'000'000}, 0.5f}}}, {}},
+                    {"current", true, 60, {{{{35'000'000'000}, 1.2f}, {{55'000'000'000}, 1.2f}}}, {}}};
     const auto palette = theme::colors(theme::Mode::dark);
     ImVec2 hit;
     const auto draw = [&] {

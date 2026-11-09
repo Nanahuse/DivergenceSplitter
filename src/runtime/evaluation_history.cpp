@@ -1,7 +1,6 @@
 #include "divergencesplitter/runtime/evaluation_history.hpp"
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cmath>
 #include <iterator>
@@ -152,10 +151,11 @@ void EvaluationHistory::index_sample(Series& series, std::size_t position) noexc
         if (block.first >= series.first_index && ordinal - block.first < block_size &&
             sample.event == HistoryEvent::sample && previous.event == HistoryEvent::sample &&
             sample.status == previous.status && sample.result == previous.result &&
+            history_preview_bucket(sample.time) == history_preview_bucket(previous.time) &&
             sample.time >= previous.time && sample.value && std::isfinite(*sample.value) &&
             previous.value && std::isfinite(*previous.value)) {
             if (*sample.value < *samples[block.low - series.first_index].value) block.low = ordinal;
-            if (*sample.value > *samples[block.high - series.first_index].value) block.high = ordinal;
+            if (*sample.value >= *samples[block.high - series.first_index].value) block.high = ordinal;
             block.last = ordinal;
             return;
         }
@@ -199,6 +199,7 @@ std::shared_ptr<const EvaluationHistorySnapshot> EvaluationHistory::snapshot(con
     const auto retention = std::chrono::seconds{60};
     const auto cutoff = result->sampled_at - retention;
     const auto recent_cutoff = result->sampled_at - std::min(recent_window, retention);
+    const auto preview_start = std::max(cutoff, history_preview_start(recent_cutoff));
     const bool recent_only = recent_window > std::chrono::seconds::zero();
     for (const auto time : timer_resets_)
         if (time >= (recent_only ? recent_cutoff : cutoff)) result->timer_resets.push_back(time);
@@ -211,41 +212,40 @@ std::shared_ptr<const EvaluationHistorySnapshot> EvaluationHistory::snapshot(con
             *series.last_observation >= recent_cutoff &&
             (!series.ordered || *series.last_observation >= samples.front().time);
     };
-    constexpr std::size_t exact_preview_budget = 200'000;
-    std::size_t preview_samples = 0;
-    if (recent_only) for (const auto& series : series_) {
-        if (!recent(series) || requested(series)) continue;
-        preview_samples += series.history.samples.size();
-        if (preview_samples > exact_preview_budget) break;
-    }
     for (const auto& series : series_) {
         const auto& samples = series.history.samples;
         const bool full = requested(series);
-        if (!full && !recent(series)) continue;
+        const bool in_window = recent(series);
+        if (!full && !in_window) continue;
         auto& target = result->conditions.emplace_back();
         target.path = series.history.path;
         target.last_observation = series.last_observation;
-        const auto since = full ? cutoff : recent_cutoff;
-        if (!full && preview_samples > exact_preview_budget && series.preview_valid) {
-            target.samples.reserve(std::min(samples.size(), series.preview_index.size() * 4));
+        if (in_window && series.preview_valid) {
+            auto& preview = full ? target.preview_samples.emplace() : target.samples;
+            preview.reserve(std::min(samples.size(), series.preview_index.size() * 4));
             for (const auto& block : series.preview_index) {
                 const auto last = block.last - series.first_index;
-                if (samples[last].time < since) continue;
+                if (samples[last].time < preview_start) continue;
                 const auto first = std::max(block.first, series.first_index) - series.first_index;
-                if (block.first < series.first_index || samples[first].time < since) {
+                if (block.first < series.first_index || samples[first].time < preview_start) {
                     // Copy a clipped edge block exactly so a stale extremum cannot
                     // hide the first visible sample or leak across the window.
                     for (auto i = first; i <= last; ++i)
-                        if (samples[i].time >= since) target.samples.push_back(samples[i]);
+                        if (samples[i].time >= preview_start) preview.push_back(samples[i]);
                     continue;
                 }
-                std::array indices{block.first, block.low, block.high, block.last};
-                std::ranges::sort(indices);
-                const auto end = std::unique(indices.begin(), indices.end());
-                for (auto it = indices.begin(); it != end; ++it)
-                    target.samples.push_back(samples[*it - series.first_index]);
+                const auto [earlier, later] = std::minmax(block.low, block.high);
+                preview.push_back(samples[first]);
+                if (earlier > block.first && earlier < block.last)
+                    preview.push_back(samples[earlier - series.first_index]);
+                if (later != earlier && later > block.first && later < block.last)
+                    preview.push_back(samples[later - series.first_index]);
+                if (last != first) preview.push_back(samples[last]);
             }
-        } else if (series.ordered) {
+            if (!full) continue;
+        }
+        const auto since = full ? cutoff : preview_start;
+        if (series.ordered) {
             const auto first = std::lower_bound(samples.begin(), samples.end(), since,
                 [](const EvaluationSample& sample, MonotonicTime time) { return sample.time < time; });
             target.samples.assign(first, samples.end());

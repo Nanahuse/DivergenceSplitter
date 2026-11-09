@@ -111,7 +111,7 @@ hold(detected) fixture used one progress/branch row and two condition rows per
 card. Both fixtures used live synthetic video and independent TestHosts.
 
 
-## Shared chart measurements
+## Shared chart measurements at `66b8122`
 
 The recent-window query selects only series with measurements, results or
 errors in the window. It switches to an endpoint/extrema index above an
@@ -138,3 +138,24 @@ query for dense histories.
 | 20 | 0.65 | 0.11 |
 | 100 | 3.55 | 0.43 |
 | 1000 | 28.58 | 3.08 |
+
+
+## Stable shared chart measurements
+
+The preview index and chart geometry use fixed 500 ms buckets on the monotonic
+clock. Series count, snapshot time and Inspector selection no longer select a
+different reduction policy. Prepared points retain timestamps, and each frame
+translates them to the current display time. Draw submission collapses flat
+edges and uses whole-pixel strokes for ImGui's baked antialiasing texture.
+
+| Splits / Reset nodes | Snapshot P95 (ms) | Preparation P95 (ms) |
+| ---: | ---: | ---: |
+| 20 / 10 | 1.54 | 0.66 |
+| 100 / 10 | 3.27 | 1.60 |
+| 100 / 1000 | 14.52 | 9.60 |
+
+In the synthetic waveform renderer test, draw CPU P95 was 0.07 ms for 20
+series, 0.46 ms for 100 and 6.15 ms for 1,000. The 1,000-series case keeps more
+points than the earlier series-count-dependent policy, which measured 3.08 ms.
+Its snapshot and preparation can exceed one 60 FPS frame budget. These are CPU
+measurements on the same Windows MSVC Release fixture.

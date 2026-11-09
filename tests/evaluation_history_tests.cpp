@@ -425,4 +425,13 @@ TEST(EvaluationHistory, DensePreviewKeepsExtremaAndGapsWhileInspectorRetainsRawS
     EXPECT_EQ(samples.back().time, inspector->conditions.front().samples.back().time);
     EXPECT_TRUE(std::ranges::any_of(samples, [](const auto& sample) { return sample.value == 1; }));
     EXPECT_TRUE(std::ranges::any_of(samples, [](const auto& sample) { return sample.event == HistoryEvent::gap; }));
+    const auto combined = history->snapshot(&selected, 60s);
+    const auto& detail = combined->conditions.front();
+    ASSERT_TRUE(detail.preview_samples);
+    const auto same = [](const auto& a, const auto& b) {
+        return a.time == b.time && a.value == b.value && a.status == b.status &&
+            a.event == b.event && a.result == b.result;
+    };
+    EXPECT_TRUE(std::ranges::equal(*detail.preview_samples, samples, same));
+    EXPECT_TRUE(std::ranges::equal(detail.samples, inspector->conditions.front().samples, same));
 }

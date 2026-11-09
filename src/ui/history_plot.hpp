@@ -39,19 +39,27 @@ struct PlotViewport {
 
 enum class SharedMarkerKind { reset, error, transition, timer_reset };
 
+struct SharedHistoryPoint {
+    MonotonicTime time;
+    float value{};
+    bool operator==(const SharedHistoryPoint&) const = default;
+};
+
 struct SharedHistorySeries {
     std::string path;
     bool current{};
     double last_observation{};
-    // X is seconds relative to the snapshot; Y is progress or boolean state.
-    std::vector<std::vector<ImVec2>> segments;
-    std::vector<ImVec2> states;
+    std::vector<std::vector<SharedHistoryPoint>> segments;
+    std::vector<SharedHistoryPoint> states;
 };
 
-struct SharedHistoryMarker { float x{}; SharedMarkerKind kind{}; };
+struct SharedHistoryMarker {
+    MonotonicTime time;
+    SharedMarkerKind kind{};
+    bool operator==(const SharedHistoryMarker&) const = default;
+};
 
 struct SharedHistoryChart {
-    double sampled_at{};
     double seconds{};
     std::vector<SharedHistorySeries> series;
     std::vector<SharedHistoryMarker> markers;

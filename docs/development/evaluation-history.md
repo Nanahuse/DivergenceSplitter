@@ -42,12 +42,16 @@ History snapshots are opt-in through `diagnostics(true)` and
 only while visible. The Runtime selects series with an observation inside the
 requested window using the last-observation timestamp. Gaps and resets alone do
 not extend a series' eligibility. Explicit Inspector paths still request all
-retained samples for those paths. For large previews, an index of endpoints and
-extrema copies fewer samples while keeping event and state boundaries. The index
-references the original bounded deques. Timer Reset timestamps are kept
+retained samples for those paths. Preview copies always use the index of
+endpoints and extrema on the same 500 ms monotonic clock grid, even when an
+Inspector path also needs raw samples. The index references the bounded deques
+and keeps event and state boundaries. Within retention, a leading bucket and its
+neighbour support clipping without shifting the representatives. Timer Reset timestamps are kept
 separately, so the boundary can appear even without a configured Reset Rule.
-The UI prepares chart geometry once per snapshot. Both shared charts use the
-same time range and leave gaps at missing measurements. The result timeline has its own segments, so it cannot suggest
+The UI prepares chart geometry once per snapshot and stores absolute
+timestamps. Each frame translates the cached points to the current display
+time. Both charts use the same time range and leave gaps at missing
+measurements. Emphasis follows the current rule and step. The result timeline has its own segments, so it cannot suggest
 a boolean result for a skipped numeric measurement.
 
 Tests use a manual clock and deterministic frames for scores, short evaluation,

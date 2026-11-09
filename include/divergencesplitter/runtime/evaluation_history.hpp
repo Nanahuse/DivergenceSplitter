@@ -14,6 +14,20 @@ namespace divergencesplitter {
 
 using HistoryPaths = std::unordered_set<std::string>;
 
+// A fixed grid shared by the preview index and the renderer.
+inline constexpr std::int64_t history_preview_bucket_ns = 500'000'000;
+
+inline constexpr std::int64_t history_preview_bucket(MonotonicTime time) {
+    constexpr auto width = history_preview_bucket_ns;
+    const auto ns = time.nanoseconds;
+    return ns / width - (ns % width < 0 ? 1 : 0);
+}
+
+inline constexpr MonotonicTime history_preview_start(MonotonicTime cutoff) {
+    // Keep the leading bucket intact and a neighbour for clipping its first edge.
+    return {(history_preview_bucket(cutoff) - 1) * history_preview_bucket_ns};
+}
+
 enum class HistoryEvent { sample, gap, reset, transition, error };
 
 struct EvaluationSample {
@@ -37,6 +51,8 @@ struct ConditionHistory {
     std::string path;
     std::vector<EvaluationSample> samples;
     std::optional<MonotonicTime> last_observation;
+    // Present when Inspector requests raw samples for a charted series.
+    std::optional<std::vector<EvaluationSample>> preview_samples;
 };
 
 struct EvaluationHistorySnapshot {

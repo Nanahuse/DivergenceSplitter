@@ -393,11 +393,8 @@ SharedHistoryGroups shared_history_groups(const ScenarioCardModel& card, std::ch
 
     const auto visit_condition = [&](const auto& self, const ConditionDiagnosticsNode& node,
                                      bool current, std::vector<SharedHistorySource>& chart) -> void {
-        if (const auto found = histories.find(node.path); found != histories.end()) {
-            const auto& sample = found->second->samples.back();
-            const bool observed = sample.value || sample.result || sample.event == HistoryEvent::error;
-            chart.push_back({&node, found->second, current && observed});
-        }
+        if (const auto found = histories.find(node.path); found != histories.end())
+            chart.push_back({&node, found->second, current});
         for (std::size_t i = 0; i < node.children.size(); ++i)
             self(self, node.children[i], current && (node.type != "then" ||
                 (!node.completed && node.active_step == i)), chart);
