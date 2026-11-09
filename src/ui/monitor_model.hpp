@@ -57,10 +57,23 @@ struct ScenarioCardModel {
 
 struct CompactConditionRow {
     const ConditionDiagnosticsNode* anchor{};
-    const ConditionDiagnosticsNode* graph{};
     const ConditionDiagnosticsNode* branch{};
     std::string label;
 };
+
+struct SharedHistorySource {
+    const ConditionDiagnosticsNode* condition{};
+    const ConditionHistory* history{};
+    bool current{};
+};
+
+struct SharedHistoryGroups {
+    std::vector<SharedHistorySource> normal;
+    std::vector<SharedHistorySource> reset;
+};
+
+[[nodiscard]] SharedHistoryGroups shared_history_groups(const ScenarioCardModel& card,
+    std::chrono::seconds window);
 
 struct CompactConditionChild {
     const ConditionDiagnosticsNode* condition{};

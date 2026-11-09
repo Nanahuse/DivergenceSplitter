@@ -206,7 +206,8 @@ std::shared_ptr<ScenarioRuntime> InstanceRuntime::runtime() const {
     return runtime_;
 }
 
-InstanceDiagnosticsSnapshot InstanceRuntime::diagnostics(bool include_history, const HistoryPaths* paths) const {
+InstanceDiagnosticsSnapshot InstanceRuntime::diagnostics(bool include_history, const HistoryPaths* paths,
+    std::chrono::seconds recent_window) const {
     InstanceDiagnosticsSnapshot result;
     std::shared_ptr<ScenarioRuntime> current_runtime;
     {
@@ -222,7 +223,7 @@ InstanceDiagnosticsSnapshot InstanceRuntime::diagnostics(bool include_history, c
         result.last_action_result = last_action_result_;
     }
     if (current_runtime) {
-        result.scenario = current_runtime->diagnostics(include_history, paths);
+        result.scenario = current_runtime->diagnostics(include_history, paths, recent_window);
     }
     return result;
 }

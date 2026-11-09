@@ -88,9 +88,11 @@ void plot_colors(const theme::Colors& palette) {
 }
 }
 
-HistoryPlots prepare_history(const EvaluationHistorySnapshot& history, const std::set<std::string>& hold_paths) {
+HistoryPlots prepare_history(const EvaluationHistorySnapshot& history, const std::set<std::string>& hold_paths,
+    const HistoryPaths* paths) {
     HistoryPlots result;
     for (const auto& condition : history.conditions) {
+        if (paths && !paths->contains(condition.path)) continue;
         auto& plot = result[condition.path];
         const bool hold = hold_paths.contains(condition.path);
         const auto capacity = condition.samples.size() * (hold ? 2 : 1);
@@ -131,101 +133,259 @@ HistoryPlots prepare_history(const EvaluationHistorySnapshot& history, const std
     return result;
 }
 
-SparklineGeometry sparkline_geometry(const ConditionDiagnosticsNode& condition,
-    const HistoryPlotData& data, double now, double seconds, ImVec2 size) {
-    SparklineGeometry result;
-    const double start = now - seconds;
-    double minimum = std::min(0.0, condition.measurement.target.value_or(0.0));
-    double maximum = std::max(condition.measurement.unit == "score" ? 1.0 : 0.0,
-                              condition.measurement.target.value_or(1.0));
-    for (std::size_t i = 0; i < data.times.size(); ++i) {
-        if (data.times[i] >= start && data.times[i] <= now) {
-            minimum = std::min(minimum, data.values[i]);
-            maximum = std::max(maximum, data.values[i]);
+namespace {
+constexpr float progress_limit = 1.25f;
+
+struct EnvelopePoint { ImVec2 point; std::size_t index{}; };
+
+// Each bucket retains endpoints and extrema in sample order. A gap flushes
+// the bucket and ends the polyline even when both sides land in one bucket.
+class ProgressEnvelope {
+public:
+    ProgressEnvelope(SharedHistorySeries& series, float seconds, int buckets, bool stairs)
+        : series_(series), seconds_(seconds), buckets_(buckets), stairs_(stairs) {}
+
+    void add(ImVec2 point) {
+        const int bucket = static_cast<int>((point.x + seconds_) * buckets_ / seconds_);
+        if (bucket != bucket_) flush();
+        const EnvelopePoint sample{point, next_index_++};
+        if (!has_bucket_) {
+            extrema_.fill(sample);
+            bucket_ = bucket;
+            has_bucket_ = true;
         }
+        extrema_[3] = sample;
+        if (point.y < extrema_[1].point.y) extrema_[1] = sample;
+        if (point.y >= extrema_[2].point.y) extrema_[2] = sample;
     }
-    const double range = maximum > minimum ? maximum - minimum : 1.0;
-    const auto x = [&](double time) { return static_cast<float>(1 + (time - start) / seconds * (size.x - 2)); };
-    const auto y = [&](double value) { return static_cast<float>((1.0 - (value - minimum) / range) * (size.y - 4) + 2); };
-    if (condition.measurement.target) result.target = y(*condition.measurement.target);
-    for (const auto& segment : data.segments) {
-        auto& points = result.segments.emplace_back().points;
-        // At most first/min/max/last per pixel, preserving extrema and coincident hold drops.
-        std::vector<std::size_t> bucket;
-        int pixel = -1;
-        const auto flush = [&] {
-            if (bucket.empty()) return;
-            auto low = bucket.front(), high = bucket.front();
-            for (const auto i : bucket) {
-                if (data.values[i] < data.values[low]) low = i;
-                if (data.values[i] >= data.values[high]) high = i;
-            }
-            std::array<std::size_t, 4> indices{bucket.front(), low, high, bucket.back()};
-            std::sort(indices.begin(), indices.end());
-            std::optional<std::size_t> previous;
-            for (const auto i : indices) {
-                if (previous == i) continue;
-                const ImVec2 point{x(data.times[i]), y(data.values[i])};
-                if (condition.measurement.stairs && !points.empty())
-                    points.emplace_back(point.x, points.back().y);
-                points.push_back(point);
-                previous = i;
-            }
-            bucket.clear();
-        };
-        for (int offset = 0; offset < segment.count; ++offset) {
-            const auto i = static_cast<std::size_t>(segment.begin + offset);
-            if (data.times[i] < start || data.times[i] > now) continue;
-            const int next = static_cast<int>(x(data.times[i]));
-            if (next != pixel) { flush(); pixel = next; }
-            bucket.push_back(i);
-        }
+
+    void finish_segment() {
         flush();
-        if (points.empty()) result.segments.pop_back();
+        segment_open_ = false;
     }
-    const auto events = [&](const auto& times, auto& target) {
-        for (const auto time : times) if (time >= start && time <= now) target.push_back(x(time));
+
+private:
+    void flush() {
+        if (!has_bucket_) return;
+        if (!segment_open_) series_.segments.emplace_back();
+        segment_open_ = true;
+        auto& points = series_.segments.back();
+        std::ranges::sort(extrema_, {}, &EnvelopePoint::index);
+        std::optional<std::size_t> previous;
+        for (const auto& sample : extrema_) {
+            if (previous == sample.index) continue;
+            previous = sample.index;
+            const auto point = sample.point;
+            if (!points.empty() && stairs_ && points.back().y != point.y)
+                points.emplace_back(point.x, points.back().y);
+            if (points.size() >= 2 && points.back().y == point.y && points[points.size() - 2].y == point.y)
+                points.back() = point;
+            else
+                points.push_back(point);
+        }
+        has_bucket_ = false;
+    }
+
+    SharedHistorySeries& series_;
+    float seconds_;
+    int buckets_;
+    bool stairs_;
+    bool segment_open_{};
+    bool has_bucket_{};
+    int bucket_{-1};
+    std::size_t next_index_{};
+    std::array<EnvelopePoint, 4> extrema_{};
+};
+}
+
+SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& sources,
+    MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets) {
+    SharedHistoryChart result;
+    result.sampled_at = sampled_at.nanoseconds / 1e9;
+    result.seconds = static_cast<double>(window.count());
+    if (window <= std::chrono::seconds::zero()) return result;
+    const auto cutoff = sampled_at - window;
+    constexpr int marker_buckets = 256;
+    std::array<std::array<bool, marker_buckets + 1>, 4> seen{};
+    const auto marker = [&](float x, SharedMarkerKind kind) {
+        const auto index = static_cast<std::size_t>((x + result.seconds) * marker_buckets / result.seconds);
+        auto& present = seen[static_cast<std::size_t>(kind)][std::min<std::size_t>(index, marker_buckets)];
+        if (!present) result.markers.push_back({x, kind});
+        present = true;
     };
-    events(data.resets, result.resets);
-    events(data.errors, result.errors);
-    events(data.transitions, result.transitions);
+    for (const auto time : timer_resets)
+        if (time >= cutoff && time <= sampled_at)
+            marker(static_cast<float>((time - sampled_at).count() / 1e9), SharedMarkerKind::timer_reset);
+
+    const int buckets = static_cast<int>(std::clamp<std::size_t>(12000 / std::max<std::size_t>(1, sources.size()), 12, 240));
+    for (const auto& source : sources) {
+        const auto& node = *source.condition;
+        const auto& history = *source.history;
+        const double target = node.measurement.target.value_or(0);
+        const bool numeric = std::isfinite(target) && target > 0 && node.type != "once";
+        auto& line = result.series.emplace_back();
+        line.path = node.path;
+        line.current = source.current;
+        line.last_observation = history.last_observation.value_or(sampled_at).nanoseconds / 1e9;
+        ProgressEnvelope envelope{line, static_cast<float>(result.seconds), buckets, node.measurement.stairs};
+        std::optional<double> previous_value;
+        std::optional<bool> previous_state;
+        std::optional<ImVec2> state_end;
+        const auto finish_state = [&] {
+            if (state_end) line.states.push_back(*state_end);
+            state_end.reset();
+            previous_state.reset();
+        };
+        for (const auto& sample : history.samples) {
+            if (sample.time < cutoff || sample.time > sampled_at) {
+                envelope.finish_segment();
+                previous_value.reset();
+                finish_state();
+                continue;
+            }
+            const auto x = static_cast<float>((sample.time - sampled_at).count() / 1e9);
+            if (sample.event == HistoryEvent::reset) marker(x, SharedMarkerKind::reset);
+            if (sample.event == HistoryEvent::error) marker(x, SharedMarkerKind::error);
+            if (sample.event == HistoryEvent::transition ||
+                (previous_state && sample.result && *previous_state != *sample.result))
+                marker(x, SharedMarkerKind::transition);
+
+            const bool boundary = sample.event == HistoryEvent::gap ||
+                sample.event == HistoryEvent::reset || sample.event == HistoryEvent::error;
+            if (numeric && !boundary && sample.value && std::isfinite(*sample.value)) {
+                if (node.type == "hold" && *sample.value == 0 && previous_value.value_or(0) > 0)
+                    envelope.add(ImVec2(x, static_cast<float>(std::clamp(*previous_value / target, 0.0, double(progress_limit)))));
+                envelope.add(ImVec2(x, static_cast<float>(std::clamp(*sample.value / target, 0.0, double(progress_limit)))));
+                previous_value = sample.value;
+            } else {
+                envelope.finish_segment();
+                previous_value.reset();
+            }
+
+            if (boundary || !sample.result) {
+                finish_state();
+            } else if (!numeric) {
+                const ImVec2 point{x, *sample.result ? 1.0f : 0.0f};
+                if (previous_state != sample.result) {
+                    finish_state();
+                    line.states.push_back(point);
+                } else {
+                    state_end = point;
+                }
+            }
+            if (!boundary) previous_state = sample.result;
+        }
+        envelope.finish_segment();
+        finish_state();
+    }
+    std::stable_partition(result.series.begin(), result.series.end(), [](const auto& line) { return !line.current; });
     return result;
 }
 
-bool draw_sparkline(const char* id, const ConditionDiagnosticsNode& condition,
-    const HistoryPlots& history, double now, double seconds, ImVec2 size,
-    const theme::Colors& palette) {
+ImVec4 shared_series_color(std::string_view path, const theme::Colors& palette) {
+    std::uint32_t hash = 2166136261u;
+    for (const unsigned char ch : path) hash = (hash ^ ch) * 16777619u;
+    // Mix neighbouring paths before mapping to hue, so sibling indices spread out.
+    hash ^= hash >> 16;
+    hash *= 0x7feb352du;
+    hash ^= hash >> 15;
+    const float hue = static_cast<float>((hash & 0x00ffffffu) / 16777216.0);
+    const bool light = palette.surface_low.x > 0.5f;
+    const float saturation = (light ? 0.72f : 0.56f) + 0.18f * ((hash >> 24) & 15u) / 15.0f;
+    const float brightness = (light ? 0.51f : 0.83f) + 0.15f * (hash >> 28) / 15.0f;
+    ImVec4 color{0, 0, 0, 1};
+    ImGui::ColorConvertHSVtoRGB(hue, saturation, brightness, color.x, color.y, color.z);
+    return color;
+}
+
+SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& chart, double now,
+    double seconds, ImVec2 size, const theme::Colors& palette, float scale) {
     const auto origin = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton(id, size);
-    const bool clicked = ImGui::IsItemClicked();
-    if (!ImGui::IsItemVisible()) return clicked;
+    SharedPlotClick result{ImGui::IsItemClicked(), {}};
+    if (!ImGui::IsItemVisible()) return result;
     auto* draw = ImGui::GetWindowDrawList();
     const ImVec2 end{origin.x + size.x, origin.y + size.y};
-    draw->AddRectFilled(origin, end, ImGui::GetColorU32(palette.surface_low), 3);
-    draw->PushClipRect(origin, end, true);
-    const auto found = history.find(condition.path);
-    static const HistoryPlotData empty;
-    auto geometry = sparkline_geometry(condition, found == history.end() ? empty : found->second,
-                                        now, seconds, size);
-    if (geometry.target) draw->AddLine(ImVec2(origin.x, origin.y + *geometry.target),
-        ImVec2(end.x, origin.y + *geometry.target), ImGui::GetColorU32(palette.warning));
-    for (auto& segment : geometry.segments) {
-        for (auto& point : segment.points) { point.x += origin.x; point.y += origin.y; }
-        if (segment.points.size() == 1)
-            draw->AddCircleFilled(segment.points.front(), 1.5f, ImGui::GetColorU32(palette.primary));
-        else draw->AddPolyline(segment.points.data(), static_cast<int>(segment.points.size()),
-                               ImGui::GetColorU32(palette.primary), ImDrawFlags_None, 1.2f);
-    }
-    const auto events = [&](const auto& positions, const ImVec4& color) {
-        for (const auto pos : positions) draw->AddLine(ImVec2(origin.x + pos, origin.y),
-            ImVec2(origin.x + pos, end.y), ImGui::GetColorU32(color));
+    const float left = origin.x + 7 * scale, right = end.x - 7 * scale;
+    const float top = origin.y + 6 * scale, bottom = end.y - (ImGui::GetFontSize() + 15 * scale);
+    const float axis = end.y - ImGui::GetFontSize() - 2 * scale;
+    const auto x_at = [&](float x) {
+        return right + static_cast<float>((x + chart.sampled_at - now) / seconds) * (right - left);
     };
-    events(geometry.resets, palette.warning);
-    events(geometry.transitions, palette.active);
-    events(geometry.errors, palette.error);
+    const auto y_at = [&](float progress) { return bottom - progress * (bottom - top) / progress_limit; };
+    draw->AddRectFilled(origin, end, ImGui::GetColorU32(palette.background_deep), 4 * scale);
+    draw->PushClipRect(ImVec2(left, top), ImVec2(right, axis), true);
+    const float goal = y_at(1);
+    draw->AddLine(ImVec2(left, goal), ImVec2(right, goal), ImGui::GetColorU32(palette.outline));
+    draw->AddLine(ImVec2(left, bottom), ImVec2(right, bottom), ImGui::GetColorU32(palette.divider));
+
+    const bool hovered = ImGui::IsItemHovered();
+    const auto mouse = ImGui::GetIO().MousePos;
+    float nearest = 144 * scale * scale;
+    std::string_view hovered_path;
+    const auto hit = [&](ImVec2 a, ImVec2 b, std::string_view path) {
+        if (!hovered || std::max(a.x, b.x) < left || std::min(a.x, b.x) > right) return;
+        const float dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+        const float t = length > 0 ? std::clamp(((mouse.x - a.x) * dx + (mouse.y - a.y) * dy) / length, 0.0f, 1.0f) : 0;
+        const float x = mouse.x - a.x - t * dx, y = mouse.y - a.y - t * dy;
+        const float distance = x * x + y * y;
+        if (distance <= nearest) { nearest = distance; hovered_path = path; }
+    };
+    const bool matching_window = chart.seconds == seconds;
+    std::vector<ImVec2> pixels;
+    for (const auto& line : chart.series) {
+        if (!matching_window || line.last_observation < now - seconds) continue;
+        if (result.path.empty() || line.current) result.path = line.path;
+        auto color = shared_series_color(line.path, palette);
+        color.w = line.current ? 1.0f : 0.48f;
+        const auto ink = ImGui::GetColorU32(color);
+        for (const auto& segment : line.segments) {
+            if (x_at(segment.back().x) < left || x_at(segment.front().x) > right) continue;
+            pixels.clear();
+            for (const auto point : segment) {
+                const ImVec2 pixel{x_at(point.x), y_at(point.y)};
+                hit(pixels.empty() ? pixel : pixels.back(), pixel, line.path);
+                pixels.push_back(pixel);
+            }
+            if (pixels.size() == 1) draw->AddCircleFilled(pixels.front(), 1.8f * scale, ink);
+            else draw->AddPolyline(pixels.data(), static_cast<int>(pixels.size()), ink,
+                                   ImDrawFlags_None, (line.current ? 1.6f : 1.0f) * scale);
+        }
+        for (const auto state : line.states) {
+            const auto x = x_at(state.x);
+            if (x < left || x > right) continue;
+            const ImVec2 pixel{x, bottom + (state.y == 1 ? 3 : 8) * scale};
+            hit(pixel, pixel, line.path);
+            if (state.y == 1) draw->AddCircleFilled(pixel, 2 * scale, ink);
+            else draw->AddLine(ImVec2(x - 2 * scale, pixel.y), ImVec2(x + 2 * scale, pixel.y), ink, scale);
+        }
+    }
+    if (matching_window) for (const auto& marker : chart.markers) {
+        const float x = x_at(marker.x);
+        if (x < left || x > right) continue;
+        const bool timer = marker.kind == SharedMarkerKind::timer_reset;
+        auto color = marker.kind == SharedMarkerKind::error ? palette.error :
+            marker.kind == SharedMarkerKind::transition ? palette.active : palette.warning;
+        color.w = timer ? 0.95f : 0.42f;
+        draw->AddLine(ImVec2(x, top), ImVec2(x, bottom), ImGui::GetColorU32(color), (timer ? 2 : 1) * scale);
+    }
     draw->PopClipRect();
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to inspect history");
-    return clicked;
+    const auto label_color = ImGui::GetColorU32(palette.text_secondary);
+    const auto time_label = "-" + std::to_string(static_cast<int>(seconds)) + " s";
+    draw->AddText(ImVec2(left, axis), label_color, time_label.c_str());
+    draw->AddText(ImVec2(right - ImGui::CalcTextSize("now").x, axis), label_color, "now");
+    draw->AddText(ImVec2(right - ImGui::CalcTextSize("100%").x, goal - ImGui::GetFontSize()),
+                  label_color, "100%");
+    if (result.path.empty() && (!matching_window || chart.markers.empty()))
+        draw->AddText(ImVec2(left + 8 * scale, top + 12 * scale), label_color, "No recent history");
+    if (hovered) {
+        if (!hovered_path.empty()) {
+            result.path = hovered_path;
+            ImGui::SetTooltip("%.*s\nClick to inspect", static_cast<int>(hovered_path.size()), hovered_path.data());
+        } else ImGui::SetTooltip("100%% = target. Dots/dashes below = true/false.\n"
+                                 "Amber: reset | Red: error | Green: transition\nClick to inspect");
+    }
+    return result;
 }
 
 bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition,

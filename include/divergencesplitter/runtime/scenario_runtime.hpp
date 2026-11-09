@@ -31,7 +31,8 @@ public:
     void settle_rejected_reset(const LiveSplitUpdate& update);
 
     [[nodiscard]] std::optional<LiveSplitSnapshot> current_snapshot() const;
-    [[nodiscard]] ScenarioDiagnosticsSnapshot diagnostics(bool include_history = false, const HistoryPaths* paths = nullptr) const;
+    [[nodiscard]] ScenarioDiagnosticsSnapshot diagnostics(bool include_history = false, const HistoryPaths* paths = nullptr,
+        std::chrono::seconds recent_window = {}) const;
 
 private:
     [[nodiscard]] std::optional<Action> evaluate_rules(

@@ -37,7 +37,8 @@ public:
     [[nodiscard]] bool running() const;
     [[nodiscard]] std::string last_error() const;
     [[nodiscard]] Profile profile() const;
-    [[nodiscard]] std::vector<InstanceDiagnosticsSnapshot> instance_diagnostics(bool include_history = false, const InstanceHistoryPaths* paths = nullptr) const;
+    [[nodiscard]] std::vector<InstanceDiagnosticsSnapshot> instance_diagnostics(bool include_history = false, const InstanceHistoryPaths* paths = nullptr,
+        std::chrono::seconds recent_window = {}) const;
     [[nodiscard]] CaptureStats capture_stats() const;
     [[nodiscard]] std::shared_ptr<const cv::Mat> latest_preview() const;
     void request_reset_all();

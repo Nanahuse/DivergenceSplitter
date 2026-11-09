@@ -159,6 +159,8 @@ void ScenarioRuntime::apply_update(const LiveSplitUpdate& update) {
         return;
     }
 
+    if (snapshot.phase == TimerPhase::not_running && current.phase != TimerPhase::not_running)
+        history_->note_timer_reset();
     snapshot_ = snapshot;
     configuration_valid_ = validate_split_count(snapshot);
     if (run_changed) {
@@ -352,10 +354,11 @@ std::optional<LiveSplitSnapshot> ScenarioRuntime::current_snapshot() const {
     return snapshot_;
 }
 
-ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics(bool include_history, const HistoryPaths* paths) const {
+ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics(bool include_history, const HistoryPaths* paths,
+    std::chrono::seconds recent_window) const {
     std::scoped_lock lock{mutex_};
     ScenarioDiagnosticsSnapshot result;
-    if (include_history) result.history = history_->snapshot(paths);
+    if (include_history) result.history = history_->snapshot(paths, recent_window);
     result.snapshot = snapshot_;
     result.configuration_valid = configuration_valid_;
     if (pending_action_.has_value()) {

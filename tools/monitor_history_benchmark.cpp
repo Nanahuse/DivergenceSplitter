@@ -12,7 +12,6 @@
 #include "divergencesplitter/runtime/scenario_runtime.hpp"
 #include "history_plot.hpp"
 #include "monitor_model.hpp"
-#include "monitor_row.hpp"
 
 using namespace divergencesplitter;
 using namespace divergencesplitter::ui;
@@ -36,7 +35,7 @@ void stats(const char* name, std::vector<double> values) {
               << " " << name << "_p95_ms=" << values[values.size()*95/100]
               << " " << name << "_max_ms=" << values.back() << ' ';
 }
-void run(int splits, int common_nodes, bool filtered) {
+void run(int splits, int common_nodes, bool filtered, std::chrono::seconds window) {
     auto clock = std::make_shared<Clock>();
     Scenario scenario;
     scenario.start_condition = tree(10);
@@ -79,20 +78,26 @@ void run(int splits, int common_nodes, bool filtered) {
     });
     for (int i = 0; i < 20; ++i) {
         const auto started = std::chrono::steady_clock::now();
-        auto snapshot = runtime.diagnostics(true, selection);
+        auto snapshot = runtime.diagnostics(true, selection, window);
         diagnostics.push_back(ms(started));
         const auto prepare_started = std::chrono::steady_clock::now();
         InstanceDiagnosticsSnapshot instance;
         instance.scenario = std::move(snapshot);
         const auto model = card_model(instance);
-        const auto plots = prepare_history(*model.history);
+        if (window > 0s) {
+            const auto sources = shared_history_groups(model, window);
+            const auto normal = prepare_shared_chart(sources.normal, model.history->sampled_at, window, model.history->timer_resets);
+            const auto reset = prepare_shared_chart(sources.reset, model.history->sampled_at, window, model.history->timer_resets);
+            if (normal.series.empty() || reset.series.empty()) std::terminate();
+        } else if (prepare_history(*model.history).empty()) {
+            std::terminate();
+        }
         preparation.push_back(ms(prepare_started));
-        if (plots.empty()) std::terminate();
         std::this_thread::sleep_until(started + 100ms);
     }
     stop = true;
     evaluator.join();
-    std::cout << "filtered=" << filtered << " splits=" << splits << " nodes_per_split=10 common_nodes=" << common_nodes
+    std::cout << "filtered=" << filtered << " window=" << window.count() << " splits=" << splits << " nodes_per_split=10 common_nodes=" << common_nodes
               << " samples=" << samples << ' ';
     stats("snapshot", diagnostics);
     stats("prepare", preparation);
@@ -109,60 +114,47 @@ void render_benchmark() {
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
     unsigned char* pixels; int width, height;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-    EvaluationHistorySnapshot snapshot;
-    auto& samples = snapshot.conditions.emplace_back(ConditionHistory{"score", {}}).samples;
-    for (int i = 0; i < 3600; ++i) {
-        const auto event = i % 300 == 150 ? HistoryEvent::gap :
-            i % 300 == 200 ? HistoryEvent::reset : i % 300 == 250 ? HistoryEvent::error : HistoryEvent::sample;
-        samples.push_back({{static_cast<std::int64_t>(i) * 1'000'000'000 / 60},
-            event == HistoryEvent::sample ? std::optional<double>{0.5 + 0.45 * std::sin(i * 0.03)} : std::nullopt,
-            ConditionStatus::false_value, event, {}});
-    }
-    const auto history = prepare_history(snapshot);
-    ConditionDiagnosticsNode node;
-    node.path = "score";
-    node.type = "detected";
-    node.measurement = {0.5, 0.7, "score", false};
     const auto palette = theme::colors(theme::Mode::dark);
-    for (const int rows : {20, 100}) for (const int renderer : {0, 1, 2}) {
-        std::vector<double> timings;
+    for (const int count : {20, 100, 1000}) {
+        std::vector<ConditionDiagnosticsNode> nodes(count);
+        std::vector<ConditionHistory> histories(count);
+        std::vector<SharedHistorySource> sources;
+        for (int n = 0; n < count; ++n) {
+            auto& node = nodes[n];
+            node.path = "score." + std::to_string(n);
+            node.type = "detected";
+            node.measurement.target = 0.7;
+            auto& history = histories[n];
+            history.path = node.path;
+            history.last_observation = MonotonicTime{60'000'000'000};
+            for (int i = 0; i < 3600; ++i) {
+                const auto event = i % 300 == 150 ? HistoryEvent::gap : i % 300 == 200 ? HistoryEvent::reset :
+                    i % 300 == 250 ? HistoryEvent::error : HistoryEvent::sample;
+                history.samples.push_back({{static_cast<std::int64_t>(i) * 1'000'000'000 / 60},
+                    event == HistoryEvent::sample ? std::optional<double>{0.5 + 0.45 * std::sin(i * 0.03 + n)} : std::nullopt,
+                    ConditionStatus::false_value, event, {}});
+            }
+            sources.push_back({&node, &history, n % 2 == 0});
+        }
+        std::vector<double> preparation, timings;
         int vertices = 0;
         for (int frame = 0; frame < 35; ++frame) {
-            const auto started = std::chrono::steady_clock::now();
+            auto started = std::chrono::steady_clock::now();
+            const auto chart = prepare_shared_chart(sources, {60'000'000'000}, 60s, {});
+            if (frame >= 5) preparation.push_back(ms(started));
+            started = std::chrono::steady_clock::now();
             ImGui::NewFrame();
             ImGui::SetNextWindowPos(ImVec2(0, 0));
-            ImGui::SetNextWindowSize(ImVec2(renderer == 2 ? 640.0f : 156.0f, 3400));
-            ImGui::Begin("Mini plot benchmark", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 2));
-            const bool table = renderer == 2;
-            if (table) {
-                ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4, 1));
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
-                ImGui::BeginTable("rows", 2);
-                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthFixed, 140);
-            }
-            for (int row = 0; row < rows; ++row) {
-                ImGui::PushID(row);
-                if (table) draw_compact_condition_row(compact_condition_row(node), false, 0, {}, false,
-                    history, 60, 30, palette, 1);
-                else if (renderer == 1) draw_sparkline("mini", node, history, 60, 30, ImVec2(140, 22), palette);
-                else {
-                    ImPlot::PushStyleVar(ImPlotStyleVar_PlotPadding, ImVec2(1, 1));
-                    draw_history_plot("mini", node, history, 60, 30, 22, palette);
-                    ImPlot::PopStyleVar();
-                }
-                ImGui::PopID();
-            }
-            if (table) { ImGui::EndTable(); ImGui::PopStyleVar(2); }
-            ImGui::PopStyleVar();
+            ImGui::SetNextWindowSize(ImVec2(500, 160));
+            ImGui::Begin("Shared plot benchmark", nullptr, ImGuiWindowFlags_NoTitleBar);
+            draw_shared_chart("shared", chart, 60, 60, {460, 112}, palette, 1);
             ImGui::End();
             ImGui::Render();
             if (frame >= 5) timings.push_back(ms(started));
             vertices = ImGui::GetDrawData()->TotalVtxCount;
         }
-        std::cout << "renderer=" << (renderer == 2 ? "CompactRows" : renderer == 1 ? "ImDrawList" : "ImPlot") << " visible_rows=" << rows
-                  << " source_samples=3600 vertices=" << vertices << ' ';
+        std::cout << "shared_series=" << count << " source_samples_per_series=3600 vertices=" << vertices << ' ';
+        stats("prepare", preparation);
         stats("render_cpu", timings);
         std::cout << std::endl;
     }
@@ -172,8 +164,10 @@ void render_benchmark() {
 }
 int main(int argc, char** argv) {
     if (argc > 1 && std::string_view{argv[1]} == "render") { render_benchmark(); return 0; }
+    const bool recent = argc > 1 && std::string_view{argv[1]} == "shared";
+    const auto window = recent ? 60s : 0s;
     const bool filtered = argc > 1;
-    run(20, 10, filtered);
-    run(100, 10, filtered);
-    run(100, 1000, filtered);
+    run(20, 10, filtered, window);
+    run(100, 10, filtered, window);
+    run(100, 1000, filtered, window);
 }

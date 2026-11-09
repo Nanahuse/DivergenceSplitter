@@ -34,8 +34,9 @@ private:
     void draw_cards();
     void draw_reset_button();
     void draw_card(const ScenarioCardModel& card);
-    void draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card, bool show_label = false);
-    void draw_condition(const ConditionDiagnosticsNode& condition, const ScenarioCardModel& card,
+    void draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card, int& remaining,
+                   bool show_label = false);
+    void draw_condition(const ConditionDiagnosticsNode& condition, const ScenarioCardModel& card, int& remaining,
                         int depth = 0, std::string_view role = {});
     void draw_structure(const ConditionDiagnosticsNode& node, const ScenarioCardModel& card,
                         const std::string& label, bool expand_selection);
@@ -45,6 +46,8 @@ private:
     struct InstancePlots {
         std::uint64_t identity{};
         HistoryPlots plots;
+        SharedHistoryChart normal;
+        SharedHistoryChart reset;
     };
     std::map<int, InstancePlots> plots_;
     int window_seconds_{30};

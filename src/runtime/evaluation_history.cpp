@@ -1,8 +1,10 @@
 #include "divergencesplitter/runtime/evaluation_history.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <iterator>
 
 #include "divergencesplitter/condition/conditions.hpp"
 
@@ -96,7 +98,12 @@ void EvaluationHistory::record(std::size_t index, const Condition& condition,
 void EvaluationHistory::append(Series& series, EvaluationSample sample) {
     auto& samples = series.history.samples;
     const auto cutoff = sample.time - std::chrono::seconds{60};
-    while (!samples.empty() && samples.front().time < cutoff) samples.pop_front();
+    while (!samples.empty() && samples.front().time < cutoff) {
+        samples.pop_front();
+        ++series.first_index;
+    }
+    while (!series.preview_index.empty() && series.preview_index.front().last < series.first_index)
+        series.preview_index.pop_front();
     if (sample.event == HistoryEvent::gap && !samples.empty() &&
         samples.back().event == HistoryEvent::gap) return;
     if (samples.size() == capacity) {
@@ -118,27 +125,135 @@ void EvaluationHistory::append(Series& series, EvaluationSample sample) {
         // An event storm is bounded too; prefer its most recent events.
         while (compact.size() > capacity * 3 / 4) compact.pop_front();
         samples.swap(compact);
+        series.preview_index.clear();
+        series.first_index = 0;
+        series.preview_valid = true;
+        for (std::size_t i = 0; i < samples.size() && series.preview_valid; ++i) index_sample(series, i);
     }
+    if (!samples.empty() && sample.time < samples.back().time) series.ordered = false;
     samples.push_back(sample);
+    if (series.preview_valid) index_sample(series, samples.size() - 1);
+    if ((sample.value || sample.result || sample.event == HistoryEvent::error) &&
+        (!series.last_observation || sample.time > *series.last_observation))
+        series.last_observation = sample.time;
+}
+
+void EvaluationHistory::index_sample(Series& series, std::size_t position) noexcept {
+    // Index only stretches of ordinary, finite samples with the same state.
+    // Events and missing values always occupy their own block.
+    constexpr std::size_t block_size = 64;
+    const auto& samples = series.history.samples;
+    const auto& sample = samples[position];
+    const auto ordinal = series.first_index + position;
+    auto& index = series.preview_index;
+    if (position > 0 && !index.empty()) {
+        auto& block = index.back();
+        const auto& previous = samples[position - 1];
+        if (block.first >= series.first_index && ordinal - block.first < block_size &&
+            sample.event == HistoryEvent::sample && previous.event == HistoryEvent::sample &&
+            sample.status == previous.status && sample.result == previous.result &&
+            sample.time >= previous.time && sample.value && std::isfinite(*sample.value) &&
+            previous.value && std::isfinite(*previous.value)) {
+            if (*sample.value < *samples[block.low - series.first_index].value) block.low = ordinal;
+            if (*sample.value > *samples[block.high - series.first_index].value) block.high = ordinal;
+            block.last = ordinal;
+            return;
+        }
+    }
+    try {
+        index.push_back({ordinal, ordinal, ordinal, ordinal});
+    } catch (...) {
+        index.clear();
+        series.preview_valid = false;
+    }
 }
 
 void EvaluationHistory::clear() {
     identity_ = next_identity.fetch_add(1);
-    for (auto& series : series_) series.history.samples.clear();
+    for (auto& series : series_) {
+        series.history.samples.clear();
+        series.last_observation.reset();
+        series.ordered = true;
+        series.preview_index.clear();
+        series.first_index = 0;
+        series.preview_valid = true;
+    }
+    timer_resets_.clear();
 }
 
-std::shared_ptr<const EvaluationHistorySnapshot> EvaluationHistory::snapshot(const HistoryPaths* paths) const {
+void EvaluationHistory::note_timer_reset() noexcept {
+    try {
+        const auto now = clock_->now();
+        while (!timer_resets_.empty() &&
+               (timer_resets_.front() < now - std::chrono::seconds{60} || timer_resets_.size() >= capacity))
+            timer_resets_.pop_front();
+        timer_resets_.push_back(now);
+    } catch (...) {} // Diagnostics must not affect a timer update.
+}
+
+std::shared_ptr<const EvaluationHistorySnapshot> EvaluationHistory::snapshot(const HistoryPaths* paths,
+    std::chrono::seconds recent_window) const {
     auto result = std::make_shared<EvaluationHistorySnapshot>();
     result->identity = identity_;
     result->sampled_at = clock_->now();
+    const auto retention = std::chrono::seconds{60};
+    const auto cutoff = result->sampled_at - retention;
+    const auto recent_cutoff = result->sampled_at - std::min(recent_window, retention);
+    const bool recent_only = recent_window > std::chrono::seconds::zero();
+    for (const auto time : timer_resets_)
+        if (time >= (recent_only ? recent_cutoff : cutoff)) result->timer_resets.push_back(time);
+    const auto requested = [&](const Series& series) {
+        return paths ? paths->contains(series.history.path) : !recent_only;
+    };
+    const auto recent = [&](const Series& series) {
+        const auto& samples = series.history.samples;
+        return recent_only && !samples.empty() && series.last_observation &&
+            *series.last_observation >= recent_cutoff &&
+            (!series.ordered || *series.last_observation >= samples.front().time);
+    };
+    constexpr std::size_t exact_preview_budget = 200'000;
+    std::size_t preview_samples = 0;
+    if (recent_only) for (const auto& series : series_) {
+        if (!recent(series) || requested(series)) continue;
+        preview_samples += series.history.samples.size();
+        if (preview_samples > exact_preview_budget) break;
+    }
     for (const auto& series : series_) {
-        if (paths && !paths->contains(series.history.path)) continue;
+        const auto& samples = series.history.samples;
+        const bool full = requested(series);
+        if (!full && !recent(series)) continue;
         auto& target = result->conditions.emplace_back();
         target.path = series.history.path;
-        target.samples.reserve(series.history.samples.size());
-        for (const auto& sample : series.history.samples)
-            if (sample.time >= result->sampled_at - std::chrono::seconds{60})
-                target.samples.push_back(sample);
+        target.last_observation = series.last_observation;
+        const auto since = full ? cutoff : recent_cutoff;
+        if (!full && preview_samples > exact_preview_budget && series.preview_valid) {
+            target.samples.reserve(std::min(samples.size(), series.preview_index.size() * 4));
+            for (const auto& block : series.preview_index) {
+                const auto last = block.last - series.first_index;
+                if (samples[last].time < since) continue;
+                const auto first = std::max(block.first, series.first_index) - series.first_index;
+                if (block.first < series.first_index || samples[first].time < since) {
+                    // Copy a clipped edge block exactly so a stale extremum cannot
+                    // hide the first visible sample or leak across the window.
+                    for (auto i = first; i <= last; ++i)
+                        if (samples[i].time >= since) target.samples.push_back(samples[i]);
+                    continue;
+                }
+                std::array indices{block.first, block.low, block.high, block.last};
+                std::ranges::sort(indices);
+                const auto end = std::unique(indices.begin(), indices.end());
+                for (auto it = indices.begin(); it != end; ++it)
+                    target.samples.push_back(samples[*it - series.first_index]);
+            }
+        } else if (series.ordered) {
+            const auto first = std::lower_bound(samples.begin(), samples.end(), since,
+                [](const EvaluationSample& sample, MonotonicTime time) { return sample.time < time; });
+            target.samples.assign(first, samples.end());
+        } else {
+            // A queued frame can predate a timer update that reset the condition.
+            std::ranges::copy_if(samples, std::back_inserter(target.samples),
+                [since](const auto& sample) { return sample.time >= since; });
+        }
     }
     return result;
 }

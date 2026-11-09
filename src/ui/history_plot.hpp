@@ -6,6 +6,7 @@
 #include <set>
 
 #include "divergencesplitter/runtime/diagnostics.hpp"
+#include "monitor_model.hpp"
 #include "theme.hpp"
 
 namespace divergencesplitter::ui {
@@ -34,21 +35,36 @@ struct PlotViewport {
 };
 
 [[nodiscard]] HistoryPlots prepare_history(const EvaluationHistorySnapshot& history,
-    const std::set<std::string>& hold_paths = {});
+    const std::set<std::string>& hold_paths = {}, const HistoryPaths* paths = nullptr);
 
-struct SparklineSegment { std::vector<ImVec2> points; };
-struct SparklineGeometry {
-    std::vector<SparklineSegment> segments;
-    std::vector<float> resets;
-    std::vector<float> errors;
-    std::vector<float> transitions;
-    std::optional<float> target;
+enum class SharedMarkerKind { reset, error, transition, timer_reset };
+
+struct SharedHistorySeries {
+    std::string path;
+    bool current{};
+    double last_observation{};
+    // X is seconds relative to the snapshot; Y is progress or boolean state.
+    std::vector<std::vector<ImVec2>> segments;
+    std::vector<ImVec2> states;
 };
-[[nodiscard]] SparklineGeometry sparkline_geometry(const ConditionDiagnosticsNode& condition,
-    const HistoryPlotData& data, double now, double seconds, ImVec2 size);
-bool draw_sparkline(const char* id, const ConditionDiagnosticsNode& condition,
-    const HistoryPlots& history, double now, double seconds, ImVec2 size,
-    const theme::Colors& palette);
+
+struct SharedHistoryMarker { float x{}; SharedMarkerKind kind{}; };
+
+struct SharedHistoryChart {
+    double sampled_at{};
+    double seconds{};
+    std::vector<SharedHistorySeries> series;
+    std::vector<SharedHistoryMarker> markers;
+};
+
+struct SharedPlotClick { bool clicked{}; std::string_view path; };
+
+[[nodiscard]] SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& sources,
+    MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets);
+[[nodiscard]] ImVec4 shared_series_color(std::string_view path, const theme::Colors& palette);
+SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& chart, double now,
+    double seconds, ImVec2 size, const theme::Colors& palette, float scale);
+
 // Small plots return true when clicked. Detailed plots allow pan/zoom and pause live time.
 bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition,
     const HistoryPlots& history, double now, double seconds, float height,

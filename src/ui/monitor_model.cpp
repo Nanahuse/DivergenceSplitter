@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <unordered_map>
 
 namespace divergencesplitter::ui {
 namespace {
@@ -374,13 +375,44 @@ CompactConditionRow compact_condition_row(const ConditionDiagnosticsNode& node) 
                 continue;
             }
         }
-        if (!row.graph && unary(current->type) && current->type != "not") row.graph = current;
         if (!unary(current->type) || current->children.size() != 1) break;
         current = &current->children.front();
     }
     if (!current->children.empty()) row.branch = current;
-    if (!row.graph && !row.branch) row.graph = current;
     return row;
+}
+
+SharedHistoryGroups shared_history_groups(const ScenarioCardModel& card, std::chrono::seconds window) {
+    SharedHistoryGroups result;
+    if (!card.history) return result;
+    const auto cutoff = card.history->sampled_at - window;
+    std::unordered_map<std::string_view, const ConditionHistory*> histories;
+    for (const auto& history : card.history->conditions)
+        if (history.last_observation && *history.last_observation >= cutoff && !history.samples.empty())
+            histories.emplace(history.path, &history);
+
+    const auto visit_condition = [&](const auto& self, const ConditionDiagnosticsNode& node,
+                                     bool current, std::vector<SharedHistorySource>& chart) -> void {
+        if (const auto found = histories.find(node.path); found != histories.end()) {
+            const auto& sample = found->second->samples.back();
+            const bool observed = sample.value || sample.result || sample.event == HistoryEvent::error;
+            chart.push_back({&node, found->second, current && observed});
+        }
+        for (std::size_t i = 0; i < node.children.size(); ++i)
+            self(self, node.children[i], current && (node.type != "then" ||
+                (!node.completed && node.active_step == i)), chart);
+    };
+    const auto visit_rule = [&](const auto& self, const RuleDiagnosticsNode& rule,
+                                bool current, std::vector<SharedHistorySource>& chart) -> void {
+        visit_condition(visit_condition, rule.condition, current, chart);
+        for (std::size_t i = 0; i < rule.sequence_rules.size(); ++i)
+            self(self, rule.sequence_rules[i], current && rule.active_rule_index == i, chart);
+    };
+    for (const auto& group : card.rule_groups) {
+        auto& chart = group.path == "reset" ? result.reset : result.normal;
+        for (const auto& rule : group.rules) visit_rule(visit_rule, rule, group.current, chart);
+    }
+    return result;
 }
 
 std::vector<CompactConditionChild> compact_condition_children(const CompactConditionRow& row) {

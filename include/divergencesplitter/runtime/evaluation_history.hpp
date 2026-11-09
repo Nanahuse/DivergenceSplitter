@@ -36,12 +36,14 @@ struct ConditionMeasurement {
 struct ConditionHistory {
     std::string path;
     std::vector<EvaluationSample> samples;
+    std::optional<MonotonicTime> last_observation;
 };
 
 struct EvaluationHistorySnapshot {
     std::uint64_t identity{}; // Unique across reconnects, profile applies and Bridge sessions.
     MonotonicTime sampled_at;
     std::vector<ConditionHistory> conditions;
+    std::vector<MonotonicTime> timer_resets;
 };
 
 // Called only under ScenarioRuntime's mutex. Snapshot copies are opt-in (10 Hz UI).
@@ -53,7 +55,11 @@ public:
     void begin_frame(MonotonicTime time);
     void end_frame();
     void clear();
-    [[nodiscard]] std::shared_ptr<const EvaluationHistorySnapshot> snapshot(const HistoryPaths* paths = nullptr) const;
+    void note_timer_reset() noexcept;
+    // Recent observations opt a series into the chart window. Explicit paths
+    // still request full retention for Inspector, even outside that window.
+    [[nodiscard]] std::shared_ptr<const EvaluationHistorySnapshot> snapshot(const HistoryPaths* paths = nullptr,
+        std::chrono::seconds recent_window = {}) const;
 
 private:
     // Collection and retention keep the original bounded deque. UI snapshots are
@@ -62,10 +68,22 @@ private:
         std::string path;
         std::deque<EvaluationSample> samples;
     };
+    struct SampleBlock {
+        std::size_t first{};
+        std::size_t low{};
+        std::size_t high{};
+        std::size_t last{};
+    };
     struct Series {
         Buffer history;
         std::uint64_t frame{};
+        std::optional<MonotonicTime> last_observation;
+        bool ordered{true};
+        std::deque<SampleBlock> preview_index;
+        std::size_t first_index{};
+        bool preview_valid{true};
     };
+    static void index_sample(Series& series, std::size_t position) noexcept;
     void record(std::size_t index, const Condition& condition, Condition::Observation event,
                 std::optional<bool> result, std::optional<MonotonicTime> time, bool short_circuited);
     void append(Series& series, EvaluationSample sample);
@@ -74,6 +92,7 @@ private:
     std::uint64_t identity_{};
     std::uint64_t frame_{};
     std::optional<MonotonicTime> frame_time_;
+    std::deque<MonotonicTime> timer_resets_;
 };
 
 } // namespace divergencesplitter

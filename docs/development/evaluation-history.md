@@ -39,13 +39,15 @@ snapshots and pruned when the collector next sees that condition.
 
 History snapshots are opt-in through `diagnostics(true)` and
 `Session::instance_diagnostics(true)`. The Monitor requests them at about 10 Hz
-only while visible, filters sample buffers to requested Condition paths, prepares
-immutable plot arrays once per update, and reuses
-those arrays during drawing. Collection buffers remain bounded deques; snapshots
-use reserved contiguous vectors to reduce allocations under the runtime mutex.
-Invisible small plots are culled. All plots use the
-same per-draw clock and chosen window; plot segments are split explicitly at gaps,
-resets and errors. The result timeline has its own segments, so it cannot suggest
+only while visible. The Runtime selects series with an observation inside the
+requested window using the last-observation timestamp. Gaps and resets alone do
+not extend a series' eligibility. Explicit Inspector paths still request all
+retained samples for those paths. For large previews, an index of endpoints and
+extrema copies fewer samples while keeping event and state boundaries. The index
+references the original bounded deques. Timer Reset timestamps are kept
+separately, so the boundary can appear even without a configured Reset Rule.
+The UI prepares chart geometry once per snapshot. Both shared charts use the
+same time range and leave gaps at missing measurements. The result timeline has its own segments, so it cannot suggest
 a boolean result for a skipped numeric measurement.
 
 Tests use a manual clock and deterministic frames for scores, short evaluation,
@@ -56,11 +58,10 @@ and actual ImPlot draw calls in both theme palettes. UI navigation state stays o
 of runtime tests.
 
 All configured Split trees remain addressable across Split, Ended and Reset
-transitions. Ordinary responsive cards show only current groups, with a short
-Start/Reset/Split caption and no single-Rule heading. The toolbar occupies one or
-two lines and opens Preview separately. Inactive groups stay in the model for the
-inspector's Rule selector, not the ordinary view. Small plots open inspectors on
-click. Inspectors allow pan/zoom and pause their time reference
+transitions. Each responsive card has a normal evaluation chart and a separate
+Reset chart. Both keep recent traces across Rule and step changes. The summary
+shows current targets and the inspector's Rule selector includes inactive
+groups. Click a shared trace to inspect its raw history. Inspectors allow pan/zoom and pause their time reference
 during interaction; Reset view or a 15/30/60-second change resumes the live view.
 Value and result plots share the inspector's X range. Hold failures insert a
 display-only vertex at the observation time to show a vertical drop to zero.
@@ -76,7 +77,6 @@ RuleSequence shows its active rule. The inspector retains the full tree and all
 rule roots, so hidden children and past steps remain selectable. Numeric values,
 instance statistics and detector comparison belong in details.
 
-Small graphs use ImDrawList at 140 × 22 logical pixels. Their per-pixel envelope
-retains first/min/max/last points inside each continuous segment; gaps and event
-boundaries remain separate. Targets and reset/error/transition markers have no
-axis or legend. ImPlot remains responsible for interactive detailed graphs.
+The shared charts use ImDrawList and cap visual progress at 125% of target.
+They use separate polylines per Condition and segment, with a distinct state
+lane for boolean data. ImPlot draws interactive Inspector graphs in raw units.

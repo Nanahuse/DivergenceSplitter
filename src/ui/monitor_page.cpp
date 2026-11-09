@@ -48,7 +48,8 @@ void MonitorPage::update(double now) {
         if (preview && !preview->empty()) preview_.update(app_->device(), app_->context(), *preview);
         else preview_.clear();
     }
-    const auto instances = session.instance_diagnostics(true, &requested_paths_);
+    const auto window = std::chrono::seconds{window_seconds_};
+    const auto instances = session.instance_diagnostics(true, &requested_paths_, window);
     const auto profile = session.profile();
     const double sampled_at = monotonic_now().nanoseconds / 1e9;
     data_.cards.clear();
@@ -69,11 +70,19 @@ void MonitorPage::update(double now) {
             comparisons_.erase(instance.index);
             if (selected_instance_ == instance.index) details_open_ = false;
         }
-        std::set<std::string> holds;
-        for (const auto& group : card.rule_groups)
-            for (const auto& rule : group.rules)
-                visit_rule(rule, [&](const auto& node) { if (node.type == "hold") holds.insert(node.path); });
-        plots = {identity, history ? prepare_history(*history, holds) : HistoryPlots{}};
+        plots = {};
+        plots.identity = identity;
+        if (history) {
+            const auto sources = shared_history_groups(card, window);
+            plots.normal = prepare_shared_chart(sources.normal, history->sampled_at, window, history->timer_resets);
+            plots.reset = prepare_shared_chart(sources.reset, history->sampled_at, window, history->timer_resets);
+            if (const auto requested = requested_paths_.find(instance.index); requested != requested_paths_.end()) {
+                std::set<std::string> holds;
+                for (const auto& path : requested->second)
+                    if (const auto* node = find_condition(card, path); node && node->type == "hold") holds.insert(path);
+                plots.plots = prepare_history(*history, holds, &requested->second);
+            }
+        }
         data_.cards.push_back(std::move(card));
     }
     std::erase_if(evaluation_rates_, [&](const auto& entry) { return !live.contains(entry.first); });
@@ -117,7 +126,10 @@ void MonitorPage::draw_toolbar() {
     if (ImGui::BeginCombo("##history_window", period.c_str())) {
         for (const int seconds : {15, 30, 60}) {
             const auto label = std::to_string(seconds) + " s";
-            if (ImGui::Selectable(label.c_str(), window_seconds_ == seconds)) window_seconds_ = seconds;
+            if (ImGui::Selectable(label.c_str(), window_seconds_ == seconds) && window_seconds_ != seconds) {
+                window_seconds_ = seconds;
+                next_update_ = 0;
+            }
         }
         ImGui::EndCombo();
     }
@@ -197,19 +209,60 @@ void MonitorPage::draw_card(const ScenarioCardModel& card) {
     if (!card.error.empty()) text_error_wrapped(card.error);
     if (!card.notice.empty()) ImGui::TextColored(palette.warning, "%s", card.notice.c_str());
     const auto groups = current_monitor_groups(card);
+    std::string normal_title = "Start / Split";
+    for (const auto& group : groups)
+        if (group.source->path != "reset") normal_title += "  |  " + group.label;
+    const auto& plots = plots_.at(card.index);
+    const auto generation = std::to_string(plots.identity);
+    ImGui::PushID(generation.c_str());
+    const auto chart = [&](const char* id, const std::string& title, const SharedHistoryChart& history,
+                           float height, bool reset) {
+        ImGui::TextColored(palette.primary, "%s", title.c_str());
+        const auto seconds = history.seconds > 0 ? history.seconds : window_seconds_;
+        const auto click = draw_shared_chart(id, history, draw_time_, seconds,
+            ImVec2(ImGui::GetContentRegionAvail().x, height * scale), palette, scale);
+        if (!click.clicked) return;
+        if (const auto* condition = click.path.empty() ? nullptr : find_condition(card, click.path)) {
+            select_condition(card, *condition);
+            return;
+        }
+        const auto roots = inspector_rule_roots(card);
+        const InspectorRuleRoot* fallback = nullptr;
+        for (const auto& root : roots) {
+            if (root.condition->path.starts_with("reset.") != reset) continue;
+            if (!fallback || root.current) fallback = &root;
+            if (root.current) break;
+        }
+        if (fallback) select_condition(card, *fallback->condition);
+        else open_inspector(card);
+    };
+    chart("##normal_history", normal_title, plots.normal, 112, false);
+    chart("##reset_history", "Reset", plots.reset, 86, true);
+    ImGui::PopID();
+
+    int remaining = 6;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 2 * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * scale, 2 * scale));
     for (const auto& group : groups) {
+        if (remaining == 0) break;
         ImGui::PushID(group.source->path.c_str());
-        ImGui::TextColored(palette.primary, "%s", group.label.c_str());
+        if (groups.size() > 1) {
+            ImGui::TextDisabled("%s", group.label.c_str());
+            --remaining;
+        }
         for (const auto& rule : group.source->rules)
-            draw_rule(rule, card, group.source->rules.size() > 1);
+            draw_rule(rule, card, remaining, group.source->rules.size() > 1);
         ImGui::PopID();
     }
-    if (groups.empty()) text_muted("No current rule");
+    if (remaining == 0 && ImGui::SmallButton("More in Details")) open_inspector(card);
+    ImGui::PopStyleVar(2);
 }
 
-void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card, bool show_label) {
+void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardModel& card, int& remaining, bool show_label) {
+    if (remaining == 0) return;
     ImGui::PushID(rule.path.c_str());
     if (show_label) {
+        --remaining;
         auto label = "Rule " + std::to_string(rule.index + 1);
         if (rule.action) label += " -> " + std::string{to_string(*rule.action)};
         if (!ImGui::TreeNodeEx("##rule", ImGuiTreeNodeFlags_NoTreePushOnOpen |
@@ -218,7 +271,8 @@ void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardM
             return;
         }
     }
-    if (!rule.sequence_rules.empty()) {
+    if (remaining > 0 && !rule.sequence_rules.empty()) {
+        --remaining;
         const auto* current = compact_sequence_rule(rule);
         const auto label = current ? "Sequence " + std::to_string(*rule.active_rule_index + 1) + " / " +
             std::to_string(rule.sequence_rules.size()) : "Sequence complete";
@@ -230,48 +284,25 @@ void MonitorPage::draw_rule(const RuleDiagnosticsNode& rule, const ScenarioCardM
                 }
             }
         }
-        if (current) draw_rule(*current, card);
+        if (current) draw_rule(*current, card, remaining);
     } else {
-        const float scale = app_->dpi_scale();
-        // Fit the name column to its projected text, keeping graphs next to names.
-        const auto label_width = [&](const auto& self, const ConditionDiagnosticsNode& node, int depth,
-                                     std::string_view role) -> float {
-            const auto row = compact_condition_row(node);
-            const auto label = role.empty() ? row.label : std::string{role} + ": " + row.label;
-            const auto children = compact_condition_children(row);
-            float width = ImGui::CalcTextSize(label.c_str()).x + (40 + depth * 12) * scale;
-            if (depth > 0 && children.empty()) width += ImGui::GetTreeNodeToLabelSpacing();
-            for (const auto& child : children)
-                width = std::max(width, self(self, *child.condition, depth + 1, child.role));
-            return width;
-        };
-        const float width = std::max(60 * scale, std::min(label_width(label_width, rule.condition, 0, {}),
-            ImGui::GetContentRegionAvail().x - 160 * scale));
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4 * scale, scale));
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4 * scale, 2 * scale));
-        if (ImGui::BeginTable("##conditions", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX)) {
-            ImGui::TableSetupColumn("Condition", ImGuiTableColumnFlags_WidthFixed, width);
-            ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthFixed, 140 * scale);
-            draw_condition(rule.condition, card);
-            ImGui::EndTable();
-        }
-        ImGui::PopStyleVar(2);
+        draw_condition(rule.condition, card, remaining);
     }
     ImGui::PopID();
 }
 
-void MonitorPage::draw_condition(const ConditionDiagnosticsNode& node, const ScenarioCardModel& card,
+void MonitorPage::draw_condition(const ConditionDiagnosticsNode& node, const ScenarioCardModel& card, int& remaining,
                                   int depth, std::string_view role) {
-    if (node.type.empty() || node.type == "none") return;
+    if (remaining == 0 || node.type.empty() || node.type == "none") return;
+    --remaining;
     const auto row = compact_condition_row(node);
     const auto children = compact_condition_children(row);
     const auto action = draw_compact_condition_row(row, !children.empty(), depth, role,
         details_open_ && selected_instance_ == card.index && selected_path_ == node.path,
-        plots_[card.index].plots, draw_time_, window_seconds_, theme::colors(app_->theme_mode()), app_->dpi_scale());
-    if (action.graph_visible && row.graph) requested_paths_[card.index].insert(row.graph->path);
+        theme::colors(app_->theme_mode()), app_->dpi_scale());
     if (action.selected) select_condition(card, *action.selected);
     if (action.open)
-        for (const auto& child : children) draw_condition(*child.condition, card, depth + 1, child.role);
+        for (const auto& child : children) draw_condition(*child.condition, card, remaining, depth + 1, child.role);
 }
 
 void MonitorPage::open_inspector(const ScenarioCardModel& card) {

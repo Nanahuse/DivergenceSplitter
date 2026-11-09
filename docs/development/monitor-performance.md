@@ -15,12 +15,14 @@ Configure a Windows Release UI build with
 cmake --build build/full --target monitor_history_benchmark
 build/full/monitor_history_benchmark.exe
 build/full/monitor_history_benchmark.exe selected
+build/full/monitor_history_benchmark.exe shared
 build/full/monitor_history_benchmark.exe render
 ```
 
 The tool is not installed or included in the distribution ZIP. The first command
-copies all histories; `selected` requests six paths representing visible graphs.
-Both modes still retrieve all rule/condition metadata and build the card model.
+copies all histories. `selected` requests six explicit paths. `shared` requests
+recent 60-second series and the same six explicit paths. `render` draws a shared
+chart with synthetic traces. All snapshot modes build the card model.
 
 The fixture preloads 60 seconds at 60 evaluations/second, visiting each split in
 sequence. Each split has ten nodes. The shared Reset rule has ten nodes in the
@@ -30,7 +32,7 @@ short evaluation, generating actual dense history through the collector.
 
 Twenty polls target a 100 ms interval. A concurrent evaluator targets a 16 ms
 interval. `snapshot` includes `ScenarioRuntime::diagnostics()` while holding its
-mutex; `prepare` includes `card_model()` and `prepare_history()`. Evaluator timings
+mutex. `prepare` includes `card_model()` and the plot preparation for the mode. Evaluator timings
 include time waiting for that mutex. The all-history stress case overruns the
 100 ms polling budget, so its actual polling rate is lower than 10 Hz.
 
@@ -48,8 +50,8 @@ P95 has only twenty snapshot/preparation observations and is close to the maximu
 | 100 / 1000 | 3,640,990 | all | 1424.93 / 1688.88 | 72.55 / 98.20 | 1339.49 / 1684.25 |
 | 100 / 1000 | 3,640,990 | six paths | 3.91 / 5.18 | 0.20 / 0.32 | 1.21 / 5.24 |
 
-Copying all retained histories caused meaningful evaluator stalls, so the Monitor
-now sends a per-Instance set of requested paths. Visible small plots, an open
+Copying all retained histories caused meaningful evaluator stalls, so the earlier Monitor
+sent a per-Instance set of requested paths. Visible mini graphs, an open
 Condition inspector, and visible comparison plots contribute paths. Collapsed or
 off-screen Conditions continue collecting history but do not copy sample buffers
 or build plot arrays on each poll. Newly opened/scrolled plots load on the next
@@ -76,9 +78,9 @@ retention are unchanged. Repeating `selected` with six paths gave these results:
 | 100 / 10 | 76,000 | 1.08 / 2.11 | 0.45 / 0.91 | 0.28 / 0.46 |
 | 100 / 1000 | 3,640,990 | 1.50 / 3.47 | 0.25 / 0.49 | 1.21 / 2.06 |
 
-## Compact graph renderer comparison
+## Earlier mini-graph renderer comparison
 
-`render` compares 140 × 22 logical-pixel mini graphs using the same 3600-point
+At `fe72082`, `render` compared 140 × 22 logical-pixel mini graphs using the same 3600-point
 prepared score history, including gaps, resets and errors. It also measures the
 complete two-column table row with a status-colored label and adjacent graph. Every tested row is deliberately
 visible, even at 100 rows. Five warmup frames precede thirty measured frames.
@@ -100,10 +102,39 @@ time by about 26% and vertices by about 81% versus ImPlot. Interactive detailed
 graphs retain ImPlot. Actual window clipping normally shows fewer than 100 rows;
 this synthetic comparison does not replace profiling a user's real scenario.
 
-The ordinary Monitor now lays Instance cards out responsively with a minimum
+The earlier layout used responsive Instance cards with a minimum
 width of 360 logical pixels plus spacing. A 1186-pixel-wide native window showed
 two simple Instance cards side by side, each 112 pixels high, below one toolbar
 row. The main content occupied roughly 160 vertical pixels. At a 900-pixel window
 width, the cards stacked into one column. A nested then → all → detected +
 hold(detected) fixture used one progress/branch row and two condition rows per
 card. Both fixtures used live synthetic video and independent TestHosts.
+
+
+## Shared chart measurements
+
+The recent-window query selects only series with measurements, results or
+errors in the window. It switches to an endpoint/extrema index above an
+estimated 200,000 preview samples. Explicit Inspector paths retain their raw
+samples. Measurements below use a Windows MSVC 19.51 Release build.
+
+| Splits / Reset nodes | Retained samples | Snapshot P50 / P95 (ms) | Preparation P50 / P95 (ms) | Evaluation P95 / max (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| 20 / 10 | 72,800 | 2.04 / 2.44 | 0.80 / 0.92 | 0.16 / 2.06 |
+| 100 / 10 | 76,000 | 2.86 / 3.52 | 1.24 / 1.44 | 0.46 / 2.15 |
+| 100 / 1000 | 3,640,990 | 9.20 / 11.19 | 2.08 / 3.07 | 2.59 / 11.10 |
+
+With full recent buffers in the same stress case, snapshot and preparation P95
+were 82.25 ms and 35.03 ms. The indexed query keeps the 60-second window and the
+same series while reducing the number of copied points.
+
+`render` feeds 3,600 raw score samples per synthetic series, including gaps and
+events. This measures geometry preparation and draw-list CPU submission
+separately. Production prepares geometry per snapshot and uses the indexed
+query for dense histories.
+
+| Series | Raw preparation P95 (ms) | Draw CPU P95 (ms) |
+| ---: | ---: | ---: |
+| 20 | 0.65 | 0.11 |
+| 100 | 3.55 | 0.43 |
+| 1000 | 28.58 | 3.08 |

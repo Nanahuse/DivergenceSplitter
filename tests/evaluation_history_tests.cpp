@@ -339,3 +339,90 @@ TEST(EvaluationHistory, ThenDiagnosticsExposeCurrentCompletionTimeoutAndResetWit
     (void)timeout.evaluate(test::make_context(test::solid(2, 2, 0), *clock));
     EXPECT_EQ(timeout.diagnostics().start[0].rules[0].condition.active_step, 0);
 }
+
+
+TEST(EvaluationHistory, RecentSnapshotExcludesResetOnlyAndExpiredSeriesButKeepsExplicitHistory) {
+    auto clock = std::make_shared<test::ManualTimeProvider>();
+    auto history = std::make_shared<EvaluationHistory>(clock);
+    auto old = detected(), current = detected(), unopened = detected();
+    history->bind(old.get(), "old");
+    history->bind(current.get(), "current");
+    history->bind(unopened.get(), "unopened");
+    const auto evaluate = [&](const ConditionPtr& node) {
+        history->begin_frame(clock->now());
+        auto frame = test::make_context(test::solid(2, 2, 255), *clock);
+        (void)node->evaluate(frame);
+        history->end_frame();
+    };
+    evaluate(old);
+    clock->advance(20s);
+    old->reset();
+    unopened->reset();
+    evaluate(current);
+    const HistoryPaths selected{"old"};
+    const auto recent = history->snapshot(nullptr, 15s);
+    ASSERT_EQ(recent->conditions.size(), 1);
+    EXPECT_EQ(recent->conditions.front().path, "current");
+    EXPECT_EQ(recent->conditions.front().last_observation, clock->now());
+    const auto detail = history->snapshot(&selected, 15s);
+    ASSERT_EQ(detail->conditions.size(), 2);
+    EXPECT_EQ(detail->conditions[0].path, "old");
+    EXPECT_EQ(detail->conditions[0].samples.front().result, true);
+    EXPECT_EQ(history->snapshot(nullptr, 30s)->conditions.size(), 2);
+    clock->advance(61s);
+    EXPECT_TRUE(history->snapshot(nullptr, 60s)->conditions.empty());
+}
+
+TEST(EvaluationHistory, TimerResetBoundarySurvivesWithoutResetRulesUntilSessionChanges) {
+    auto clock = std::make_shared<test::ManualTimeProvider>();
+    Scenario scenario;
+    scenario.start_condition = detected();
+    ScenarioRuntime runtime{scenario, clock};
+    runtime.apply_update(state(TimerPhase::running, 0));
+    const auto identity = runtime.diagnostics(true).history->identity;
+    clock->advance(1s);
+    runtime.apply_update(state(TimerPhase::not_running, -1, 1, 2));
+    const auto reset = runtime.diagnostics(true, nullptr, 15s).history;
+    EXPECT_EQ(reset->identity, identity);
+    ASSERT_EQ(reset->timer_resets.size(), 1);
+    EXPECT_EQ(reset->timer_resets.front(), clock->now());
+    clock->advance(16s);
+    EXPECT_TRUE(runtime.diagnostics(true, nullptr, 15s).history->timer_resets.empty());
+    EXPECT_EQ(runtime.diagnostics(true, nullptr, 30s).history->timer_resets.size(), 1);
+    runtime.apply_update(state(TimerPhase::not_running, -1, 2));
+    EXPECT_NE(runtime.diagnostics(true).history->identity, identity);
+    EXPECT_TRUE(runtime.diagnostics(true).history->timer_resets.empty());
+}
+
+TEST(EvaluationHistory, DensePreviewKeepsExtremaAndGapsWhileInspectorRetainsRawSamples) {
+    auto clock = std::make_shared<test::ManualTimeProvider>();
+    auto history = std::make_shared<EvaluationHistory>(clock);
+    auto score = detected(2);
+    history->bind(score.get(), "score");
+    std::vector<ConditionPtr> dense;
+    for (int i = 0; i < 35; ++i) {
+        dense.push_back(std::make_shared<ElapsedCondition>(120s));
+        history->bind(dense.back().get(), "elapsed." + std::to_string(i));
+    }
+    for (int i = 0; i < 6020; ++i) {
+        clock->advance(10ms);
+        history->begin_frame(clock->now());
+        auto frame = test::make_context(test::solid(2, 2, i == 4001 ? 255 : 50), *clock);
+        for (const auto& node : dense) (void)node->evaluate(frame);
+        if (i == 4004) score->mark_skipped();
+        else (void)score->evaluate(frame);
+        history->end_frame();
+    }
+    const auto preview = history->snapshot(nullptr, 60s);
+    const HistoryPaths selected{"score"};
+    const auto inspector = history->snapshot(&selected);
+    ASSERT_EQ(preview->conditions.size(), 36);
+    ASSERT_EQ(inspector->conditions.size(), 1);
+    const auto& samples = preview->conditions.front().samples;
+    EXPECT_LT(samples.size(), 500);
+    EXPECT_GE(inspector->conditions.front().samples.size(), 6000);
+    EXPECT_EQ(samples.front().time, inspector->conditions.front().samples.front().time);
+    EXPECT_EQ(samples.back().time, inspector->conditions.front().samples.back().time);
+    EXPECT_TRUE(std::ranges::any_of(samples, [](const auto& sample) { return sample.value == 1; }));
+    EXPECT_TRUE(std::ranges::any_of(samples, [](const auto& sample) { return sample.event == HistoryEvent::gap; }));
+}

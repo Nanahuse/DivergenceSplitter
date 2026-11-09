@@ -153,7 +153,8 @@ Profile Session::profile() const {
     return profile_;
 }
 
-std::vector<InstanceDiagnosticsSnapshot> Session::instance_diagnostics(bool include_history, const InstanceHistoryPaths* paths) const {
+std::vector<InstanceDiagnosticsSnapshot> Session::instance_diagnostics(bool include_history, const InstanceHistoryPaths* paths,
+    std::chrono::seconds recent_window) const {
     std::scoped_lock lock{mutex_};
     std::vector<InstanceDiagnosticsSnapshot> result;
     result.reserve(instances_.size());
@@ -164,7 +165,7 @@ std::vector<InstanceDiagnosticsSnapshot> Session::instance_diagnostics(bool incl
             const auto found = paths->find(instance->index());
             selection = found == paths->end() ? &empty : &found->second;
         }
-        result.push_back(instance->diagnostics(include_history, selection));
+        result.push_back(instance->diagnostics(include_history, selection, recent_window));
     }
     return result;
 }

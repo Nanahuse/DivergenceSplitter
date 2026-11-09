@@ -40,12 +40,9 @@ bool draw_status_icon(std::string_view status, const theme::Colors& palette, flo
 
 ConditionRowInteraction draw_compact_condition_row(const CompactConditionRow& row,
     bool has_children, int depth, std::string_view role, bool selected,
-    const HistoryPlots& history, double now, double seconds,
     const theme::Colors& palette, float scale) {
     ConditionRowInteraction result;
     ImGui::PushID(row.anchor->path.c_str());
-    ImGui::TableNextRow(ImGuiTableRowFlags_None, 24 * scale);
-    ImGui::TableSetColumnIndex(0);
     const float indent = depth > 0 ? static_cast<float>(depth) * 12 * scale +
         (has_children ? 0 : ImGui::GetTreeNodeToLabelSpacing()) : 0;
     if (indent > 0) ImGui::Indent(indent);
@@ -69,13 +66,6 @@ ConditionRowInteraction draw_compact_condition_row(const CompactConditionRow& ro
     ImGui::PopStyleColor();
     if (indent > 0) ImGui::Unindent(indent);
 
-    ImGui::TableSetColumnIndex(1);
-    if (row.graph) {
-        const ImVec2 size{140 * scale, 22 * scale};
-        result.graph_visible = ImGui::IsRectVisible(size);
-        if (draw_sparkline("##sparkline", *row.graph, history, now, seconds, size, palette))
-            result.selected = row.graph;
-    }
     ImGui::PopID();
     return result;
 }
