@@ -6,6 +6,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   windows:
     name: Windows
@@ -13,9 +17,11 @@ jobs:
     permissions:
       contents: read
     env:
-      VCPKG_ROOT: C:\vcpkg
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
       NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
+      TESTHOST_REF: 4c14c0161eacd50b05411c0d20f5eff523e9c155
+      TESTHOST_CONFIGURATION: Release
+      TESTHOST_OUTPUT: .testhost/bin
     steps:
       - uses: actions/checkout@v5
 
@@ -30,6 +36,9 @@ jobs:
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Set vcpkg root after MSVC setup
+        run: '"VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV'
+
       - name: Get official pinned NDI SDK for runtime integration test
         if: env.NDI_SDK_URL_WINDOWS != ''
         env:
@@ -37,34 +46,51 @@ jobs:
         run: python tools/get_ndi_sdk.py
 
       - name: Bootstrap vcpkg
-        run: C:\vcpkg\bootstrap-vcpkg.bat
+        run: '& "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"'
 
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
           path: |
-            C:\vcpkg\downloads
+            ${{ env.VCPKG_ROOT }}\downloads
             C:\vcpkg-cache
           key: cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             cpp23-vcpkg-${{ runner.os }}-
 
+      - name: Identify runner image for TestHost cache
+        id: testhost-image
+        run: '"image=$env:ImageOS" >> $env:GITHUB_OUTPUT'
+
+      - name: Restore TestHost
+        id: testhost-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.TESTHOST_OUTPUT }}
+          key: testhost-v1-${{ steps.testhost-image.outputs.image }}-${{ runner.arch }}-${{ env.TESTHOST_CONFIGURATION }}-${{ env.TESTHOST_REF }}
+
       - name: Check out LiveSplit.Bridge TestHost
+        if: steps.testhost-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v5
         with:
           repository: Nanahuse/LiveSplit.Bridge
-          ref: 4c14c0161eacd50b05411c0d20f5eff523e9c155
+          ref: ${{ env.TESTHOST_REF }}
           submodules: recursive
           path: .testhost/LiveSplit.Bridge
 
       - name: Set up .NET
+        if: steps.testhost-cache.outputs.cache-hit != 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Build TestHost
+        if: steps.testhost-cache.outputs.cache-hit != 'true'
         working-directory: ${{ github.workspace }}
-        run: dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration Release
+        run: |
+          dotnet build .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/LiveSplit.Bridge.TestHost.csproj --configuration $env:TESTHOST_CONFIGURATION --output $env:TESTHOST_OUTPUT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem -LiteralPath $env:TESTHOST_OUTPUT -Recurse -File -Filter '*.pdb' | Remove-Item
 
       - name: Configure
         run: cmake --preset ci
@@ -77,11 +103,18 @@ jobs:
           if ($env:NDI_SDK_DIR) {
             $env:NDI_RUNTIME_DIR_V6 = Join-Path $env:NDI_SDK_DIR "Bin/x64"
           }
-          ctest --preset ci --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
+          ctest --preset ci --parallel 4 --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
 
       - name: TestHost integration
         working-directory: ${{ github.workspace }}
-        run: python tools/run_testhost.py --testhost .testhost/LiveSplit.Bridge/tests/LiveSplit.Bridge.TestHost/bin --test-exe build/ci/divergencesplitter_testhost_tests.exe --port 54000
+        run: python tools/run_testhost.py --testhost $env:TESTHOST_OUTPUT --test-exe build/ci/divergencesplitter_testhost_tests.exe --port 54000
+
+      - name: Save TestHost
+        if: steps.testhost-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.TESTHOST_OUTPUT }}
+          key: ${{ steps.testhost-cache.outputs.cache-primary-key }}
 
       - name: Package ZIP
         run: cmake --build --preset ci --target package

@@ -23,13 +23,17 @@ target_link_libraries(divergencesplitter_tests
         GTest::gtest_main
 )
 target_include_directories(divergencesplitter_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-gtest_discover_tests(divergencesplitter_tests)
+# The UTF-8 path test and the repetition below share a fixed temp directory.
+gtest_discover_tests(divergencesplitter_tests TEST_FILTER "-VideoFileSource.OpensJapaneseUtf8Path")
+gtest_discover_tests(divergencesplitter_tests
+    TEST_FILTER "VideoFileSource.OpensJapaneseUtf8Path"
+    PROPERTIES RESOURCE_LOCK recorded_utf8_path)
 # Each iteration starts a fresh process so decoder startup is covered too.
 add_test(NAME recorded_pipeline_repeat COMMAND "${CMAKE_COMMAND}"
     "-DTEST_EXECUTABLE=$<TARGET_FILE:divergencesplitter_tests>"
     -P "${CMAKE_CURRENT_LIST_DIR}/repeat_recorded_pipeline.cmake")
 set_tests_properties(recorded_pipeline_repeat PROPERTIES
-    TIMEOUT 180 LABELS "recording;regression")
+    TIMEOUT 180 LABELS "recording;regression" RESOURCE_LOCK recorded_utf8_path)
 add_executable(divergencesplitter_ndi_loopback_tests ndi_loopback_tests.cpp)
 target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/third_party/ndi/include")
