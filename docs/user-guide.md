@@ -6,7 +6,7 @@
 
 ## Monitor
 
-Monitor上部のツールバーにはCaptureのFPS、履歴の表示期間、Preview、Reset Allをまとめています。Captureにポインターを置くと、動作状態と取得フレーム数を確認できます。Previewは必要なときだけ別ウィンドウで開き、共通入力のCrop／Resize後の画像を表示します。
+Monitor上部のツールバーにはCaptureのFPS、Preview、Reset Allをまとめています。Captureにポインターを置くと、動作状態と取得フレーム数を確認できます。Previewは必要なときだけ別ウィンドウで開き、共通入力のCrop／Resize後の画像を表示します。
 
 Instanceは画面幅に応じて横に並ぶカードで表示します。狭い画面では1列になります。カードの先頭には接続状態とEvaluation FPSを表示します。Evaluation FPSは、そのInstanceが1秒あたりに映像を評価した回数です。Detailsを開くと、Bridgeの接続先、タイマーの状態、Split位置、最後の操作結果、評価時間の平均・最大を確認できます。Instance番号は0から、Rule・Split番号は1から始まります。
 
@@ -14,7 +14,7 @@ Instanceは画面幅に応じて横に並ぶカードで表示します。狭い
 
 数値の系列は目標に対する進捗で表示します。100%が目標線で、表示範囲は0〜125%です。目標が0以下のConditionや真偽値のConditionは、下段に成立を点、不成立を横線で表示します。オレンジ色の太い縦線はタイマーのResetです。名前の前の状態アイコンはチェックがtrue、丸がfalse、四角がnot_evaluated、横線がskipped、バツがerrorを表します。
 
-各Conditionの履歴は同じ時間軸を使います。ツールバーで15秒・30秒・60秒を切り替え、Condition名または共有グラフの系列を選ぶと軸・凡例・現在値・目標値を含む詳細画面が開きます。Detailsからも開けます。左側の構造ツリーでは、集約した子Conditionや`then`の全ステップを選択できます。Rule選択には過去のSplitやRuleSequenceの全Ruleも含まれます。詳細表示はSplitが切り替わっても残ります。Compare detectorsでは、そのInstanceの複数Detectorを選んでスコアを比較できます。詳細グラフではホイールでズーム、ドラッグで移動、右ドラッグで範囲選択できます。操作すると表示時刻を固定し、値と状態の時間軸を揃えたまま確認できます。Resume liveやReset view、表示期間の変更でライブ表示に戻ります。保持期間を過ぎた履歴は固定表示中も失われます。表示設定は保存しません。
+通常判定とResetの共有グラフは直近30秒を表示します。Condition名または共有グラフの系列を選ぶと軸・凡例・現在値・目標値を含む詳細画面が開きます。詳細画面ではDetector比較を含め、ライブ表示は直近60秒です。Detailsからも開けます。左側の構造ツリーでは、集約した子Conditionや`then`の全ステップを選択できます。Rule選択には過去のSplitやRuleSequenceの全Ruleも含まれます。詳細表示はSplitが切り替わっても残ります。Compare detectorsでは、そのInstanceの複数Detectorを選んでスコアを比較できます。詳細グラフではホイールでズーム、ドラッグで移動、右ドラッグで範囲選択できます。操作すると表示時刻を固定し、値と状態の時間軸を揃えたまま確認できます。Resume liveまたはReset viewで直近60秒のライブ表示に戻ります。保持期間を過ぎた履歴は固定表示中も失われます。表示設定は保存しません。
 
 詳細画面では、`detected`はスコアとしきい値、`elapsed`と`hold`は秒数と目標時間、`nth`は観測回数、`then`はステップの進行を表示します。`nth`は内部Conditionがtrueを返すたびに増え、内部Conditionが`rising_edge`の場合にその成立回数を数えます。状態Conditionにはtrue／falseの履歴を表示します。
 

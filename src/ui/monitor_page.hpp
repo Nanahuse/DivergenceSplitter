@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <map>
 #include <vector>
 
@@ -50,7 +49,6 @@ private:
         SharedHistoryChart reset;
     };
     std::map<int, InstancePlots> plots_;
-    int window_seconds_{30};
     bool preview_visible_{};
     bool details_open_{};
     int selected_instance_{};

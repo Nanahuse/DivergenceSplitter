@@ -3,6 +3,7 @@
 
 #include <imgui.h>
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cfloat>
 #include <functional>
@@ -13,6 +14,9 @@
 
 namespace divergencesplitter::ui {
 namespace {
+constexpr int monitor_seconds = 30;
+constexpr int inspector_seconds = 60;
+
 void visit_condition(const ConditionDiagnosticsNode& node, const std::function<void(const ConditionDiagnosticsNode&)>& fn) {
     fn(node);
     for (const auto& child : node.children) visit_condition(child, fn);
@@ -48,8 +52,8 @@ void MonitorPage::update(double now) {
         if (preview && !preview->empty()) preview_.update(app_->device(), app_->context(), *preview);
         else preview_.clear();
     }
-    const auto window = std::chrono::seconds{window_seconds_};
-    const auto instances = session.instance_diagnostics(true, &requested_paths_, window);
+    constexpr std::chrono::seconds monitor_window{monitor_seconds};
+    const auto instances = session.instance_diagnostics(true, &requested_paths_, monitor_window);
     const auto profile = session.profile();
     const double sampled_at = monotonic_now().nanoseconds / 1e9;
     data_.cards.clear();
@@ -74,10 +78,10 @@ void MonitorPage::update(double now) {
         plots.plots.clear();
         plots.identity = identity;
         if (history) {
-            const auto sources = shared_history_groups(card, window);
-            plots.normal = prepare_shared_chart(sources.normal, history->sampled_at, window, history->timer_resets,
+            const auto sources = shared_history_groups(card, monitor_window);
+            plots.normal = prepare_shared_chart(sources.normal, history->sampled_at, monitor_window, history->timer_resets,
                 std::move(plots.normal));
-            plots.reset = prepare_shared_chart(sources.reset, history->sampled_at, window, history->timer_resets,
+            plots.reset = prepare_shared_chart(sources.reset, history->sampled_at, monitor_window, history->timer_resets,
                 std::move(plots.reset));
             if (const auto requested = requested_paths_.find(instance.index); requested != requested_paths_.end()) {
                 std::set<std::string> holds;
@@ -124,20 +128,6 @@ void MonitorPage::draw_toolbar() {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s | %llu frames", data_.running ? "Running" : "Stopped",
         static_cast<unsigned long long>(data_.frames_published));
     if (!two_lines) ImGui::SameLine(0, 20 * scale);
-    ImGui::SetNextItemWidth(70 * scale);
-    const auto period = std::to_string(window_seconds_) + " s";
-    if (ImGui::BeginCombo("##history_window", period.c_str())) {
-        for (const int seconds : {15, 30, 60}) {
-            const auto label = std::to_string(seconds) + " s";
-            if (ImGui::Selectable(label.c_str(), window_seconds_ == seconds) && window_seconds_ != seconds) {
-                window_seconds_ = seconds;
-                next_update_ = 0;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("History window");
-    ImGui::SameLine();
     if (ImGui::Button("Preview")) preview_visible_ = !preview_visible_;
     ImGui::SameLine();
     draw_reset_button();
@@ -222,8 +212,7 @@ void MonitorPage::draw_card(const ScenarioCardModel& card) {
     const auto chart = [&](const char* id, const std::string& title, const SharedHistoryChart& history,
                            float height, bool reset) {
         ImGui::TextColored(plot_palette.text, "%s", title.c_str());
-        const auto seconds = history.seconds > 0 ? history.seconds : window_seconds_;
-        const auto click = draw_shared_chart(id, history, draw_time_, seconds,
+        const auto click = draw_shared_chart(id, history, draw_time_, monitor_seconds,
             ImVec2(ImGui::GetContentRegionAvail().x, height * scale), plot_palette, scale);
         if (!click.clicked) return;
         if (const auto* condition = click.path.empty() ? nullptr : find_condition(card, click.path)) {
@@ -452,7 +441,7 @@ void MonitorPage::draw_details() {
                     }
                 });
             if (nodes.empty()) text_muted("Select detectors on the left.");
-            else draw_detector_comparison(nodes, plots_[card->index].plots, draw_time_, window_seconds_,
+            else draw_detector_comparison(nodes, plots_[card->index].plots, draw_time_, inspector_seconds,
                 std::max(180 * scale, ImGui::GetContentRegionAvail().y - 40 * scale), palette, &comparison_view_);
         } else if (const auto* selected = find_condition(*card, selected_path_)) {
             requested_paths_[card->index].insert(selected->path);
@@ -475,9 +464,9 @@ void MonitorPage::draw_details() {
                 }
             }
             const float plot_space = std::max(260 * scale, ImGui::GetContentRegionAvail().y - 90 * scale);
-            draw_history_plot("History", *selected, plots_[card->index].plots, draw_time_, window_seconds_,
+            draw_history_plot("History", *selected, plots_[card->index].plots, draw_time_, inspector_seconds,
                              plot_space * 0.65f, palette, true, false, &detail_view_);
-            draw_history_plot("Result timeline", *selected, plots_[card->index].plots, draw_time_, window_seconds_,
+            draw_history_plot("Result timeline", *selected, plots_[card->index].plots, draw_time_, inspector_seconds,
                              plot_space * 0.35f, palette, true, true, &detail_view_);
             ImGui::TextColored(palette.axis_text, "Blank: unmeasured | Orange: reset | Green: transition | Red: error");
             ImGui::PopID();

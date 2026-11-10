@@ -355,20 +355,20 @@ TEST(EvaluationHistory, RecentSnapshotExcludesResetOnlyAndExpiredSeriesButKeepsE
         history->end_frame();
     };
     evaluate(old);
-    clock->advance(20s);
+    clock->advance(40s);
     old->reset();
     unopened->reset();
     evaluate(current);
     const HistoryPaths selected{"old"};
-    const auto recent = history->snapshot(nullptr, 15s);
+    const auto recent = history->snapshot(nullptr, 30s);
     ASSERT_EQ(recent->conditions.size(), 1);
     EXPECT_EQ(recent->conditions.front().path, "current");
     EXPECT_EQ(recent->conditions.front().last_observation, clock->now());
-    const auto detail = history->snapshot(&selected, 15s);
+    const auto detail = history->snapshot(&selected, 30s);
     ASSERT_EQ(detail->conditions.size(), 2);
     EXPECT_EQ(detail->conditions[0].path, "old");
     EXPECT_EQ(detail->conditions[0].samples.front().result, true);
-    EXPECT_EQ(history->snapshot(nullptr, 30s)->conditions.size(), 2);
+    EXPECT_EQ(history->snapshot(nullptr, 60s)->conditions.size(), 2);
     clock->advance(61s);
     EXPECT_TRUE(history->snapshot(nullptr, 60s)->conditions.empty());
 }
