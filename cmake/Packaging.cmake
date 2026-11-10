@@ -20,7 +20,8 @@ file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" _license_python)
 set(_license_imgui_args)
 if(DIVERGENCESPLITTER_BUILD_UI)
     file(TO_CMAKE_PATH "${imgui_SOURCE_DIR}" _license_imgui_dir)
-    set(_license_imgui_args "--imgui-source \"${_license_imgui_dir}\"")
+    file(TO_CMAKE_PATH "${implot_SOURCE_DIR}" _license_implot_dir)
+    set(_license_imgui_args "--imgui-source \"${_license_imgui_dir}\" --implot-source \"${_license_implot_dir}\"")
 endif()
 install(CODE "
     execute_process(

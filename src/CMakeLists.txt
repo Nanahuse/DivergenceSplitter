@@ -35,6 +35,7 @@ target_link_libraries(divergencesplitter_core
 # ---------------------------------------------------------------------------
 
 add_library(divergencesplitter_runtime STATIC
+    runtime/evaluation_history.cpp
     runtime/scenario_runtime.cpp
     runtime/instance_runtime.cpp
     runtime/livesplit_adapter.cpp
@@ -90,6 +91,13 @@ if(DIVERGENCESPLITTER_BUILD_UI)
     )
     target_link_libraries(divergencesplitter_imgui PUBLIC d3d11 dxgi)
 
+    add_library(divergencesplitter_implot STATIC
+        "${implot_SOURCE_DIR}/implot.cpp"
+        "${implot_SOURCE_DIR}/implot_items.cpp"
+    )
+    target_include_directories(divergencesplitter_implot SYSTEM PUBLIC "${implot_SOURCE_DIR}")
+    target_link_libraries(divergencesplitter_implot PUBLIC divergencesplitter_imgui)
+
     add_library(divergencesplitter_ui STATIC
         ui/about_page.hpp
         ui/app.hpp
@@ -113,8 +121,10 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         ui/file_dialog.cpp
         ui/image_texture.cpp
         ui/license_inventory.cpp
+        ui/history_plot.cpp
         ui/monitor_model.cpp
         ui/monitor_page.cpp
+        ui/monitor_row.cpp
         ui/ndi_discovery.cpp
         ui/profile_page.cpp
         ui/profile_preview.cpp
@@ -135,10 +145,17 @@ if(DIVERGENCESPLITTER_BUILD_UI)
             divergencesplitter::runtime
         PRIVATE
             divergencesplitter_imgui
+            divergencesplitter_implot
             d3d11 dxgi shell32 ole32 uuid
     )
     # UI headers are internal; only the application and UI tests need this path.
     target_include_directories(divergencesplitter_ui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
+
+    if(DIVERGENCESPLITTER_BUILD_BENCHMARKS)
+        add_executable(monitor_history_benchmark "${PROJECT_SOURCE_DIR}/tools/monitor_history_benchmark.cpp")
+        target_link_libraries(monitor_history_benchmark PRIVATE divergencesplitter::ui divergencesplitter_implot)
+        target_include_directories(monitor_history_benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
+    endif()
 
     add_executable(DivergenceSplitter WIN32 ui/main.cpp)
     target_link_libraries(DivergenceSplitter PRIVATE divergencesplitter::ui divergencesplitter_imgui)

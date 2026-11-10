@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <unordered_map>
 
 namespace divergencesplitter::ui {
 namespace {
@@ -119,6 +120,20 @@ void append_group(
 }
 
 }  // namespace
+
+void MonitorEvaluationRate::update(std::uint64_t identity, std::uint64_t count, double now) {
+    if (!initialized_ || identity_ != identity || count < count_ || now < sampled_at_) {
+        initialized_ = true;
+        identity_ = identity;
+        count_ = count;
+        sampled_at_ = now;
+        fps_ = 0;
+    } else if (now - sampled_at_ >= 0.5) {
+        fps_ = static_cast<double>(count - count_) / (now - sampled_at_);
+        count_ = count;
+        sampled_at_ = now;
+    }
+}
 
 std::string state_text(InstanceState state) {
     switch (state) {
@@ -251,7 +266,42 @@ ScenarioCardModel card_model(const InstanceDiagnosticsSnapshot& instance) {
     data.state = instance.state;
     data.status = state_text(instance.state);
     data.error = instance.error;
+    if (instance.last_action) data.action_status = "Last action: " + std::string{to_string(*instance.last_action)} + " | " + instance.last_action_result;
     data.groups = evaluation_groups(instance);
+    if (instance.scenario) {
+        const auto& scenario = *instance.scenario;
+        data.history = scenario.history;
+        if (!scenario.configuration_valid) data.notice = "Scenario / split count mismatch";
+        else if (!scenario.snapshot) data.notice = "Waiting for timer state";
+        else if (scenario.reset_pending) data.notice = "Waiting for Reset confirmation";
+        else if (scenario.pending_action) data.notice = "Pending: " + std::string{to_string(*scenario.pending_action)};
+        const auto phase = scenario.snapshot ? scenario.snapshot->phase : TimerPhase::unspecified;
+        const bool eligible = scenario.configuration_valid && scenario.snapshot && !scenario.reset_pending;
+        const bool running = phase == TimerPhase::running || phase == TimerPhase::paused;
+        if (scenario.snapshot) {
+            const auto& timer = *scenario.snapshot;
+            data.timer_status = phase_text(timer.phase) + " | Split " +
+                std::to_string(timer.split_index + 1) + " / " + std::to_string(timer.split_count);
+        }
+        const auto append = [&](const auto& groups, const char* name, bool current) {
+            for (const auto& group : groups)
+                if (!group.rules.empty()) data.rule_groups.push_back({name, group.rules, group.name, current});
+        };
+        append(scenario.start, "Start", eligible && phase == TimerPhase::not_running);
+        append(scenario.reset, "Reset", eligible && running);
+        append(scenario.incomplete, "Incomplete", eligible && phase == TimerPhase::ended);
+        // Keep all configured splits addressable, including after Ended/Reset or Undo.
+        for (const auto& split : scenario.splits) {
+            if (split.rules.empty()) continue;
+            auto label = "Split " + std::to_string(split.index + 1);
+            const auto name = segment_name(instance, split.index);
+            if (!name.empty()) label += " - " + name;
+            const bool current = eligible && running && scenario.snapshot->split_index >= 0 &&
+                split.index == static_cast<std::size_t>(scenario.snapshot->split_index);
+            data.rule_groups.push_back({label, split.rules, split.path, current});
+        }
+    }
+
     if (!data.error.empty()) {
         EvaluationGroup error_group;
         error_group.lines.push_back(EvaluationLine{"Error: " + data.error, {}, 0, false});
@@ -266,6 +316,158 @@ ScenarioCardModel card_model(const InstanceDiagnosticsSnapshot& instance) {
         data.maximum = "-";
     }
     return data;
+}
+
+const ConditionDiagnosticsNode* find_condition(const ScenarioCardModel& card, std::string_view path) {
+    const auto condition = [&](const auto& self, const ConditionDiagnosticsNode& node) -> const ConditionDiagnosticsNode* {
+        if (node.path == path) return &node;
+        for (const auto& child : node.children)
+            if (const auto* found = self(self, child)) return found;
+        return nullptr;
+    };
+    const auto rule = [&](const auto& self, const RuleDiagnosticsNode& node) -> const ConditionDiagnosticsNode* {
+        if (const auto* found = condition(condition, node.condition)) return found;
+        for (const auto& child : node.sequence_rules)
+            if (const auto* found = self(self, child)) return found;
+        return nullptr;
+    };
+    for (const auto& group : card.rule_groups)
+        for (const auto& node : group.rules)
+            if (const auto* found = rule(rule, node)) return found;
+    return nullptr;
+}
+
+std::vector<CurrentMonitorGroup> current_monitor_groups(const ScenarioCardModel& card) {
+    std::vector<CurrentMonitorGroup> result;
+    for (const auto& group : card.rule_groups) {
+        if (!group.current) continue;
+        auto label = group.label;
+        if (label.starts_with("Split ")) label = label.substr(0, label.find(" - "));
+        result.push_back({&group, std::move(label)});
+    }
+    return result;
+}
+
+int monitor_card_columns(float available_width, float scale, std::size_t count) {
+    if (count == 0) return 1;
+    const auto columns = std::max(1, static_cast<int>((available_width + 12 * scale) / (372 * scale)));
+    return std::min(columns, static_cast<int>(count));
+}
+
+CompactConditionRow compact_condition_row(const ConditionDiagnosticsNode& node) {
+    CompactConditionRow row;
+    row.anchor = &node;
+    const auto unary = [](std::string_view type) {
+        return type == "hold" || type == "nth" || type == "once" || type == "not" ||
+               type == "rising_edge" || type == "falling_edge";
+    };
+    const ConditionDiagnosticsNode* current = &node;
+    while (true) {
+        if (!row.label.empty()) row.label += " \xC2\xB7 ";
+        row.label += current->type;
+        if (current->type == "then") {
+            const auto count = current->children.size();
+            row.label += current->completed ? " | Complete " : " ";
+            const auto step = current->completed ? count : std::min(current->active_step.value_or(0) + 1, count);
+            row.label += std::to_string(step) + " / " + std::to_string(count);
+            if (!current->completed && current->active_step && *current->active_step < count) {
+                current = &current->children[*current->active_step];
+                continue;
+            }
+        }
+        if (!unary(current->type) || current->children.size() != 1) break;
+        current = &current->children.front();
+    }
+    if (!current->children.empty()) row.branch = current;
+    return row;
+}
+
+SharedHistoryGroups shared_history_groups(const ScenarioCardModel& card, std::chrono::seconds window) {
+    SharedHistoryGroups result;
+    if (!card.history) return result;
+    const auto cutoff = card.history->sampled_at - window;
+    std::unordered_map<std::string_view, const ConditionHistory*> histories;
+    for (const auto& history : card.history->conditions)
+        if (history.last_observation && *history.last_observation >= cutoff && !history.samples.empty())
+            histories.emplace(history.path, &history);
+
+    const auto visit_condition = [&](const auto& self, const ConditionDiagnosticsNode& node,
+                                     bool current, std::vector<SharedHistorySource>& chart) -> void {
+        if (const auto found = histories.find(node.path); found != histories.end())
+            chart.push_back({&node, found->second, current});
+        for (std::size_t i = 0; i < node.children.size(); ++i)
+            self(self, node.children[i], current && (node.type != "then" ||
+                (!node.completed && node.active_step == i)), chart);
+    };
+    const auto visit_rule = [&](const auto& self, const RuleDiagnosticsNode& rule,
+                                bool current, std::vector<SharedHistorySource>& chart) -> void {
+        visit_condition(visit_condition, rule.condition, current, chart);
+        for (std::size_t i = 0; i < rule.sequence_rules.size(); ++i)
+            self(self, rule.sequence_rules[i], current && rule.active_rule_index == i, chart);
+    };
+    for (const auto& group : card.rule_groups) {
+        auto& chart = group.path == "reset" ? result.reset : result.normal;
+        for (const auto& rule : group.rules) visit_rule(visit_rule, rule, group.current, chart);
+    }
+    return result;
+}
+
+std::vector<CompactConditionChild> compact_condition_children(const CompactConditionRow& row) {
+    std::vector<CompactConditionChild> result;
+    if (!row.branch) return result;
+    const auto& branch = *row.branch;
+    if (branch.type == "then") {
+        if (!branch.completed) {
+            const auto step = branch.active_step.value_or(0);
+            if (step < branch.children.size()) result.push_back({&branch.children[step], {}});
+        }
+    } else {
+        for (std::size_t i = 0; i < branch.children.size(); ++i) {
+            std::string role;
+            if (branch.type == "reset_when") role = i == 0 ? "Condition" : "Reset";
+            result.push_back({&branch.children[i], std::move(role)});
+        }
+    }
+    return result;
+}
+
+const RuleDiagnosticsNode* compact_sequence_rule(const RuleDiagnosticsNode& rule) {
+    if (!rule.active_rule_index || *rule.active_rule_index >= rule.sequence_rules.size()) return nullptr;
+    return &rule.sequence_rules[*rule.active_rule_index];
+}
+
+std::vector<InspectorRuleRoot> inspector_rule_roots(const ScenarioCardModel& card) {
+    std::vector<InspectorRuleRoot> result;
+    const auto append = [&](const auto& self, const RuleDiagnosticsNode& rule,
+                            const std::string& label, bool current) -> void {
+        const auto name = label + " / Rule " + std::to_string(rule.index + 1);
+        if (!rule.sequence_rules.empty()) {
+            for (std::size_t i = 0; i < rule.sequence_rules.size(); ++i)
+                self(self, rule.sequence_rules[i], name,
+                     current && rule.active_rule_index == i);
+        } else if (!rule.condition.type.empty() && rule.condition.type != "none") {
+            result.push_back({&rule.condition, name, current});
+        }
+    };
+    for (const auto& group : card.rule_groups)
+        for (const auto& rule : group.rules) append(append, rule, group.label, group.current);
+    return result;
+}
+
+bool condition_is_current(const ScenarioCardModel& card, std::string_view path) {
+    const auto visit = [&](const auto& self, const ConditionDiagnosticsNode& node,
+                           bool current) -> std::optional<bool> {
+        if (node.path == path) return current;
+        for (std::size_t i = 0; i < node.children.size(); ++i) {
+            const bool active = current && (node.type != "then" ||
+                (!node.completed && node.active_step == i));
+            if (const auto found = self(self, node.children[i], active)) return found;
+        }
+        return {};
+    };
+    for (const auto& root : inspector_rule_roots(card))
+        if (const auto found = visit(visit, *root.condition, root.current)) return *found;
+    return false;
 }
 
 }  // namespace divergencesplitter::ui

@@ -1,15 +1,19 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "divergencesplitter/rule/rule.hpp"
+#include "divergencesplitter/runtime/evaluation_history.hpp"
 #include "divergencesplitter/runtime/models.hpp"
 
 namespace divergencesplitter {
+
+using InstanceHistoryPaths = std::map<int, HistoryPaths>;
 
 struct ConditionDiagnosticsNode {
     std::string path;
@@ -20,7 +24,10 @@ struct ConditionDiagnosticsNode {
     std::optional<double> latest_score;
     std::optional<double> max_score;
     std::optional<double> minimum_score;
+    ConditionMeasurement measurement;
     std::vector<ConditionDiagnosticsNode> children;
+    std::optional<std::size_t> active_step;
+    bool completed{};
 };
 
 struct RuleDiagnosticsNode {
@@ -46,6 +53,7 @@ struct SplitDiagnosticsNode {
 };
 
 struct ScenarioDiagnosticsSnapshot {
+    std::shared_ptr<const EvaluationHistorySnapshot> history;
     std::optional<LiveSplitSnapshot> snapshot;
     bool configuration_valid{true};
     std::optional<ActionOperation> pending_action;

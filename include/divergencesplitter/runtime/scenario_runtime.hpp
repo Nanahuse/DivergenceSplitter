@@ -14,7 +14,7 @@ namespace divergencesplitter {
 
 class ScenarioRuntime {
 public:
-    explicit ScenarioRuntime(Scenario scenario);
+    explicit ScenarioRuntime(Scenario scenario, std::shared_ptr<TimeProvider> clock = {});
 
     void apply_update(const LiveSplitUpdate& update);
     [[nodiscard]] std::optional<Action> evaluate(FrameContext context);
@@ -31,7 +31,8 @@ public:
     void settle_rejected_reset(const LiveSplitUpdate& update);
 
     [[nodiscard]] std::optional<LiveSplitSnapshot> current_snapshot() const;
-    [[nodiscard]] ScenarioDiagnosticsSnapshot diagnostics() const;
+    [[nodiscard]] ScenarioDiagnosticsSnapshot diagnostics(bool include_history = false, const HistoryPaths* paths = nullptr,
+        std::chrono::seconds recent_window = {}) const;
 
 private:
     [[nodiscard]] std::optional<Action> evaluate_rules(
@@ -57,6 +58,8 @@ private:
         const LiveSplitSnapshot& snapshot
     );
 
+    void bind_history(const std::vector<ScenarioRulePtr>& rules, const std::string& path);
+    std::shared_ptr<EvaluationHistory> history_;
     Scenario scenario_;
     std::vector<ScenarioRulePtr> start_rules_;
     std::vector<ScenarioRulePtr> reset_rules_;

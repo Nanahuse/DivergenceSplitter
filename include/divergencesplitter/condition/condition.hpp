@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -23,6 +24,11 @@ enum class ConditionStatus {
 
 class Condition {
 public:
+    enum class Observation { evaluated, skipped, reset, error };
+    using Observer = std::function<void(const Condition&, Observation, std::optional<bool>,
+                                        std::optional<MonotonicTime>, bool)>;
+    // Observers belong to an instance's condition tree, never to a shared frame.
+    void set_observer(Observer observer) const { observer_ = std::move(observer); }
     virtual ~Condition() = default;
 
     [[nodiscard]] std::optional<bool> evaluate(FrameContext& context, bool short_circuited = false);
@@ -39,6 +45,10 @@ public:
     void mark_skipped() const;
 
 protected:
+    // Some composites restart internally without resetting their children.
+    void record_reset_boundary(MonotonicTime time) const noexcept {
+        observe(Observation::reset, {}, time);
+    }
     [[nodiscard]] virtual std::optional<bool> evaluate_impl(
         FrameContext& context,
         bool short_circuited
@@ -46,6 +56,9 @@ protected:
     virtual void reset_state() = 0;
 
 private:
+    void observe(Observation event, std::optional<bool> result = {},
+                 std::optional<MonotonicTime> time = {}, bool short_circuited = false) const noexcept;
+    mutable Observer observer_;
     mutable ConditionStatus status_{ConditionStatus::not_evaluated};
 };
 

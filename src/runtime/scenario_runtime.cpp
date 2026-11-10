@@ -30,6 +30,11 @@ ConditionDiagnosticsNode make_condition_node(
         node.detector_type = std::string{detected->detector()->type_name()};
         node.minimum_score = detected->minimum_score();
     }
+    node.measurement = condition_measurement(*condition);
+    if (const auto* sequence = dynamic_cast<const ThenCondition*>(condition)) {
+        node.completed = sequence->completed();
+        if (!node.completed) node.active_step = sequence->current_step();
+    }
     node.latest_score = condition->latest_score();
     node.max_score = condition->max_score();
     const auto& children = condition->children();
@@ -90,7 +95,8 @@ std::vector<RuleDiagnosticsNode> make_rule_nodes(
 
 }  // namespace
 
-ScenarioRuntime::ScenarioRuntime(Scenario scenario) : scenario_(std::move(scenario)) {
+ScenarioRuntime::ScenarioRuntime(Scenario scenario, std::shared_ptr<TimeProvider> clock)
+    : history_(std::make_shared<EvaluationHistory>(std::move(clock))), scenario_(std::move(scenario)) {
     if (!scenario_.start_condition) {
         throw std::invalid_argument("scenario start_condition is required");
     }
@@ -110,6 +116,12 @@ ScenarioRuntime::ScenarioRuntime(Scenario scenario) : scenario_(std::move(scenar
             Action{ActionOperation::undo}
         ));
     }
+    bind_history(start_rules_, "start");
+    bind_history(reset_rules_, "reset");
+    bind_history(incomplete_rules_, "incomplete");
+    for (std::size_t i = 0; i < scenario_.splits.size(); ++i)
+        if (scenario_.splits[i]) bind_history(*scenario_.splits[i], "split." + std::to_string(i));
+
 }
 
 void ScenarioRuntime::apply_update(const LiveSplitUpdate& update) {
@@ -147,6 +159,8 @@ void ScenarioRuntime::apply_update(const LiveSplitUpdate& update) {
         return;
     }
 
+    if (snapshot.phase == TimerPhase::not_running && current.phase != TimerPhase::not_running)
+        history_->note_timer_reset();
     snapshot_ = snapshot;
     configuration_valid_ = validate_split_count(snapshot);
     if (run_changed) {
@@ -173,8 +187,10 @@ void ScenarioRuntime::apply_update(const LiveSplitUpdate& update) {
 std::optional<Action> ScenarioRuntime::evaluate(FrameContext context) {
     const auto wall_started = std::chrono::steady_clock::now();
     std::scoped_lock lock{mutex_};
+    history_->begin_frame(context.now());
     ++evaluation_count_;
     const auto finish = [&]() {
+        history_->end_frame();
         const auto wall_completed = std::chrono::steady_clock::now();
         last_evaluation_ms_ =
             std::chrono::duration<double, std::milli>(wall_completed - wall_started).count();
@@ -338,9 +354,11 @@ std::optional<LiveSplitSnapshot> ScenarioRuntime::current_snapshot() const {
     return snapshot_;
 }
 
-ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics() const {
+ScenarioDiagnosticsSnapshot ScenarioRuntime::diagnostics(bool include_history, const HistoryPaths* paths,
+    std::chrono::seconds recent_window) const {
     std::scoped_lock lock{mutex_};
     ScenarioDiagnosticsSnapshot result;
+    if (include_history) result.history = history_->snapshot(paths, recent_window);
     result.snapshot = snapshot_;
     result.configuration_valid = configuration_valid_;
     if (pending_action_.has_value()) {
@@ -479,6 +497,7 @@ void ScenarioRuntime::apply_transition_resets(
 }
 
 void ScenarioRuntime::establish_baseline(const LiveSplitSnapshot& snapshot) {
+    if (snapshot_ && snapshot_->session_id != snapshot.session_id) history_->clear();
     snapshot_ = snapshot;
     configuration_valid_ = validate_split_count(snapshot);
     clear_all_pending();
@@ -534,6 +553,18 @@ std::optional<std::size_t> ScenarioRuntime::evaluation_index(
         return static_cast<std::size_t>(snapshot.split_index);
     }
     return std::nullopt;
+}
+
+void ScenarioRuntime::bind_history(const std::vector<ScenarioRulePtr>& rules, const std::string& path) {
+    for (std::size_t i = 0; i < rules.size(); ++i) {
+        const auto rule_path = path + ".r" + std::to_string(i);
+        if (const auto* sequence = dynamic_cast<const RuleSequence*>(rules[i].get())) {
+            for (std::size_t j = 0; j < sequence->rules().size(); ++j)
+                history_->bind(sequence->rules()[j]->condition().get(), rule_path + ".s" + std::to_string(j) + ".cond");
+        } else {
+            history_->bind(rules[i]->active_condition(), rule_path + ".cond");
+        }
+    }
 }
 
 }  // namespace divergencesplitter

@@ -64,6 +64,7 @@ void Session::apply_profile(const Profile& profile, const AppSettings& settings)
         InstanceRuntimeOptions runtime_options;
         runtime_options.reaction_time = std::chrono::milliseconds{settings.reaction_time_ms};
         runtime_options.logger = logger;
+        runtime_options.time_provider = time_provider_;
         new_instances.push_back(std::make_unique<InstanceRuntime>(
             static_cast<int>(index),
             std::move(loaded.scenario),
@@ -152,12 +153,19 @@ Profile Session::profile() const {
     return profile_;
 }
 
-std::vector<InstanceDiagnosticsSnapshot> Session::instance_diagnostics() const {
+std::vector<InstanceDiagnosticsSnapshot> Session::instance_diagnostics(bool include_history, const InstanceHistoryPaths* paths,
+    std::chrono::seconds recent_window) const {
     std::scoped_lock lock{mutex_};
     std::vector<InstanceDiagnosticsSnapshot> result;
     result.reserve(instances_.size());
     for (const auto& instance : instances_) {
-        result.push_back(instance->diagnostics());
+        const HistoryPaths empty;
+        const HistoryPaths* selection = nullptr;
+        if (paths) {
+            const auto found = paths->find(instance->index());
+            selection = found == paths->end() ? &empty : &found->second;
+        }
+        result.push_back(instance->diagnostics(include_history, selection, recent_window));
     }
     return result;
 }

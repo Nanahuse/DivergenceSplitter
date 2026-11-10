@@ -8,24 +8,19 @@ This is an English translation. The Japanese version is the original and takes p
 
 ## Monitor
 
-Each table row pairs one scenario with a LiveSplit connection; this pair is called an instance. Monitor shows the normalized input image: the same Crop/Resize output used by all
-scenario instances. The input line shows the number of frames made available for
-evaluation, measured capture FPS, and whether capture is running. The table shows each scenario's connection state,
-timer phase, split index, last requested action, and error or action result.
-Scenario and split indexes in diagnostics are zero-based.
+The Monitor toolbar combines Capture FPS, Preview and Reset All. Hover Capture for its state and received frame count. Preview opens a separate window only when needed and shows the shared input after Crop/Resize.
 
-**Processing FPS** measures each instance's evaluation rate. It differs from
-input FPS and can vary between instances sharing the same input. **Current
-evaluation** summarizes current conditions, their status, and evaluated detector
-thresholds and latest scores. Hover over the summary for additional lines. This version does not
-include a separate Diagnostics screen; current conditions are shown on Monitor. See
-[control confirmation](troubleshooting.en.md#control-confirmation-and-reset-failures)
-for Pending and Waiting for Reset confirmation.
+Instances appear in responsive cards: side by side when space permits, and in one column on narrow windows. Each card starts with connection state and Evaluation FPS. Open Details for its Bridge endpoint, timer state, split position, last action and average/maximum evaluation time. Instance indexes start at zero; Rule and Split numbers start at one.
 
-**Ready** means that the instance has synchronized with Bridge. Check input and
-Monitor as well; Ready alone does not mean that a condition is true or that
-the configured split count is valid. While disconnected, that instance cannot
-evaluate actions. Other instances have independent connections.
+Each Instance has a shared chart for Start, Split and other normal evaluations, plus a separate chart for the scenario's Reset Rules. Series stay in view for the 30-second window across Rule and then step changes. A Condition keeps its color, and current series stand out from earlier ones. The summary below the charts shows current Rules and progress.
+
+Numeric series show progress toward a common 100% target line, with a display range of 0–125%. Boolean Conditions and Conditions with a nonpositive target show dots for true and dashes for false below the baseline. A heavier orange line marks a timer Reset. Status icons before Condition names show a check for true, a circle for false, a square for not_evaluated, a dash for skipped and a cross for error.
+
+Select a Condition name or a trace on a shared chart, or click Details, to open the inspector with axes, legend, current value, target and result timeline. Live views in the inspector show the latest 60 seconds, including detector comparison. Its structure tree includes merged child Conditions and every then step. The Rule selector includes past Splits and all Rules in a sequence. Compare detectors lets you select multiple scores within that Instance. The inspector stays open across Split changes. Use the wheel to zoom, drag to pan, or right-drag to select a range. Interaction pauses the time reference and links the value/result X ranges. Resume live or Reset view returns to the live 60-second window. Retention still expires old data while paused. Display settings are not saved.
+
+In the inspector, detected Conditions plot scores and thresholds; elapsed/hold plot seconds and target time; nth plots observed counts as stairs; then plots step progress. Nth counts true child evaluations, so it counts edges only when its child is an edge Condition. Boolean Conditions show state history. Blank intervals mean no measurement, rather than a zero score. Lines break at gaps and resets. Orange marks resets, green marks transitions, and red marks errors. Numeric state that actually updates during short-circuit evaluation is still recorded; skipped current values are labelled Last value.
+
+History is collected at evaluation time even while Monitor is hidden. It stays in memory for 60 seconds, with at most 8192 samples per Condition. At capacity, thinning prioritizes extrema and state changes. Reconnects, Bridge session changes and Profile applies start fresh histories. Ready means the Bridge connection and timer synchronization succeeded; input, Conditions and split configuration must still be checked separately.
 
 ### Reset All
 

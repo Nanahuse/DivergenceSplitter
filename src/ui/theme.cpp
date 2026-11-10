@@ -1,5 +1,7 @@
 #include "theme.hpp"
 
+#include <implot.h>
+
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -99,6 +101,54 @@ Colors colors(Mode mode) {
         from_hex(palette.text),
         from_hex(palette.text_secondary),
     };
+}
+
+const ChartColors& chart_colors(Mode mode) {
+    static const ChartColors light{
+        .frame = from_hex("#EBEFF4"), .background = from_hex("#F5F7FA"),
+        .border = from_hex("#919DA9"), .grid = from_hex("#D5DCE5"),
+        .text = from_hex("#172B3D"), .axis_text = from_hex("#3C4E61"),
+        .legend = from_hex("#FFFFFF"), .target = from_hex("#687889"),
+        .trace = from_hex("#2457A2"), .reset = from_hex("#A94706"),
+        .transition = from_hex("#176547"), .error = from_hex("#AB2638"),
+        .selection = from_hex("#25599A"), .history_alpha = 0.80f,
+    };
+    static const ChartColors dark{
+        .frame = from_hex("#192129"), .background = from_hex("#11171D"),
+        .border = from_hex("#5B6C7C"), .grid = from_hex("#303D49"),
+        .text = from_hex("#E4EAF0"), .axis_text = from_hex("#B5C4D0"),
+        .legend = from_hex("#202A34"), .target = from_hex("#899BAA"),
+        .trace = from_hex("#83B9F5"), .reset = from_hex("#F2A35C"),
+        .transition = from_hex("#6DCCA0"), .error = from_hex("#F1828A"),
+        .selection = from_hex("#8DBFF4"), .history_alpha = 0.68f,
+    };
+    return mode == Mode::dark ? dark : light;
+}
+
+void apply_plot(Mode mode) {
+    auto& style = ImPlot::GetStyle();
+    if (mode == Mode::dark) ImPlot::StyleColorsDark(&style);
+    else ImPlot::StyleColorsLight(&style);
+
+    const auto& palette = chart_colors(mode);
+    auto& c = style.Colors;
+    c[ImPlotCol_ErrorBar] = palette.error;
+    c[ImPlotCol_FrameBg] = palette.frame;
+    c[ImPlotCol_PlotBg] = palette.background;
+    c[ImPlotCol_PlotBorder] = palette.border;
+    c[ImPlotCol_LegendBg] = palette.legend;
+    c[ImPlotCol_LegendBorder] = palette.border;
+    c[ImPlotCol_LegendText] = palette.text;
+    c[ImPlotCol_TitleText] = palette.text;
+    c[ImPlotCol_InlayText] = palette.text;
+    c[ImPlotCol_AxisText] = palette.axis_text;
+    c[ImPlotCol_AxisGrid] = palette.grid;
+    c[ImPlotCol_AxisTick] = palette.border;
+    c[ImPlotCol_AxisBg] = with_alpha(palette.frame, 0.0f);
+    c[ImPlotCol_AxisBgHovered] = with_alpha(palette.selection, 0.12f);
+    c[ImPlotCol_AxisBgActive] = with_alpha(palette.selection, 0.22f);
+    c[ImPlotCol_Selection] = palette.selection;
+    c[ImPlotCol_Crosshairs] = palette.target;
 }
 
 void apply(Mode mode, float scale) {

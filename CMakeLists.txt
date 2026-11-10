@@ -8,6 +8,7 @@ project(
     LANGUAGES CXX
 )
 
+option(DIVERGENCESPLITTER_BUILD_BENCHMARKS "Build developer Monitor history benchmarks" OFF)
 option(DIVERGENCESPLITTER_BUILD_UI "Build the Dear ImGui Win32 desktop UI" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTS "Build the CTest suite" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS "Build the optional LiveSplit.Bridge TestHost smoke test" OFF)
@@ -65,6 +66,13 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(imgui)
+    FetchContent_Declare(
+        implot
+        GIT_REPOSITORY https://github.com/epezent/implot.git
+        GIT_TAG v0.17
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(implot)
 endif()
 if(DIVERGENCESPLITTER_BUILD_TESTS)
     enable_testing()

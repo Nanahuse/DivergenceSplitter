@@ -42,6 +42,7 @@ std::optional<bool> Condition::evaluate(FrameContext& context, bool short_circui
         const auto result = evaluate_impl(context, short_circuited);
         if (short_circuited) {
             status_ = ConditionStatus::skipped;
+            observe(Observation::evaluated, result, context.now(), true);
             return result;
         }
         if (!result.has_value()) {
@@ -49,9 +50,11 @@ std::optional<bool> Condition::evaluate(FrameContext& context, bool short_circui
             throw std::logic_error("condition did not return a boolean result");
         }
         status_ = *result ? ConditionStatus::true_value : ConditionStatus::false_value;
+        observe(Observation::evaluated, result, context.now());
         return result;
     } catch (...) {
         status_ = ConditionStatus::error;
+        observe(Observation::error, {}, context.now(), short_circuited);
         throw;
     }
 }
@@ -59,10 +62,20 @@ std::optional<bool> Condition::evaluate(FrameContext& context, bool short_circui
 void Condition::reset() {
     status_ = ConditionStatus::not_evaluated;
     reset_state();
+    observe(Observation::reset);
+}
+
+void Condition::observe(Observation event, std::optional<bool> result,
+                        std::optional<MonotonicTime> time, bool short_circuited) const noexcept {
+    // Diagnostics must never change evaluation results or exception behavior.
+    try {
+        if (observer_) observer_(*this, event, result, time, short_circuited);
+    } catch (...) {}
 }
 
 void Condition::mark_skipped() const {
     status_ = ConditionStatus::skipped;
+    observe(Observation::skipped);
     for (const auto* child : children()) {
         if (child != nullptr) {
             child->mark_skipped();
@@ -495,6 +508,7 @@ std::optional<bool> ThenCondition::evaluate_impl(FrameContext& context, bool sho
         if (within_.has_value() && elapsed > within_->count()) {
             index_ = 0;
             started_at_.reset();
+            record_reset_boundary(context.now());
         }
     }
     bool current = false;

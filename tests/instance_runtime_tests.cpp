@@ -291,6 +291,8 @@ TEST(InstanceRuntime, ReconnectsAfterConnectionLoss) {
     runtime.start();
     ASSERT_TRUE(test::wait_until([&]() { return runtime.diagnostics().state == InstanceState::ready; }));
 
+    const auto before = runtime.diagnostics(true);
+    ASSERT_TRUE(before.scenario && before.scenario->history);
     bridge->set_ready(false);
     runtime.publish_frame(white_frame());
     ASSERT_TRUE(test::wait_until([&]() {
@@ -303,6 +305,43 @@ TEST(InstanceRuntime, ReconnectsAfterConnectionLoss) {
         return runtime.diagnostics().state == InstanceState::ready;
     }));
 
+    const auto after = runtime.diagnostics(true);
+    ASSERT_TRUE(after.scenario && after.scenario->history);
+    EXPECT_GT(after.generation, before.generation);
+    EXPECT_NE(after.scenario->history->identity, before.scenario->history->identity);
+    runtime.stop();
+}
+
+TEST(InstanceRuntime, HistoryUsesTheInjectedSessionClock) {
+    auto clock = std::make_shared<test::ManualTimeProvider>();
+    auto fake = std::make_unique<test::FakeBridgeClient>(
+        test::make_snapshot(TimerPhase::not_running, -1, 2));
+    Scenario scenario;
+    scenario.start_condition = std::make_shared<DetectedCondition>(
+        std::make_shared<MeanBrightnessDetector>(), 2.0);
+    InstanceRuntimeOptions options;
+    options.time_provider = clock;
+    InstanceRuntime runtime{0, std::move(scenario), std::move(fake), options};
+    runtime.start();
+    ASSERT_TRUE(test::wait_until([&] { return runtime.state() == InstanceState::ready; }));
+    runtime.publish_frame(std::make_shared<SharedFrameEvaluation>(
+        SharedFrameEvaluation{Frame{test::solid(2, 2, 0), clock->now()}, clock->now(), {}}));
+    ASSERT_TRUE(test::wait_until([&] {
+        const auto data = runtime.diagnostics();
+        return data.scenario && data.scenario->evaluation_count == 1;
+    }));
+    const auto data = runtime.diagnostics(true);
+    ASSERT_TRUE(data.scenario && data.scenario->history);
+    const auto& history = *data.scenario->history;
+    ASSERT_FALSE(history.conditions.empty());
+    ASSERT_FALSE(history.conditions.front().samples.empty());
+    EXPECT_EQ(history.sampled_at, clock->now());
+    EXPECT_EQ(history.conditions.front().samples.back().value, 0.0);
+    HistoryPaths none;
+    const auto filtered = runtime.diagnostics(true, &none);
+    ASSERT_TRUE(filtered.scenario && filtered.scenario->history);
+    EXPECT_TRUE(filtered.scenario->history->conditions.empty());
+    EXPECT_EQ(filtered.scenario->history->identity, history.identity);
     runtime.stop();
 }
 

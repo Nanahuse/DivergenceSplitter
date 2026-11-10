@@ -12,6 +12,7 @@ notices are included under licenses/vcpkg/.
 Third-party components:
 
 - Dear ImGui - MIT. See licenses/imgui.txt.
+- ImPlot - MIT. See licenses/implot.txt.
 - OpenCV - Apache-2.0. See licenses/opencv.txt.
 - Boost - BSL-1.0. See licenses/boost.txt.
 - rapidyaml - MIT. See licenses/ryml.txt.

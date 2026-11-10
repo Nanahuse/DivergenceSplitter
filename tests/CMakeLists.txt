@@ -4,6 +4,7 @@ add_executable(divergencesplitter_tests
     camera_tests.cpp
     condition_tests.cpp
     detector_tests.cpp
+    evaluation_history_tests.cpp
     frame_cache_tests.cpp
     instance_runtime_tests.cpp
     logging_tests.cpp
@@ -49,12 +50,13 @@ if(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS)
 endif()
 
 if(DIVERGENCESPLITTER_BUILD_UI)
-    add_executable(divergencesplitter_ui_tests ui_model_tests.cpp)
+    add_executable(divergencesplitter_ui_tests ui_model_tests.cpp history_plot_tests.cpp)
     target_compile_features(divergencesplitter_ui_tests PRIVATE cxx_std_23)
     target_link_libraries(divergencesplitter_ui_tests
         PRIVATE
             divergencesplitter::ui
             divergencesplitter_imgui
+            divergencesplitter_implot
             GTest::gtest_main
     )
     target_include_directories(divergencesplitter_ui_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")

@@ -24,7 +24,7 @@ GUI配布物には、`DivergenceSplitter.exe`、OpenCVなどのランタイムDL
 
 ## CI workflow
 
-[C++23](../../.github/workflows/cpp23.yml)は、PR、`main` へのpush、手動実行で動きます。Windows、MSVC、Ninja、vcpkgを使い、`ci` プリセットで1種類だけビルドします。Dear ImGuiはconfigure時にFetchContentで取得します。Qtのインストール手順はありません。
+[C++23](../../.github/workflows/cpp23.yml)は、PR、`main` へのpush、手動実行で動きます。Windows、MSVC、Ninja、vcpkgを使い、`ci` プリセットで1種類だけビルドします。Dear ImGui（v1.91.9b）とImPlot（v0.17）はconfigure時にFetchContentで取得します。Qtのインストール手順はありません。
 
 固定リビジョンのBridge TestHostもビルドし、CTest、実TestHostとの結合テスト、ZIPの作成、展開後の起動検証まで実行します。
 
@@ -36,9 +36,9 @@ GUI配布物には、`DivergenceSplitter.exe`、OpenCVなどのランタイムDL
 
 ## 第三者ライセンスの通知
 
-アプリのソースは[MIT](../../LICENSE)です。[DISTRIBUTION-NOTICE.txt](../../DISTRIBUTION-NOTICE.txt) にDear ImGui、OpenCV、Boost、rapidyaml（ryml）、c4core、nlohmann/json、Bridgeクライアント、カメラ列挙の移植部分などを記載します。それぞれ別のライセンスが適用されます。
+アプリのソースは[MIT](../../LICENSE)です。[DISTRIBUTION-NOTICE.txt](../../DISTRIBUTION-NOTICE.txt) にDear ImGui、ImPlot、OpenCV、Boost、rapidyaml（ryml）、c4core、nlohmann/json、Bridgeクライアント、カメラ列挙の移植部分などを記載します。それぞれ別のライセンスが適用されます。
 
-[licenses/components.json](../../licenses/components.json)をコンポーネントとライセンスの正本とし、About画面、収集スクリプト、ZIP検証で共有します。install・package時には[collect_licenses.py](../../tools/collect_licenses.py)が、この一覧に従ってvcpkgパッケージの通知、取得したBridgeのライセンス、FetchContentで取得したDear ImGuiの `LICENSE.txt`、同梱するNDIヘッダーの通知を集めます。カメラ列挙部分の許諾ライセンスは、[third-party-license-lock.json](../../tools/third-party-license-lock.json)に記録した固定コミットから取得します。取得した本文は、Git管理外のビルドキャッシュに保存します。
+[licenses/components.json](../../licenses/components.json)をコンポーネントとライセンスの正本とし、About画面、収集スクリプト、ZIP検証で共有します。install・package時には[collect_licenses.py](../../tools/collect_licenses.py)が、この一覧に従ってvcpkgパッケージの通知、取得したBridgeのライセンス、FetchContentで取得したDear ImGuiの `LICENSE.txt` とImPlotの `LICENSE`、同梱するNDIヘッダーの通知を集めます。カメラ列挙部分の許諾ライセンスは、[third-party-license-lock.json](../../tools/third-party-license-lock.json)に記録した固定コミットから取得します。取得した本文は、Git管理外のビルドキャッシュに保存します。
 
 必要な通知がない場合、取得した本文が固定内容と違う場合、パッケージ化に失敗します。rymlとc4coreの通知は、`licenses/ryml.txt` と `licenses/c4core.txt` として必ず含め、ZIP検証でも確認します。他のライブラリが依存するライブラリの通知も、`licenses/vcpkg/` に含めます。
 

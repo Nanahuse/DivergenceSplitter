@@ -12,6 +12,12 @@
       "source": "imgui"
     },
     {
+      "name": "ImPlot",
+      "license": "MIT",
+      "license_file": "implot.txt",
+      "source": "implot"
+    },
+    {
       "name": "OpenCV",
       "license": "Apache-2.0",
       "license_file": "opencv.txt",
