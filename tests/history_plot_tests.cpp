@@ -76,6 +76,7 @@ TEST(HistoryPlot, RendersNumericStateStairsAndComparisonWithPinnedImPlot) {
         {{2'000'000'000}, 1.0, ConditionStatus::true_value, HistoryEvent::transition, true},
         {{3'000'000'000}, {}, ConditionStatus::not_evaluated, HistoryEvent::reset, {}},
         {{4'000'000'000}, 0.0, ConditionStatus::skipped, HistoryEvent::sample, {}},
+        {{4'500'000'000}, {}, ConditionStatus::error, HistoryEvent::error, {}},
     }});
     const auto plots = prepare_history(history);
     ConditionDiagnosticsNode node;
@@ -83,11 +84,13 @@ TEST(HistoryPlot, RendersNumericStateStairsAndComparisonWithPinnedImPlot) {
     node.type = "detected";
     node.measurement = {1.0, 0.5, "score", false};
     node.minimum_score = 0.5;
-    for (const auto mode : {theme::Mode::light, theme::Mode::dark}) {
+    for (const auto mode : {theme::Mode::dark, theme::Mode::light, theme::Mode::dark}) {
+        theme::apply(mode, 1);
         ImGui::NewFrame();
         ImGui::SetNextWindowSize(ImVec2(1000, 980));
         ImGui::Begin("Monitor plots");
-        const auto palette = theme::colors(mode);
+        theme::apply_plot(mode);
+        const auto& palette = theme::chart_colors(mode);
         draw_history_plot("score", node, plots, 5, 15, 65, palette);
         node.measurement.stairs = true;
         draw_history_plot("count", node, plots, 5, 30, 180, palette, true);
@@ -97,6 +100,25 @@ TEST(HistoryPlot, RendersNumericStateStairsAndComparisonWithPinnedImPlot) {
         ImGui::Render();
         ASSERT_NE(ImGui::GetDrawData(), nullptr);
         EXPECT_GT(ImGui::GetDrawData()->TotalVtxCount, 0);
+        const auto& style = ImPlot::GetStyle();
+        const auto packed = ImGui::ColorConvertFloat4ToU32;
+        EXPECT_EQ(packed(style.Colors[ImPlotCol_FrameBg]), packed(palette.frame));
+        EXPECT_EQ(packed(style.Colors[ImPlotCol_PlotBorder]), packed(palette.border));
+        EXPECT_EQ(packed(style.Colors[ImPlotCol_LegendBg]), packed(palette.legend));
+        EXPECT_EQ(packed(style.Colors[ImPlotCol_LegendBorder]), packed(palette.border));
+        EXPECT_EQ(packed(style.Colors[ImPlotCol_LegendText]), packed(palette.text));
+        EXPECT_EQ(packed(style.Colors[ImPlotCol_TitleText]), packed(palette.text));
+        EXPECT_EQ(packed(style.Colors[ImPlotCol_Selection]), packed(palette.selection));
+        const auto& draw_data = *ImGui::GetDrawData();
+        for (const auto& role : {palette.background, palette.axis_text, palette.trace,
+                                 palette.reset, palette.transition, palette.error}) {
+            const auto ink = packed(role);
+            bool visible = false;
+            for (int i = 0; i < draw_data.CmdListsCount; ++i)
+                visible |= std::ranges::any_of(draw_data.CmdLists[i]->VtxBuffer,
+                    [ink](const auto& vertex) { return vertex.col == ink; });
+            EXPECT_TRUE(visible) << ink;
+        }
     }
     ImPlot::DestroyContext(plot_context);
     ImGui::DestroyContext(gui);
@@ -211,8 +233,8 @@ TEST(HistoryPlot, SmallConditionAndComparisonPlotsOpenOnClick) {
     for (bool comparison : {false, true}) {
         PlotFixture fixture;
         const auto draw = [&] {
-            return comparison ? draw_detector_comparison({&fixture.node}, fixture.history, 60, 30, 240, theme::colors(theme::Mode::dark))
-                : draw_history_plot("small", fixture.node, fixture.history, 60, 30, 240, theme::colors(theme::Mode::dark));
+            return comparison ? draw_detector_comparison({&fixture.node}, fixture.history, 60, 30, 240, theme::chart_colors(theme::Mode::dark))
+                : draw_history_plot("small", fixture.node, fixture.history, 60, 30, 240, theme::chart_colors(theme::Mode::dark));
         };
         fixture.begin();
         EXPECT_FALSE(draw());
@@ -233,8 +255,8 @@ TEST(HistoryPlot, DetailAndComparisonZoomFreezeTimeAndKeepTheViewportUntilReset)
         PlotFixture fixture;
         PlotViewport view;
         const auto draw = [&](double now, int seconds) {
-            if (comparison) draw_detector_comparison({&fixture.node}, fixture.history, now, seconds, 240, theme::colors(theme::Mode::dark), &view);
-            else draw_history_plot("detail", fixture.node, fixture.history, now, seconds, 240, theme::colors(theme::Mode::dark), true, false, &view);
+            if (comparison) draw_detector_comparison({&fixture.node}, fixture.history, now, seconds, 240, theme::chart_colors(theme::Mode::dark), &view);
+            else draw_history_plot("detail", fixture.node, fixture.history, now, seconds, 240, theme::chart_colors(theme::Mode::dark), true, false, &view);
         };
         fixture.begin(); draw(60, 30);
         const auto min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
@@ -522,7 +544,7 @@ TEST(MonitorModel, SharedChartKeepsPastStartAndThenStepWhileResetStaysSeparate) 
                                 node("split.0.r0.cond.c1", {29'000'000'000})};
     card.rule_groups = {{"Start", {start}, "start", true}, {"Split 1", {split}, "split.0", false},
                         {"Reset", {reset}, "reset", false}, {"Split 2", {expired}, "split.1", false}};
-    const auto palette = theme::colors(theme::Mode::dark);
+    const auto palette = theme::chart_colors(theme::Mode::dark);
     const auto before = shared_history_groups(card, 15s);
     ASSERT_EQ(before.normal.size(), 3);
     EXPECT_TRUE(before.normal.front().current);
@@ -597,13 +619,83 @@ TEST(HistoryPlot, StatusIconsHaveDistinctShapesInBothThemesWithoutAddingHeight) 
     }
 }
 
+TEST(HistoryPlot, ChartSeriesAndEventColorsContrastAgainstBothBackgrounds) {
+    const auto luminance = [](ImVec4 color) {
+        const auto linear = [](float channel) {
+            return channel <= 0.04045f ? channel / 12.92f : std::pow((channel + 0.055f) / 1.055f, 2.4f);
+        };
+        return 0.2126f * linear(color.x) + 0.7152f * linear(color.y) + 0.0722f * linear(color.z);
+    };
+    for (const auto mode : {theme::Mode::dark, theme::Mode::light}) {
+        const auto& palette = theme::chart_colors(mode);
+        const auto contrast = [&](ImVec4 ink) {
+            // Measure the actual 8-bit vertex color blended onto the chart.
+            ink = ImGui::ColorConvertU32ToFloat4(ImGui::ColorConvertFloat4ToU32(ink));
+            const float foreground = luminance({std::lerp(palette.background.x, ink.x, ink.w),
+                std::lerp(palette.background.y, ink.y, ink.w), std::lerp(palette.background.z, ink.z, ink.w), 1});
+            const float background = luminance(palette.background);
+            return (std::max(foreground, background) + 0.05f) / (std::min(foreground, background) + 0.05f);
+        };
+        EXPECT_GT(palette.reset.x, palette.reset.y);
+        EXPECT_GT(palette.reset.y, palette.reset.z);
+        EXPECT_GT(palette.transition.y, palette.transition.x);
+        EXPECT_GT(palette.transition.y, palette.transition.z);
+        EXPECT_GT(palette.error.x, palette.error.y);
+        EXPECT_GT(palette.error.x, palette.error.z);
+        for (const auto& color : {palette.reset, palette.transition, palette.error, palette.target})
+            EXPECT_GE(contrast(color), 3.0f);
+        EXPECT_GE(contrast(palette.axis_text), 4.5f);
+        for (int i = 0; i < 256; ++i) {
+            const auto path = "split.0.r0.cond.c" + std::to_string(i);
+            EXPECT_GE(contrast(shared_series_color(path, palette)), 4.4f) << path;
+            EXPECT_GE(contrast(shared_series_color(path, palette, false)), 3.0f) << path;
+        }
+    }
+}
+
+TEST(HistoryPlot, SharedChartRecolorsTheSameSnapshotAcrossThemeSwitches) {
+    PlotFixture fixture;
+    SharedHistoryChart chart;
+    chart.seconds = 30;
+    chart.series = {{"past", false, 60, {{{{35'000'000'000}, 0.5f}, {{55'000'000'000}, 0.5f}}}, {}}};
+    chart.markers = {{{45'000'000'000}, SharedMarkerKind::timer_reset},
+        {{47'000'000'000}, SharedMarkerKind::transition}, {{49'000'000'000}, SharedMarkerKind::error}};
+    const auto& dark = theme::chart_colors(theme::Mode::dark);
+    const auto& light = theme::chart_colors(theme::Mode::light);
+    auto lighter_history = light;
+    lighter_history.history_alpha = 1.0f;
+    const auto past_ink = [&](const auto& palette) {
+        return ImGui::ColorConvertFloat4ToU32(shared_series_color("past", palette, false));
+    };
+    ASSERT_NE(past_ink(dark), past_ink(light));
+    ASSERT_NE(past_ink(light), past_ink(lighter_history));
+    const auto draw = [&](const theme::ChartColors& palette, const theme::ChartColors& previous) {
+        fixture.begin();
+        draw_shared_chart("shared", chart, 60, 30, {300, 168}, palette, 1);
+        const auto& vertices = ImGui::GetWindowDrawList()->VtxBuffer;
+        const auto contains = [&](ImU32 ink) {
+            return std::ranges::any_of(vertices, [ink](const auto& vertex) { return vertex.col == ink; });
+        };
+        EXPECT_TRUE(contains(past_ink(palette)));
+        if (past_ink(previous) != past_ink(palette)) EXPECT_FALSE(contains(past_ink(previous)));
+        for (const auto& role : {palette.background, palette.border, palette.axis_text,
+                                 palette.reset, palette.transition, palette.error})
+            EXPECT_TRUE(contains(ImGui::ColorConvertFloat4ToU32(role)));
+        fixture.end();
+    };
+    draw(dark, dark);
+    draw(light, dark);
+    draw(lighter_history, light);
+    draw(dark, lighter_history);
+}
+
 TEST(HistoryPlot, SharedDrawFramesTranslateTheSameCachedTrace) {
     PlotFixture fixture;
     SharedHistoryChart chart;
     chart.seconds = 30;
     chart.series = {{"clocked", true, 60,
         {{{{40'000'000'000}, 0.3f}, {{45'000'000'000}, 0.7f}, {{50'000'000'000}, 0.2f}}}, {}}};
-    const auto palette = theme::colors(theme::Mode::dark);
+    const auto palette = theme::chart_colors(theme::Mode::dark);
     const auto ink = ImGui::ColorConvertFloat4ToU32(shared_series_color("clocked", palette));
     const auto draw = [&](double now) {
         fixture.begin();
@@ -656,7 +748,7 @@ TEST(HistoryPlot, CachedTraceDrawsKeepIndicesValidAcrossVertexOffsets) {
     }
     for (const double now : {60.0, 60.05}) {
         fixture.begin();
-        draw_shared_chart("shared", chart, now, 30, {300, 120}, theme::colors(theme::Mode::dark), 1);
+        draw_shared_chart("shared", chart, now, 30, {300, 120}, theme::chart_colors(theme::Mode::dark), 1);
         fixture.end();
         const auto* data = ImGui::GetDrawData();
         ASSERT_GT(data->TotalVtxCount, 65536);
@@ -683,7 +775,7 @@ TEST(HistoryPlot, SharedGraphClickSelectsAVisibleHistoricalTrace) {
     chart.seconds = 30;
     chart.series = {{"past", false, 60, {{{{35'000'000'000}, 0.5f}, {{55'000'000'000}, 0.5f}}}, {}},
                     {"current", true, 60, {{{{35'000'000'000}, 1.2f}, {{55'000'000'000}, 1.2f}}}, {}}};
-    const auto palette = theme::colors(theme::Mode::dark);
+    const auto palette = theme::chart_colors(theme::Mode::dark);
     ImVec2 hit;
     const auto draw = [&] {
         fixture.begin();

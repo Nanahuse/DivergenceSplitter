@@ -74,17 +74,17 @@ struct SharedPlotClick { bool clicked{}; std::string_view path; };
 [[nodiscard]] SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& sources,
     MonotonicTime sampled_at, std::chrono::seconds window, const std::vector<MonotonicTime>& timer_resets,
     SharedHistoryChart previous = {});
-[[nodiscard]] ImVec4 shared_series_color(std::string_view path, const theme::Colors& palette);
+[[nodiscard]] ImVec4 shared_series_color(std::string_view path, const theme::ChartColors& palette, bool current = true);
 SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& chart, double now,
-    double seconds, ImVec2 size, const theme::Colors& palette, float scale);
+    double seconds, ImVec2 size, const theme::ChartColors& palette, float scale);
 
 // Small plots return true when clicked. Detailed plots allow pan/zoom and pause live time.
 bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition,
     const HistoryPlots& history, double now, double seconds, float height,
-    const theme::Colors& palette, bool detail = false, bool state = false,
+    const theme::ChartColors& palette, bool detail = false, bool state = false,
     PlotViewport* viewport = nullptr);
 bool draw_detector_comparison(const std::vector<const ConditionDiagnosticsNode*>& conditions,
     const HistoryPlots& history, double now, double seconds, float height,
-    const theme::Colors& palette, PlotViewport* viewport = nullptr);
+    const theme::ChartColors& palette, PlotViewport* viewport = nullptr);
 
 } // namespace divergencesplitter::ui

@@ -21,14 +21,19 @@ ImPlotPoint point(int index, void* pointer) {
     return {context.data->times[i] - context.now,
             context.state ? context.data->states[i] : context.data->values[i]};
 }
-void series(const char* label, const HistoryPlotData& data, double now, bool stairs, bool state) {
+void series(const char* label, const HistoryPlotData& data, double now, bool stairs, bool state,
+    const ImVec4& color) {
     const auto& segments = state ? data.state_segments : data.segments;
     for (const auto& segment : segments) {
         GetterData getter{&data, now, segment.begin, state};
+        ImPlot::SetNextLineStyle(color, 2.0f);
         if (stairs) ImPlot::PlotStairsG(label, point, &getter, segment.count);
         else ImPlot::PlotLineG(label, point, &getter, segment.count);
         // A single measurement (including zero) must remain visible.
-        if (segment.count == 1) ImPlot::PlotScatterG(label, point, &getter, 1);
+        if (segment.count == 1) {
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, IMPLOT_AUTO, color, IMPLOT_AUTO, color);
+            ImPlot::PlotScatterG(label, point, &getter, 1);
+        }
     }
 }
 void markers(const char* label, const std::vector<double>& times, double now, const ImVec4& color) {
@@ -82,11 +87,7 @@ bool finish_interaction(PlotViewport* view, double origin) {
     }
     return false;
 }
-void plot_colors(const theme::Colors& palette) {
-    ImPlot::PushStyleColor(ImPlotCol_PlotBg, palette.surface_low);
-    ImPlot::PushStyleColor(ImPlotCol_AxisText, palette.text_secondary);
-    ImPlot::PushStyleColor(ImPlotCol_AxisGrid, palette.divider);
-}
+
 }
 
 HistoryPlots prepare_history(const EvaluationHistorySnapshot& history, const std::set<std::string>& hold_paths,
@@ -212,7 +213,8 @@ struct SharedTraceMesh {
     float scale{};
     float alpha{};
     float fringe{};
-    bool light{};
+    std::array<float, 4> color_key{};
+    std::vector<ImU32> inks;
     ImDrawListFlags flags{};
     ImTextureID texture{};
 };
@@ -308,7 +310,34 @@ SharedHistoryChart prepare_shared_chart(const std::vector<SharedHistorySource>& 
     return result;
 }
 
-ImVec4 shared_series_color(std::string_view path, const theme::Colors& palette) {
+namespace {
+float luminance(const ImVec4& color) {
+    const auto linear = [](float channel) {
+        return channel <= 0.04045f ? channel / 12.92f : std::pow((channel + 0.055f) / 1.055f, 2.4f);
+    };
+    return 0.2126f * linear(color.x) + 0.7152f * linear(color.y) + 0.0722f * linear(color.z);
+}
+
+ImVec4 mix(const ImVec4& from, const ImVec4& to, float amount) {
+    return {std::lerp(from.x, to.x, amount), std::lerp(from.y, to.y, amount),
+            std::lerp(from.z, to.z, amount), 1.0f};
+}
+
+// Find the smallest adjustment that reaches the contrast target.
+template<class MeetsTarget>
+float contrast_adjustment(float initial, const MeetsTarget& meets) {
+    if (meets(initial)) return initial;
+    float low = initial, high = 1.0f;
+    for (int i = 0; i < 8; ++i) {
+        const float mid = (low + high) / 2;
+        if (meets(mid)) high = mid;
+        else low = mid;
+    }
+    return high;
+}
+}
+
+ImVec4 shared_series_color(std::string_view path, const theme::ChartColors& palette, bool current) {
     std::uint32_t hash = 2166136261u;
     for (const unsigned char ch : path) hash = (hash ^ ch) * 16777619u;
     // Mix neighbouring paths before mapping to hue, so sibling indices spread out.
@@ -316,22 +345,29 @@ ImVec4 shared_series_color(std::string_view path, const theme::Colors& palette) 
     hash *= 0x7feb352du;
     hash ^= hash >> 15;
     const float hue = static_cast<float>((hash & 0x00ffffffu) / 16777216.0);
-    const bool light = palette.surface_low.x > 0.5f;
+    const float background = luminance(palette.background);
+    const bool light = background > 0.5f;
     const float saturation = (light ? 0.72f : 0.56f) + 0.18f * ((hash >> 24) & 15u) / 15.0f;
     const float brightness = (light ? 0.51f : 0.83f) + 0.15f * (hash >> 28) / 15.0f;
     ImVec4 color{0, 0, 0, 1};
     ImGui::ColorConvertHSVtoRGB(hue, saturation, brightness, color.x, color.y, color.z);
+    const auto contrast = [&](const ImVec4& ink) {
+        const float ink_luminance = luminance(ink);
+        return (std::max(background, ink_luminance) + 0.05f) / (std::min(background, ink_luminance) + 0.05f);
+    };
+    const ImVec4 endpoint = light ? ImVec4(0, 0, 0, 1) : ImVec4(1, 1, 1, 1);
+    color = mix(color, endpoint, contrast_adjustment(0.0f, [&](float amount) {
+        return contrast(mix(color, endpoint, amount)) >= 4.5f;
+    }));
+    if (!current) {
+        color.w = contrast_adjustment(palette.history_alpha, [&](float alpha) {
+            return contrast(mix(palette.background, color, alpha)) >= 3.2f;
+        });
+    }
     return color;
 }
 
-
 namespace {
-ImU32 shared_trace_ink(const SharedHistorySeries& line, const theme::Colors& palette) {
-    auto color = shared_series_color(line.path, palette);
-    color.w = line.current ? 1.0f : 0.48f;
-    return ImGui::GetColorU32(color);
-}
-
 void capture_trace_mesh(SharedTraceMesh& mesh, const ImDrawList& draw,
     int first_vertex, int first_index, int first_command) {
     const auto vertices = draw.VtxBuffer.Size - first_vertex;
@@ -395,15 +431,15 @@ void append_trace_mesh(ImDrawList& draw, const SharedTraceMesh& mesh, float x, f
 
 void draw_shared_traces(ImDrawList& draw, const SharedHistoryChart& chart, double now,
     double seconds, double pixels_per_second, float right, float bottom, float height,
-    const theme::Colors& palette, float scale) {
+    const theme::ChartColors& palette, float scale) {
     const auto alpha = ImGui::GetStyle().Alpha;
-    const bool light = palette.surface_low.x > 0.5f;
+    const std::array color_key{palette.background.x, palette.background.y, palette.background.z, palette.history_alpha};
     const auto texture = draw._CmdHeader.TextureId;
     const auto shared = ImGui::GetDrawListSharedData();
     auto& cached = chart.trace_mesh;
     if (!cached || !cached->valid || cached->shared != shared || now < cached->anchor ||
         cached->pixels_per_second != pixels_per_second || cached->height != height ||
-        cached->scale != scale || cached->alpha != alpha || cached->light != light ||
+        cached->scale != scale || cached->alpha != alpha || cached->color_key != color_key ||
         cached->flags != draw.Flags || cached->texture != texture || cached->fringe != draw._FringeScale) {
         if (!cached || cached.use_count() != 1 || cached->shared != shared)
             cached = std::make_shared<SharedTraceMesh>();
@@ -416,7 +452,7 @@ void draw_shared_traces(ImDrawList& draw, const SharedHistoryChart& chart, doubl
         mesh.height = height;
         mesh.scale = scale;
         mesh.alpha = alpha;
-        mesh.light = light;
+        mesh.color_key = color_key;
         mesh.flags = draw.Flags;
         mesh.texture = texture;
         mesh.fringe = draw._FringeScale;
@@ -425,9 +461,12 @@ void draw_shared_traces(ImDrawList& draw, const SharedHistoryChart& chart, doubl
         const int first_command = draw.CmdBuffer.Size - 1;
 
         std::vector<ImVec2> points;
+        mesh.inks.clear();
+        mesh.inks.reserve(chart.series.size());
         for (const auto& line : chart.series) {
+            const auto ink = ImGui::GetColorU32(shared_series_color(line.path, palette, line.current));
+            mesh.inks.push_back(ink);
             if (line.last_observation < now - seconds || line.segments.empty()) continue;
-            const auto ink = shared_trace_ink(line, palette);
             // Whole-pixel strokes use ImGui's baked antialiasing texture.
             const auto stroke = std::max(1.0f, std::round((line.current ? 1.6f : 1.0f) * scale));
             for (const auto& segment : line.segments) {
@@ -458,7 +497,7 @@ void draw_shared_traces(ImDrawList& draw, const SharedHistoryChart& chart, doubl
 }
 
 SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& chart, double now,
-    double seconds, ImVec2 size, const theme::Colors& palette, float scale) {
+    double seconds, ImVec2 size, const theme::ChartColors& palette, float scale) {
     const auto origin = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton(id, size);
     SharedPlotClick result{ImGui::IsItemClicked(), {}};
@@ -473,11 +512,12 @@ SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& char
         return right + static_cast<float>((time.nanoseconds / 1e9 - now) * pixels_per_second);
     };
     const auto y_at = [&](float progress) { return bottom - progress * (bottom - top) / progress_limit; };
-    draw->AddRectFilled(origin, end, ImGui::GetColorU32(palette.background_deep), 4 * scale);
+    draw->AddRectFilled(origin, end, ImGui::GetColorU32(palette.background), 4 * scale);
+    draw->AddRect(origin, end, ImGui::GetColorU32(palette.border), 4 * scale);
     draw->PushClipRect(ImVec2(left, top), ImVec2(right, axis), true);
     const float goal = y_at(1);
-    draw->AddLine(ImVec2(left, goal), ImVec2(right, goal), ImGui::GetColorU32(palette.outline));
-    draw->AddLine(ImVec2(left, bottom), ImVec2(right, bottom), ImGui::GetColorU32(palette.divider));
+    draw->AddLine(ImVec2(left, goal), ImVec2(right, goal), ImGui::GetColorU32(palette.target));
+    draw->AddLine(ImVec2(left, bottom), ImVec2(right, bottom), ImGui::GetColorU32(palette.grid));
 
     const bool hovered = ImGui::IsItemHovered();
     const auto mouse = ImGui::GetIO().MousePos;
@@ -494,7 +534,8 @@ SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& char
     const bool matching_window = chart.seconds == seconds;
     if (matching_window)
         draw_shared_traces(*draw, chart, now, seconds, pixels_per_second, right, bottom, bottom - top, palette, scale);
-    for (const auto& line : chart.series) {
+    for (std::size_t i = 0; i < chart.series.size(); ++i) {
+        const auto& line = chart.series[i];
         if (!matching_window || line.last_observation < now - seconds) continue;
         if (result.path.empty() || line.current) result.path = line.path;
         if (hovered) for (const auto& segment : line.segments) {
@@ -508,7 +549,7 @@ SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& char
             }
         }
         if (line.states.empty()) continue;
-        const auto ink = shared_trace_ink(line, palette);
+        const auto ink = chart.trace_mesh->inks[i];
         for (const auto state : line.states) {
             const auto x = x_at(state.time);
             if (x < left || x > right) continue;
@@ -523,32 +564,33 @@ SharedPlotClick draw_shared_chart(const char* id, const SharedHistoryChart& char
         if (x < left || x > right) continue;
         const bool timer = marker.kind == SharedMarkerKind::timer_reset;
         auto color = marker.kind == SharedMarkerKind::error ? palette.error :
-            marker.kind == SharedMarkerKind::transition ? palette.active : palette.warning;
-        color.w = timer ? 0.95f : 0.42f;
+            marker.kind == SharedMarkerKind::transition ? palette.transition : palette.reset;
         draw->AddLine(ImVec2(x, top), ImVec2(x, bottom), ImGui::GetColorU32(color), (timer ? 2 : 1) * scale);
     }
     draw->PopClipRect();
-    const auto label_color = ImGui::GetColorU32(palette.text_secondary);
+    const auto label_color = ImGui::GetColorU32(palette.axis_text);
     const auto time_label = "-" + std::to_string(static_cast<int>(seconds)) + " s";
     draw->AddText(ImVec2(left, axis), label_color, time_label.c_str());
     draw->AddText(ImVec2(right - ImGui::CalcTextSize("now").x, axis), label_color, "now");
     draw->AddText(ImVec2(right - ImGui::CalcTextSize("100%").x, goal - ImGui::GetFontSize()),
                   label_color, "100%");
-    if (result.path.empty() && (!matching_window || chart.markers.empty()))
-        draw->AddText(ImVec2(left + 8 * scale, top + 12 * scale), label_color, "No recent history");
+    if (result.path.empty() && (!matching_window || chart.markers.empty())) {
+        const float message_y = (goal + bottom - ImGui::GetFontSize()) * 0.5f;
+        draw->AddText(ImVec2(left + 8 * scale, message_y), label_color, "No recent history");
+    }
     if (hovered) {
         if (!hovered_path.empty()) {
             result.path = hovered_path;
             ImGui::SetTooltip("%.*s\nClick to inspect", static_cast<int>(hovered_path.size()), hovered_path.data());
         } else ImGui::SetTooltip("100%% = target. Dots/dashes below = true/false.\n"
-                                 "Amber: reset | Red: error | Green: transition\nClick to inspect");
+                                 "Orange: reset | Red: error | Green: transition\nClick to inspect");
     }
     return result;
 }
 
 bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition,
     const HistoryPlots& history, double now, double seconds, float height,
-    const theme::Colors& palette, bool detail, bool state, PlotViewport* viewport) {
+    const theme::ChartColors& palette, bool detail, bool state, PlotViewport* viewport) {
     if (!ImGui::IsRectVisible(ImVec2(ImGui::GetContentRegionAvail().x, height))) {
         ImGui::Dummy(ImVec2(0, height));
         return false;
@@ -558,7 +600,6 @@ bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition
     if (detail) view_controls(id, view, now, seconds);
     const double origin = detail && !view.follow ? view.anchor : now;
     bool clicked = false;
-    plot_colors(palette);
     if (detail) ImGui::PushID(static_cast<int>(view.revision));
     const auto flags = detail ? ImPlotFlags_NoMenus : ImPlotFlags_CanvasOnly | ImPlotFlags_NoInputs;
     if (ImPlot::BeginPlot(id, ImVec2(-1, height), flags)) {
@@ -582,27 +623,25 @@ bool draw_history_plot(const char* id, const ConditionDiagnosticsNode& condition
         ImPlot::SetupAxisLimits(ImAxis_Y1, minimum - 0.05 * range,
                                 maximum + 0.1 * range, detail ? ImPlotCond_Once : ImPlotCond_Always);
         if (found != history.end()) {
-            ImPlot::SetNextLineStyle(palette.primary, 2.0f);
-            series(state ? "Result" : "Value", found->second, origin, state || condition.measurement.stairs, state);
-            markers("Reset", found->second.resets, origin, palette.warning);
-            markers("Transition", found->second.transitions, origin, palette.active);
+            series(state ? "Result" : "Value", found->second, origin, state || condition.measurement.stairs, state, palette.trace);
+            markers("Reset", found->second.resets, origin, palette.reset);
+            markers("Transition", found->second.transitions, origin, palette.transition);
             markers("Error", found->second.errors, origin, palette.error);
         }
         if (condition.measurement.target && !state) {
             const double target = *condition.measurement.target;
-            ImPlot::SetNextLineStyle(palette.warning, 1.0f);
+            ImPlot::SetNextLineStyle(palette.target, 1.0f);
             ImPlot::PlotInfLines("Target", &target, 1, ImPlotInfLinesFlags_Horizontal);
         }
         clicked = finish_interaction(detail ? &view : nullptr, origin);
         ImPlot::EndPlot();
     }
-    ImPlot::PopStyleColor(3);
     if (detail) ImGui::PopID();
     return clicked;
 }
 
 bool draw_detector_comparison(const std::vector<const ConditionDiagnosticsNode*>& conditions,
-    const HistoryPlots& history, double now, double seconds, float height, const theme::Colors& palette, PlotViewport* viewport) {
+    const HistoryPlots& history, double now, double seconds, float height, const theme::ChartColors& palette, PlotViewport* viewport) {
     if (!viewport && !ImGui::IsRectVisible(ImVec2(ImGui::GetContentRegionAvail().x, height))) {
         ImGui::Dummy(ImVec2(0, height));
         return false;
@@ -611,7 +650,6 @@ bool draw_detector_comparison(const std::vector<const ConditionDiagnosticsNode*>
     const double origin = viewport && !viewport->follow ? viewport->anchor : now;
     bool clicked = false;
     if (viewport) ImGui::PushID(static_cast<int>(viewport->revision));
-    plot_colors(palette);
     if (ImPlot::BeginPlot("##detector_comparison", ImVec2(-1, height), viewport ? ImPlotFlags_NoMenus : ImPlotFlags_NoInputs | ImPlotFlags_NoMenus)) {
         ImPlot::SetupAxes(viewport && !viewport->follow ? "Time (s from paused view)" : "Time (seconds ago)", "score", viewport ? ImPlotAxisFlags_None : ImPlotAxisFlags_Lock, viewport ? ImPlotAxisFlags_None : ImPlotAxisFlags_Lock);
         if (viewport) ImPlot::SetupAxisLinks(ImAxis_X1, &viewport->x_min, &viewport->x_max);
@@ -626,17 +664,18 @@ bool draw_detector_comparison(const std::vector<const ConditionDiagnosticsNode*>
             const auto found = history.find(condition->path);
             if (found == history.end()) continue;
             const auto label = condition->path + " (" + condition->detector_type + ")";
-            series(label.c_str(), found->second, origin, false, false);
+            const auto color = shared_series_color(condition->path, palette);
+            series(label.c_str(), found->second, origin, false, false, color);
             if (condition->minimum_score) {
                 const auto target_label = condition->path + " target";
                 const double target = *condition->minimum_score;
+                ImPlot::SetNextLineStyle(color, 1.0f);
                 ImPlot::PlotInfLines(target_label.c_str(), &target, 1, ImPlotInfLinesFlags_Horizontal);
             }
         }
         clicked = finish_interaction(viewport, origin);
         ImPlot::EndPlot();
     }
-    ImPlot::PopStyleColor(3);
     if (viewport) ImGui::PopID();
     return clicked;
 }

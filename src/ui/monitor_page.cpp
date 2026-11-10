@@ -218,12 +218,13 @@ void MonitorPage::draw_card(const ScenarioCardModel& card) {
     const auto& plots = plots_.at(card.index);
     const auto generation = std::to_string(plots.identity);
     ImGui::PushID(generation.c_str());
+    const auto& plot_palette = theme::chart_colors(app_->theme_mode());
     const auto chart = [&](const char* id, const std::string& title, const SharedHistoryChart& history,
                            float height, bool reset) {
-        ImGui::TextColored(palette.primary, "%s", title.c_str());
+        ImGui::TextColored(plot_palette.text, "%s", title.c_str());
         const auto seconds = history.seconds > 0 ? history.seconds : window_seconds_;
         const auto click = draw_shared_chart(id, history, draw_time_, seconds,
-            ImVec2(ImGui::GetContentRegionAvail().x, height * scale), palette, scale);
+            ImVec2(ImGui::GetContentRegionAvail().x, height * scale), plot_palette, scale);
         if (!click.clicked) return;
         if (const auto* condition = click.path.empty() ? nullptr : find_condition(card, click.path)) {
             select_condition(card, *condition);
@@ -239,8 +240,8 @@ void MonitorPage::draw_card(const ScenarioCardModel& card) {
         if (fallback) select_condition(card, *fallback->condition);
         else open_inspector(card);
     };
-    chart("##normal_history", normal_title, plots.normal, 112, false);
-    chart("##reset_history", "Reset", plots.reset, 86, true);
+    chart("##normal_history", normal_title, plots.normal, 168, false);
+    chart("##reset_history", "Reset", plots.reset, 129, true);
     ImGui::PopID();
 
     int remaining = 6;
@@ -381,7 +382,7 @@ void MonitorPage::draw_details() {
                             ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1040 * scale, 760 * scale), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("History details", &details_open_)) {
-        const auto palette = theme::colors(app_->theme_mode());
+        const auto& palette = theme::chart_colors(app_->theme_mode());
         ImGui::PushID(static_cast<int>(selected_identity_));
         ImGui::PushID(selected_instance_);
         ImGui::Text("Instance %d | %s | %s | %.1f fps", card->index, card->endpoint.c_str(), card->status.c_str(), card->evaluation_fps);
@@ -478,7 +479,7 @@ void MonitorPage::draw_details() {
                              plot_space * 0.65f, palette, true, false, &detail_view_);
             draw_history_plot("Result timeline", *selected, plots_[card->index].plots, draw_time_, window_seconds_,
                              plot_space * 0.35f, palette, true, true, &detail_view_);
-            text_muted("Blank: unmeasured | Yellow: reset | Green: transition | Red: error");
+            ImGui::TextColored(palette.axis_text, "Blank: unmeasured | Orange: reset | Green: transition | Red: error");
             ImGui::PopID();
         }
         ImGui::EndChild();

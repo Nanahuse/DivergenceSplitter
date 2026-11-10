@@ -403,6 +403,7 @@ void App::load_fonts(float scale) {
 void App::apply_theme(theme::Mode mode) {
     theme_mode_ = mode;
     theme::apply(mode, dpi_scale_);
+    theme::apply_plot(mode);
     ImGui::GetIO().FontGlobalScale = 1.0f;
 }
 

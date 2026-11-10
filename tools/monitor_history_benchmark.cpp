@@ -114,7 +114,7 @@ void render_benchmark() {
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
     unsigned char* pixels; int width, height;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-    const auto palette = theme::colors(theme::Mode::dark);
+    const auto palette = theme::chart_colors(theme::Mode::dark);
     for (const int count : {20, 100, 1000}) {
         std::vector<ConditionDiagnosticsNode> nodes(count);
         std::vector<ConditionHistory> histories(count);
