@@ -54,8 +54,11 @@ jobs:
           path: |
             ${{ env.VCPKG_ROOT }}\downloads
             C:\vcpkg-cache
-          key: cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          # Save a new cache when migrating from Visual Studio's vcpkg.
+          key: cpp23-vcpkg-v2-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
+            cpp23-vcpkg-v2-${{ runner.os }}-
+            cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
             cpp23-vcpkg-${{ runner.os }}-
 
       - name: Identify runner image for TestHost cache
