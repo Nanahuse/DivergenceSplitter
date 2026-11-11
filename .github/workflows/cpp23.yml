@@ -19,6 +19,8 @@ jobs:
     env:
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
       NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
+      SCCACHE_DIR: ${{ github.workspace }}\.cache\sccache
+      SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
       TESTHOST_REF: 4c14c0161eacd50b05411c0d20f5eff523e9c155
       TESTHOST_CONFIGURATION: Release
       TESTHOST_OUTPUT: .testhost/bin
@@ -95,11 +97,34 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem -LiteralPath $env:TESTHOST_OUTPUT -Recurse -File -Filter '*.pdb' | Remove-Item
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.19.0
+          disable_annotations: true
+
+      - name: Identify MSVC toolset
+        id: msvc
+        run: '"version=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT'
+
+      - name: Restore sccache
+        id: sccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.msvc.outputs.version }}-${{ hashFiles('.github/workflows/cpp23.yml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json', 'cmake/**', 'src/**', 'include/**', 'tests/**', 'third_party/**') }}
+          restore-keys: |
+            sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.msvc.outputs.version }}-
+
       - name: Configure
-        run: cmake --preset ci
+        run: cmake --preset ci -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DFETCHCONTENT_QUIET=OFF
 
       - name: Build
         run: cmake --build --preset ci --parallel
+
+      - name: Show sccache statistics
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
       - name: Test
         run: |
@@ -142,3 +167,10 @@ jobs:
           name: cpp23-tests
           path: build/ci/ctest-results.xml
           if-no-files-found: warn
+
+      - name: Save sccache
+        if: steps.sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.sccache.outputs.cache-primary-key }}
