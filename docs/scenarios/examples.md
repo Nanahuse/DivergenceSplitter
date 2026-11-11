@@ -124,6 +124,45 @@ splits:
             action: split
 ```
 
+## 条件の継承で区間ごとの画像を指定
+
+各区間で別の画像を検出し、1秒待ってからSplitします。待ち時間と検出器の設定をアンカーにまとめ、`course` の参照画像だけを区間ごとに変更します。
+
+```yaml
+definitions:
+  course_finish: &course_finish
+    type: then
+    conditions:
+      - id: course
+        type: detected
+        minimum_score: 0.9
+        detector:
+          type: root_mean_square_similarity
+          reference: assets/default.png
+      - type: elapsed
+        duration: 1s
+
+start_condition: {type: elapsed, duration: 0s}
+
+splits:
+  - rules:
+      - condition:
+          extends: *course_finish
+          overrides:
+            course:
+              detector:
+                reference: assets/YI1.png
+        action: split
+  - rules:
+      - condition:
+          extends: *course_finish
+          overrides:
+            course:
+              detector:
+                reference: assets/DPC.png
+        action: split
+```
+
 ## アンカーによる共通化と出現回数
 
 明るさの設定をアンカーで共通化し、区間0で画面が暗い状態から明るい状態に変わる回数を数えます。3回目の変化でSplitします。

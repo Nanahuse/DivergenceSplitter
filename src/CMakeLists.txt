@@ -7,6 +7,7 @@ add_library(divergencesplitter_core STATIC
     core/detectors.cpp
     core/conditions.cpp
     core/rules.cpp
+    core/scenario_inheritance.cpp
     core/scenario_loader.cpp
     core/text.cpp
 )
