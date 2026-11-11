@@ -19,6 +19,9 @@ jobs:
     env:
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
       NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
+      SCCACHE_DIR: ${{ github.workspace }}\.cache\sccache
+      SCCACHE_CACHE_SIZE: 128M
+      SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
       TESTHOST_REF: 4c14c0161eacd50b05411c0d20f5eff523e9c155
       TESTHOST_CONFIGURATION: Release
       TESTHOST_OUTPUT: .testhost/bin
@@ -45,8 +48,19 @@ jobs:
           NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
         run: python tools/get_ndi_sdk.py
 
-      - name: Bootstrap vcpkg
-        run: '& "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"'
+      - name: Bootstrap vcpkg and identify the toolchain
+        id: toolchain
+        run: |
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:VCPKG_ROOT\vcpkg.exe" version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $revision = git -C $env:VCPKG_ROOT rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "vcpkg checkout: $revision"
+          Write-Host "MSVC toolset: $env:VCToolsVersion, Windows SDK: $env:WindowsSDKVersion"
+          "vcpkg=$revision" >> $env:GITHUB_OUTPUT
+          "msvc=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT
 
       - name: Cache vcpkg
         uses: actions/cache@v4
@@ -54,11 +68,13 @@ jobs:
           path: |
             ${{ env.VCPKG_ROOT }}\downloads
             C:\vcpkg-cache
-          # Save a new cache when migrating from Visual Studio's vcpkg.
-          key: cpp23-vcpkg-v2-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          # vcpkg still checks each package's ABI when an older archive is restored.
+          key: cpp23-vcpkg-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-${{ steps.toolchain.outputs.vcpkg }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
+            cpp23-vcpkg-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-
+            cpp23-vcpkg-v3-${{ runner.os }}-${{ runner.arch }}-
+            cpp23-vcpkg-v2-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
             cpp23-vcpkg-v2-${{ runner.os }}-
-            cpp23-vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
             cpp23-vcpkg-${{ runner.os }}-
 
       - name: Identify runner image for TestHost cache
@@ -95,11 +111,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem -LiteralPath $env:TESTHOST_OUTPUT -Recurse -File -Filter '*.pdb' | Remove-Item
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.19.0
+          disable_annotations: true
+
+      - name: Restore sccache
+        id: sccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-${{ hashFiles('.github/workflows/cpp23.yml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json', 'cmake/**', 'src/**', 'include/**', 'tests/**', 'third_party/**') }}
+          restore-keys: |
+            sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-
+
       - name: Configure
-        run: cmake --preset ci
+        run: cmake --preset ci -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DFETCHCONTENT_QUIET=OFF
 
       - name: Build
         run: cmake --build --preset ci --parallel
+
+      - name: Show sccache statistics
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
       - name: Test
         run: |
@@ -142,3 +177,10 @@ jobs:
           name: cpp23-tests
           path: build/ci/ctest-results.xml
           if-no-files-found: warn
+
+      - name: Save sccache
+        if: steps.sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: ${{ steps.sccache.outputs.cache-primary-key }}

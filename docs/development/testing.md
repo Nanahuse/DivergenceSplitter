@@ -39,7 +39,7 @@ GUIの起動確認は、ビルドした実行ファイルに `--smoke-test` を�
 
 VideoFileSourceでは、内蔵MJPEGデコーダーを先に使うことと、H.264の動画をWindowsのデコーダーで読み込めることを確認します。RecordedPipelineでは、低FPSの動画でも速やかに停止できるかを確認します。
 
-CTestの `recorded_pipeline_repeat` は、録画とデコーダーのケースを新しいプロセスで20回実行します。毎回起動し直すことで、デコーダー起動時の不安定さも調べます。
+CTestの `recorded_pipeline_repeat_1` から `recorded_pipeline_repeat_4` は、録画とデコーダーのケースをそれぞれ5回、計20回実行します。各回で新しいプロセスを起動し、デコーダー起動時の不安定さも調べます。CIでは4グループを並列実行できます。
 
 ```powershell
 ctest --preset full -R 'RecordedPipeline|VideoFileSource|recorded_pipeline_repeat' --output-on-failure
