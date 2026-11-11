@@ -21,10 +21,10 @@ Configuration keys, UI labels, and file paths retain their implementation names.
 
 ## Installation
 
-Download the `DivergenceSplitter-cpp23-windows-x64` artifact from a successful
+Download `DivergenceSplitter-<version>-windows-x64.zip` from a successful
 [C++23 Actions run](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml).
-GitHub sign-in is required. Extract the artifact and then the Windows ZIP inside
-it into a writable directory. Keep the DLLs and licenses alongside
+GitHub sign-in is required. Extract the ZIP into a writable directory.
+Keep the DLLs and licenses alongside
 `DivergenceSplitter.exe`. Availability depends on a successful Windows job and
 artifact retention; otherwise [build from source (Japanese)](docs/development/building.md).
 See [Getting started](docs/getting-started.en.md) for the initial setup.

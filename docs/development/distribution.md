@@ -32,7 +32,7 @@ GUI配布物には、`DivergenceSplitter.exe`、OpenCVなどのランタイムDL
 - NDI Runtimeの初期化・受信テストは、リポジトリSecret `NDI_SDK_URL_WINDOWS` がある場合だけ実行します。CIは公式SDKを取得し、`NDI_RUNTIME_DIR_V6` をSDK内のRuntimeフォルダーへ向けてループバックテストを実行します。
 - forkのPRやSecretがない実行では、NDI Runtimeテストをスキップします。ビルド・起動・Camera・Videoのテストは常に実行します。
 - Secretがない場合もNDI ON/OFFビルドへ切り替えず、同じ1種類のビルドを続行します。
-- 成果物 `DivergenceSplitter-cpp23-windows-x64` は1種類だけアップロードし、CTest結果もアップロードします。
+- CPackが生成した `DivergenceSplitter-<version>-windows-x64.zip` をそのままアップロードし、CTest結果もアップロードします。
 
 ## 第三者ライセンスの通知
 

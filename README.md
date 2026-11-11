@@ -14,9 +14,9 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ## インストール
 
-[C++23のGitHub Actions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-cpp23-windows-x64` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
+[C++23のGitHub Actions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
 
-ダウンロードしたファイルを展開すると、中にアプリ本体のWindows ZIPがあります。そのZIPも書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLLとライセンスのファイルは、展開後の配置を保ってください。
+ダウンロードしたZIPを書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLLとライセンスのファイルは、展開後の配置を保ってください。
 
 ダウンロードできるのは、Windowsジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
 

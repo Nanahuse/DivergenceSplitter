@@ -131,8 +131,8 @@ jobs:
       - name: Upload distribution
         uses: actions/upload-artifact@v7
         with:
-          name: DivergenceSplitter-cpp23-windows-x64
           path: build/ci/*.zip
+          archive: false
           if-no-files-found: error
 
       - name: Upload test results
