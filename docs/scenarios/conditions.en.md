@@ -10,6 +10,16 @@ A Condition defines when a timer control should be requested. Set `type` to one 
 
 Use `condition` for one nested condition and `conditions` for a list of conditions. Each condition is written as a group containing `type` and its settings. Fields are required unless described as optional. Unknown fields are rejected.
 
+## Condition IDs and overridable settings
+
+Every condition accepts an optional `id`. Give the root or a descendant an ID to use as a key in `overrides`. Each use maintains its own runtime state, including timers and counts.
+
+- Override settings supported by the condition, such as `duration`, `count`, `minimum_score`, and `within`.
+- Override settings supported by the detector, such as `reference`, `roi`, `hash_size`, and color bounds.
+- A condition's `type` and `id`, the detector's `type`, and the child links `conditions`, `condition`, and `reset_condition` are fixed. To change a child condition's settings, target that child's ID directly.
+
+See the syntax and rules for `null` in the [YAML reference](yaml-reference.en.md#condition-inheritance).
+
 ## Time, counts, and state
 
 Time conditions use the application's elapsed time when a video frame is evaluated, not LiveSplit's real time, game time, or a frame count. Pausing the timer or losing frames does not stop that clock; a time condition can become true on the next frame evaluation. No result is updated until a frame is evaluated. `hold` checks continuity only on frames that are evaluated.

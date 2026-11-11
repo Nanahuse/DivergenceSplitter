@@ -21,15 +21,28 @@
 #include "divergencesplitter/condition/conditions.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
 #include "divergencesplitter/text.hpp"
+#include "scenario_inheritance.hpp"
+#include "scenario_yaml.hpp"
 
 namespace divergencesplitter {
 namespace {
 
-using StringSet = std::set<std::string>;
+using scenario_yaml::ResolvedCondition;
+using scenario_yaml::StringSet;
+using scenario_yaml::child;
+using scenario_yaml::copy_scalar;
+using scenario_yaml::is_null;
+using scenario_yaml::schema_error;
+using scenario_yaml::unique_key;
 
 struct LoadContext {
     std::filesystem::path base_directory;
     std::optional<ReferenceResizeOptions> reference_resize;
+    const ResolvedCondition* inheritance = nullptr;
+
+    std::string setting_path(ryml::ConstNodeRef node, std::string path) const {
+        return inheritance ? inheritance->setting_path(node, path) : std::move(path);
+    }
 };
 
 std::string lower_extension(const std::filesystem::path& path) {
@@ -40,42 +53,11 @@ std::string lower_extension(const std::filesystem::path& path) {
     return extension;
 }
 
-[[noreturn]] void schema_error(const std::string& message) {
-    throw ScenarioLoadError(ScenarioErrorKind::schema, message);
-}
-
-// Missing children are represented by an invalid reference, never a seeded node.
-ryml::ConstNodeRef child(ryml::ConstNodeRef node, std::string_view key) {
-    if (node.invalid() || !node.is_map()) {
-        return {};
-    }
-    return node.find_child(ryml::csubstr{key.data(), key.size()});
-}
-
-bool is_null(ryml::ConstNodeRef node) {
-    if (node.invalid() || !node.has_val()) {
-        return false;
-    }
-    if (node.has_val_tag()) {
-        if (node.val_tag() == "!!str" || node.val_tag() == "tag:yaml.org,2002:str") {
-            return false;
-        }
-        if (node.val_tag() == "!!null" || node.val_tag() == "tag:yaml.org,2002:null") {
-            return true;
-        }
-    }
-    return node.val_is_null();
-}
-
 ryml::ConstNodeRef require_map(ryml::ConstNodeRef node, std::string_view field) {
     if (node.invalid() || !node.is_map()) {
         schema_error(std::string(field) + " must be a mapping");
     }
     return node;
-}
-
-std::string copy_scalar(ryml::csubstr value) {
-    return value.len ? std::string{value.str, value.len} : std::string{};
 }
 
 std::string as_string(ryml::ConstNodeRef node, std::string_view field) {
@@ -124,29 +106,24 @@ std::vector<ryml::ConstNodeRef> as_list(ryml::ConstNodeRef node, std::string_vie
 
 void check_keys(
     const ryml::ConstNodeRef& node,
+    std::string_view field,
     const StringSet& required,
     const StringSet& optional = {},
     bool allow_unknown = false
 ) {
     StringSet present;
     for (const auto entry : node.children()) {
-        if (!entry.has_key() || entry.key_is_null()) {
-            schema_error("mapping keys must be strings");
-        }
-        const auto key = copy_scalar(entry.key());
-        if (!present.insert(key).second) {
-            schema_error("duplicate scenario field: " + key);
-        }
+        (void)unique_key(entry, field, present);
     }
     for (const auto& key : required) {
         if (!present.contains(key)) {
-            schema_error("missing scenario field: " + key);
+            schema_error(std::string(field) + "." + key + " is missing");
         }
     }
     if (!allow_unknown) {
         for (const auto& key : present) {
             if (!required.contains(key) && !optional.contains(key)) {
-                schema_error("unknown scenario field: " + key);
+                schema_error(std::string(field) + "." + key + " is an unknown scenario field");
             }
         }
     }
@@ -175,7 +152,7 @@ ryml::Callbacks yaml_callbacks() {
 // Validate references and merge operand types before calling it; expansion and
 // precedence remain entirely the library's responsibility. Raw duplicates must
 // also be rejected before resolution can hide them.
-void validate_yaml(ryml::ConstNodeRef root) {
+void validate_yaml(ryml::Tree& tree, ryml::ConstNodeRef root) {
     std::map<std::string, ryml::ConstNodeRef> anchors;
     const auto visit = [&](auto&& self, ryml::ConstNodeRef node) -> void {
         const auto target = [&](ryml::csubstr name) {
@@ -204,6 +181,7 @@ void validate_yaml(ryml::ConstNodeRef root) {
             if (merge && (value.invalid() || !value.is_map())) {
                 yaml_error("merge aliases must refer to mappings");
             }
+            scenario_yaml::mark_extends_alias(tree, node);
         }
         // A key anchor always denotes a scalar, even when its value is a map.
         if (node.has_key_anchor()) {
@@ -260,18 +238,21 @@ std::chrono::nanoseconds parse_duration(const ryml::ConstNodeRef& node, std::str
     return std::chrono::nanoseconds{static_cast<std::int64_t>(nanoseconds)};
 }
 
-std::optional<Region> parse_roi(const ryml::ConstNodeRef& node, std::string_view field) {
+std::optional<Region> parse_roi(
+    const ryml::ConstNodeRef& node,
+    std::string_view field,
+    const LoadContext& context
+) {
     if (node.invalid() || is_null(node)) {
         return std::nullopt;
     }
     const auto mapping = require_map(node, field);
-    check_keys(mapping, {"x", "y", "width", "height"});
-    Region region{
-        as_integer(child(mapping, "x"), std::string(field) + ".x"),
-        as_integer(child(mapping, "y"), std::string(field) + ".y"),
-        as_integer(child(mapping, "width"), std::string(field) + ".width"),
-        as_integer(child(mapping, "height"), std::string(field) + ".height"),
+    check_keys(mapping, field, scenario_yaml::roi_fields);
+    const auto coordinate = [&](std::string_view key) {
+        const auto value = child(mapping, key);
+        return as_integer(value, context.setting_path(value, std::string(field) + "." + std::string(key)));
     };
+    Region region{coordinate("x"), coordinate("y"), coordinate("width"), coordinate("height")};
     if (!region.valid()) {
         schema_error(std::string(field) + " must be non-negative with positive dimensions");
     }
@@ -319,9 +300,23 @@ DetectorPtr parse_detector(
 
 ConditionPtr parse_condition(
     const ryml::ConstNodeRef& node,
-    std::string_view field,
+    const std::string& path,
     const LoadContext& context
 );
+
+ConditionPtr load_condition(
+    ryml::ConstNodeRef node,
+    const std::string& path,
+    const LoadContext& context
+) {
+    if (!scenario_yaml::uses_inheritance(node)) {
+        return parse_condition(node, path, context);
+    }
+    const ResolvedCondition resolved{node, path};
+    LoadContext inherited_context = context;
+    inherited_context.inheritance = &resolved;
+    return parse_condition(resolved.root(), path, inherited_context);
+}
 
 std::vector<ConditionPtr> parse_condition_list(
     const ryml::ConstNodeRef& node,
@@ -330,7 +325,9 @@ std::vector<ConditionPtr> parse_condition_list(
 ) {
     std::vector<ConditionPtr> result;
     for (const auto& item : as_list(node, field)) {
-        result.push_back(parse_condition(item, field, context));
+        result.push_back(parse_condition(
+            item, std::string(field) + "[" + std::to_string(result.size()) + "]", context
+        ));
     }
     return result;
 }
@@ -339,80 +336,83 @@ DetectorPtr parse_detector(
     const ryml::ConstNodeRef& node,
     std::string_view field,
     const LoadContext& context
-) {
+) try {
     const auto mapping = require_map(node, field);
+    const auto path_for = [&](std::string_view key) {
+        return context.setting_path(child(mapping, key), std::string(field) + "." + std::string(key));
+    };
     if (child(mapping, "type").invalid()) {
         schema_error(std::string(field) + ".type is missing");
     }
     const std::string type = as_string(child(mapping, "type"), std::string(field) + ".type");
     if (type == "template_match") {
-        check_keys(mapping, {"type", "reference"}, {"roi"});
-        const auto roi = parse_roi(child(mapping, "roi"), std::string(field) + ".roi");
+        check_keys(mapping, field, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
         return std::make_shared<TemplateMatchDetector>(
-            read_reference(child(mapping, "reference"), std::string(field) + ".reference", context, roi),
+            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
             roi
         );
     }
     if (type == "mean_absolute_similarity") {
-        check_keys(mapping, {"type", "reference"}, {"roi"});
-        const auto roi = parse_roi(child(mapping, "roi"), std::string(field) + ".roi");
+        check_keys(mapping, field, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
         return std::make_shared<MeanAbsoluteSimilarityDetector>(
-            read_reference(child(mapping, "reference"), std::string(field) + ".reference", context, roi),
+            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
             roi
         );
     }
     if (type == "root_mean_square_similarity") {
-        check_keys(mapping, {"type", "reference"}, {"roi"});
-        const auto roi = parse_roi(child(mapping, "roi"), std::string(field) + ".roi");
+        check_keys(mapping, field, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
         return std::make_shared<RootMeanSquareSimilarityDetector>(
-            read_reference(child(mapping, "reference"), std::string(field) + ".reference", context, roi),
+            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
             roi
         );
     }
     if (type == "histogram_similarity") {
-        check_keys(mapping, {"type", "reference"}, {"roi"});
-        const auto roi = parse_roi(child(mapping, "roi"), std::string(field) + ".roi");
+        check_keys(mapping, field, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
         return std::make_shared<HistogramSimilarityDetector>(
-            read_reference(child(mapping, "reference"), std::string(field) + ".reference", context, roi),
+            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
             roi
         );
     }
     if (type == "perceptual_hash_similarity") {
-        check_keys(mapping, {"type", "reference"}, {"roi"});
-        const auto roi = parse_roi(child(mapping, "roi"), std::string(field) + ".roi");
+        check_keys(mapping, field, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
         return std::make_shared<PerceptualHashSimilarityDetector>(
-            read_reference(child(mapping, "reference"), std::string(field) + ".reference", context, roi),
+            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
             roi
         );
     }
     if (type == "difference_hash_similarity") {
-        check_keys(mapping, {"type", "reference"}, {"hash_size", "roi"});
+        check_keys(mapping, field, {"type", "reference"}, {"hash_size", "roi"});
         const int hash_size = !child(mapping, "hash_size").invalid()
-            ? as_integer(child(mapping, "hash_size"), std::string(field) + ".hash_size")
+            ? as_integer(child(mapping, "hash_size"), path_for("hash_size"))
             : 8;
-        const auto roi = parse_roi(child(mapping, "roi"), std::string(field) + ".roi");
+        const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
         return std::make_shared<DifferenceHashSimilarityDetector>(
-            read_reference(child(mapping, "reference"), std::string(field) + ".reference", context, roi),
+            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
             hash_size,
             roi
         );
     }
     if (type == "phase_correlation") {
-        check_keys(mapping, {"type", "reference"}, {"roi"});
-        const auto roi = parse_roi(child(mapping, "roi"), std::string(field) + ".roi");
+        check_keys(mapping, field, {"type", "reference"}, {"roi"});
+        const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
         return std::make_shared<PhaseCorrelationDetector>(
-            read_reference(child(mapping, "reference"), std::string(field) + ".reference", context, roi),
+            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
             roi
         );
     }
     if (type == "mean_brightness") {
-        check_keys(mapping, {"type"}, {"roi"});
+        check_keys(mapping, field, {"type"}, {"roi"});
         return std::make_shared<MeanBrightnessDetector>(
-            parse_roi(child(mapping, "roi"), std::string(field) + ".roi")
+            parse_roi(child(mapping, "roi"), path_for("roi"), context)
         );
     }
     if (type == "color_range") {
-        check_keys(mapping, {"type", "lower", "upper"}, {"roi"});
+        check_keys(mapping, field, {"type", "lower", "upper"}, {"roi"});
         const auto parse_bounds = [&](const ryml::ConstNodeRef& value, std::string_view bound_field) {
             std::vector<double> result;
             for (const auto& item : as_list(value, bound_field)) {
@@ -421,122 +421,134 @@ DetectorPtr parse_detector(
             return result;
         };
         return std::make_shared<ColorRangeDetector>(
-            parse_bounds(child(mapping, "lower"), std::string(field) + ".lower"),
-            parse_bounds(child(mapping, "upper"), std::string(field) + ".upper"),
-            parse_roi(child(mapping, "roi"), std::string(field) + ".roi")
+            parse_bounds(child(mapping, "lower"), path_for("lower")),
+            parse_bounds(child(mapping, "upper"), path_for("upper")),
+            parse_roi(child(mapping, "roi"), path_for("roi"), context)
         );
     }
-    schema_error("unsupported detector type: " + type);
+    schema_error(std::string(field) + ".type is an unsupported detector type: " + type);
+} catch (const ScenarioLoadError&) {
+    throw;
+} catch (const std::exception& error) {
+    schema_error(std::string(field) + ": " + error.what());
 }
 
 ConditionPtr parse_condition(
     const ryml::ConstNodeRef& node,
-    std::string_view field,
+    const std::string& path,
     const LoadContext& context
-) {
+) try {
+    const auto field = context.setting_path(node, path);
     const auto mapping = require_map(node, field);
+    const auto path_for = [&](std::string_view key) {
+        return context.setting_path(child(mapping, key), field + "." + std::string(key));
+    };
     if (child(mapping, "type").invalid()) {
         schema_error(std::string(field) + ".type is missing");
     }
     const std::string type = as_string(child(mapping, "type"), std::string(field) + ".type");
     if (type == "detected") {
-        check_keys(mapping, {"type", "minimum_score", "detector"});
+        check_keys(mapping, field, {"type", "minimum_score", "detector"});
         return std::make_shared<DetectedCondition>(
-            parse_detector(child(mapping, "detector"), std::string(field) + ".detector", context),
-            as_number(child(mapping, "minimum_score"), std::string(field) + ".minimum_score")
+            parse_detector(child(mapping, "detector"), path_for("detector"), context),
+            as_number(child(mapping, "minimum_score"), path_for("minimum_score"))
         );
     }
     if (type == "all") {
-        check_keys(mapping, {"type", "conditions"});
+        check_keys(mapping, field, {"type", "conditions"});
         return std::make_shared<AllCondition>(
             parse_condition_list(
                 child(mapping, "conditions"),
-                std::string(field) + ".conditions",
+                path + ".conditions",
                 context
             )
         );
     }
     if (type == "any") {
-        check_keys(mapping, {"type", "conditions"});
+        check_keys(mapping, field, {"type", "conditions"});
         return std::make_shared<AnyCondition>(
             parse_condition_list(
                 child(mapping, "conditions"),
-                std::string(field) + ".conditions",
+                path + ".conditions",
                 context
             )
         );
     }
     if (type == "not") {
-        check_keys(mapping, {"type", "condition"});
+        check_keys(mapping, field, {"type", "condition"});
         return std::make_shared<NotCondition>(
-            parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context)
+            parse_condition(child(mapping, "condition"), path + ".condition", context)
         );
     }
     if (type == "rising_edge") {
-        check_keys(mapping, {"type", "condition"});
+        check_keys(mapping, field, {"type", "condition"});
         return std::make_shared<RisingEdgeCondition>(
-            parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context)
+            parse_condition(child(mapping, "condition"), path + ".condition", context)
         );
     }
     if (type == "falling_edge") {
-        check_keys(mapping, {"type", "condition"});
+        check_keys(mapping, field, {"type", "condition"});
         return std::make_shared<FallingEdgeCondition>(
-            parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context)
+            parse_condition(child(mapping, "condition"), path + ".condition", context)
         );
     }
     if (type == "once") {
-        check_keys(mapping, {"type", "condition"});
+        check_keys(mapping, field, {"type", "condition"});
         return std::make_shared<OnceCondition>(
-            parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context)
+            parse_condition(child(mapping, "condition"), path + ".condition", context)
         );
     }
     if (type == "elapsed") {
-        check_keys(mapping, {"type", "duration"});
+        check_keys(mapping, field, {"type", "duration"});
         return std::make_shared<ElapsedCondition>(
-            parse_duration(child(mapping, "duration"), std::string(field) + ".duration")
+            parse_duration(child(mapping, "duration"), path_for("duration"))
         );
     }
     if (type == "hold") {
-        check_keys(mapping, {"type", "duration", "condition"});
+        check_keys(mapping, field, {"type", "duration", "condition"});
         return std::make_shared<HoldCondition>(
-            parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context),
-            parse_duration(child(mapping, "duration"), std::string(field) + ".duration")
+            parse_condition(child(mapping, "condition"), path + ".condition", context),
+            parse_duration(child(mapping, "duration"), path_for("duration"))
         );
     }
     if (type == "nth") {
-        check_keys(mapping, {"type", "count", "condition"});
+        check_keys(mapping, field, {"type", "count", "condition"});
         return std::make_shared<NthCondition>(
-            parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context),
-            as_integer(child(mapping, "count"), std::string(field) + ".count")
+            parse_condition(child(mapping, "condition"), path + ".condition", context),
+            as_integer(child(mapping, "count"), path_for("count"))
         );
     }
     if (type == "reset_when") {
-        check_keys(mapping, {"type", "condition", "reset_condition"});
+        check_keys(mapping, field, {"type", "condition", "reset_condition"});
         return std::make_shared<ResetWhenCondition>(
-            parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context),
+            parse_condition(child(mapping, "condition"), path + ".condition", context),
             parse_condition(
                 child(mapping, "reset_condition"),
-                std::string(field) + ".reset_condition",
+                path + ".reset_condition",
                 context
             )
         );
     }
     if (type == "then") {
-        check_keys(mapping, {"type", "conditions"}, {"within"});
+        check_keys(mapping, field, {"type", "conditions"}, {"within"});
         std::optional<std::chrono::nanoseconds> within;
         if (!child(mapping, "within").invalid()) {
-            within = parse_duration(child(mapping, "within"), std::string(field) + ".within");
+            within = parse_duration(child(mapping, "within"), path_for("within"));
         }
         return std::make_shared<ThenCondition>(
             parse_condition_list(
                 child(mapping, "conditions"),
-                std::string(field) + ".conditions",
+                path + ".conditions",
                 context
             ),
             within
         );
     }
-    schema_error("unsupported condition type: " + type);
+    schema_error(field + ".type is an unsupported condition type: " + type);
+} catch (const ScenarioLoadError&) {
+    throw;
+} catch (const std::exception& error) {
+    schema_error(context.setting_path(node, path) + ": " + error.what());
 }
 
 std::shared_ptr<Rule> parse_rule(
@@ -545,14 +557,14 @@ std::shared_ptr<Rule> parse_rule(
     const LoadContext& context
 ) {
     const auto mapping = require_map(node, field);
-    check_keys(mapping, {"condition", "action"});
+    check_keys(mapping, field, {"condition", "action"});
     const auto action_name = as_string(child(mapping, "action"), std::string(field) + ".action");
     const auto action = parse_action(action_name);
     if (!action.has_value()) {
         schema_error("unsupported action operation: " + action_name);
     }
     return std::make_shared<Rule>(
-        parse_condition(child(mapping, "condition"), std::string(field) + ".condition", context),
+        load_condition(child(mapping, "condition"), std::string(field) + ".condition", context),
         Action{*action}
     );
 }
@@ -564,14 +576,16 @@ ScenarioRulePtr parse_scenario_rule(
 ) {
     const auto mapping = require_map(node, field);
     if (!child(mapping, "sequence").invalid()) {
-        check_keys(mapping, {"sequence"});
+        check_keys(mapping, field, {"sequence"});
         const auto items = as_list(child(mapping, "sequence"), std::string(field) + ".sequence");
         if (items.empty()) {
             schema_error("rule.sequence must not be empty");
         }
         std::vector<std::shared_ptr<Rule>> rules;
         for (const auto& item : items) {
-            rules.push_back(parse_rule(item, std::string(field) + ".sequence", context));
+            rules.push_back(parse_rule(
+                item, std::string(field) + ".sequence[" + std::to_string(rules.size()) + "]", context
+            ));
         }
         return std::make_shared<RuleSequence>(std::move(rules));
     }
@@ -588,11 +602,14 @@ std::vector<std::optional<std::vector<ScenarioRulePtr>>> parse_splits(
             splits.push_back(std::nullopt);
             continue;
         }
-        const auto mapping = require_map(item, "split");
-        check_keys(mapping, {"rules"});
+        const auto field = "splits[" + std::to_string(splits.size()) + "]";
+        const auto mapping = require_map(item, field);
+        check_keys(mapping, field, {"rules"});
         std::vector<ScenarioRulePtr> rules;
-        for (const auto& rule_node : as_list(child(mapping, "rules"), "split.rules")) {
-            rules.push_back(parse_scenario_rule(rule_node, "rule", context));
+        for (const auto& rule_node : as_list(child(mapping, "rules"), field + ".rules")) {
+            rules.push_back(parse_scenario_rule(
+                rule_node, field + ".rules[" + std::to_string(rules.size()) + "]", context
+            ));
         }
         splits.push_back(std::move(rules));
     }
@@ -601,16 +618,21 @@ std::vector<std::optional<std::vector<ScenarioRulePtr>>> parse_splits(
 
 Scenario parse_scenario(const ryml::ConstNodeRef& root, const LoadContext& context) {
     const auto mapping = require_map(root, "scenario");
-    check_keys(mapping, {"start_condition", "splits"}, {"reset_condition", "incomplete_condition"}, true);
+    check_keys(mapping, "scenario", {"start_condition", "splits"}, {"reset_condition", "incomplete_condition"}, true);
+    for (const auto key : {"extends", "overrides"}) {
+        if (!child(mapping, key).invalid()) {
+            schema_error(std::string("scenario.") + key + " can only be used in a Condition");
+        }
+    }
     Scenario scenario;
-    scenario.start_condition = parse_condition(child(mapping, "start_condition"), "start_condition", context);
+    scenario.start_condition = load_condition(child(mapping, "start_condition"), "start_condition", context);
     if (!child(mapping, "reset_condition").invalid() && !is_null(child(mapping, "reset_condition"))) {
         scenario.reset_condition =
-            parse_condition(child(mapping, "reset_condition"), "reset_condition", context);
+            load_condition(child(mapping, "reset_condition"), "reset_condition", context);
     }
     if (!child(mapping, "incomplete_condition").invalid() && !is_null(child(mapping, "incomplete_condition"))) {
         scenario.incomplete_condition =
-            parse_condition(child(mapping, "incomplete_condition"), "incomplete_condition", context);
+            load_condition(child(mapping, "incomplete_condition"), "incomplete_condition", context);
     }
     scenario.splits = parse_splits(child(mapping, "splits"), context);
     return scenario;
@@ -669,7 +691,7 @@ LoadedScenario load_scenario(
             tree.remove(root.next_sibling().id());
         }
     }
-    validate_yaml(root);
+    validate_yaml(tree, root);
     tree.resolve();
 
     try {

@@ -8,6 +8,16 @@ Conditionはタイマーを操作する条件です。YAMLの `type` に、以�
 
 別の条件と組み合わせるときは、`condition` に1つの条件を、`conditions` に条件のリストを書きます。各条件は `type` とその設定項目をひとまとまりにして記述します。省略できると書かれていない項目は必須です。未定義の項目があると読み込みに失敗します。
 
+## 条件IDと上書きできる設定
+
+すべてのConditionに任意の `id` を付けられます。上書き対象のルートや子条件にIDを付け、`overrides` のキーとして使います。時間や回数などの実行時の状態は使用箇所ごとに独立しています。
+
+- `duration`、`count`、`minimum_score`、`within` など、そのConditionが持つ設定を変更できます。
+- Detectorでは `reference`、`roi`、`hash_size`、色範囲など、そのDetectorが持つ設定を変更できます。
+- Conditionの `type` と `id`、Detectorの `type`、子条件を指定する `conditions`、`condition`、`reset_condition` は固定です。子条件の設定を変更するには、その子のIDを直接指定します。
+
+継承構文と `null` の扱いは[YAMLリファレンス](yaml-reference.md#conditionの継承)を参照してください。
+
 ## 時間・回数・状態の扱い
 
 時間はLiveSplitのタイマーではなく、アプリ側の時計で測ります。Pauseしたり映像が途切れたりしても、計測中の時間は進みます。ただし、条件が成立したかを確認するのは、次のフレームを判定したときです。映像が来ない間は判定結果を更新しません。`hold` で条件が続いているかを確認できるのも、判定したフレームだけです。

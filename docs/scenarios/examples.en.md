@@ -139,6 +139,45 @@ splits:
             action: split
 ```
 
+## Inherit a condition and change the image per split
+
+Each split detects a different image and then waits one second before splitting. The anchor holds the shared wait and detector settings. Each split overrides the reference image on the `course` condition.
+
+```yaml
+definitions:
+  course_finish: &course_finish
+    type: then
+    conditions:
+      - id: course
+        type: detected
+        minimum_score: 0.9
+        detector:
+          type: root_mean_square_similarity
+          reference: assets/default.png
+      - type: elapsed
+        duration: 1s
+
+start_condition: {type: elapsed, duration: 0s}
+
+splits:
+  - rules:
+      - condition:
+          extends: *course_finish
+          overrides:
+            course:
+              detector:
+                reference: assets/YI1.png
+        action: split
+  - rules:
+      - condition:
+          extends: *course_finish
+          overrides:
+            course:
+              detector:
+                reference: assets/DPC.png
+        action: split
+```
+
 ## Reuse with anchors; count appearances
 
 Reuse a bright condition and count three rising edges in segment 0. Consecutive

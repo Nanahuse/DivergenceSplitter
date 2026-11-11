@@ -168,6 +168,33 @@ Use forward slashes on Windows (`images/title.png`, `C:/game/title.png`). If usi
 backslashes, YAML single quotes keep them literal. Reference images are decoded
 with their original channels/depth; see [image constraints](detectors.en.md#reference-images-and-channels).
 
+## Condition inheritance
+
+DivergenceSplitter's `extends: *anchor` loads one anchored condition mapping and applies optional `overrides`. Use it in any condition slot, including scenario conditions, rule conditions, and children of composite conditions. Place anchors anywhere in the YAML, including under `definitions`.
+
+```yaml
+definitions:
+  base: &base
+    id: wait
+    type: elapsed
+    duration: 1s
+
+start_condition:
+  extends: *base
+  overrides:
+    wait:
+      duration: 2s
+splits: []
+```
+
+- Set `id` to a nonempty string. IDs must be unique across the inherited condition tree, including its root and descendants.
+- `overrides` maps IDs to settings. Mappings merge recursively by field. Scalars and sequences are replaced as a whole.
+- Set an optional setting to `null` to clear its inherited value. For example, this restores the default behavior for a `then` condition's `within` or a detector's `roi`.
+- In an inheritance chain, overrides apply from the earliest base to the final use site. You can give the inheriting condition an `id`. When omitted, it keeps the base condition's root ID.
+- An `extends` mapping can also contain `overrides` and `id`. Use `overrides` to change settings.
+
+A direct `*anchor` alias uses the entire definition. A `<<` merge imports mapping keys. With `extends`, you can also change settings on a child condition by ID, including children in sequences. See the supported fields and a multi-split example. [Condition reference](conditions.en.md) · [Scenario examples](examples.en.md#inherit-a-condition-and-change-the-image-per-split)
+
 ## YAML anchors, aliases, and merges
 
 Anchors (`&name`) and aliases (`*name`) are YAML features provided by rapidyaml

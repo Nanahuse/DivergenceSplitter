@@ -10,6 +10,7 @@
 
 #include "divergencesplitter/scenario/scenario.hpp"
 #include "divergencesplitter/condition/conditions.hpp"
+#include "divergencesplitter/detector/detectors.hpp"
 #include "divergencesplitter/runtime/session.hpp"
 #include "divergencesplitter/runtime/scenario_runtime.hpp"
 #include "test_support.hpp"
@@ -58,12 +59,13 @@ std::filesystem::path write_reference(const std::filesystem::path& directory) {
     return path;
 }
 
-void expect_load_error(const std::filesystem::path& path, ScenarioErrorKind kind) {
+void expect_load_error(const std::filesystem::path& path, ScenarioErrorKind kind, std::string_view field = {}) {
     try {
         (void)load_scenario(path);
         FAIL() << "expected ScenarioLoadError";
     } catch (const ScenarioLoadError& error) {
         EXPECT_EQ(error.kind(), kind) << error.what();
+        EXPECT_NE(std::string_view{error.what()}.find(field), std::string_view::npos) << error.what();
     }
 }
 
@@ -174,6 +176,8 @@ TEST(ScenarioLoader, InvalidYamlAndReferencesThrowWithoutChangingGlobalCallbacks
         "a: &a [*a]\nstart_condition: *a\nsplits: []\n",
         "a: &a {nested: &b {nested: *a}}\nstart_condition: *b\nsplits: []\n",
         "a: &a {<<: *a}\nstart_condition: *a\nsplits: []\n",
+        "a: &a {extends: *a}\nstart_condition: *a\nsplits: []\n",
+        "start_condition: {extends: *missing}\nsplits: []\n",
         "a: &a scalar\nstart_condition: {<<: *a}\nsplits: []\n",
         "a: &a [1, 2]\nstart_condition: {<<: [*a]}\nsplits: []\n",
         "start_condition: {<<: [not_an_alias]}\nsplits: []\n",
@@ -185,6 +189,218 @@ TEST(ScenarioLoader, InvalidYamlAndReferencesThrowWithoutChangingGlobalCallbacks
         EXPECT_EQ(ryml::get_callbacks(), callbacks);
         write_text(path, "start_condition: {type: elapsed, duration: 0s}\nsplits: []\n");
         EXPECT_NO_THROW((void)load_scenario(path));
+    }
+}
+
+TEST(ScenarioLoader, InheritanceBuildsIndependentThenStateEquivalentToDirectYaml) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    write_text(path, R"(
+definitions:
+  base: &base
+    type: then
+    conditions:
+      - {type: elapsed, duration: 0s}
+      - {id: pause, type: elapsed, duration: 2s}
+start_condition:
+  type: then
+  conditions:
+    - {type: elapsed, duration: 0s}
+    - {type: elapsed, duration: 1s}
+splits:
+  - rules:
+      - condition: {extends: *base, overrides: {pause: {duration: 1s}}}
+        action: split
+  - rules:
+      - condition: {extends: *base}
+        action: split
+)");
+    const auto loaded = load_scenario(path);
+    auto& direct = *loaded.scenario.start_condition;
+    auto& first = *std::dynamic_pointer_cast<Rule>(loaded.scenario.splits[0]->at(0))->condition();
+    auto& second = *std::dynamic_pointer_cast<Rule>(loaded.scenario.splits[1]->at(0))->condition();
+    EXPECT_NE(first.children()[1], second.children()[1]);
+    test::ManualTimeProvider clock;
+    const auto frame = cv::Mat::zeros(2, 2, CV_8UC3);
+    const auto evaluate = [&](Condition& condition) {
+        auto context = test::make_context(frame, clock);
+        return condition.evaluate(context);
+    };
+    EXPECT_EQ(evaluate(direct), false);
+    EXPECT_EQ(evaluate(first), false);
+    EXPECT_EQ(evaluate(direct), false);
+    EXPECT_EQ(evaluate(first), false);
+    clock.advance(std::chrono::seconds{1});
+    EXPECT_EQ(evaluate(direct), true);
+    EXPECT_EQ(evaluate(first), true);
+    EXPECT_EQ(evaluate(second), false);
+    EXPECT_EQ(evaluate(second), false);
+    clock.advance(std::chrono::seconds{1});
+    EXPECT_EQ(evaluate(second), false);
+    clock.advance(std::chrono::seconds{1});
+    EXPECT_EQ(evaluate(second), true);
+}
+
+TEST(ScenarioLoader, InheritanceMergesNestedDetectorSettingsAcrossLayers) {
+    TemporaryDirectory directory;
+    const auto reference = write_reference(directory.path());
+    const cv::Mat alternate(8, 8, CV_8UC3, cv::Scalar{40, 80, 120});
+    ASSERT_TRUE(cv::imwrite((directory.path() / "alternate.png").string(), alternate));
+    const auto path = directory.path() / "scenario.yaml";
+    write_text(path, R"(
+definitions:
+  detector: &detector {type: root_mean_square_similarity, reference: reference.png}
+  course: &course
+    id: course
+    type: detected
+    minimum_score: 0.9
+    detector:
+      <<: *detector
+      roi: {x: 0, y: 0, width: 8, height: 8}
+  base: &base
+    id: sequence
+    type: then
+    within: 2s
+    conditions:
+      - type: reset_when
+        condition: {type: elapsed, duration: 1s}
+        reset_condition: {extends: *course}
+  mid: &mid
+    extends: *base
+    overrides:
+      course:
+        minimum_score: 0.6
+        detector: {reference: alternate.png, roi: {x: 1}}
+start_condition:
+  extends: *mid
+  overrides:
+    course:
+      minimum_score: 0.7
+      detector: {roi: {y: 2}}
+reset_condition:
+  extends: *mid
+  overrides:
+    sequence: {within: null}
+    course: {detector: {roi: null}}
+incomplete_condition: *base
+splits: []
+)");
+    const auto loaded = load_scenario(path);
+    const auto nested = [](const Condition& condition) {
+        return dynamic_cast<const DetectedCondition*>(condition.children().at(0)->children().at(1));
+    };
+    const auto* start = nested(*loaded.scenario.start_condition);
+    const auto* reset = nested(*loaded.scenario.reset_condition);
+    const auto* base = nested(*loaded.scenario.incomplete_condition);
+    ASSERT_NE(start, nullptr);
+    ASSERT_NE(reset, nullptr);
+    ASSERT_NE(base, nullptr);
+    EXPECT_DOUBLE_EQ(start->minimum_score(), 0.7);
+    EXPECT_DOUBLE_EQ(reset->minimum_score(), 0.6);
+    EXPECT_DOUBLE_EQ(base->minimum_score(), 0.9);
+    EXPECT_EQ(start->detector()->type_name(), "root_mean_square_similarity");
+    const RootMeanSquareSimilarityDetector expected_start{alternate, Region{1, 2, 8, 8}};
+    const RootMeanSquareSimilarityDetector expected_reset{alternate};
+    EXPECT_EQ(start->detector()->cache_key(), expected_start.cache_key());
+    EXPECT_EQ(reset->detector()->cache_key(), expected_reset.cache_key());
+    EXPECT_NE(loaded.scenario.start_condition->describe().find("within"), std::string::npos);
+    EXPECT_EQ(loaded.scenario.reset_condition->describe().find("within"), std::string::npos);
+    test::ManualTimeProvider clock;
+    auto alternate_context = test::make_context(alternate, clock);
+    EXPECT_DOUBLE_EQ(reset->detector()->detect(alternate_context).score, 1.0);
+    auto original_context = test::make_context(cv::imread(reference.string()), clock);
+    EXPECT_DOUBLE_EQ(base->detector()->detect(original_context).score, 1.0);
+}
+
+TEST(ScenarioLoader, InheritanceReplacesSequencesAndWorksInRuleSequences) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    write_text(path, R"(
+definitions:
+  base: &base
+    id: color
+    type: detected
+    minimum_score: 0.9
+    detector: {type: color_range, lower: [0, 0, 0], upper: [255, 255, 255]}
+  patch: &patch {id: shade, extends: *base, overrides: {color: {detector: {lower: [20], upper: [30]}}}}
+  merged: &merged {<<: *patch}
+start_condition: {type: elapsed, duration: 0s}
+splits:
+  - rules:
+      - sequence:
+          - condition: {extends: *merged, overrides: {shade: {minimum_score: 1.0}}}
+            action: split
+)");
+    const auto loaded = load_scenario(path);
+    const auto* condition = loaded.scenario.splits[0]->at(0)->active_condition();
+    test::ManualTimeProvider clock;
+    auto inside = test::make_context(cv::Mat(2, 2, CV_8UC1, cv::Scalar{25}), clock);
+    auto outside = test::make_context(cv::Mat(2, 2, CV_8UC1, cv::Scalar{10}), clock);
+    EXPECT_DOUBLE_EQ(condition->detector()->detect(inside).score, 1.0);
+    EXPECT_DOUBLE_EQ(condition->detector()->detect(outside).score, 0.0);
+}
+
+TEST(ScenarioLoader, RejectsInvalidInheritanceWithSettingPaths) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    const std::string definitions = R"(
+scalar: &scalar text
+list: &list [1, 2]
+mapping: &mapping {id: course}
+detector: &detector {type: mean_brightness}
+base: &base
+  id: course
+  type: detected
+  minimum_score: 0.9
+  detector: {type: root_mean_square_similarity, reference: original.png, roi: {x: 0, y: 0, width: 8, height: 8}}
+bad_reference: &bad_reference
+  extends: *base
+  overrides: {course: {detector: {reference: missing.png}}}
+bad_roi: &bad_roi
+  extends: *base
+  overrides: {course: {detector: {roi: {depth: 4}}}}
+duplicate: &duplicate
+  type: then
+  conditions:
+    - {type: elapsed, id: course, duration: 1s}
+    - {type: elapsed, id: course, duration: 2s}
+start_condition: {type: elapsed, duration: 0s}
+splits:
+  - rules:
+      - action: split
+        condition: )";
+    for (const auto& [mapping, field] : std::vector<std::pair<std::string_view, std::string_view>>{
+        {"{extends: base}", ".extends"},
+        {"{extends: '*base'}", ".extends"},
+        {"{extends: {type: elapsed, duration: 1s}}", ".extends"},
+        {"{extends: *scalar}", ".extends"},
+        {"{extends: *list}", ".extends"},
+        {"{extends: *mapping}", ".extends"},
+        {"{extends: *detector}", ".type"},
+        {"{type: elapsed, duration: 0s, overrides: {}}", ".overrides"},
+        {"{extends: *base, type: elapsed}", ".type"},
+        {"{extends: *base, id: null}", ".id"},
+        {"{extends: *base, overrides: null}", ".overrides"},
+        {"{extends: *base, overrides: {missing: {}}}", ".overrides.missing"},
+        {"{extends: *base, overrides: {course: []}}", ".overrides.course"},
+        {"{extends: *duplicate, overrides: {course: {duration: 1s}}}", ".overrides.course"},
+        {"{extends: *base, overrides: {course: {type: elapsed}}}", ".overrides.course.type"},
+        {"{extends: *base, overrides: {course: {id: other}}}", ".overrides.course.id"},
+        {"{extends: *base, overrides: {course: {conditions: []}}}", ".overrides.course.conditions"},
+        {"{extends: *base, overrides: {course: {condition: {}}}}", ".overrides.course.condition"},
+        {"{extends: *base, overrides: {course: {reset_condition: null}}}", ".overrides.course.reset_condition"},
+        {"{extends: *base, overrides: {course: {mystery: 1}}}", ".overrides.course.mystery"},
+        {"{extends: *base, overrides: {course: {minimum_score: bad}}}", ".overrides.course.minimum_score"},
+        {"{extends: *base, overrides: {course: {detector: {type: mean_brightness}}}}", ".overrides.course.detector.type"},
+        {"{extends: *base, overrides: {course: {detector: {reference: null}}}}", ".overrides.course.detector.reference"},
+        {"{extends: *base, overrides: {course: {detector: {reference: missing.png}}}}", ".overrides.course.detector.reference"},
+        {"{extends: *bad_reference, overrides: {course: {detector: {roi: null}}}}", ".extends.overrides.course.detector.reference"},
+        {"{extends: *bad_roi, overrides: {course: {detector: {roi: null}}}}", ".extends.overrides.course.detector.roi.depth"},
+        {"{extends: *base, overrides: {course: {detector: {roi: {width: 0}}}}}", ".overrides.course.detector.roi"},
+    }) {
+        SCOPED_TRACE(mapping);
+        write_text(path, definitions + std::string(mapping) + "\n");
+        expect_load_error(path, ScenarioErrorKind::schema, "splits[0].rules[0].condition" + std::string(field));
     }
 }
 
