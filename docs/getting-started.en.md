@@ -16,11 +16,11 @@ the test.
 
 1. Open the repository's [C++23 Actions workflow](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml).
    Select a successful trusted run for the revision you intend to use and download
-   the `DivergenceSplitter-cpp23-windows-x64` artifact. GitHub artifact downloads
+   `DivergenceSplitter-<version>-windows-x64.zip`. GitHub artifact downloads
    require sign-in. Availability depends on a successful Windows job and
    artifact retention; if no artifact is available, [build from source (Japanese)](development/building.md).
-2. Extract the artifact, then extract the application ZIP inside it into a writable
-   local directory. Keep the DLLs and license files together.
+2. Extract the ZIP into a writable local directory. Keep the DLLs and license
+   files together.
    The official ZIP does not include the NDI Runtime. Install the NDI Runtime
 separately if you want to use NDI input.
 3. Run `DivergenceSplitter.exe`. A fresh installation has no active input. If the
