@@ -29,6 +29,13 @@ class ProcessMemoryCounters(ct.Structure):
     ]
 
 
+class ProcessMemoryCountersEx2(ProcessMemoryCounters):
+    _fields_ = [
+        ("PrivateWorkingSetSize", ct.c_size_t),
+        ("SharedCommitUsage", ct.c_ulonglong),
+    ]
+
+
 def filetime_ticks(value: win.FILETIME) -> int:
     return (value.dwHighDateTime << 32) | value.dwLowDateTime
 
@@ -43,9 +50,7 @@ def record(args: argparse.Namespace) -> None:
         win.HANDLE, win.DWORD, win.LPWSTR, ct.POINTER(win.DWORD)
     )
     kernel.QueryFullProcessImageNameW.restype = win.BOOL
-    kernel.K32GetProcessMemoryInfo.argtypes = (
-        win.HANDLE, ct.POINTER(ProcessMemoryCounters), win.DWORD
-    )
+    kernel.K32GetProcessMemoryInfo.argtypes = (win.HANDLE, ct.c_void_p, win.DWORD)
     kernel.K32GetProcessMemoryInfo.restype = win.BOOL
     kernel.GetProcessTimes.argtypes = (win.HANDLE,) + (ct.POINTER(win.FILETIME),) * 4
     kernel.GetProcessTimes.restype = win.BOOL
@@ -64,8 +69,14 @@ def record(args: argparse.Namespace) -> None:
         if not kernel.QueryFullProcessImageNameW(process, 0, executable, ct.byref(size)):
             raise ct.WinError(ct.get_last_error())
 
-        counters = ProcessMemoryCounters()
+        counters = ProcessMemoryCountersEx2()
         counters.cb = ct.sizeof(counters)
+        if not kernel.K32GetProcessMemoryInfo(process, ct.byref(counters), counters.cb):
+            error = ct.get_last_error()
+            if error not in (24, 87):  # ERROR_BAD_LENGTH or ERROR_INVALID_PARAMETER
+                raise ct.WinError(error)
+            counters = ProcessMemoryCounters()
+            counters.cb = ct.sizeof(counters)
         created, exited, system, user = (win.FILETIME() for _ in range(4))
         logical_cpus = os.cpu_count() or 1
         with args.output.open("x", encoding="utf-8", newline="") as stream:
@@ -73,7 +84,7 @@ def record(args: argparse.Namespace) -> None:
             writer.writerow((
                 "utc", "pid", "executable", "windows_version", "logical_cpus", "build", "revision", "phase",
                 "scheduled_s", "elapsed_s", "working_set_bytes", "private_bytes", "peak_working_set_bytes",
-                "process_cpu_seconds", "cpu_percent",
+                "private_working_set_bytes", "process_cpu_seconds", "cpu_percent",
             ))
             stream.flush()
             started = time.monotonic()
@@ -99,7 +110,8 @@ def record(args: argparse.Namespace) -> None:
                     datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
                     args.pid, executable.value, platform.version(), logical_cpus, args.build, args.revision,
                     args.phase, scheduled, f"{elapsed:.3f}", counters.WorkingSetSize, counters.PrivateUsage,
-                    counters.PeakWorkingSetSize, f"{cpu:.6f}", utilization,
+                    counters.PeakWorkingSetSize, getattr(counters, "PrivateWorkingSetSize", ""),
+                    f"{cpu:.6f}", utilization,
                 ))
                 stream.flush()
                 previous_time, previous_cpu = elapsed, cpu
