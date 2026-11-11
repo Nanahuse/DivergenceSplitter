@@ -83,9 +83,12 @@ private:
 class Recording {
 public:
     Recording() {
-        root = std::filesystem::temp_directory_path() /
-            ("divergencesplitter-recorded-" + std::to_string(monotonic_now().nanoseconds));
-        std::filesystem::create_directories(root);
+        const auto parent = std::filesystem::temp_directory_path();
+        const auto prefix = "divergencesplitter-recorded-" + std::to_string(monotonic_now().nanoseconds);
+        for (unsigned suffix = 0; ; ++suffix) {
+            root = parent / (prefix + "-" + std::to_string(suffix));
+            if (std::filesystem::create_directory(root)) break;
+        }
     }
     ~Recording() { std::error_code error; std::filesystem::remove_all(root, error); }
 
@@ -298,9 +301,10 @@ TEST(VideoFileSource, NonMjpegInputFallsBackToOtherBackends) {
 TEST(VideoFileSource, OpensJapaneseUtf8Path) {
     const auto source_file =
         std::filesystem::path{__FILE__}.parent_path() / "data" / "fallback-h264.mp4";
+    Recording recording;
     const auto directory =
-        std::filesystem::temp_directory_path() / path_from_utf8(reinterpret_cast<const char*>(u8"DivergenceSplitter-日本語"));
-    std::filesystem::create_directories(directory);
+        recording.root / path_from_utf8(reinterpret_cast<const char*>(u8"DivergenceSplitter-日本語"));
+    std::filesystem::create_directory(directory);
     const auto japanese = directory / path_from_utf8(reinterpret_cast<const char*>(u8"動画-テスト.mp4"));
     std::filesystem::copy_file(
         source_file, japanese, std::filesystem::copy_options::overwrite_existing
@@ -311,5 +315,4 @@ TEST(VideoFileSource, OpensJapaneseUtf8Path) {
     const auto frame = source.read(at);
     EXPECT_FALSE(frame.empty());
     source.close();
-    std::filesystem::remove_all(directory);
 }

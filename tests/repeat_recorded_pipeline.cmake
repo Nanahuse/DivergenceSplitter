@@ -1,4 +1,6 @@
-foreach(iteration RANGE 1 20)
+math(EXPR first_iteration "(${GROUP} - 1) * 5 + 1")
+math(EXPR last_iteration "${first_iteration} + 4")
+foreach(iteration RANGE ${first_iteration} ${last_iteration})
     execute_process(
         COMMAND "${TEST_EXECUTABLE}" "--gtest_filter=RecordedPipeline.*:VideoFileSource.*"
         RESULT_VARIABLE result
@@ -11,4 +13,4 @@ foreach(iteration RANGE 1 20)
             "Recording/decoder repetition ${iteration}/20 failed (${result}):\n${output}\n${error}")
     endif()
 endforeach()
-message(STATUS "Recording/decoder regressions passed in 20 fresh processes")
+message(STATUS "Recording/decoder repetitions ${first_iteration}-${last_iteration}/20 passed in 5 fresh processes")
