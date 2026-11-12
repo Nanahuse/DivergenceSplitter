@@ -111,6 +111,75 @@ double masked_sum(const cv::Mat& image, const cv::Mat& mask, bool squared) {
     return total;
 }
 
+std::size_t rms_8bit_component_count(const cv::Mat& reference) {
+    if (reference.empty()) {
+        throw std::invalid_argument("reference image is empty");
+    }
+    if (reference.dims != 2) {
+        throw std::invalid_argument("reference image must be two-dimensional");
+    }
+    const int channels = reference.channels();
+    if (channels == 1 || channels == 3) {
+        return reference.total() * channels;
+    }
+    if (channels != 4) {
+        throw std::invalid_argument("unsupported reference channel layout");
+    }
+    std::size_t pixels = 0;
+    for (int row = 0; row < reference.rows; ++row) {
+        const auto* data = reference.ptr<cv::Vec4b>(row);
+        for (int col = 0; col < reference.cols; ++col) {
+            const auto alpha = data[col][3];
+            if (alpha != 0 && alpha != 255) {
+                throw std::invalid_argument("reference alpha must contain only 0 or 255");
+            }
+            pixels += alpha == 255;
+        }
+    }
+    if (pixels == 0) {
+        throw std::invalid_argument("reference alpha mask has no valid pixels");
+    }
+    return pixels * 3;
+}
+
+unsigned int squared_byte_difference(unsigned char frame, unsigned char reference) {
+    const int difference = static_cast<int>(frame) - static_cast<int>(reference);
+    return static_cast<unsigned int>(difference * difference);
+}
+
+std::uint64_t rms_8bit_squared_error(
+    const cv::Mat& frame, const cv::Mat& reference, std::size_t component_count
+) {
+    const int frame_channels = frame.channels();
+    const int reference_channels = reference.channels();
+    std::uint64_t total = 0;
+    if (frame_channels == reference_channels && reference_channels != 4) {
+        const auto row_components = static_cast<std::size_t>(frame.cols) * frame_channels;
+        for (int row = 0; row < frame.rows; ++row) {
+            const auto* input = frame.ptr<unsigned char>(row);
+            const auto* target = reference.ptr<unsigned char>(row);
+            for (std::size_t i = 0; i < row_components; ++i) {
+                total += squared_byte_difference(input[i], target[i]);
+            }
+        }
+        return total;
+    }
+
+    const bool masked = reference_channels == 4 && component_count < reference.total() * 3;
+    for (int row = 0; row < frame.rows; ++row) {
+        const auto* input = frame.ptr<unsigned char>(row);
+        const auto* target = reference.ptr<unsigned char>(row);
+        for (int col = 0; col < frame.cols; ++col, input += frame_channels, target += reference_channels) {
+            if (!masked || target[3] == 255) {
+                total += squared_byte_difference(input[0], target[0])
+                    + squared_byte_difference(input[1], target[1])
+                    + squared_byte_difference(input[2], target[2]);
+            }
+        }
+    }
+    return total;
+}
+
 void require_bgr8(const cv::Mat& image) {
     if (image.empty() || image.dims != 2 || image.type() != CV_8UC3) {
         throw std::invalid_argument("image must be a non-empty 8-bit 3-channel BGR image");
@@ -479,15 +548,17 @@ RootMeanSquareSimilarityDetector::RootMeanSquareSimilarityDetector(
     std::optional<Region> roi
 )
     : reference_(reference.clone()), roi_(roi) {
-    auto prepared = detail::prepare_reference_alpha(reference_);
-    prepared_ = to_float64(prepared.image);
-    mask_ = prepared.mask;
-    const std::size_t pixels = mask_.empty()
-        ? static_cast<std::size_t>(prepared_.rows) * prepared_.cols
-        : static_cast<std::size_t>(cv::countNonZero(mask_));
-    component_count_ = pixels * static_cast<std::size_t>(prepared_.channels());
-    if (component_count_ == 0) {
-        throw std::invalid_argument("reference mask has no pixels");
+    if (reference_.depth() == CV_8U) {
+        component_count_ = rms_8bit_component_count(reference_);
+    } else {
+        const auto& prepared = floating_reference_.emplace(prepare_floating_reference(reference_));
+        const auto pixels = prepared.mask.empty()
+            ? prepared.pixels.total()
+            : static_cast<std::size_t>(cv::countNonZero(prepared.mask));
+        component_count_ = pixels * prepared.pixels.channels();
+        if (component_count_ == 0) {
+            throw std::invalid_argument("reference mask has no pixels");
+        }
     }
     key_ = detail::make_detector_key(
         "root_mean_square_similarity",
@@ -497,16 +568,36 @@ RootMeanSquareSimilarityDetector::RootMeanSquareSimilarityDetector(
     );
 }
 
+RootMeanSquareSimilarityDetector::FloatingReference
+RootMeanSquareSimilarityDetector::prepare_floating_reference(const cv::Mat& reference) {
+    auto prepared = detail::prepare_reference_alpha(reference);
+    return {to_float64(prepared.image), std::move(prepared.mask)};
+}
+
 DetectionResult RootMeanSquareSimilarityDetector::detect(FrameContext& context) const {
     cv::Mat frame = detail::frame_region(context.frame().image, roi_);
-    require_finite(frame, "root mean square similarity");
-    if (frame.size() != prepared_.size() || frame.channels() != prepared_.channels()) {
+    const int frame_channels = frame.channels() == 4 ? 3 : frame.channels();
+    const int reference_channels = reference_.channels() == 4 ? 3 : reference_.channels();
+    if (frame.dims != 2 || frame.size() != reference_.size() || frame_channels != reference_channels) {
         throw std::invalid_argument("shape mismatch between frame and reference");
     }
-    cv::Mat frame_float = to_float64(frame);
-    cv::Mat difference;
-    cv::subtract(frame_float, prepared_, difference);
-    const double total = masked_sum(difference, mask_, true);
+    double total;
+    if (!floating_reference_ && frame.depth() == CV_8U) {
+        total = static_cast<double>(rms_8bit_squared_error(frame, reference_, component_count_));
+    } else {
+        if (frame.channels() == 4) {
+            cv::Mat bgr(frame.rows, frame.cols, CV_MAKETYPE(frame.depth(), 3));
+            constexpr int channels[]{0, 0, 1, 1, 2, 2};
+            cv::mixChannels(&frame, 1, &bgr, 1, channels, 3);
+            frame = std::move(bgr);
+        }
+        require_finite(frame, "root mean square similarity");
+        // An 8-bit reference can still be compared with legacy non-8-bit frames.
+        const auto prepared = floating_reference_ ? *floating_reference_ : prepare_floating_reference(reference_);
+        cv::Mat difference;
+        cv::subtract(to_float64(frame), prepared.pixels, difference);
+        total = masked_sum(difference, prepared.mask, true);
+    }
     const double error =
         std::sqrt(total) / std::sqrt(static_cast<double>(component_count_));
     return DetectionResult{detail::clamp_unit(1.0 - error / 255.0)};

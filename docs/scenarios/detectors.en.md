@@ -128,9 +128,11 @@ reference: images/screen.png
 Required: `reference`; optional: `roi`. With the same component selection as above,
 score: `clamp(1 - sqrt(sum(d_i * d_i) / N) / 255)`.
 
-Requires exact dimensions/channels. Squaring emphasizes a few large errors more
-than mean absolute error does. Use when localized mismatches should reduce the
-score strongly.
+Requires matching dimensions. Color images compare the three BGR channels and
+ignore input alpha. Reference alpha selects pixels with 255 and excludes pixels
+with 0. Intermediate alpha and fully transparent references are errors.
+Grayscale images can be compared with each other. Squaring emphasizes localized
+mismatches more than mean absolute error does.
 
 ## histogram_similarity
 
