@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "divergencesplitter/condition/conditions.hpp"
+#include "divergencesplitter/detector/common.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
 #include "divergencesplitter/text.hpp"
 #include "scenario_inheritance.hpp"
@@ -35,9 +36,12 @@ using scenario_yaml::is_null;
 using scenario_yaml::schema_error;
 using scenario_yaml::unique_key;
 
+using RmsDetectors = std::map<std::pair<std::string, std::string>, DetectorPtr>;
+
 struct LoadContext {
     std::filesystem::path base_directory;
     std::optional<ReferenceResizeOptions> reference_resize;
+    RmsDetectors& rms_detectors;
     const ResolvedCondition* inheritance = nullptr;
 
     std::string setting_path(ryml::ConstNodeRef node, std::string path) const {
@@ -364,10 +368,16 @@ DetectorPtr parse_detector(
     if (type == "root_mean_square_similarity") {
         check_keys(mapping, field, {"type", "reference"}, {"roi"});
         const auto roi = parse_roi(child(mapping, "roi"), path_for("roi"), context);
-        return std::make_shared<RootMeanSquareSimilarityDetector>(
-            read_reference(child(mapping, "reference"), path_for("reference"), context, roi),
-            roi
-        );
+        const auto reference = child(mapping, "reference");
+        const auto reference_field = path_for("reference");
+        auto key = std::pair{as_string(reference, reference_field), detail::region_key(roi)};
+        // Resize and base directory are fixed for this load. Conditions keep their own state.
+        if (const auto found = context.rms_detectors.find(key); found != context.rms_detectors.end()) {
+            return found->second;
+        }
+        auto detector = std::make_shared<RootMeanSquareSimilarityDetector>(
+            read_reference(reference, reference_field, context, roi), roi);
+        return context.rms_detectors.emplace(std::move(key), std::move(detector)).first->second;
     }
     if (type == "histogram_similarity") {
         check_keys(mapping, field, {"type", "reference"}, {"roi"});
@@ -695,7 +705,8 @@ LoadedScenario load_scenario(
     tree.resolve();
 
     try {
-        return LoadedScenario{parse_scenario(root, LoadContext{path.parent_path(), reference_resize}), path};
+        RmsDetectors rms_detectors;
+        return LoadedScenario{parse_scenario(root, LoadContext{path.parent_path(), reference_resize, rms_detectors}), path};
     } catch (const ScenarioLoadError&) {
         throw;
     } catch (const std::exception& error) {

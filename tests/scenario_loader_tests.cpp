@@ -71,6 +71,50 @@ void expect_load_error(const std::filesystem::path& path, ScenarioErrorKind kind
 
 }  // namespace
 
+TEST(ScenarioLoader, SharesMatchingRmsDetectorsWithinOneLoad) {
+    TemporaryDirectory directory;
+    const auto reference = write_reference(directory.path());
+    const auto path = directory.path() / "scenario.yaml";
+    write_text(path, R"(
+definitions:
+  condition: &condition
+    type: detected
+    minimum_score: 0.9
+    detector: &detector {type: root_mean_square_similarity, reference: reference.png}
+start_condition:
+  type: all
+  conditions:
+    - <<: *condition
+      minimum_score: 0.25
+    - <<: *condition
+    - <<: *condition
+      detector:
+        <<: *detector
+        roi: {x: 0, y: 0, width: 8, height: 8}
+splits: []
+)");
+
+    const auto original = load_scenario(path);
+    const auto conditions = original.scenario.start_condition->children();
+    ASSERT_EQ(conditions.size(), 3U);
+    const auto* first = dynamic_cast<const DetectedCondition*>(conditions[0]);
+    const auto* second = dynamic_cast<const DetectedCondition*>(conditions[1]);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_DOUBLE_EQ(first->minimum_score(), 0.25);
+    EXPECT_DOUBLE_EQ(second->minimum_score(), 0.9);
+    ASSERT_NE(first->detector(), nullptr);
+    EXPECT_EQ(first->detector(), second->detector());
+    EXPECT_NE(first->detector(), conditions[2]->detector());
+
+    ASSERT_TRUE(cv::imwrite(reference.string(), cv::Mat(8, 8, CV_8UC3, cv::Scalar::all(255))));
+    const auto reloaded = load_scenario(path);
+    const auto reloaded_conditions = reloaded.scenario.start_condition->children();
+    ASSERT_EQ(reloaded_conditions.size(), 3U);
+    ASSERT_NE(reloaded_conditions[0]->detector(), nullptr);
+    EXPECT_NE(first->detector()->cache_key(), reloaded_conditions[0]->detector()->cache_key());
+}
+
 TEST(ScenarioLoader, ResolvesNestedMergesAndExplicitOverrides) {
     TemporaryDirectory directory;
     const auto path = directory.path() / "scenario.yaml";
