@@ -2,12 +2,15 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <memory>
 
 #include "divergencesplitter/condition/conditions.hpp"
+#include "divergencesplitter/detector/common.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
 #include "test_support.hpp"
 
@@ -64,6 +67,20 @@ cv::Mat with_alpha(const cv::Mat& image) {
         }
     }
     return reference;
+}
+
+double floating_rms_score(const cv::Mat& frame, const cv::Mat& reference) {
+    const auto prepared = detail::prepare_reference_alpha(reference);
+    cv::Mat frame_float;
+    cv::Mat reference_float;
+    frame.convertTo(frame_float, CV_64F);
+    prepared.image.convertTo(reference_float, CV_64F);
+    const auto pixels = prepared.mask.empty()
+        ? prepared.image.total()
+        : static_cast<std::size_t>(cv::countNonZero(prepared.mask));
+    const double components = static_cast<double>(pixels * prepared.image.channels());
+    const double total = cv::norm(frame_float, reference_float, cv::NORM_L2SQR, prepared.mask);
+    return std::clamp(1.0 - (std::sqrt(total) / std::sqrt(components)) / 255.0, 0.0, 1.0);
 }
 
 std::array<DetectorPtr, 2> color_similarities(
@@ -125,6 +142,89 @@ TEST(Detectors, SimilarityDetectorsScoreMatches) {
     auto different_context = test::make_context(different, clock);
     EXPECT_NEAR(absolute.detect(different_context).score, 1.0 - 100.0 / 255.0, 1e-9);
     EXPECT_NEAR(rms.detect(different_context).score, 1.0 - 100.0 / 255.0, 1e-9);
+}
+
+TEST(Detectors, IntegerRmsMatchesFloatingScoresAndThresholds) {
+    cv::RNG random(1823);
+    test::ManualTimeProvider clock;
+    const Region roi{2, 3, 19, 17};
+    const auto rectangle = *to_rect(roi);
+    for (int iteration = 0; iteration < 8; ++iteration) {
+        cv::Mat reference(17, 19, CV_8UC3);
+        cv::Mat frame(25, 27, CV_8UC3);
+        random.fill(reference, cv::RNG::UNIFORM, 0, 256);
+        random.fill(frame, cv::RNG::UNIFORM, 0, 256);
+        cv::Mat opaque_reference;
+        cv::cvtColor(reference, opaque_reference, cv::COLOR_BGR2BGRA);
+        const cv::Mat masked_reference = with_alpha(reference);
+        cv::Mat alpha_frame;
+        cv::cvtColor(frame, alpha_frame, cv::COLOR_BGR2BGRA);
+        cv::Mat alpha(frame.size(), CV_8U);
+        random.fill(alpha, cv::RNG::UNIFORM, 0, 256);
+        cv::insertChannel(alpha, alpha_frame, 3);
+
+        for (const auto& target : {reference, opaque_reference, masked_reference}) {
+            const double expected = floating_rms_score(frame(rectangle), target);
+            for (const auto& input : {frame, alpha_frame}) {
+                for (const bool use_roi : {false, true}) {
+                    SCOPED_TRACE(::testing::Message() << iteration << '/' << target.channels()
+                                                     << '/' << input.channels() << '/' << use_roi);
+                    const auto detector = std::make_shared<RootMeanSquareSimilarityDetector>(
+                        target, use_roi ? std::optional{roi} : std::nullopt);
+                    auto context = test::make_context(use_roi ? input : input(rectangle), clock);
+                    EXPECT_DOUBLE_EQ(detector->detect(context).score, expected);
+                    const auto threshold = [&](double value) {
+                        return evaluate_normal(std::make_shared<DetectedCondition>(detector, value), context);
+                    };
+                    EXPECT_TRUE(threshold(std::nextafter(expected, 0.0)));
+                    EXPECT_TRUE(threshold(expected));
+                    EXPECT_FALSE(threshold(std::nextafter(expected, 1.0)));
+                }
+            }
+        }
+    }
+}
+
+TEST(Detectors, IntegerRmsAccumulatesLargeSquaredErrors) {
+    const cv::Mat reference(224, 256, CV_8UC3, cv::Scalar::all(0));
+    const cv::Mat frame(reference.size(), CV_8UC3, cv::Scalar::all(255));
+    test::ManualTimeProvider clock;
+    auto context = test::make_context(frame, clock);
+    EXPECT_DOUBLE_EQ(RootMeanSquareSimilarityDetector{reference}.detect(context).score,
+                     floating_rms_score(frame, reference));
+    EXPECT_NEAR(RootMeanSquareSimilarityDetector{reference}.detect(context).score, 0.0, 1e-15);
+}
+
+TEST(Detectors, IntegerRmsValidatesReferenceAlphaAndPreservesDiagnosticImage) {
+    cv::Mat reference(2, 2, CV_8UC4, cv::Scalar{1, 2, 3, 0});
+    EXPECT_THROW(RootMeanSquareSimilarityDetector{reference}, std::invalid_argument);
+    reference.at<cv::Vec4b>(0, 0)[3] = 128;
+    EXPECT_THROW(RootMeanSquareSimilarityDetector{reference}, std::invalid_argument);
+    reference.at<cv::Vec4b>(0, 0)[3] = 255;
+    RootMeanSquareSimilarityDetector detector{reference};
+    const auto original = reference.clone();
+    reference.setTo(cv::Scalar::all(0));
+    auto displayed = detector.reference_images();
+    ASSERT_EQ(displayed.size(), 1U);
+    EXPECT_EQ(cv::norm(displayed[0].image, original, cv::NORM_INF), 0.0);
+    displayed[0].image.setTo(cv::Scalar::all(0));
+    EXPECT_EQ(cv::norm(detector.reference_images()[0].image, original, cv::NORM_INF), 0.0);
+}
+
+TEST(Detectors, RmsKeepsFloatingAndMixedDepthInputs) {
+    const cv::Mat reference_16(2, 3, CV_16UC3, cv::Scalar{260, 280, 300});
+    const cv::Mat frame(2, 3, CV_32FC3, cv::Scalar{230.5, 260.25, 290.125});
+    cv::Mat alpha_frame;
+    cv::cvtColor(frame, alpha_frame, cv::COLOR_BGR2BGRA);
+    const cv::Mat alpha(frame.size(), CV_32F, cv::Scalar{std::numeric_limits<float>::quiet_NaN()});
+    cv::insertChannel(alpha, alpha_frame, 3);
+    const cv::Mat reference_8 = with_alpha(cv::Mat(frame.size(), CV_8UC3, cv::Scalar{225, 250, 255}));
+    test::ManualTimeProvider clock;
+    for (const auto& reference : {reference_16, reference_8}) {
+        RootMeanSquareSimilarityDetector detector{reference};
+        auto context = test::make_context(alpha_frame, clock);
+        EXPECT_DOUBLE_EQ(detector.detect(context).score, floating_rms_score(frame, reference));
+    }
 }
 
 TEST(Detectors, DifferenceHash) {

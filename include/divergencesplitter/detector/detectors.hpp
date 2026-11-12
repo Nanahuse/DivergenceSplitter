@@ -64,9 +64,14 @@ public:
     [[nodiscard]] std::string describe() const override;
 
 private:
+    struct FloatingReference {
+        cv::Mat pixels;
+        cv::Mat mask;
+    };
+    [[nodiscard]] static FloatingReference prepare_floating_reference(const cv::Mat& reference);
+
     cv::Mat reference_;
-    cv::Mat prepared_;
-    cv::Mat mask_;
+    std::optional<FloatingReference> floating_reference_;
     std::size_t component_count_{};
     std::optional<Region> roi_;
     std::string key_;
