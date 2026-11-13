@@ -32,6 +32,31 @@ target_link_libraries(divergencesplitter_core
 )
 
 # ---------------------------------------------------------------------------
+# Scenario editor: YAML-preserving model used by the Scenario Builder PoC.
+# ---------------------------------------------------------------------------
+
+add_library(divergencesplitter_scenario_editor STATIC
+    scenario_editor/commands.cpp
+    scenario_editor/model.cpp
+    scenario_editor/yaml_export.cpp
+    scenario_editor/yaml_import.cpp
+)
+
+add_library(divergencesplitter::scenario_editor ALIAS divergencesplitter_scenario_editor)
+
+target_compile_features(divergencesplitter_scenario_editor PUBLIC cxx_std_23)
+target_include_directories(divergencesplitter_scenario_editor
+    PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(divergencesplitter_scenario_editor
+    PUBLIC
+        divergencesplitter::core
+        nlohmann_json::nlohmann_json
+)
+
+# ---------------------------------------------------------------------------
 # Runtime: LiveSplit mapping, instance threads, capture, configuration.
 # ---------------------------------------------------------------------------
 
