@@ -1,7 +1,5 @@
 # YAMLリファレンス
 
-[日本語（正本）](yaml-reference.md) | [English](yaml-reference.en.md)
-
 [シナリオ作成](README.md) · [Condition](conditions.md) · [Detector](detectors.md) · [例](examples.md)
 
 ## シナリオの構造
@@ -106,7 +104,7 @@ Bridgeが操作を受け付けた後は、対応する状態変化を最大1秒�
 
 Resetを拒否された場合もタイマーを確認し直し、下表に従って条件をリセットします。Resetを送る前に取り消しただけの場合は、すでに送った通常Actionの確定待ちは残します。タイマーを確認できなければ、判定を止めて接続の回復を待ちます。
 
-画面での確認方法は[トラブルシューティング](../troubleshooting.md#操作の確定待ちとresetの失敗)、通信処理の設計は[アーキテクチャ](../development/architecture.md#bridgeとタイマー制御)を参照してください。
+画面での確認方法は[トラブルシューティング](../troubleshooting.md#操作の確定待ちとresetの失敗)を参照してください。
 
 ## 状態とリセット
 

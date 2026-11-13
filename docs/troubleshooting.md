@@ -1,7 +1,5 @@
 # トラブルシューティング
 
-[日本語（正本）](troubleshooting.md) | [English](troubleshooting.en.md)
-
 [ドキュメント一覧](../README.md)
 
 問題が起きたら、まずMonitorで映像が届いているか、接続がReadyになっているか、最後のActionやエラーが何かを確認してください。判定がおかしい場合は、Monitorで現在のSplit位置とConditionの結果・スコアを調べます。

@@ -1,7 +1,5 @@
 # 利用ガイド
 
-[日本語（正本）](user-guide.md) | [English](user-guide.en.md)
-
 [ドキュメント一覧](../README.md) · [初回の手順](getting-started.md)
 
 ## Monitor

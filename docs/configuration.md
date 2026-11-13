@@ -1,7 +1,5 @@
 # 設定リファレンス
 
-[日本語（正本）](configuration.md) | [English](configuration.en.md)
-
 [ドキュメント一覧](../README.md) · [Profileの操作](user-guide.md#profileの下書き適用済み設定ファイル)
 
 ## Profile JSON v2
@@ -100,7 +98,7 @@ NDI入力を使用するには、NDI Runtimeを別途インストールする必
 
 送信元が一時停止した場合や、通常の受信タイムアウトが起きた場合も、受信機は作り直しません。同じ名前の送信元が戻ると、SDKが再接続します。処理を続けられないSDKエラーや映像形式のエラーでは、映像取得を止めます。受信したフレームは、アプリが保持するBGR画像に変換して判定します。
 
-利用条件は[NDIの通知](../licenses/NDI.md)、ソースから有効にする方法は[NDI対応ビルド](development/building.md#ndi対応ビルド)を参照してください。
+利用条件は[NDIの通知](../licenses/NDI.md)を参照してください。
 
 ## Crop・Resize・参照画像
 

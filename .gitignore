@@ -43,3 +43,7 @@ downloads/
 # Local agent instructions and notes
 AGENTS.md
 .docs
+
+# Local development documentation
+docs/development/
+tests/data/README.md

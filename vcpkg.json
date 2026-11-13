@@ -1,6 +1,5 @@
 {
   "name": "divergencesplitter",
-  "version-semver": "0.1.0",
   "description": "Automatic splitter for LiveSplit.Bridge",
   "homepage": "https://github.com/Nanahuse/DivergenceSplitter",
   "license": "MIT",

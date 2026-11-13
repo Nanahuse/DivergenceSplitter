@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     DivergenceSplitter
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "Automatic splitter for LiveSplit.Bridge"
     HOMEPAGE_URL "https://github.com/Nanahuse/DivergenceSplitter"
     LANGUAGES CXX
