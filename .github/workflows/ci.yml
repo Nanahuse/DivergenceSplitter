@@ -152,7 +152,7 @@ jobs:
 
       - name: Build Scenario Builder and its editor tests
         run: |
-          cmake --preset builder -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DFETCHCONTENT_QUIET=OFF
+          cmake --preset builder -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded -DFETCHCONTENT_QUIET=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build/builder --target ScenarioBuilder divergencesplitter_scenario_editor_tests --parallel
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
