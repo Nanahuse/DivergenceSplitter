@@ -3,10 +3,26 @@
 #include <ryml/ryml.hpp>
 #include <ryml/ryml_std.hpp>
 
+#include <chrono>
+#include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
+#include "divergencesplitter/scenario/scenario.hpp"
 
 namespace divergencesplitter::scenario_editor {
 namespace {
@@ -84,6 +100,8 @@ std::string export_scenario_yaml(const ScenarioDocument& document) {
     if (!document.start_condition) {
         throw ScenarioEditorError("scenario.start_condition is required");
     }
+    validate_scenario_document(document);
+
     ryml::Tree tree;
     ryml::NodeRef root = tree.rootref();
     root.set_map();
@@ -91,13 +109,10 @@ std::string export_scenario_yaml(const ScenarioDocument& document) {
     if (!document.definitions.empty()) {
         auto definitions = append_key(root, "definitions");
         definitions.set_map();
-        for (const auto& definition : document.definitions) {
-            if (definition.name.empty() || definition.value.is_alias()) {
-                throw ScenarioEditorError("shared definitions must have a name and a concrete value");
-            }
-            auto node = append_key(definitions, definition.name);
-            write_value(node, definition.value);
-            node.set_val_anchor(view(definition.name));
+        for (const auto* definition : ordered_definitions(document)) {
+            auto node = append_key(definitions, definition->name);
+            write_value(node, definition->value);
+            node.set_val_anchor(view(definition->name));
         }
     }
 
@@ -133,13 +148,64 @@ std::string export_scenario_yaml(const ScenarioDocument& document) {
 
 void save_scenario_document(const ScenarioDocument& document, const std::filesystem::path& path) {
     const std::string text = export_scenario_yaml(document);
-    std::ofstream stream{path, std::ios::binary | std::ios::trunc};
-    if (!stream) {
-        throw ScenarioEditorError("could not open scenario file for writing: " + path_to_utf8(path));
-    }
-    stream.write(text.data(), static_cast<std::streamsize>(text.size()));
-    if (!stream) {
-        throw ScenarioEditorError("could not write scenario file: " + path_to_utf8(path));
+
+    static std::size_t sequence = 0;
+    const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
+    std::filesystem::path temporary = path;
+    temporary.replace_extension(
+        ".tmp-" + std::to_string(unique) + "-" + std::to_string(++sequence) + ".yaml"
+    );
+
+    try {
+        {
+            std::ofstream stream{temporary, std::ios::binary | std::ios::trunc};
+            if (!stream) {
+                throw ScenarioEditorError(
+                    "could not open a temporary scenario file for writing: "
+                    + path_to_utf8(temporary)
+                );
+            }
+            stream.write(text.data(), static_cast<std::streamsize>(text.size()));
+            stream.flush();
+            if (!stream) {
+                throw ScenarioEditorError(
+                    "could not write the temporary scenario file: " + path_to_utf8(temporary)
+                );
+            }
+        }
+
+        try {
+            (void)load_scenario(temporary);
+        } catch (const std::exception& error) {
+            throw ScenarioEditorError(
+                "scenario validation failed; the original file was not changed: "
+                + std::string{error.what()}
+            );
+        }
+
+#ifdef _WIN32
+        if (!MoveFileExW(
+                temporary.c_str(),
+                path.c_str(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+            )) {
+            throw ScenarioEditorError(
+                "could not replace the scenario file: " + path_to_utf8(path)
+            );
+        }
+#else
+        std::error_code error;
+        std::filesystem::rename(temporary, path, error);
+        if (error) {
+            throw ScenarioEditorError(
+                "could not replace the scenario file: " + path_to_utf8(path)
+            );
+        }
+#endif
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+        throw;
     }
 }
 

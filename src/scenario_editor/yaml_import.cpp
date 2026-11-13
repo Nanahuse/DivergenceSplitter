@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -41,11 +42,43 @@ ryml::Callbacks yaml_callbacks() {
 
 using AnchorMap = std::map<std::string, ConstNodeRef>;
 
+void check_unique_keys(ConstNodeRef node, const std::string& path) {
+    std::set<std::string> keys;
+    for (const auto entry : node.children()) {
+        if (entry.is_key_ref()) {
+            yaml_error(path + " aliases as mapping keys are not supported");
+        }
+        if (!entry.has_key() || entry.key_is_null()) {
+            yaml_error(path + " mapping keys must be strings");
+        }
+        const std::string key = scenario_yaml::copy_scalar(entry.key());
+        if (!keys.insert(key).second) {
+            yaml_error(path + "." + key + " is duplicated");
+        }
+    }
+}
+
+std::optional<std::string> node_anchor(ConstNodeRef node) {
+    if (!node.has_val_anchor()) {
+        return std::nullopt;
+    }
+    const std::string name = scenario_yaml::copy_scalar(node.val_anchor());
+    if (name.empty()) {
+        yaml_error("anchor names must not be empty");
+    }
+    return name;
+}
+
 void collect_anchors(ConstNodeRef node, AnchorMap& anchors) {
-    if (node.has_val_anchor()) {
-        const std::string name = scenario_yaml::copy_scalar(node.val_anchor());
-        if (!name.empty()) {
-            anchors[name] = node;
+    if (node.has_key_anchor()) {
+        yaml_error("anchors on mapping keys are not supported by the Scenario Builder");
+    }
+    if (const auto name = node_anchor(node)) {
+        if (!node.is_map()) {
+            yaml_error("anchor '" + *name + "' must be attached to a mapping");
+        }
+        if (!anchors.emplace(*name, node).second) {
+            yaml_error("anchor is defined more than once: " + *name);
         }
     }
     for (const auto child : node.children()) {
@@ -53,25 +86,68 @@ void collect_anchors(ConstNodeRef node, AnchorMap& anchors) {
     }
 }
 
+void collect_structural_ids(ConstNodeRef root, std::set<ryml::id_type>& ids) {
+    ids.insert(root.id());
+    if (const auto definitions = scenario_yaml::child(root, "definitions");
+        !definitions.invalid()) {
+        ids.insert(definitions.id());
+    }
+    const auto splits = scenario_yaml::child(root, "splits");
+    if (splits.invalid() || !splits.is_seq()) {
+        return;
+    }
+    ids.insert(splits.id());
+    for (const auto split : splits.children()) {
+        ids.insert(split.id());
+        if (!split.is_map()) {
+            continue;
+        }
+        const auto rules = scenario_yaml::child(split, "rules");
+        if (rules.invalid() || !rules.is_seq()) {
+            continue;
+        }
+        ids.insert(rules.id());
+        for (const auto rule : rules.children()) {
+            ids.insert(rule.id());
+            const auto sequence = scenario_yaml::child(rule, "sequence");
+            if (!sequence.invalid()) {
+                ids.insert(sequence.id());
+                for (const auto step : sequence.children()) {
+                    ids.insert(step.id());
+                }
+            }
+        }
+    }
+}
+
 Value value_from_node(
     ConstNodeRef node,
     const AnchorMap& anchors,
     std::set<std::string>& expanding,
-    const std::string& path
+    const std::string& path,
+    std::optional<ryml::id_type> ignored_anchor = std::nullopt
 );
 
 Value value_from_map(
     ConstNodeRef node,
     const AnchorMap& anchors,
     std::set<std::string>& expanding,
-    const std::string& path
+    const std::string& path,
+    std::optional<ryml::id_type> ignored_anchor
 ) {
     Value result = Value::make_mapping();
+    std::set<std::string> source_keys;
     for (const auto entry : node.children()) {
+        if (entry.is_key_ref()) {
+            yaml_error(path + " aliases as mapping keys are not supported");
+        }
         if (!entry.has_key() || entry.key_is_null()) {
             yaml_error(path + " mapping keys must be strings");
         }
         const std::string key = scenario_yaml::copy_scalar(entry.key());
+        if (!source_keys.insert(key).second) {
+            yaml_error(path + "." + key + " is duplicated");
+        }
         if (key == "<<") {
             const auto merge_one = [&](ConstNodeRef reference) {
                 if (!reference.is_val_ref()) {
@@ -85,7 +161,13 @@ Value value_from_map(
                 if (!expanding.insert(anchor).second) {
                     yaml_error(path + " cyclic merge alias: " + anchor);
                 }
-                Value merged = value_from_node(target->second, anchors, expanding, path + ".<<");
+                Value merged = value_from_node(
+                    target->second,
+                    anchors,
+                    expanding,
+                    path + ".<<",
+                    target->second.id()
+                );
                 expanding.erase(anchor);
                 if (!merged.is_mapping()) {
                     yaml_error(path + " merge alias must refer to a mapping: " + anchor);
@@ -103,7 +185,10 @@ Value value_from_map(
             }
             continue;
         }
-        result.set(key, value_from_node(entry, anchors, expanding, path + "." + key));
+        result.set(
+            key,
+            value_from_node(entry, anchors, expanding, path + "." + key, ignored_anchor)
+        );
     }
     return result;
 }
@@ -112,20 +197,29 @@ Value value_from_node(
     ConstNodeRef node,
     const AnchorMap& anchors,
     std::set<std::string>& expanding,
-    const std::string& path
+    const std::string& path,
+    std::optional<ryml::id_type> ignored_anchor
 ) {
     if (node.is_val_ref()) {
         return Value::make_alias(scenario_yaml::copy_scalar(node.val_ref()));
     }
+    if (const auto name = node_anchor(node);
+        name && (!ignored_anchor || node.id() != *ignored_anchor)) {
+        return Value::make_alias(*name);
+    }
     if (node.is_map()) {
-        return value_from_map(node, anchors, expanding, path);
+        return value_from_map(node, anchors, expanding, path, ignored_anchor);
     }
     if (node.is_seq()) {
         Value result = Value::make_sequence();
         std::size_t index = 0;
         for (const auto item : node.children()) {
             result.sequence.push_back(value_from_node(
-                item, anchors, expanding, path + "[" + std::to_string(index++) + "]"
+                item,
+                anchors,
+                expanding,
+                path + "[" + std::to_string(index++) + "]",
+                ignored_anchor
             ));
         }
         return result;
@@ -172,6 +266,7 @@ RuleDefinition parse_rule(
     if (!node.is_map()) {
         throw ScenarioEditorError(path + " must be a rule mapping");
     }
+    check_unique_keys(node, path);
     const auto condition = scenario_yaml::child(node, "condition");
     if (condition.invalid()) {
         throw ScenarioEditorError(path + ".condition is missing");
@@ -191,6 +286,7 @@ ScenarioRule parse_scenario_rule(
     if (!node.is_map()) {
         throw ScenarioEditorError(path + " must be a rule mapping");
     }
+    check_unique_keys(node, path);
     const auto sequence = scenario_yaml::child(node, "sequence");
     if (!sequence.invalid()) {
         if (!sequence.is_seq()) {
@@ -233,6 +329,7 @@ std::vector<std::optional<SplitDefinition>> parse_splits(
         if (!item.is_map()) {
             throw ScenarioEditorError(split_path + " must be a mapping or null");
         }
+        check_unique_keys(item, split_path);
         const auto rules = scenario_yaml::child(item, "rules");
         if (rules.invalid() || !rules.is_seq()) {
             throw ScenarioEditorError(split_path + ".rules must be a list");
@@ -253,18 +350,26 @@ std::vector<std::optional<SplitDefinition>> parse_splits(
 }
 
 void add_definition(
-    std::vector<SharedDefinition>& definitions,
-    std::set<std::string>& names,
+    ScenarioDocument& document,
+    std::map<std::string, ryml::id_type>& definition_nodes,
     std::string name,
+    ryml::id_type node_id,
     Value value
 ) {
     if (name.empty()) {
         throw ScenarioEditorError("shared definition names must not be empty");
     }
-    if (!names.insert(name).second) {
-        return;
+    const auto existing = definition_nodes.find(name);
+    if (existing != definition_nodes.end()) {
+        if (existing->second == node_id) {
+            return;
+        }
+        throw ScenarioEditorError("shared definition is duplicated: " + name);
     }
-    definitions.push_back(SharedDefinition{std::move(name), classify_definition(value), std::move(value)});
+    definition_nodes.emplace(name, node_id);
+    document.definitions.push_back(SharedDefinition{
+        std::move(name), classify_definition(value), std::move(value)
+    });
 }
 
 }  // namespace
@@ -292,31 +397,47 @@ ScenarioDocument import_scenario_yaml(std::string_view source, std::string sourc
     if (root.invalid() || !root.is_map()) {
         throw ScenarioEditorError("scenario must be a mapping");
     }
+    check_unique_keys(root, "scenario");
 
     AnchorMap anchors;
     collect_anchors(root, anchors);
+    std::set<ryml::id_type> structural_ids;
+    collect_structural_ids(root, structural_ids);
+    for (const auto& [name, node] : anchors) {
+        if (structural_ids.contains(node.id())) {
+            yaml_error("anchor '" + name + "' is attached to an unsupported scenario structure");
+        }
+    }
 
     std::set<std::string> expanding;
     ScenarioDocument document;
-    std::set<std::string> definition_names;
+    std::map<std::string, ryml::id_type> definition_nodes;
 
-    if (const auto definitions = scenario_yaml::child(root, "definitions"); !definitions.invalid()) {
+    if (const auto definitions = scenario_yaml::child(root, "definitions");
+        !definitions.invalid()) {
         if (!definitions.is_map()) {
             throw ScenarioEditorError("definitions must be a mapping");
         }
+        check_unique_keys(definitions, "definitions");
         for (const auto entry : definitions.children()) {
             if (!entry.has_key() || entry.key_is_null()) {
                 throw ScenarioEditorError("definitions keys must be strings");
             }
-            std::string name = scenario_yaml::copy_scalar(entry.key());
-            if (entry.has_val_anchor()) {
-                name = scenario_yaml::copy_scalar(entry.val_anchor());
-            }
+            const std::string key = scenario_yaml::copy_scalar(entry.key());
+            const auto anchor = node_anchor(entry);
+            const std::string name = anchor.value_or(key);
             add_definition(
-                document.definitions,
-                definition_names,
-                std::move(name),
-                value_from_node(entry, anchors, expanding, "definitions." + scenario_yaml::copy_scalar(entry.key()))
+                document,
+                definition_nodes,
+                name,
+                entry.id(),
+                value_from_node(
+                    entry,
+                    anchors,
+                    expanding,
+                    "definitions." + key,
+                    anchor ? std::optional<ryml::id_type>{entry.id()} : std::nullopt
+                )
             );
         }
     }
@@ -333,27 +454,48 @@ ScenarioDocument import_scenario_yaml(std::string_view source, std::string sourc
             continue;
         }
         const std::string key = scenario_yaml::copy_scalar(entry.key());
-        if (scenario_fields.contains(key) || !entry.has_val_anchor() || !entry.is_map()) {
+        if (scenario_fields.contains(key)) {
+            continue;
+        }
+        const auto anchor = node_anchor(entry);
+        if (!anchor) {
             continue;
         }
         add_definition(
-            document.definitions,
-            definition_names,
-            scenario_yaml::copy_scalar(entry.val_anchor()),
-            value_from_node(entry, anchors, expanding, key)
+            document,
+            definition_nodes,
+            *anchor,
+            entry.id(),
+            value_from_node(
+                entry,
+                anchors,
+                expanding,
+                key,
+                std::optional<ryml::id_type>{entry.id()}
+            )
         );
     }
 
-    // Nested anchors may be referenced from unrelated Condition positions.
-    // Exporting them under `definitions` keeps those aliases resolvable.
     for (const auto& [name, node] : anchors) {
-        if (definition_names.contains(name) || !node.is_map()) {
-            continue;
+        if (const auto existing = definition_nodes.find(name); existing != definition_nodes.end()) {
+            if (existing->second == node.id()) {
+                continue;
+            }
+            throw ScenarioEditorError("shared definition is duplicated: " + name);
         }
-        auto value = value_from_node(node, anchors, expanding, name);
-        if (value.is_mapping() && value.find("type") != nullptr) {
-            add_definition(document.definitions, definition_names, name, std::move(value));
-        }
+        add_definition(
+            document,
+            definition_nodes,
+            name,
+            node.id(),
+            value_from_node(
+                node,
+                anchors,
+                expanding,
+                name,
+                std::optional<ryml::id_type>{node.id()}
+            )
+        );
     }
 
     document.start_condition = condition_usage(
@@ -369,6 +511,7 @@ ScenarioDocument import_scenario_yaml(std::string_view source, std::string sourc
         scenario_yaml::child(root, "splits"), anchors, expanding
     );
 
+    validate_scenario_document(document);
     return document;
 }
 

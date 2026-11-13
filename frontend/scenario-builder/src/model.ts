@@ -11,18 +11,22 @@ export interface AliasValue {
 
 export interface SharedDefinition {
   name: string;
-  kind: "condition" | "detector";
+  kind: "condition" | "detector" | "other";
   value: JsonValue;
+  resolved: JsonValue;
+  ids: string[];
 }
 
 export interface RuleDefinition {
   condition: JsonValue;
+  condition_resolved?: JsonValue;
   action: string;
 }
 
 export interface ScenarioRule {
   sequence?: RuleDefinition[];
   condition?: JsonValue;
+  condition_resolved?: JsonValue;
   action?: string;
 }
 
@@ -35,8 +39,11 @@ export interface ScenarioDocument {
   dirty: boolean;
   definitions: SharedDefinition[];
   start_condition: JsonValue | null;
+  start_condition_resolved: JsonValue | null;
   reset_condition: JsonValue | null;
+  reset_condition_resolved: JsonValue | null;
   incomplete_condition: JsonValue | null;
+  incomplete_condition_resolved: JsonValue | null;
   splits: (SplitDefinition | null)[];
 }
 
@@ -192,91 +199,33 @@ export function usageAnchor(value: JsonValue | undefined): string | null {
   return null;
 }
 
-function mergePatch(target: Record<string, JsonValue>, patch: Record<string, JsonValue>): void {
-  for (const [key, patchValue] of Object.entries(patch)) {
-    if (patchValue === null) {
-      delete target[key];
-    } else if (isMapping(target[key]) && isMapping(patchValue)) {
-      mergePatch(target[key] as Record<string, JsonValue>, patchValue);
-    } else {
-      target[key] = structuredClone(patchValue);
-    }
-  }
-}
-
-function collectIdNodes(
-  value: JsonValue,
-  result = new Map<string, Record<string, JsonValue>>(),
-): Map<string, Record<string, JsonValue>> {
-  if (!isMapping(value)) {
-    return result;
-  }
-  const id = conditionId(value);
-  if (id) {
-    result.set(id, value);
-  }
-  const type = conditionType(value);
-  for (const key of childConditionKeys(type)) {
-    const child = value[key];
-    if (key === "conditions" && isSequence(child)) {
-      child.forEach((item) => collectIdNodes(item, result));
-    } else if (child !== undefined) {
-      collectIdNodes(child, result);
-    }
-  }
-  return result;
-}
-
-function applyOverrides(
-  base: Record<string, JsonValue>,
-  overrides: Record<string, JsonValue>,
-): Record<string, JsonValue> {
-  const result = structuredClone(base);
-  const targets = collectIdNodes(result);
-  for (const [id, patch] of Object.entries(overrides)) {
-    const target = targets.get(id);
-    if (target && isMapping(patch)) {
-      mergePatch(target, patch);
-    }
-  }
-  return result;
-}
-
-export function resolveCondition(
+export function resolvedRootAtPath(
   document: ScenarioDocument,
-  value: JsonValue | undefined,
-  expanding = new Set<string>(),
+  path: Path,
 ): JsonValue | undefined {
-  if (value === undefined) {
+  if (path.length === 0) {
     return undefined;
   }
-  if (isAlias(value)) {
-    const definition = definitionByName(document, value.$alias);
-    if (!definition || definition.kind !== "condition" || expanding.has(value.$alias)) {
-      return value;
+  if (path[0] === "definitions") {
+    const name = path[1];
+    if (typeof name !== "string") {
+      return undefined;
     }
-    const next = new Set(expanding);
-    next.add(value.$alias);
-    return resolveCondition(document, definition.value, next);
+    return definitionByName(document, name)?.resolved;
   }
-  if (isSequence(value)) {
-    return value.map((item) => resolveCondition(document, item, expanding) ?? null);
+  if (path[0] === "start_condition") {
+    return document.start_condition_resolved ?? undefined;
   }
-  if (!isMapping(value)) {
-    return value;
+  if (path[0] === "reset_condition") {
+    return document.reset_condition_resolved ?? undefined;
   }
-  if (isInheritanceUsage(value)) {
-    const base = resolveCondition(document, value.extends, expanding);
-    if (isMapping(base)) {
-      const overrides = isMapping(value.overrides) ? value.overrides : {};
-      return resolveCondition(document, applyOverrides(base, overrides), expanding);
-    }
+  if (path[0] === "incomplete_condition") {
+    return document.incomplete_condition_resolved ?? undefined;
   }
-  const result: Record<string, JsonValue> = {};
-  for (const [key, item] of Object.entries(value)) {
-    result[key] = resolveCondition(document, item, expanding) ?? null;
+  if (path[0] === "splits" && typeof path[1] === "number" && typeof path[3] === "number") {
+    return document.splits[path[1]]?.rules[path[3]]?.condition_resolved;
   }
-  return result;
+  return undefined;
 }
 
 export function conditionAtPath(
@@ -363,7 +312,7 @@ export function formatPath(_document: ScenarioDocument, path: Path): string {
 export function emptyDemoState(): EditorState {
   return {
     type: "state",
-    version: 1,
+    version: 2,
     canUndo: false,
     canRedo: false,
     document: {
@@ -371,8 +320,11 @@ export function emptyDemoState(): EditorState {
       dirty: false,
       definitions: [],
       start_condition: { type: "elapsed", duration: "2s" },
+      start_condition_resolved: { type: "elapsed", duration: "2s" },
       reset_condition: null,
+      reset_condition_resolved: null,
       incomplete_condition: null,
+      incomplete_condition_resolved: null,
       splits: [{ rules: [] }],
     },
   };

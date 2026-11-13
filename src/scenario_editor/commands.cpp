@@ -726,22 +726,33 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
     throw ScenarioEditorError("unknown editor command: " + type);
 }
 
-nlohmann::json rule_json(const RuleDefinition& rule) {
+nlohmann::json rule_json(const ScenarioDocument& document, const RuleDefinition& rule) {
     return nlohmann::json{
         {"condition", value_to_json(rule.condition.value)},
+        {"condition_resolved", value_to_json(resolve_condition(document, rule.condition.value))},
         {"action", rule.action},
     };
 }
 
-nlohmann::json scenario_rule_json(const ScenarioRule& rule) {
+nlohmann::json scenario_rule_json(const ScenarioDocument& document, const ScenarioRule& rule) {
     if (rule.sequence) {
         nlohmann::json steps = nlohmann::json::array();
         for (const auto& step : rule.sequence_rules) {
-            steps.push_back(rule_json(step));
+            steps.push_back(rule_json(document, step));
         }
         return nlohmann::json{{"sequence", std::move(steps)}};
     }
-    return rule_json(rule.rule);
+    return rule_json(document, rule.rule);
+}
+
+nlohmann::json resolved_usage_json(
+    const ScenarioDocument& document,
+    const std::optional<ConditionUsage>& usage
+) {
+    if (!usage) {
+        return nullptr;
+    }
+    return value_to_json(resolve_condition(document, usage->value));
 }
 
 }  // namespace
@@ -839,6 +850,7 @@ void apply_editor_command(EditorSession& session, const nlohmann::json& command)
     }
     ScenarioDocument next = session.document;
     mutate_document(next, command);
+    validate_scenario_document(next);
     if (session.undo_stack.size() >= max_undo_steps) {
         session.undo_stack.erase(session.undo_stack.begin());
     }
@@ -877,10 +889,19 @@ void save_editor_session(EditorSession& session, const std::filesystem::path& pa
 nlohmann::json editor_state_json(const EditorSession& session) {
     nlohmann::json definitions = nlohmann::json::array();
     for (const auto& definition : session.document.definitions) {
+        const auto resolved = resolve_condition(session.document, definition.value);
+        const char* kind = "other";
+        if (definition.kind == DefinitionKind::condition) {
+            kind = "condition";
+        } else if (definition.kind == DefinitionKind::detector) {
+            kind = "detector";
+        }
         definitions.push_back(nlohmann::json{
             {"name", definition.name},
-            {"kind", definition.kind == DefinitionKind::detector ? "detector" : "condition"},
+            {"kind", kind},
             {"value", value_to_json(definition.value)},
+            {"resolved", value_to_json(resolved)},
+            {"ids", condition_ids(resolved)},
         });
     }
     nlohmann::json splits = nlohmann::json::array();
@@ -891,7 +912,7 @@ nlohmann::json editor_state_json(const EditorSession& session) {
         }
         nlohmann::json rules = nlohmann::json::array();
         for (const auto& rule : split->rules) {
-            rules.push_back(scenario_rule_json(rule));
+            rules.push_back(scenario_rule_json(session.document, rule));
         }
         splits.push_back(nlohmann::json{{"rules", std::move(rules)}});
     }
@@ -903,16 +924,22 @@ nlohmann::json editor_state_json(const EditorSession& session) {
         {"start_condition", session.document.start_condition
                 ? value_to_json(session.document.start_condition->value)
                 : nlohmann::json(nullptr)},
+        {"start_condition_resolved", resolved_usage_json(
+                session.document, session.document.start_condition)},
         {"reset_condition", session.document.reset_condition
                 ? value_to_json(session.document.reset_condition->value)
                 : nlohmann::json(nullptr)},
+        {"reset_condition_resolved", resolved_usage_json(
+                session.document, session.document.reset_condition)},
         {"incomplete_condition", session.document.incomplete_condition
                 ? value_to_json(session.document.incomplete_condition->value)
                 : nlohmann::json(nullptr)},
+        {"incomplete_condition_resolved", resolved_usage_json(
+                session.document, session.document.incomplete_condition)},
         {"splits", std::move(splits)},
     };
     return nlohmann::json{
-        {"version", 1},
+        {"version", 2},
         {"document", std::move(document)},
         {"canUndo", !session.undo_stack.empty()},
         {"canRedo", !session.redo_stack.empty()},

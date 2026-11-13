@@ -63,7 +63,7 @@
       "displayName": "Scenario Builder PoC",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "DIVERGENCESPLITTER_BUILD_UI": "ON",
+        "DIVERGENCESPLITTER_BUILD_UI": "OFF",
         "DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER": "ON",
         "VCPKG_MANIFEST_FEATURES": "tests"
       }

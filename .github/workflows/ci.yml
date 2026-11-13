@@ -143,6 +143,22 @@ jobs:
           }
           ctest --preset ci --parallel 4 --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/scenario-builder/package-lock.json
+
+      - name: Build Scenario Builder and its editor tests
+        run: |
+          cmake --preset builder -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DFETCHCONTENT_QUIET=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build/builder --target ScenarioBuilder divergencesplitter_scenario_editor_tests --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build/builder -R ScenarioEditor --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: TestHost integration
         working-directory: ${{ github.workspace }}
         run: python tools/run_testhost.py --testhost $env:TESTHOST_OUTPUT --test-exe build/ci/divergencesplitter_testhost_tests.exe --port 54000

@@ -210,16 +210,8 @@ private:
             }
             return 0;
         case WM_CLOSE:
-            if (self->session_.dirty) {
-                const int answer = MessageBoxW(
-                    window,
-                    L"保存されていない変更があります。閉じますか？",
-                    L"Scenario Builder",
-                    MB_OKCANCEL | MB_ICONWARNING
-                );
-                if (answer != IDOK) {
-                    return 0;
-                }
+            if (!self->confirm_discard_changes()) {
+                return 0;
             }
             DestroyWindow(window);
             return 0;
@@ -326,6 +318,17 @@ private:
 
             auto message_handler = Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                 [this](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                    LPWSTR source_raw = nullptr;
+                    if (FAILED(args->get_Source(&source_raw)) || source_raw == nullptr) {
+                        return S_OK;
+                    }
+                    const std::wstring source = source_raw;
+                    CoTaskMemFree(source_raw);
+                    if (source.rfind(L"https://app.local/", 0) != 0
+                        && source != L"https://app.local") {
+                        return S_OK;
+                    }
+
                     LPWSTR raw = nullptr;
                     if (FAILED(args->get_WebMessageAsJson(&raw)) || raw == nullptr) {
                         return S_OK;
@@ -337,6 +340,31 @@ private:
                 }
             );
             webview_->add_WebMessageReceived(message_handler.Get(), nullptr);
+
+            auto navigation_handler = Callback<ICoreWebView2NavigationStartingEventHandler>(
+                [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                    LPWSTR uri_raw = nullptr;
+                    if (FAILED(args->get_Uri(&uri_raw)) || uri_raw == nullptr) {
+                        return S_OK;
+                    }
+                    const std::wstring uri = uri_raw;
+                    CoTaskMemFree(uri_raw);
+                    if (uri.rfind(L"https://app.local/", 0) != 0
+                        && uri != L"https://app.local") {
+                        args->put_Cancel(TRUE);
+                    }
+                    return S_OK;
+                }
+            );
+            webview_->add_NavigationStarting(navigation_handler.Get(), nullptr);
+
+            auto new_window_handler = Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                    args->put_Handled(TRUE);
+                    return S_OK;
+                }
+            );
+            webview_->add_NewWindowRequested(new_window_handler.Get(), nullptr);
 
             const auto ui = executable_directory() / "scenario-builder-ui";
             if (!std::filesystem::exists(ui / "index.html")) {
@@ -382,12 +410,18 @@ private:
                 return;
             }
             if (type == "new") {
+                if (!confirm_discard_changes()) {
+                    return;
+                }
                 session_ = new_editor_session();
                 update_title();
                 publish_state();
                 return;
             }
             if (type == "open") {
+                if (!confirm_discard_changes()) {
+                    return;
+                }
                 const auto path = pick_open_file(window_);
                 if (!path.empty()) {
                     session_ = open_editor_session(path);
@@ -397,25 +431,51 @@ private:
                 return;
             }
             if (type == "save" || type == "saveAs") {
-                save(type == "saveAs");
+                (void)save(type == "saveAs");
                 return;
             }
         } catch (const std::exception& error) {
-            publish_state(std::string{error.what()});
+            publish_error(error.what());
         }
     }
 
-    void save(bool force_picker) {
+    bool confirm_discard_changes() {
+        if (!session_.dirty) {
+            return true;
+        }
+        const int answer = MessageBoxW(
+            window_,
+            L"保存されていない変更があります。保存しますか？",
+            L"Scenario Builder",
+            MB_YESNOCANCEL | MB_ICONWARNING
+        );
+        if (answer == IDCANCEL) {
+            return false;
+        }
+        if (answer == IDYES) {
+            try {
+                return save(false);
+            } catch (const std::exception& error) {
+                const std::wstring message = to_wide(error.what());
+                MessageBoxW(window_, message.c_str(), L"Scenario Builder", MB_ICONERROR);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool save(bool force_picker) {
         std::filesystem::path path = session_.path;
         if (force_picker || path.empty()) {
             path = pick_save_file(window_, path);
         }
         if (path.empty()) {
-            return;
+            return false;
         }
         save_editor_session(session_, path);
         update_title();
         publish_state();
+        return true;
     }
 
     void update_title() {
@@ -426,23 +486,27 @@ private:
         SetWindowTextW(window_, (L"Scenario Builder - " + name + dirty).c_str());
     }
 
-    void publish_state(const std::string* error = nullptr) {
+    void publish_state() {
         if (!webview_) {
             return;
         }
-        json state = editor_state_json(session_);
-        state["type"] = "state";
-        const std::wstring serialized = to_wide(state.dump());
-        webview_->PostWebMessageAsJson(serialized.c_str());
-        if (error != nullptr) {
-            const json failure{{"type", "error"}, {"message", *error}};
-            const std::wstring serialized_error = to_wide(failure.dump());
-            webview_->PostWebMessageAsJson(serialized_error.c_str());
+        try {
+            json state = editor_state_json(session_);
+            state["type"] = "state";
+            const std::wstring serialized = to_wide(state.dump());
+            webview_->PostWebMessageAsJson(serialized.c_str());
+        } catch (const std::exception& error) {
+            publish_error(error.what());
         }
     }
 
-    void publish_state(const std::string& error) {
-        publish_state(&error);
+    void publish_error(const std::string& message) {
+        if (!webview_) {
+            return;
+        }
+        const json failure{{"type", "error"}, {"message", message}};
+        const std::wstring serialized = to_wide(failure.dump());
+        webview_->PostWebMessageAsJson(serialized.c_str());
     }
 
     std::filesystem::path initial_document_;

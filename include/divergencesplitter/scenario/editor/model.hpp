@@ -1,12 +1,18 @@
 #pragma once
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 namespace divergencesplitter::scenario_editor {
+
+class ScenarioEditorError : public std::runtime_error {
+public:
+    explicit ScenarioEditorError(std::string message) : std::runtime_error(std::move(message)) {}
+};
 
 // Editor-facing value tree. It keeps YAML mappings in source order and retains
 // aliases as first-class values so that anchors are not expanded while editing.
@@ -59,6 +65,7 @@ struct ConditionUsage {
 enum class DefinitionKind {
     condition,
     detector,
+    other,
 };
 
 struct SharedDefinition {
@@ -101,9 +108,19 @@ struct ScenarioDocument {
 // them, excluding arbitrary mapping fields such as Detector settings.
 [[nodiscard]] std::vector<std::string> condition_ids(const Value& value);
 
-// Applies aliases and `extends`/`overrides` against the shared definitions.
-// The returned tree contains no condition-level aliases unless the anchor is
-// missing or cyclic. `overrides` values set to null remove the inherited field.
+// Applies aliases and `extends`/`overrides` using the same rules as the runtime
+// loader. Invalid references, duplicate IDs, unknown override IDs, and invalid
+// override fields throw ScenarioEditorError.
 [[nodiscard]] Value resolve_condition(const ScenarioDocument& document, const Value& value);
+
+// Validates shared-definition uniqueness, alias targets, inheritance rules, and
+// cycles. Editor commands use this before committing a change.
+void validate_scenario_document(const ScenarioDocument& document);
+
+// Dependency-first shared definition order: a definition that aliases another
+// definition follows it in the emitted YAML.
+[[nodiscard]] std::vector<const SharedDefinition*> ordered_definitions(
+    const ScenarioDocument& document
+);
 
 }  // namespace divergencesplitter::scenario_editor

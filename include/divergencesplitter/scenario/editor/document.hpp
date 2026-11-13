@@ -12,11 +12,6 @@
 
 namespace divergencesplitter::scenario_editor {
 
-class ScenarioEditorError : public std::runtime_error {
-public:
-    explicit ScenarioEditorError(std::string message) : std::runtime_error(std::move(message)) {}
-};
-
 // The importer deliberately reads anchors and aliases without calling
 // ryml::Tree::resolve(), so shared definitions remain references in the model.
 [[nodiscard]] ScenarioDocument import_scenario_yaml(

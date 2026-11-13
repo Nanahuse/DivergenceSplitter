@@ -22,7 +22,8 @@ cmake --build --preset builder --target ScenarioBuilder
 
 `DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER=ON` のときだけ、WebView2 SDK の
 NuGet パッケージと React フロントエンドをビルドします。Node.js と npm が必要です。
-WebView2 SDK を事前に展開している場合は
+`builder` プリセットは Scenario Builder 単体の検証用に
+`DIVERGENCESPLITTER_BUILD_UI=OFF` としています。WebView2 SDK を事前に展開している場合は
 `DIVERGENCESPLITTER_WEBVIEW2_ROOT` に `build/native` を含むディレクトリを指定できます。
 
 従来のビルドとテストではオプションは OFF のままです。
@@ -42,9 +43,10 @@ ctest --preset full
 | `frontend/scenario-builder` | React + TypeScript + Vite の 3 ペイン UI |
 | `tests/scenario_editor_tests.cpp` | モデル、YAML 往復、実行用ローダー互換性のテスト |
 
-編集モデルと履歴の正本は C++ 側にあります。React は表示と操作状態を担当し、
-変更は `{ "type": "command", "command": { ... } }` の JSON メッセージで送ります。
-ホストは変更後のドキュメント全体を `state` メッセージで返します。
+編集モデル、YAML の解決結果、履歴の正本は C++ 側にあります。React は表示と
+操作状態を担当し、変更は `{ "type": "command", "command": { ... } }` の JSON
+メッセージで送ります。ホストは変更後のドキュメントと `extends` / `overrides`
+適用済みの解決結果を `state` メッセージで返します。React 側では継承を再解決しません。
 
 ## YAML の扱い
 
@@ -55,9 +57,27 @@ ctest --preset full
 - コメント、空白、インデントは保持しません。
 - YAML マージキー `<<` はインポート時に内容へ展開します。エディタからは
   アンカー参照または `extends` として保存されます。
+- 条件や Detector の定義箇所に付いたアンカーは共通定義へ移し、元の使用箇所は
+  `*anchor` 参照に置き換えます。これにより定義元と参照先の共有関係を維持します。
+- ネストしたアンカーは依存関係を解決し、参照先の共通定義を先に出力します。
+- スカラー・配列・マッピングキー・Split/Rule 構造に付いたアンカー、アンカー名の
+  再定義は、共有関係を保持できないため読み込み時に明示的に拒否します。
+- `extends` / `overrides` の解決規則と検証は実行用ローダーに合わせています。
+  存在しない Override ID、重複 ID、不正な上書きフィールドはエラーになります。
 
-保存した YAML は DivergenceSplitter の既存ローダーでそのまま読み込めます。
-`tests/scenario_editor_tests.cpp` の `ExportedYamlLoadsInTheRuntimeLoader` で検証しています。
+## 保存
+
+- 編集コマンド適用後に C++ モデルの参照関係を検証します。
+- 保存時は同じディレクトリの一時 YAML に書き出し、既存の
+  `load_scenario()` で読み込めることを確認します。
+- 検証と書き込みが成功した場合だけ、一時ファイルを元のファイルへ置き換えます。
+  失敗時は元のファイルを変更しません。
+- 新規作成・ファイルを開く・ウィンドウを閉じるときは、未保存の変更について
+  保存・破棄・キャンセルを確認します。
+
+`tests/scenario_editor_tests.cpp` では、アンカー参照、ネストした Detector
+アンカー、`extends` / `overrides`、無効な参照、保存失敗時のファイル保護、
+実行用ローダーでの読み込みを検証しています。
 
 ## UI
 

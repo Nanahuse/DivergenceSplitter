@@ -11,7 +11,7 @@ import {
   isMapping,
   isSequence,
   pathEquals,
-  resolveCondition,
+  resolvedRootAtPath,
   scalar,
   usageAnchor,
   valueAtPath,
@@ -448,14 +448,13 @@ function OverridesEditor({
   const anchor = usageAnchor(value) ?? "";
   const definition = definitionByName(document, anchor);
   const ids = useMemo(
-    () => (definition ? conditionIds(definition.value) : []),
+    () => (definition ? conditionIds(definition.resolved) : []),
     [definition],
   );
   const overrides = isMapping(value.overrides) ? value.overrides : {};
   const [targetId, setTargetId] = useState(ids[0] ?? "");
   const [fieldPath, setFieldPath] = useState("");
   const [fieldValue, setFieldValue] = useState("");
-  const resolved = resolveCondition(document, value);
 
   useEffect(() => {
     if (!ids.includes(targetId)) {
@@ -568,8 +567,8 @@ function OverridesEditor({
         </p>
       </div>
       <div className="nested-group">
-        <div className="nested-title">解決後の Condition</div>
-        <pre>{JSON.stringify(resolved, null, 2)}</pre>
+        <div className="nested-title">継承元の Condition</div>
+        <pre>{JSON.stringify(definition.resolved, null, 2)}</pre>
       </div>
     </div>
   );
@@ -866,8 +865,9 @@ export function ConditionPane({
   }
   const inheritance = isInheritanceUsage(raw);
   const reference = isAlias(raw);
-  const effective = inheritance || reference ? resolveCondition(document, raw) : raw;
-  const display = effective ?? raw;
+  const display = inheritance || reference
+    ? (resolvedRootAtPath(document, usagePath) ?? raw)
+    : raw;
   const editable = !inheritance && !reference;
   const overrideIds = new Set<string>();
   if (inheritance && isMapping(raw) && isMapping(raw.overrides)) {
@@ -996,16 +996,18 @@ export function ConditionInspector({
     return <p className="muted">Condition を選択してください。</p>;
   }
   const rootInherits = isInheritanceUsage(rawRoot);
+  const rootReference = isAlias(rawRoot);
+  const fixedRoot = rootInherits || rootReference;
   const relative = selectedPath.slice(usagePath.length);
-  const effectiveRoot = resolveCondition(document, rawRoot);
+  const effectiveRoot = resolvedRootAtPath(document, usagePath) ?? rawRoot;
   const rawSelected = valueAtPath(rawRoot, relative);
   const effectiveSelected = valueAtPath(effectiveRoot, relative);
-  const modeValue = rootInherits
+  const modeValue = fixedRoot
     ? relative.length === 0
       ? rawRoot
       : effectiveSelected
     : rawSelected;
-  const showModeToolbar = !rootInherits || relative.length === 0;
+  const showModeToolbar = !fixedRoot || relative.length === 0;
 
   return (
     <div className="inspector">
@@ -1032,6 +1034,23 @@ export function ConditionInspector({
             sendCommand={sendCommand}
           />
         </>
+      ) : rootReference ? (
+        relative.length === 0 ? (
+          <SettingsEditor
+            document={document}
+            value={rawSelected}
+            valuePath={selectedPath}
+            sendCommand={sendCommand}
+          />
+        ) : (
+          <div className="nested-group">
+            <div className="nested-title">参照先の Condition</div>
+            <p className="muted">
+              共通定義を参照している使用箇所では子 Condition を直接編集できません。
+            </p>
+            <pre>{JSON.stringify(effectiveSelected, null, 2)}</pre>
+          </div>
+        )
       ) : (
         <SettingsEditor
           document={document}

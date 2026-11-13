@@ -3,10 +3,12 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 
 #include "divergencesplitter/condition/conditions.hpp"
+#include "divergencesplitter/detector/detector.hpp"
 #include "divergencesplitter/scenario/editor/document.hpp"
 #include "divergencesplitter/scenario/editor/model.hpp"
 #include "divergencesplitter/scenario/scenario.hpp"
@@ -63,6 +65,11 @@ const Value& require_condition(const Value& conditions_parent, std::size_t index
 void write_text(const std::filesystem::path& path, std::string_view text) {
     std::ofstream stream{path, std::ios::binary};
     stream << text;
+}
+
+std::string read_text(const std::filesystem::path& path) {
+    std::ifstream stream{path, std::ios::binary};
+    return {std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
 }
 
 }  // namespace
@@ -329,7 +336,9 @@ TEST(ScenarioEditor, JsonStateContainsSharedDefinitionsAndConditionUsages) {
     const auto state = editor_state_json(session);
     ASSERT_TRUE(state["document"]["definitions"].is_array());
     EXPECT_EQ(state["document"]["definitions"][0]["name"], "shared");
+    EXPECT_EQ(state["document"]["definitions"][0]["resolved"]["type"], "elapsed");
     EXPECT_EQ(state["document"]["start_condition"]["$alias"], "shared");
+    EXPECT_EQ(state["document"]["start_condition_resolved"]["type"], "elapsed");
     EXPECT_TRUE(state["canUndo"].get<bool>());
 }
 
@@ -426,4 +435,270 @@ splits: []
     const auto reloaded = import_scenario_yaml(yaml);
     ASSERT_EQ(reloaded.definitions.size(), 1U);
     EXPECT_EQ(reloaded.definitions[0].kind, DefinitionKind::detector);
+}
+
+TEST(ScenarioEditor, ConvertsAnAnchorDefiningUsageIntoAReference) {
+    auto document = import_scenario_yaml(R"(
+start_condition: &shared
+  type: elapsed
+  duration: 1s
+splits:
+  - rules:
+      - condition: *shared
+        action: split
+)");
+    ASSERT_EQ(document.definitions.size(), 1U);
+    EXPECT_EQ(document.definitions[0].name, "shared");
+    ASSERT_TRUE(document.start_condition.has_value());
+    EXPECT_TRUE(document.start_condition->is_reference());
+    EXPECT_EQ(document.start_condition->anchor(), "shared");
+    const auto rule_condition = document.splits[0]->rules[0].rule.condition.value;
+    EXPECT_TRUE(rule_condition.is_alias());
+
+    document.definitions[0].value.set("duration", Value::make_scalar("4s"));
+    EXPECT_EQ(scalar_setting(
+        resolve_condition(document, document.start_condition->value), "duration"
+    ), "4s");
+    EXPECT_EQ(scalar_setting(resolve_condition(document, rule_condition), "duration"), "4s");
+
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    save_scenario_document(document, path);
+    const auto loaded = load_scenario(path);
+    const auto* start = dynamic_cast<const ElapsedCondition*>(loaded.scenario.start_condition.get());
+    ASSERT_NE(start, nullptr);
+    EXPECT_EQ(start->duration(), std::chrono::seconds{4});
+    ASSERT_EQ(loaded.scenario.splits.size(), 1U);
+    const auto* split = dynamic_cast<const ElapsedCondition*>(
+        loaded.scenario.splits[0]->at(0)->active_condition()
+    );
+    ASSERT_NE(split, nullptr);
+    EXPECT_EQ(split->duration(), std::chrono::seconds{4});
+}
+
+TEST(ScenarioEditor, OrdersNestedAnchorDefinitionsBeforeTheirParents) {
+    const auto document = import_scenario_yaml(R"(
+definitions:
+  first: &first
+    type: detected
+    minimum_score: 0.9
+    detector: &shared_detector
+      type: mean_brightness
+  second: &second
+    type: detected
+    minimum_score: 0.8
+    detector: *shared_detector
+start_condition: *second
+splits: []
+)");
+    ASSERT_EQ(document.definitions.size(), 3U);
+    const auto* first = find_definition(document, "first");
+    ASSERT_NE(first, nullptr);
+    const auto* nested = first->value.find("detector");
+    ASSERT_NE(nested, nullptr);
+    EXPECT_TRUE(nested->is_alias());
+    EXPECT_EQ(nested->scalar, "shared_detector");
+
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    save_scenario_document(document, path);
+    const auto yaml = read_text(path);
+    const auto detector_position = yaml.find("&shared_detector");
+    const auto first_position = yaml.find("&first");
+    const auto second_position = yaml.find("&second");
+    ASSERT_NE(detector_position, std::string::npos) << yaml;
+    ASSERT_NE(first_position, std::string::npos) << yaml;
+    ASSERT_NE(second_position, std::string::npos) << yaml;
+    EXPECT_LT(detector_position, first_position) << yaml;
+    EXPECT_LT(detector_position, second_position) << yaml;
+
+    const auto loaded = load_scenario(path);
+    const auto* start = dynamic_cast<const DetectedCondition*>(
+        loaded.scenario.start_condition.get()
+    );
+    ASSERT_NE(start, nullptr);
+    ASSERT_NE(start->detector(), nullptr);
+    EXPECT_EQ(start->detector()->type_name(), "mean_brightness");
+}
+
+TEST(ScenarioEditor, RejectsUnsupportedOrAmbiguousAnchors) {
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+scalar_anchor: &scalar 1
+start_condition: {type: elapsed, duration: 1s}
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+sequence_anchor: &sequence [1, 2]
+start_condition: {type: elapsed, duration: 1s}
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+definitions:
+  one: &same {type: elapsed, duration: 1s}
+  two: &same {type: elapsed, duration: 2s}
+start_condition: *same
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+splits:
+  - &split
+    rules: []
+start_condition: {type: elapsed, duration: 1s}
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+start_condition: *missing
+splits: []
+)"),
+        ScenarioEditorError
+    );
+}
+
+TEST(ScenarioEditor, RejectsInvalidInheritanceWithLoaderRules) {
+    const std::string definitions = R"(
+definitions:
+  base: &base
+    type: all
+    conditions:
+      - id: step
+        type: elapsed
+        duration: 1s
+)";
+    EXPECT_THROW(
+        (void)import_scenario_yaml(definitions + R"(
+start_condition:
+  extends: *base
+  overrides:
+    missing:
+      duration: 2s
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(definitions + R"(
+start_condition:
+  extends: *base
+  overrides:
+    step:
+      type: elapsed
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(definitions + R"(
+start_condition:
+  extends: *base
+  duration: 2s
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+definitions:
+  duplicate: &duplicate
+    type: all
+    conditions:
+      - id: same
+        type: elapsed
+        duration: 1s
+      - id: same
+        type: elapsed
+        duration: 2s
+start_condition:
+  extends: *duplicate
+  overrides: {}
+splits: []
+)"),
+        ScenarioEditorError
+    );
+}
+
+TEST(ScenarioEditor, AppliesTheUsageIdWhenResolvingExtends) {
+    const auto document = import_scenario_yaml(R"(
+definitions:
+  base: &base
+    id: inherited
+    type: elapsed
+    duration: 1s
+start_condition:
+  extends: *base
+  id: local
+  overrides: {}
+splits: []
+)");
+    ASSERT_TRUE(document.start_condition.has_value());
+    const auto resolved = resolve_condition(document, document.start_condition->value);
+    EXPECT_EQ(scalar_setting(resolved, "id"), "local");
+}
+
+TEST(ScenarioEditor, SaveRejectsInvalidYamlAndKeepsTheOriginalFile) {
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    const std::string original = R"(
+start_condition: {type: elapsed, duration: 1s}
+splits: []
+)";
+    write_text(path, original);
+
+    auto document = import_scenario_yaml(original);
+    document.start_condition->value.set("type", Value::make_scalar("unsupported"));
+    EXPECT_THROW(save_scenario_document(document, path), ScenarioEditorError);
+    EXPECT_EQ(read_text(path), original);
+    EXPECT_EQ(std::distance(
+        std::filesystem::directory_iterator{directory.path()},
+        std::filesystem::directory_iterator{}
+    ), 1);
+}
+
+TEST(ScenarioEditor, RejectsOverrideCommandsWithUnknownConditionIds) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_definition"},
+        {"name", "base"},
+        {"value", {
+            {"type", "all"},
+            {"conditions", nlohmann::json::array({
+                {{"id", "step"}, {"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{{"type", "add_split"}, {"index", 0}});
+    apply_editor_command(session, nlohmann::json{{"type", "add_rule"}, {"split", 0}});
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage"},
+        {"path", nlohmann::json::array({"splits", 0, "rules", 0, "condition"})},
+        {"mode", "inherits"},
+        {"anchor", "base"},
+    });
+    const std::size_t undo_before = session.undo_stack.size();
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "set_override"},
+            {"path", nlohmann::json::array({"splits", 0, "rules", 0, "condition"})},
+            {"condition_id", "missing"},
+            {"setting_path", nlohmann::json::array({"duration"})},
+            {"value", "2s"},
+        }),
+        ScenarioEditorError
+    );
+    EXPECT_EQ(session.undo_stack.size(), undo_before);
+    EXPECT_EQ(
+        session.document.splits[0]->rules[0].rule.condition.value.find("overrides"),
+        nullptr
+    );
 }

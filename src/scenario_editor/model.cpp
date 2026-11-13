@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -9,6 +10,21 @@
 
 namespace divergencesplitter::scenario_editor {
 namespace {
+
+constexpr std::array<std::string_view, 12> condition_types{
+    "detected",
+    "all",
+    "any",
+    "not",
+    "rising_edge",
+    "falling_edge",
+    "once",
+    "elapsed",
+    "hold",
+    "nth",
+    "reset_when",
+    "then",
+};
 
 constexpr std::array<std::string_view, 9> detector_types{
     "template_match",
@@ -22,11 +38,31 @@ constexpr std::array<std::string_view, 9> detector_types{
     "phase_correlation",
 };
 
+bool forbidden_override_key(std::string_view key) {
+    return key == "type" || key == "id" || key == "conditions" || key == "condition"
+        || key == "reset_condition" || key == "extends" || key == "overrides";
+}
+
 const Value* child_slot(const Value& value, std::string_view key) {
     if (!value.is_mapping()) {
         return nullptr;
     }
     return value.find(key);
+}
+
+template <typename Visit>
+void for_each_alias(const Value& value, Visit&& visit) {
+    if (value.is_alias()) {
+        visit(value.scalar);
+        return;
+    }
+    for (const auto& [key, item] : value.mapping) {
+        (void)key;
+        for_each_alias(item, visit);
+    }
+    for (const auto& item : value.sequence) {
+        for_each_alias(item, visit);
+    }
 }
 
 void collect_ids(const Value& value, std::set<std::string>& result) {
@@ -70,8 +106,13 @@ std::map<std::string, Value*> index_condition_ids(Value& value) {
         if (!node.is_mapping()) {
             return;
         }
-        if (auto* id = node.find("id"); id != nullptr && id->is_scalar() && !id->scalar.empty()) {
-            result.emplace(id->scalar, &node);
+        if (const auto* id = node.find("id"); id != nullptr) {
+            if (!id->is_scalar() || id->scalar.empty()) {
+                throw ScenarioEditorError("condition ids must be non-empty strings");
+            }
+            if (!result.emplace(id->scalar, &node).second) {
+                throw ScenarioEditorError("condition id is duplicated: " + id->scalar);
+            }
         }
         for (const auto key : {"condition", "reset_condition"}) {
             if (auto* nested = node.find(key); nested != nullptr) {
@@ -92,7 +133,17 @@ void merge_patch(Value& target, const Value& patch) {
         return;
     }
     for (const auto& [key, patch_value] : patch.mapping) {
+        if (forbidden_override_key(key)) {
+            throw ScenarioEditorError("field cannot be overridden: " + key);
+        }
         auto* current = target.find(key);
+        if (key == "detector") {
+            if (!patch_value.is_mapping() || current == nullptr || !current->is_mapping()) {
+                throw ScenarioEditorError(
+                    "detector overrides must modify an existing Detector mapping"
+                );
+            }
+        }
         if (patch_value.is_null()) {
             target.erase(key);
         } else if (current != nullptr && current->is_mapping() && patch_value.is_mapping()) {
@@ -105,13 +156,16 @@ void merge_patch(Value& target, const Value& patch) {
 
 void apply_overrides(Value& base, const Value& overrides) {
     if (!overrides.is_mapping()) {
-        return;
+        throw ScenarioEditorError("overrides must be a mapping of condition IDs");
     }
     auto targets = index_condition_ids(base);
     for (const auto& [id, patch] : overrides.mapping) {
         const auto found = targets.find(id);
         if (found == targets.end()) {
-            continue;
+            throw ScenarioEditorError("override condition ID was not found: " + id);
+        }
+        if (!patch.is_mapping()) {
+            throw ScenarioEditorError("an override for condition '" + id + "' must be a mapping");
         }
         merge_patch(*found->second, patch);
     }
@@ -124,11 +178,12 @@ Value resolve_impl(
 ) {
     if (value.is_alias()) {
         const auto* definition = find_definition(document, value.scalar);
-        if (definition == nullptr || definition->kind != DefinitionKind::condition
-            || !definition->value.is_mapping() || expanding.contains(value.scalar)) {
-            return value;
+        if (definition == nullptr) {
+            throw ScenarioEditorError("alias target was not found: " + value.scalar);
         }
-        expanding.insert(value.scalar);
+        if (!expanding.insert(value.scalar).second) {
+            throw ScenarioEditorError("cyclic alias or extends reference: " + value.scalar);
+        }
         auto resolved = resolve_impl(document, definition->value, expanding);
         expanding.erase(value.scalar);
         return resolved;
@@ -145,21 +200,66 @@ Value resolve_impl(
         return value;
     }
 
-    if (const auto* extends = value.find("extends"); extends != nullptr && extends->is_alias()) {
-        const auto inherited = resolve_impl(document, *extends, expanding);
-        if (inherited.is_mapping()) {
-            Value result = inherited;
-            if (const auto* overrides = value.find("overrides"); overrides != nullptr) {
-                apply_overrides(result, *overrides);
-            }
-            return resolve_impl(document, result, expanding);
+    const auto* extends = value.find("extends");
+    if (extends == nullptr) {
+        if (value.find("overrides") != nullptr) {
+            throw ScenarioEditorError("overrides requires extends");
         }
+        if (const auto* id = value.find("id");
+            id != nullptr && (!id->is_scalar() || id->scalar.empty())) {
+            throw ScenarioEditorError("condition ids must be non-empty strings");
+        }
+        Value result = Value::make_mapping();
+        result.mapping.reserve(value.mapping.size());
+        for (const auto& [key, item] : value.mapping) {
+            result.mapping.emplace_back(key, resolve_impl(document, item, expanding));
+        }
+        return result;
     }
 
-    Value result = Value::make_mapping();
-    result.mapping.reserve(value.mapping.size());
     for (const auto& [key, item] : value.mapping) {
-        result.mapping.emplace_back(key, resolve_impl(document, item, expanding));
+        (void)item;
+        if (key != "extends" && key != "overrides" && key != "id") {
+            throw ScenarioEditorError(
+                "extends conditions can only set extends, overrides, and id: " + key
+            );
+        }
+    }
+    if (!extends->is_alias()) {
+        throw ScenarioEditorError("extends must be a YAML alias to a Condition");
+    }
+    const auto* local_id = value.find("id");
+    if (local_id != nullptr && (!local_id->is_scalar() || local_id->scalar.empty())) {
+        throw ScenarioEditorError("condition ids must be non-empty strings");
+    }
+
+    const auto inherited = resolve_impl(document, *extends, expanding);
+    if (!inherited.is_mapping() || inherited.find("type") == nullptr) {
+        throw ScenarioEditorError("extends must refer to a Condition mapping with a type");
+    }
+    Value result = inherited;
+    const auto* overrides = value.find("overrides");
+    if (overrides != nullptr) {
+        apply_overrides(result, *overrides);
+    } else {
+        const Value empty = Value::make_mapping();
+        apply_overrides(result, empty);
+    }
+    if (local_id != nullptr) {
+        result.set("id", *local_id);
+    }
+    return resolve_impl(document, result, expanding);
+}
+
+std::map<std::string, const SharedDefinition*> definition_index(const ScenarioDocument& document) {
+    std::map<std::string, const SharedDefinition*> result;
+    for (const auto& definition : document.definitions) {
+        if (definition.name.empty()) {
+            throw ScenarioEditorError("shared definition names must not be empty");
+        }
+        if (!result.emplace(definition.name, &definition).second) {
+            throw ScenarioEditorError("shared definition is duplicated: " + definition.name);
+        }
     }
     return result;
 }
@@ -274,15 +374,24 @@ std::string ConditionUsage::anchor() const {
 }
 
 DefinitionKind classify_definition(const Value& value) {
-    if (value.is_mapping()) {
-        if (const auto* type = value.find("type"); type != nullptr && type->is_scalar()) {
-            const auto found = std::find(detector_types.begin(), detector_types.end(), type->scalar);
-            if (found != detector_types.end()) {
-                return DefinitionKind::detector;
-            }
-        }
+    if (!value.is_mapping()) {
+        return DefinitionKind::other;
     }
-    return DefinitionKind::condition;
+    if (const auto* type = value.find("type"); type != nullptr && type->is_scalar()) {
+        if (std::find(condition_types.begin(), condition_types.end(), type->scalar)
+            != condition_types.end()) {
+            return DefinitionKind::condition;
+        }
+        if (std::find(detector_types.begin(), detector_types.end(), type->scalar)
+            != detector_types.end()) {
+            return DefinitionKind::detector;
+        }
+        return DefinitionKind::other;
+    }
+    if (value.find("extends") != nullptr) {
+        return DefinitionKind::condition;
+    }
+    return DefinitionKind::other;
 }
 
 const SharedDefinition* find_definition(const ScenarioDocument& document, std::string_view name) {
@@ -305,6 +414,97 @@ std::vector<std::string> condition_ids(const Value& value) {
 Value resolve_condition(const ScenarioDocument& document, const Value& value) {
     std::set<std::string> expanding;
     return resolve_impl(document, value, expanding);
+}
+
+void validate_scenario_document(const ScenarioDocument& document) {
+    const auto definitions = definition_index(document);
+
+    for (const auto& definition : document.definitions) {
+        if (definition.value.is_alias()) {
+            throw ScenarioEditorError(
+                "shared definition must have a concrete mapping: " + definition.name
+            );
+        }
+        if (!definition.value.is_mapping()) {
+            throw ScenarioEditorError(
+                "shared definition must be a mapping: " + definition.name
+            );
+        }
+        for_each_alias(definition.value, [&](const std::string& alias) {
+            if (!definitions.contains(alias)) {
+                throw ScenarioEditorError("alias target was not found: " + alias);
+            }
+        });
+    }
+
+    const auto check_usage = [&](const ConditionUsage& usage) {
+        if (!usage.value.is_mapping() && !usage.value.is_alias()) {
+            throw ScenarioEditorError("conditions must be mappings or aliases");
+        }
+        (void)resolve_condition(document, usage.value);
+    };
+
+    for (const auto& definition : document.definitions) {
+        (void)resolve_condition(document, definition.value);
+    }
+    if (document.start_condition) {
+        check_usage(*document.start_condition);
+    }
+    if (document.reset_condition) {
+        check_usage(*document.reset_condition);
+    }
+    if (document.incomplete_condition) {
+        check_usage(*document.incomplete_condition);
+    }
+    for (const auto& split : document.splits) {
+        if (!split) {
+            continue;
+        }
+        for (const auto& rule : split->rules) {
+            if (rule.sequence) {
+                for (const auto& step : rule.sequence_rules) {
+                    check_usage(step.condition);
+                }
+            } else {
+                check_usage(rule.rule.condition);
+            }
+        }
+    }
+
+    (void)ordered_definitions(document);
+}
+
+std::vector<const SharedDefinition*> ordered_definitions(const ScenarioDocument& document) {
+    const auto definitions = definition_index(document);
+    std::map<std::string, int> state;
+    std::vector<const SharedDefinition*> result;
+    result.reserve(document.definitions.size());
+
+    const std::function<void(const SharedDefinition&)> visit = [&](const SharedDefinition& definition) {
+        const auto found = state.find(definition.name);
+        if (found != state.end()) {
+            if (found->second == 1) {
+                throw ScenarioEditorError(
+                    "cyclic shared definition dependency: " + definition.name
+                );
+            }
+            return;
+        }
+        state[definition.name] = 1;
+        for_each_alias(definition.value, [&](const std::string& alias) {
+            const auto dependency = definitions.find(alias);
+            if (dependency != definitions.end()) {
+                visit(*dependency->second);
+            }
+        });
+        state[definition.name] = 2;
+        result.push_back(&definition);
+    };
+
+    for (const auto& definition : document.definitions) {
+        visit(definition);
+    }
+    return result;
 }
 
 }  // namespace divergencesplitter::scenario_editor
