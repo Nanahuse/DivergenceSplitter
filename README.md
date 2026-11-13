@@ -1,7 +1,5 @@
 # DivergenceSplitter
 
-[日本語（正本）](README.md) | [English](README.en.md)
-
 DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit、Resetを自動で行うWindowsアプリです。判定条件はYAMLファイルに記述します。画面から入力映像や判定結果を確認できます。
 
 ## 主な機能
@@ -14,11 +12,11 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ## インストール
 
-[C++23のGitHub Actions](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/cpp23.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
+[GitHub ActionsのCI](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/ci.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
 
 ダウンロードしたZIPを書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLLとライセンスのファイルは、展開後の配置を保ってください。
 
-ダウンロードできるのは、Windowsジョブが成功し、アーティファクトの保存期間が切れていない場合です。利用できる実行結果がなければ、[ソースからビルド](docs/development/building.md)してください。最初の設定は[はじめに](docs/getting-started.md)で説明します。
+ダウンロードできるのは、`Windows x64` ジョブが成功し、アーティファクトの保存期間が切れていない場合です。最初の設定は[はじめに](docs/getting-started.md)で説明します。
 
 ## 使い方
 
@@ -31,10 +29,6 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 
 ## ドキュメント
 
-利用者向けの文書には日本語版と英語版があります。日本語版を正本とし、英語版はその翻訳です。内容が異なる場合は日本語版に従ってください。画面名、設定キー、ファイルパスは、どちらの言語でも製品の表記に合わせています。
-
-開発・設計・ビルド・テスト・CI・配布の手順と検証記録は、日本語のみで提供します。
-
 | 目的 | 参照先 |
 | --- | --- |
 | 導入して最初の自動Splitを試す | [はじめに](docs/getting-started.md) |
@@ -44,16 +38,9 @@ DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit
 | シナリオを作る | [シナリオ作成](docs/scenarios/README.md) |
 | YAML、Condition、Detector、Actionの仕様を調べる | [YAML](docs/scenarios/yaml-reference.md)、[Condition](docs/scenarios/conditions.md)、[Detector](docs/scenarios/detectors.md) |
 | 設定例を応用する | [シナリオ例](docs/scenarios/examples.md)、[サンプルファイル](examples/README.md) |
-| ビルド、テスト、配布を行う | [開発ガイド](docs/development/README.md) |
-
-## 開発
-
-アプリはC++23とDear ImGui（Win32 / Direct3D 11）で実装しています。CMakeの設定はリポジトリ直下にあります。実装は `src/`、複数のターゲットで共有するヘッダーは `include/`、テストは `tests/`、文書は `docs/` に置きます。`tools/` にはPythonで書いたビルド・配布用の補助スクリプトがあります。
-
-ビルド、CTest、Bridge TestHostとの結合テスト、NDI、Windows ZIPの作成と検証は、[開発ガイド](docs/development/README.md)を参照してください。
 
 ## ライセンス
 
-ソースコードは[MITライセンス](LICENSE)です。同梱する依存ライブラリにはそれぞれ別のライセンスが適用されます。[配布時の通知](DISTRIBUTION-NOTICE.txt)と[第三者ライセンスの収集・配布手順](docs/development/distribution.md)を参照してください。
+ソースコードは[MITライセンス](LICENSE)です。同梱する依存ライブラリにはそれぞれ別のライセンスが適用されます。[配布時の通知](DISTRIBUTION-NOTICE.txt)を参照してください。
 
 NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。NDI入力を使用する場合、NDI Runtimeを別途インストールする必要があります。配布ZIPには同梱されません。条件は[NDIの通知](licenses/NDI.md)を参照してください。

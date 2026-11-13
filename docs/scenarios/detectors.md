@@ -1,7 +1,5 @@
 # Detectorリファレンス
 
-[日本語（正本）](detectors.md) | [English](detectors.en.md)
-
 [シナリオ作成](README.md) · [detected](conditions.md#detected) · [例](examples.md)
 
 Detectorは画像を調べて結果を数値のスコアにする判定方法です。[`detected`](conditions.md#detected) は、そのスコアが `minimum_score` 以上なら成立します。

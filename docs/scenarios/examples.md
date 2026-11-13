@@ -1,7 +1,5 @@
 # シナリオ例
 
-[日本語（正本）](examples.md) | [English](examples.en.md)
-
 [シナリオ作成](README.md) · [YAMLリファレンス](yaml-reference.md)
 
 以下のYAMLはそのまま `.yaml` ファイルとして保存できるシナリオです。保存したファイルの絶対パスをProfileに指定してください。どの例でも、映像が届き、BridgeがReadyになってからタイマー操作を行います。

@@ -1,7 +1,5 @@
 # Conditionリファレンス
 
-[日本語（正本）](conditions.md) | [English](conditions.en.md)
-
 [シナリオ作成](README.md) · [YAMLのリセット](yaml-reference.md#状態とリセット)
 
 Conditionはタイマーを操作する条件です。YAMLの `type` に、以下の12種類のいずれかを指定します。

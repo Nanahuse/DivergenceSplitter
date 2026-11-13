@@ -1,7 +1,5 @@
 # サンプルファイル
 
-[日本語（正本）](README.md) | [English](README.en.md)
-
 [ドキュメント一覧](../README.md) · [シナリオ例](../docs/scenarios/examples.md)
 
 - [minimal-scenario.yaml](minimal-scenario.yaml)：開始条件の判定を始めて2秒後にStartし、区間0の判定を始めて3秒後にSplitします。画像を使わないため、参照画像は不要です。LiveSplitに1区間のテスト用Runを用意してください。

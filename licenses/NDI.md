@@ -1,7 +1,5 @@
 # NDI®ランタイムの通知
 
-[日本語（正本）](NDI.md) | [English](NDI.en.md)
-
 NDI®はVizrt NDI ABの登録商標です。NDI公式サイトは https://ndi.video/ です。
 
 DivergenceSplitterのソースコードはMITライセンスです。NDI入力を使用する場合、NDI Runtimeを別途インストールする必要があります。NDI Runtimeはプロプライエタリなソフトウェアで、DivergenceSplitterのMITライセンスとは別の条件が適用されます。
