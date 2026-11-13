@@ -1,46 +1,44 @@
 # DivergenceSplitter
 
-DivergenceSplitterは、映像の変化を検出してLiveSplitの開始やSplit、Resetを自動で行うWindowsアプリです。判定条件はYAMLファイルに記述します。画面から入力映像や判定結果を確認できます。
+## 目次
 
-## 主な機能
+- [できること](#できること)
+- [インストール](#インストール)
+- [ドキュメント](#ドキュメント)
+- [ライセンス](#ライセンス)
 
-- カメラ・キャプチャーカード、動画ファイル、NDI®の映像を入力に使えます。NDI入力を使用するには、NDI Runtimeを別途インストールする必要があります。
-- 映像の切り取り（Crop）やサイズ変更（Resize）を行い、画像の検出方法（Detector）と条件（Condition）を組み合わせて判定できます。
-- 条件が成立すると、LiveSplit.Bridgeを通じてStart、Split、Resetなどの操作を送ります。
-- 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。画面には映像のプレビューと判定・接続の状態を表示します。
-- About画面に、同梱する第三者コンポーネントと追加のライセンス通知一覧を表示します。
+## できること
+
+DivergenceSplitterは、映像を判定し、LiveSplitのStart、Split、Resetなどを自動で行うWindowsアプリです。LiveSplitとの接続には、Protocol v4対応のLiveSplit.Bridgeを使います。
+
+- カメラ、キャプチャーカード、動画ファイル、NDI®の映像を使えます。入力映像の切り取り（Crop）とサイズ変更（Resize）も設定できます。
+- 画像を調べるDetectorと、スコアや経過時間を判定するConditionを組み合わせて、YAMLでシナリオを作れます。
+- 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。Monitorで映像、接続状態、判定結果を確認できます。
 
 ## インストール
 
-[GitHub ActionsのCI](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/ci.yml)を開き、使いたいリビジョンで成功した実行結果から `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードしてください。ダウンロードにはGitHubへのサインインが必要です。
+1. GitHubにサインインし、[GitHub ActionsのCI](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/ci.yml)を開きます。
+2. 使いたいリビジョンで `Windows x64` ジョブが成功した実行を選び、Artifactsから `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードします。保存期間が過ぎたファイルはダウンロードできません。
+3. ZIPを書き込み可能なフォルダーに展開し、`DivergenceSplitter.exe` を起動します。同梱のDLLとライセンスファイルは展開時の配置を保ってください。
 
-ダウンロードしたZIPを書き込み可能なフォルダーへ展開し、`DivergenceSplitter.exe` を起動します。DLLとライセンスのファイルは、展開後の配置を保ってください。
+NDI入力を使う場合は、[NDI Runtime](https://ndi.video/)もインストールしてください。配布ZIPには含まれていません。
 
-ダウンロードできるのは、`Windows x64` ジョブが成功し、アーティファクトの保存期間が切れていない場合です。最初の設定は[はじめに](docs/getting-started.md)で説明します。
-
-## 使い方
-
-1. LiveSplitにProtocol v4対応のLiveSplit.Bridgeを導入し、テスト用Runを用意します。
-2. Profileで映像入力、YAMLシナリオ、Bridgeポートを設定します。
-3. Draft input previewで映像とCrop／Resizeの結果を確認し、Applyを押します。入力とBridgeの準備が整うとシナリオの評価とタイマー操作が始まります。
-4. Monitorで判定・接続状態を確認し、Profileを保存します。
-
-具体的な操作と設定例は[利用ガイド](docs/user-guide.md)と[サンプル](examples/README.md)にあります。
+起動したら、[はじめに](docs/getting-started.md)の手順でLiveSplitを接続し、自動Splitを試してください。
 
 ## ドキュメント
 
 | 目的 | 参照先 |
 | --- | --- |
-| 導入して最初の自動Splitを試す | [はじめに](docs/getting-started.md) |
-| Monitor、Profile、Settings、Aboutを使う | [利用ガイド](docs/user-guide.md) |
-| 入力、画像変換、Bridge接続を設定する | [設定リファレンス](docs/configuration.md) |
-| 入力・接続・判定の問題を調べる | [トラブルシューティング](docs/troubleshooting.md) |
-| シナリオを作る | [シナリオ作成](docs/scenarios/README.md) |
-| YAML、Condition、Detector、Actionの仕様を調べる | [YAML](docs/scenarios/yaml-reference.md)、[Condition](docs/scenarios/conditions.md)、[Detector](docs/scenarios/detectors.md) |
-| 設定例を応用する | [シナリオ例](docs/scenarios/examples.md)、[サンプルファイル](examples/README.md) |
+| LiveSplitを接続して最初の自動Splitを試す | [はじめに](docs/getting-started.md) |
+| Monitorで判定を確認する、Profileを編集・保存する | [利用ガイド](docs/user-guide.md) |
+| Profileとアプリ設定のJSONを調べる | [設定リファレンス](docs/configuration.md) |
+| 映像・接続・判定の問題を解決する | [トラブルシューティング](docs/troubleshooting.md) |
+| 自分のゲームに合わせてシナリオを作る | [シナリオ作成](docs/scenarios/README.md) |
+| シナリオの項目と実行時の動作を調べる | [YAML](docs/scenarios/yaml-reference.md)、[Condition](docs/scenarios/conditions.md)、[Detector](docs/scenarios/detectors.md) |
+| サンプルを試す、用途に合う設定例を探す | [サンプルファイル](examples/README.md)、[シナリオ例](docs/scenarios/examples.md) |
 
 ## ライセンス
 
-ソースコードは[MITライセンス](LICENSE)です。同梱する依存ライブラリにはそれぞれ別のライセンスが適用されます。[配布時の通知](DISTRIBUTION-NOTICE.txt)を参照してください。
+ソースコードには[MITライセンス](LICENSE)が適用されます。同梱する第三者コンポーネントには、それぞれのライセンスが適用されます。アプリのAbout画面または[配布時の通知](DISTRIBUTION-NOTICE.txt)を参照してください。
 
-NDI®はVizrt NDI ABの登録商標です。[NDI公式サイト](https://ndi.video/)。NDI入力を使用する場合、NDI Runtimeを別途インストールする必要があります。配布ZIPには同梱されません。条件は[NDIの通知](licenses/NDI.md)を参照してください。
+NDI®はVizrt NDI ABの登録商標です。利用条件は[NDIの通知](licenses/NDI.md)を参照してください。
