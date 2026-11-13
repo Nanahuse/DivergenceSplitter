@@ -155,7 +155,7 @@ Windowsでも `images/title.png` や `C:/game/title.png` のようにスラッ�
 
 ## Conditionの継承
 
-`extends: *anchor` は、アンカーで指定した1つのConditionを読み込み、任意の `overrides` を適用するDivergenceSplitterの機能です。開始・リセット・未完了の条件、Ruleの条件、複合条件内の子条件で使用できます。アンカーは `definitions` など任意の場所に置けます。
+`extends: *anchor` は、アンカーで指定したConditionの `type` と設定を引き継ぎます。設定の一部を変更する場合は `overrides` を使います。開始・リセット・未完了の条件、Ruleの条件、複合条件内の子条件で使用できます。アンカーは `definitions` など任意の場所に置けます。
 
 ```yaml
 definitions:
@@ -176,7 +176,7 @@ splits: []
 - `overrides` はIDから設定へのマッピングです。マッピング同士はフィールドごとに再帰的にマージし、スカラーや配列は値全体を置き換えます。
 - 省略可能な設定に `null` を指定すると、継承した値が解除されます。例えば `then` の `within` やDetectorの `roi` を省略時の動作に戻せます。
 - 多段継承では元の定義に近い上書きから適用します。継承するConditionにも `id` を指定でき、省略時は継承元ルートのIDを引き継ぎます。
-- `extends` と同じ階層には `overrides` と `id` を指定できます。設定項目の変更には `overrides` を使います。
+- 継承先には `extends` を指定します。`overrides` と `id` は任意です。
 
 `*anchor` をConditionとして直接使うと定義全体を参照します。`<<` はマッピングのキーを取り込みます。`extends` はさらに、配列内を含む子条件をIDで指定して設定を変更できます。[上書きできる項目](conditions.md#条件idと上書きできる設定)と[区間ごとに参照画像を切り替える例](examples.md#条件の継承で区間ごとの画像を指定)を参照してください。
 

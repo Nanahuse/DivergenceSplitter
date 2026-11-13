@@ -15,7 +15,8 @@
 - [all](#all) — すべての条件を満たしたときに成立する
 - [any](#any) — いずれかの条件を満たしたときに成立する
 - [not](#not) — 条件の成立・不成立を反転する
-- [rising_edge / falling_edge](#rising_edgeとfalling_edge) — 条件が成立または不成立に変わったときに成立する
+- [rising_edge](#rising_edge) — 条件が不成立から成立に変わったときに成立する
+- [falling_edge](#falling_edge) — 条件が成立から不成立に変わったときに成立する
 - [once](#once) — 一度成立した条件をリセットまで保持する
 - [elapsed](#elapsed) — 指定時間の経過を判定する
 - [hold](#hold) — 条件が一定時間続いたか判定する
@@ -23,9 +24,11 @@
 - [reset_when](#reset_when) — 別の条件が成立したときに判定状態をリセットする
 - [then](#then) — 複数の条件を指定した順番で判定する
 
-Conditionはタイマーを操作する条件です。YAMLの `type` に、一覧にある12種類のいずれかを指定します。
+Conditionはタイマーを操作する条件です。新しく定義するには、`type` に一覧の12種類のいずれかを指定し、その種類に応じた設定を書きます。未定義の項目があると読み込みに失敗します。
 
-`condition` には1つのConditionを、`conditions` にはConditionのリストを記述します。それぞれに `type` と、その種類に応じた項目を指定してください。未定義の項目があると読み込みに失敗します。
+既存の定義を [`extends`](yaml-reference.md#conditionの継承) で継承する場合は、継承元の `type` を使います。継承先では `extends` で参照先を指定し、設定を変更する場合は `overrides` を使います。
+
+`condition` には1つのConditionを、`conditions` にはConditionのリストを記述します。
 
 ## 条件IDと上書きできる設定
 
@@ -41,7 +44,7 @@ Conditionはタイマーを操作する条件です。YAMLの `type` に、一�
 
 時間はアプリ側の時計で測ります。LiveSplitをPauseしたり、映像が途切れたりしても、計測中の時間は進みます。条件の結果を更新するのは、映像のフレームを判定したときです。`hold` が条件の継続を確認できるのも、判定したフレームに限られます。
 
-複数の条件を組み合わせても、他の条件がfalseの間に時間の計測や回数の記録が進む場合があります。`all` に `nth` やedgeの条件を入れた場合は、それらが成立した判定で、他の条件も成立している必要があります。後から他の条件が成立しても、すでに過ぎた回数や変化を使い直すことはできません。
+複数の条件を組み合わせても、他の条件がfalseの間に時間の計測や回数の記録が進む場合があります。`all` に `nth`、`rising_edge`、`falling_edge` を含める場合は、その条件が成立した判定で他の条件も成立している必要があります。後から他の条件が成立しても、すでに過ぎた回数や変化を使い直すことはできません。
 
 条件を順番に確認したい場合は、[`then`](#then) を使ってください。
 
@@ -119,9 +122,9 @@ condition: {type: detected, minimum_score: 0.1, detector: {type: mean_brightness
 
 リセットすると、指定した条件もリセットします。
 
-## rising_edgeとfalling_edge
+## rising_edge
 
-画像が現れたときは `rising_edge`、消えたときは `falling_edge` を使います。例で消失を検出するには、`type` を `falling_edge` に変えてください。
+画像が現れたときや、画面がしきい値以上に明るくなったときに使います。
 
 ```yaml
 type: rising_edge
@@ -130,9 +133,26 @@ condition: {type: detected, minimum_score: 0.8, detector: {type: mean_brightness
 
 | 設定項目 | 必須・任意 | 指定する値 |
 | --- | --- | --- |
-| `condition` | 必須 | 変化を調べるCondition。 |
+| `condition` | 必須 | 成立したかを調べるCondition。 |
 
-`rising_edge` はfalseからtrueへの変化、`falling_edge` はtrueからfalseへの変化を確認した判定で一度だけ成立します。
+指定した条件が前回の判定でfalse、今回の判定でtrueになったときだけ成立します。
+
+初回の判定では比較の基準だけを記録し、falseになります。リセット時には比較の記録を消し、指定した条件も初期状態に戻します。
+
+## falling_edge
+
+画像が消えたときや、画面がしきい値より暗くなったときに使います。
+
+```yaml
+type: falling_edge
+condition: {type: detected, minimum_score: 0.8, detector: {type: mean_brightness}}
+```
+
+| 設定項目 | 必須・任意 | 指定する値 |
+| --- | --- | --- |
+| `condition` | 必須 | 不成立になったかを調べるCondition。 |
+
+指定した条件が前回の判定でtrue、今回の判定でfalseになったときだけ成立します。
 
 初回の判定では比較の基準だけを記録し、falseになります。リセット時には比較の記録を消し、指定した条件も初期状態に戻します。
 
