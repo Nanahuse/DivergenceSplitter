@@ -2,6 +2,10 @@ if(NOT WIN32)
     message(FATAL_ERROR "DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER requires Windows")
 endif()
 
+if(POLICY CMP0207)
+    cmake_policy(SET CMP0207 NEW)
+endif()
+
 set(
     DIVERGENCESPLITTER_WEBVIEW2_VERSION
     "1.0.2903.40"
@@ -152,3 +156,61 @@ add_custom_target(scenario_builder_frontend
     DEPENDS "${_scenario_builder_frontend_stamp}"
 )
 add_dependencies(ScenarioBuilder scenario_builder_frontend)
+
+install(TARGETS ScenarioBuilder
+    RUNTIME_DEPENDENCY_SET scenario_builder_runtime
+    RUNTIME DESTINATION . COMPONENT ScenarioBuilder
+)
+install(RUNTIME_DEPENDENCY_SET scenario_builder_runtime
+        DESTINATION .
+        COMPONENT ScenarioBuilder
+        DIRECTORIES "$<TARGET_FILE_DIR:ScenarioBuilder>"
+        PRE_EXCLUDE_REGEXES
+            "api-ms-.*"
+            "ext-ms-.*"
+            "[Kk][Ee][Rr][Nn][Ee][Ll]32\\.dll"
+            "[Uu][Ss][Ee][Rr]32\\.dll"
+            "[Gg][Dd][Ii]32\\.dll"
+            "[Aa][Dd][Vv][Aa][Pp][Ii]32\\.dll"
+            "[Ss][Hh][Ee][Ll][Ll]32\\.dll"
+            "[Oo][Ll][Ee]32\\.dll"
+            "[Oo][Ll][Ee][Aa][Uu][Tt]32\\.dll"
+            "[Ss][Hh][Ll][Ww][Aa][Pp][Ii]\\.dll"
+            "[Cc][Oo][Mm][Dd][Ll][Gg]32\\.dll"
+            "[Cc][Oo][Mm][Cc][Tt][Ll]32\\.dll"
+            "[Vv][Ee][Rr][Ss][Ii][Oo][Nn]\\.dll"
+            "[Ww][Ss]2_32\\.dll"
+            "[Mm][Ss][Ww][Ss][Oo][Cc][Kk]\\.dll"
+            "[Mm][Ff]\\.dll"
+            "[Mm][Ff][Pp][Ll][Aa][Tt]\\.dll"
+            "[Mm][Ff][Uu][Uu][Ii][Dd]\\.dll"
+            "[Mm][Ff][Rr][Ee][Aa][Dd][Ww][Rr][Ii][Tt][Ee]\\.dll"
+            "[Dd]3[Dd]11\\.dll"
+            "[Dd][Xx][Gg][Ii]\\.dll"
+            "[Bb][Cc][Rr][Yy][Pp][Tt]\\.dll"
+            "[Cc][Rr][Yy][Pp][Tt]32\\.dll"
+            "[Dd][Bb][Gg][Hh][Ee][Ll][Pp]\\.dll"
+            "[Uu][Cc][Rr][Tt][Bb][Aa][Ss][Ee]\\.dll"
+            "VCRUNTIME.*\\.dll"
+            "MSVCP.*\\.dll"
+            "ucrtbased\\.dll"
+            "vcruntimed.*\\.dll"
+            "msvcpd.*\\.dll"
+            "[Ww]indows[Cc]odecs.*\\.dll"
+            "[Dd][Ww][Rr][Ii][Tt][Ee]\\.dll"
+            "[Dd][Cc][Oo][Mm][Pp]\\.dll"
+            "[Dd][Ww][Mm][Aa][Pp][Ii]\\.dll"
+        POST_EXCLUDE_REGEXES
+            ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\][Ss][Yy][Ss][Tt][Ee][Mm]32.*"
+)
+install(DIRECTORY "${_scenario_builder_frontend}/dist/" DESTINATION "scenario-builder-ui" COMPONENT ScenarioBuilder)
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION "licenses" COMPONENT ScenarioBuilder)
+install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION . RENAME LICENSE.txt COMPONENT ScenarioBuilder)
+install(FILES
+    "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt"
+    DESTINATION . COMPONENT ScenarioBuilder
+)
+install(FILES
+    "${PROJECT_SOURCE_DIR}/docs/scenario-builder.md"
+    DESTINATION docs COMPONENT ScenarioBuilder
+)
