@@ -1,0 +1,108 @@
+name: Scenario Builder CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/scenario-builder.yml"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "vcpkg.json"
+      - "cmake/**"
+      - "include/divergencesplitter/scenario/editor/**"
+      - "src/CMakeLists.txt"
+      - "src/scenario_editor/**"
+      - "src/scenario_builder/**"
+      - "tests/CMakeLists.txt"
+      - "tests/scenario_editor_tests.cpp"
+      - "frontend/scenario-builder/**"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scenario-builder:
+    name: Windows x64
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/scenario-builder/package-lock.json
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set vcpkg root after MSVC setup
+        run: '"VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV'
+
+      - name: Bootstrap vcpkg
+        run: |
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:VCPKG_ROOT\vcpkg.exe" version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_ROOT }}\downloads
+            C:\vcpkg-cache
+          key: scenario-builder-vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            scenario-builder-vcpkg-${{ runner.os }}-${{ runner.arch }}-
+            scenario-builder-vcpkg-${{ runner.os }}-
+
+      - name: Cache WebView2 SDK
+        uses: actions/cache@v4
+        with:
+          path: build/builder/_deps/webview2
+          key: scenario-builder-webview2-1.0.2903.40-${{ runner.os }}
+
+      - name: Configure
+        run: >-
+          cmake --preset builder
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+          -DFETCHCONTENT_QUIET=OFF
+
+      - name: Build
+        run: >-
+          cmake --build build/builder
+          --target ScenarioBuilder divergencesplitter_scenario_editor_tests
+          --parallel
+
+      - name: Test
+        run: >-
+          ctest --test-dir build/builder
+          -R ScenarioEditor
+          --output-on-failure
+          --interactive-debug-mode 0
+          --output-junit scenario-builder-ctest.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scenario-builder-tests
+          path: scenario-builder-ctest.xml
+          if-no-files-found: warn
