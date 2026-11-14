@@ -17,9 +17,8 @@ DivergenceSplitterは、映像を判定し、LiveSplitのStart、Split、Reset�
 
 ## インストール
 
-1. GitHubにサインインし、[GitHub ActionsのCI](https://github.com/Nanahuse/DivergenceSplitter/actions/workflows/ci.yml)を開きます。
-2. 使いたいリビジョンで `Windows x64` ジョブが成功した実行を選び、Artifactsから `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードします。保存期間が過ぎたファイルはダウンロードできません。
-3. ZIPを書き込み可能なフォルダーに展開し、`DivergenceSplitter.exe` を起動します。同梱のDLLとライセンスファイルは展開時の配置を保ってください。
+1. [GitHub Releases](https://github.com/Nanahuse/DivergenceSplitter/releases/latest) の Assets から `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードします。
+2. ZIPを書き込み可能なフォルダーに展開し、`DivergenceSplitter.exe` を起動します。同梱のDLLとライセンスファイルは展開時の配置を保ってください。
 
 NDI入力を使う場合は、[NDI Runtime](https://ndi.video/)もインストールしてください。配布ZIPには含まれていません。
 
