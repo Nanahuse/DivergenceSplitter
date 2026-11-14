@@ -1,0 +1,15 @@
+# Connection check: use a test LiveSplit run with one segment.
+# Requires incoming frames and a ready Bridge; no reference image is needed.
+# Times begin at each condition's first evaluation, not at Apply.
+# Resetting the timer allows this scenario to start it again.
+
+start_condition:
+  type: elapsed
+  duration: 2s
+
+splits:
+  - rules:
+      - condition:
+          type: elapsed
+          duration: 3s
+        action: split

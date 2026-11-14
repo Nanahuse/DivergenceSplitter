@@ -1,0 +1,114 @@
+#pragma once
+
+#include <cstdint>
+#include <deque>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+#include <unordered_set>
+
+#include "divergencesplitter/condition/condition.hpp"
+
+namespace divergencesplitter {
+
+using HistoryPaths = std::unordered_set<std::string>;
+
+// A fixed grid shared by the preview index and the renderer.
+inline constexpr std::int64_t history_preview_bucket_ns = 500'000'000;
+
+inline constexpr std::int64_t history_preview_bucket(MonotonicTime time) {
+    constexpr auto width = history_preview_bucket_ns;
+    const auto ns = time.nanoseconds;
+    return ns / width - (ns % width < 0 ? 1 : 0);
+}
+
+inline constexpr MonotonicTime history_preview_start(MonotonicTime cutoff) {
+    // Keep the leading bucket intact and a neighbour for clipping its first edge.
+    return {(history_preview_bucket(cutoff) - 1) * history_preview_bucket_ns};
+}
+
+enum class HistoryEvent { sample, gap, reset, transition, error };
+
+struct EvaluationSample {
+    MonotonicTime time;
+    std::optional<double> value;
+    ConditionStatus status{ConditionStatus::not_evaluated};
+    HistoryEvent event{HistoryEvent::sample};
+    std::optional<bool> result;
+};
+
+struct ConditionMeasurement {
+    std::optional<double> value;
+    std::optional<double> target;
+    std::string unit;
+    bool stairs{};
+};
+
+[[nodiscard]] ConditionMeasurement condition_measurement(const Condition& condition);
+
+struct ConditionHistory {
+    std::string path;
+    std::vector<EvaluationSample> samples;
+    std::optional<MonotonicTime> last_observation;
+    // Present when Inspector requests raw samples for a charted series.
+    std::optional<std::vector<EvaluationSample>> preview_samples;
+};
+
+struct EvaluationHistorySnapshot {
+    std::uint64_t identity{}; // Unique across reconnects, profile applies and Bridge sessions.
+    MonotonicTime sampled_at;
+    std::vector<ConditionHistory> conditions;
+    std::vector<MonotonicTime> timer_resets;
+};
+
+// Called only under ScenarioRuntime's mutex. Snapshot copies are opt-in (10 Hz UI).
+class EvaluationHistory : public std::enable_shared_from_this<EvaluationHistory> {
+public:
+    static constexpr std::size_t capacity = 8192;
+    explicit EvaluationHistory(std::shared_ptr<TimeProvider> clock = {});
+    void bind(const Condition* condition, const std::string& path);
+    void begin_frame(MonotonicTime time);
+    void end_frame();
+    void clear();
+    void note_timer_reset() noexcept;
+    // Recent observations opt a series into the chart window. Explicit paths
+    // still request full retention for Inspector, even outside that window.
+    [[nodiscard]] std::shared_ptr<const EvaluationHistorySnapshot> snapshot(const HistoryPaths* paths = nullptr,
+        std::chrono::seconds recent_window = {}) const;
+
+private:
+    // Collection and retention keep the original bounded deque. UI snapshots are
+    // contiguous so dense lists do not allocate one MSVC deque block per sample.
+    struct Buffer {
+        std::string path;
+        std::deque<EvaluationSample> samples;
+    };
+    struct SampleBlock {
+        std::size_t first{};
+        std::size_t low{};
+        std::size_t high{};
+        std::size_t last{};
+    };
+    struct Series {
+        Buffer history;
+        std::uint64_t frame{};
+        std::optional<MonotonicTime> last_observation;
+        bool ordered{true};
+        std::deque<SampleBlock> preview_index;
+        std::size_t first_index{};
+        bool preview_valid{true};
+    };
+    static void index_sample(Series& series, std::size_t position) noexcept;
+    void record(std::size_t index, const Condition& condition, Condition::Observation event,
+                std::optional<bool> result, std::optional<MonotonicTime> time, bool short_circuited);
+    void append(Series& series, EvaluationSample sample);
+    std::vector<Series> series_;
+    std::shared_ptr<TimeProvider> clock_;
+    std::uint64_t identity_{};
+    std::uint64_t frame_{};
+    std::optional<MonotonicTime> frame_time_;
+    std::deque<MonotonicTime> timer_resets_;
+};
+
+} // namespace divergencesplitter
