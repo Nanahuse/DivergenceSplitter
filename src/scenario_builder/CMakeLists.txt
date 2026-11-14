@@ -1,0 +1,216 @@
+if(NOT WIN32)
+    message(FATAL_ERROR "DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER requires Windows")
+endif()
+
+if(POLICY CMP0207)
+    cmake_policy(SET CMP0207 NEW)
+endif()
+
+set(
+    DIVERGENCESPLITTER_WEBVIEW2_VERSION
+    "1.0.2903.40"
+    CACHE STRING
+    "Microsoft.Web.WebView2 NuGet package version"
+)
+set(
+    DIVERGENCESPLITTER_WEBVIEW2_ROOT
+    ""
+    CACHE PATH
+    "Existing WebView2 SDK root (the directory containing build/native)"
+)
+
+set(_webview2_arch "x64")
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    set(_webview2_arch "x86")
+endif()
+
+set(_webview2_root "${DIVERGENCESPLITTER_WEBVIEW2_ROOT}")
+if(_webview2_root)
+    set(_webview2_include "${_webview2_root}/build/native/include")
+    set(_webview2_loader "${_webview2_root}/build/native/${_webview2_arch}/WebView2LoaderStatic.lib")
+else()
+    find_path(_webview2_include
+        NAMES WebView2.h
+        HINTS ENV WEBVIEW2_SDK_ROOT
+        PATH_SUFFIXES build/native/include
+    )
+    find_library(_webview2_loader
+        NAMES WebView2LoaderStatic
+        HINTS ENV WEBVIEW2_SDK_ROOT
+        PATH_SUFFIXES build/native/${_webview2_arch}
+    )
+endif()
+
+if(NOT _webview2_include OR NOT _webview2_loader)
+    set(_webview2_package
+        "${CMAKE_BINARY_DIR}/_deps/webview2/Microsoft.Web.WebView2.${DIVERGENCESPLITTER_WEBVIEW2_VERSION}.nupkg"
+    )
+    set(_webview2_extract "${CMAKE_BINARY_DIR}/_deps/webview2/sdk")
+    if(NOT EXISTS "${_webview2_package}")
+        message(STATUS "Downloading Microsoft.Web.WebView2 ${DIVERGENCESPLITTER_WEBVIEW2_VERSION}")
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/_deps/webview2")
+        file(DOWNLOAD
+            "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/${DIVERGENCESPLITTER_WEBVIEW2_VERSION}/microsoft.web.webview2.${DIVERGENCESPLITTER_WEBVIEW2_VERSION}.nupkg"
+            "${_webview2_package}"
+            EXPECTED_HASH SHA256=EF128016DD1E51C59178C827ED5B8AA3322C57AFA8675D930F8109505542AD74
+            TLS_VERIFY ON
+            SHOW_PROGRESS
+            STATUS _webview2_download_status
+        )
+        list(GET _webview2_download_status 0 _webview2_download_code)
+        if(NOT _webview2_download_code EQUAL 0)
+            list(GET _webview2_download_status 1 _webview2_download_message)
+            message(FATAL_ERROR "Could not download the WebView2 SDK: ${_webview2_download_message}")
+        endif()
+    endif()
+    file(ARCHIVE_EXTRACT
+        INPUT "${_webview2_package}"
+        DESTINATION "${_webview2_extract}"
+    )
+    set(_webview2_include "${_webview2_extract}/build/native/include")
+    set(_webview2_loader
+        "${_webview2_extract}/build/native/${_webview2_arch}/WebView2LoaderStatic.lib"
+    )
+endif()
+
+if(NOT EXISTS "${_webview2_include}/WebView2.h" OR NOT EXISTS "${_webview2_loader}")
+    message(FATAL_ERROR
+        "WebView2 SDK was not found. Set DIVERGENCESPLITTER_WEBVIEW2_ROOT to a "
+        "Microsoft.Web.WebView2 package directory."
+    )
+endif()
+
+add_library(divergencesplitter_webview2 UNKNOWN IMPORTED)
+set_target_properties(divergencesplitter_webview2 PROPERTIES
+    IMPORTED_LOCATION "${_webview2_loader}"
+    INTERFACE_INCLUDE_DIRECTORIES "${_webview2_include}"
+)
+
+find_program(DIVERGENCESPLITTER_NPM_EXECUTABLE NAMES npm.cmd npm)
+if(NOT DIVERGENCESPLITTER_NPM_EXECUTABLE)
+    message(FATAL_ERROR "Scenario Builder requires Node.js and npm to build the React frontend")
+endif()
+
+set(_scenario_builder_frontend "${PROJECT_SOURCE_DIR}/frontend/scenario-builder")
+
+add_executable(ScenarioBuilder WIN32
+    main.cpp
+    webview_host.cpp
+)
+target_compile_features(ScenarioBuilder PRIVATE cxx_std_23)
+target_compile_definitions(ScenarioBuilder PRIVATE
+    _WIN32_WINNT=0x0A00
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    UNICODE
+    _UNICODE
+)
+target_include_directories(ScenarioBuilder PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(ScenarioBuilder PRIVATE
+    divergencesplitter::scenario_editor
+    divergencesplitter_webview2
+    ole32
+    oleaut32
+    shell32
+    shlwapi
+    comdlg32
+    comctl32
+    user32
+    gdi32
+    advapi32
+    version
+)
+set_target_properties(ScenarioBuilder PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    OUTPUT_NAME "ScenarioBuilder"
+)
+
+file(GLOB_RECURSE _scenario_builder_frontend_sources CONFIGURE_DEPENDS
+    "${_scenario_builder_frontend}/src/*"
+)
+set(_scenario_builder_frontend_stamp
+    "${CMAKE_CURRENT_BINARY_DIR}/scenario_builder_frontend.stamp"
+)
+add_custom_command(
+    OUTPUT "${_scenario_builder_frontend_stamp}"
+    COMMAND "${DIVERGENCESPLITTER_NPM_EXECUTABLE}" ci --no-audit --no-fund
+    COMMAND "${DIVERGENCESPLITTER_NPM_EXECUTABLE}" run build
+    COMMAND "${CMAKE_COMMAND}" -E remove_directory
+        "$<TARGET_FILE_DIR:ScenarioBuilder>/scenario-builder-ui"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${_scenario_builder_frontend}/dist"
+        "$<TARGET_FILE_DIR:ScenarioBuilder>/scenario-builder-ui"
+    COMMAND "${CMAKE_COMMAND}" -E touch "${_scenario_builder_frontend_stamp}"
+    DEPENDS
+        "${_scenario_builder_frontend}/index.html"
+        "${_scenario_builder_frontend}/package.json"
+        "${_scenario_builder_frontend}/package-lock.json"
+        "${_scenario_builder_frontend}/tsconfig.json"
+        "${_scenario_builder_frontend}/vite.config.ts"
+        ${_scenario_builder_frontend_sources}
+    WORKING_DIRECTORY "${_scenario_builder_frontend}"
+    COMMENT "Building and deploying the Scenario Builder React frontend"
+    VERBATIM
+)
+add_custom_target(scenario_builder_frontend
+    DEPENDS "${_scenario_builder_frontend_stamp}"
+)
+add_dependencies(ScenarioBuilder scenario_builder_frontend)
+
+install(TARGETS ScenarioBuilder
+    RUNTIME_DEPENDENCY_SET scenario_builder_runtime
+    RUNTIME DESTINATION . COMPONENT ScenarioBuilder
+)
+install(RUNTIME_DEPENDENCY_SET scenario_builder_runtime
+        DESTINATION .
+        COMPONENT ScenarioBuilder
+        DIRECTORIES "$<TARGET_FILE_DIR:ScenarioBuilder>"
+        PRE_EXCLUDE_REGEXES
+            "api-ms-.*"
+            "ext-ms-.*"
+            "[Kk][Ee][Rr][Nn][Ee][Ll]32\\.dll"
+            "[Uu][Ss][Ee][Rr]32\\.dll"
+            "[Gg][Dd][Ii]32\\.dll"
+            "[Aa][Dd][Vv][Aa][Pp][Ii]32\\.dll"
+            "[Ss][Hh][Ee][Ll][Ll]32\\.dll"
+            "[Oo][Ll][Ee]32\\.dll"
+            "[Oo][Ll][Ee][Aa][Uu][Tt]32\\.dll"
+            "[Ss][Hh][Ll][Ww][Aa][Pp][Ii]\\.dll"
+            "[Cc][Oo][Mm][Dd][Ll][Gg]32\\.dll"
+            "[Cc][Oo][Mm][Cc][Tt][Ll]32\\.dll"
+            "[Vv][Ee][Rr][Ss][Ii][Oo][Nn]\\.dll"
+            "[Ww][Ss]2_32\\.dll"
+            "[Mm][Ss][Ww][Ss][Oo][Cc][Kk]\\.dll"
+            "[Mm][Ff]\\.dll"
+            "[Mm][Ff][Pp][Ll][Aa][Tt]\\.dll"
+            "[Mm][Ff][Uu][Uu][Ii][Dd]\\.dll"
+            "[Mm][Ff][Rr][Ee][Aa][Dd][Ww][Rr][Ii][Tt][Ee]\\.dll"
+            "[Dd]3[Dd]11\\.dll"
+            "[Dd][Xx][Gg][Ii]\\.dll"
+            "[Bb][Cc][Rr][Yy][Pp][Tt]\\.dll"
+            "[Cc][Rr][Yy][Pp][Tt]32\\.dll"
+            "[Dd][Bb][Gg][Hh][Ee][Ll][Pp]\\.dll"
+            "[Uu][Cc][Rr][Tt][Bb][Aa][Ss][Ee]\\.dll"
+            "VCRUNTIME.*\\.dll"
+            "MSVCP.*\\.dll"
+            "ucrtbased\\.dll"
+            "vcruntimed.*\\.dll"
+            "msvcpd.*\\.dll"
+            "[Ww]indows[Cc]odecs.*\\.dll"
+            "[Dd][Ww][Rr][Ii][Tt][Ee]\\.dll"
+            "[Dd][Cc][Oo][Mm][Pp]\\.dll"
+            "[Dd][Ww][Mm][Aa][Pp][Ii]\\.dll"
+        POST_EXCLUDE_REGEXES
+            ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\][Ss][Yy][Ss][Tt][Ee][Mm]32.*"
+)
+install(DIRECTORY "${_scenario_builder_frontend}/dist/" DESTINATION "scenario-builder-ui" COMPONENT ScenarioBuilder)
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION "licenses" COMPONENT ScenarioBuilder)
+install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION . RENAME LICENSE.txt COMPONENT ScenarioBuilder)
+install(FILES
+    "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt"
+    DESTINATION . COMPONENT ScenarioBuilder
+)
+install(FILES
+    "${PROJECT_SOURCE_DIR}/docs/scenario-builder.md"
+    DESTINATION docs COMPONENT ScenarioBuilder
+)

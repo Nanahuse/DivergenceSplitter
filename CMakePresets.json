@@ -58,6 +58,17 @@
       }
     },
     {
+      "name": "builder",
+      "inherits": "base",
+      "displayName": "Scenario Builder PoC",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "DIVERGENCESPLITTER_BUILD_UI": "OFF",
+        "DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
       "name": "ci",
       "inherits": "base",
       "displayName": "CI: Release UI",
@@ -74,6 +85,7 @@
     { "name": "core-release", "configurePreset": "core-release" },
     { "name": "full", "configurePreset": "full" },
     { "name": "full-release", "configurePreset": "full-release" },
+    { "name": "builder", "configurePreset": "builder" },
     { "name": "ci", "configurePreset": "ci" }
   ],
   "testPresets": [
@@ -95,6 +107,11 @@
     {
       "name": "full-release",
       "configurePreset": "full-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "builder",
+      "configurePreset": "builder",
       "output": { "outputOnFailure": true }
     },
     {

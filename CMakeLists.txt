@@ -10,6 +10,7 @@ project(
 
 option(DIVERGENCESPLITTER_BUILD_BENCHMARKS "Build developer Monitor history benchmarks" OFF)
 option(DIVERGENCESPLITTER_BUILD_UI "Build the Dear ImGui Win32 desktop UI" ON)
+option(DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER "Build the standalone Scenario Builder" OFF)
 option(DIVERGENCESPLITTER_BUILD_TESTS "Build the CTest suite" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS "Build the optional LiveSplit.Bridge TestHost smoke test" OFF)
 option(DIVERGENCESPLITTER_FETCH_BRIDGE "Fetch the LiveSplit Bridge C++ client" ON)
@@ -84,6 +85,9 @@ find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 
 add_subdirectory(src)
+if(DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER)
+    add_subdirectory(src/scenario_builder)
+endif()
 if(DIVERGENCESPLITTER_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
