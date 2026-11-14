@@ -71,6 +71,7 @@ jobs:
           restore-keys: |
             scenario-builder-vcpkg-${{ runner.os }}-${{ runner.arch }}-
             scenario-builder-vcpkg-${{ runner.os }}-
+            cpp23-vcpkg-v3-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache WebView2 SDK
         uses: actions/cache@v4
