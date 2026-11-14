@@ -28,6 +28,7 @@ enum class ValueKind {
 struct Value {
     ValueKind kind{ValueKind::null_value};
     std::string scalar;
+    bool quoted{false};
     std::vector<Value> sequence;
     std::vector<std::pair<std::string, Value>> mapping;
 
@@ -96,6 +97,9 @@ struct ScenarioDocument {
     std::optional<ConditionUsage> reset_condition;
     std::optional<ConditionUsage> incomplete_condition;
     std::vector<std::optional<SplitDefinition>> splits;
+    // Unknown root fields are preserved verbatim so a load/save round-trip does
+    // not discard scenario metadata supported by the runtime loader.
+    std::vector<std::pair<std::string, Value>> extra_root;
 };
 
 enum class FieldKind {

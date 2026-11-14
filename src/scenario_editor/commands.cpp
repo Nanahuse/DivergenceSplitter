@@ -1,8 +1,11 @@
 #include "divergencesplitter/scenario/editor/document.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <locale>
+#include <sstream>
 #include <functional>
 #include <set>
 #include <string>
@@ -304,6 +307,31 @@ RuleDefinition default_rule() {
     });
     rule.action = "split";
     return rule;
+}
+
+bool yaml_ambiguous_string(std::string_view text) {
+    if (text.empty()) {
+        return true;
+    }
+    std::string lowered{text};
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    static const std::set<std::string> ambiguous{
+        "~", "null", "true", "false", "yes", "no", "on", "off",
+        ".nan", ".inf", "-.inf", "+.inf",
+    };
+    if (ambiguous.contains(lowered)) {
+        return true;
+    }
+    std::istringstream stream{std::string{text}};
+    stream.imbue(std::locale::classic());
+    stream.unsetf(std::ios::dec);
+    double number{};
+    if ((stream >> std::noskipws >> number) && (stream >> std::ws).eof()) {
+        return true;
+    }
+    return false;
 }
 
 std::string field_kind_name(FieldKind kind) {
@@ -900,7 +928,9 @@ Value value_from_json(const nlohmann::json& value) {
         return Value::make_null();
     }
     if (value.is_string()) {
-        return Value::make_scalar(value.get<std::string>());
+        Value result = Value::make_scalar(value.get<std::string>());
+        result.quoted = yaml_ambiguous_string(result.scalar);
+        return result;
     }
     if (value.is_boolean()) {
         return Value::make_scalar(value.get<bool>() ? "true" : "false");
@@ -1029,9 +1059,15 @@ nlohmann::json editor_state_json(const EditorSession& session) {
         splits.push_back(nlohmann::json{{"rules", std::move(rules)}});
     }
 
+    nlohmann::json extra_root = nlohmann::json::object();
+    for (const auto& [key, value] : session.document.extra_root) {
+        extra_root[key] = value_to_json(value);
+    }
+
     nlohmann::json document = nlohmann::json{
         {"path", path_to_utf8(session.path)},
         {"dirty", session.dirty},
+        {"extra_root", std::move(extra_root)},
         {"definitions", std::move(definitions)},
         {"start_condition", session.document.start_condition
                 ? value_to_json(session.document.start_condition->value)

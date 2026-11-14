@@ -437,6 +437,28 @@ void validate_scenario_document(const ScenarioDocument& document) {
         });
     }
 
+    static const std::set<std::string_view> reserved_root_fields{
+        "definitions",
+        "start_condition",
+        "reset_condition",
+        "incomplete_condition",
+        "splits",
+    };
+    std::set<std::string> extra_keys;
+    for (const auto& [key, value] : document.extra_root) {
+        if (key.empty() || reserved_root_fields.contains(key)) {
+            throw ScenarioEditorError("invalid extra root field: " + key);
+        }
+        if (!extra_keys.insert(key).second) {
+            throw ScenarioEditorError("extra root field is duplicated: " + key);
+        }
+        for_each_alias(value, [&](const std::string& alias) {
+            if (!definitions.contains(alias)) {
+                throw ScenarioEditorError("alias target was not found: " + alias);
+            }
+        });
+    }
+
     const auto check_usage = [&](const ConditionUsage& usage) {
         if (!usage.value.is_mapping() && !usage.value.is_alias()) {
             throw ScenarioEditorError("conditions must be mappings or aliases");

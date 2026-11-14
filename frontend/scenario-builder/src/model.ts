@@ -37,6 +37,7 @@ export interface SplitDefinition {
 export interface ScenarioDocument {
   path: string;
   dirty: boolean;
+  extra_root: Record<string, JsonValue>;
   definitions: SharedDefinition[];
   start_condition: JsonValue | null;
   start_condition_resolved: JsonValue | null;
@@ -341,6 +342,7 @@ export function emptyDemoState(): EditorState {
     document: {
       path: "",
       dirty: false,
+      extra_root: {},
       definitions: [],
       start_condition: { type: "elapsed", duration: "2s" },
       start_condition_resolved: { type: "elapsed", duration: "2s" },

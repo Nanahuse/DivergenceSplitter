@@ -69,6 +69,14 @@ std::optional<std::string> node_anchor(ConstNodeRef node) {
     return name;
 }
 
+bool explicit_string_tag(ConstNodeRef node) {
+    if (!node.has_val_tag()) {
+        return false;
+    }
+    const std::string tag = scenario_yaml::copy_scalar(node.val_tag());
+    return tag == "!!str" || tag == "tag:yaml.org,2002:str";
+}
+
 void collect_anchors(ConstNodeRef node, AnchorMap& anchors) {
     if (node.has_key_anchor()) {
         yaml_error("anchors on mapping keys are not supported by the Scenario Builder");
@@ -230,7 +238,9 @@ Value value_from_node(
     if (!node.has_val()) {
         yaml_error(path + " must be a scalar or mapping");
     }
-    return Value::make_scalar(scenario_yaml::copy_scalar(node.val()));
+    Value result = Value::make_scalar(scenario_yaml::copy_scalar(node.val()));
+    result.quoted = node.is_val_quoted() || explicit_string_tag(node);
+    return result;
 }
 
 std::optional<ConditionUsage> condition_usage(
@@ -458,21 +468,25 @@ ScenarioDocument import_scenario_yaml(std::string_view source, std::string sourc
             continue;
         }
         const auto anchor = node_anchor(entry);
-        if (!anchor) {
+        if (anchor) {
+            add_definition(
+                document,
+                definition_nodes,
+                *anchor,
+                entry.id(),
+                value_from_node(
+                    entry,
+                    anchors,
+                    expanding,
+                    key,
+                    std::optional<ryml::id_type>{entry.id()}
+                )
+            );
             continue;
         }
-        add_definition(
-            document,
-            definition_nodes,
-            *anchor,
-            entry.id(),
-            value_from_node(
-                entry,
-                anchors,
-                expanding,
-                key,
-                std::optional<ryml::id_type>{entry.id()}
-            )
+        document.extra_root.emplace_back(
+            key,
+            value_from_node(entry, anchors, expanding, key)
         );
     }
 

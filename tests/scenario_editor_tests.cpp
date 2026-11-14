@@ -829,3 +829,118 @@ TEST(ScenarioEditor, JsonStateExposesTheFixedFieldSchema) {
     EXPECT_TRUE(elapsed[0]["required"].get<bool>());
     EXPECT_EQ(elapsed[0]["default"], "1s");
 }
+
+TEST(ScenarioEditor, PreservesUnknownRootFields) {
+    auto document = import_scenario_yaml(R"(
+metadata:
+  title: My Scenario
+  tags: [alpha, beta]
+  nested:
+    note: "null"
+start_condition: {type: elapsed, duration: 1s}
+splits: []
+)");
+    ASSERT_EQ(document.extra_root.size(), 1U);
+    EXPECT_EQ(document.extra_root[0].first, "metadata");
+    const auto& metadata = document.extra_root[0].second;
+    EXPECT_EQ(scalar_setting(metadata, "title"), "My Scenario");
+    const auto* nested = metadata.find("nested");
+    ASSERT_NE(nested, nullptr);
+    const auto* note = nested->find("note");
+    ASSERT_NE(note, nullptr);
+    EXPECT_TRUE(note->is_scalar());
+    EXPECT_EQ(note->scalar, "null");
+    EXPECT_TRUE(note->quoted);
+
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "scenario.yaml";
+    save_scenario_document(document, path);
+    const auto reloaded = import_scenario_yaml(read_text(path));
+    ASSERT_EQ(reloaded.extra_root.size(), 1U);
+    EXPECT_EQ(reloaded.extra_root[0].first, "metadata");
+    const auto& reloaded_metadata = reloaded.extra_root[0].second;
+    EXPECT_EQ(scalar_setting(reloaded_metadata, "title"), "My Scenario");
+    const auto* reloaded_nested = reloaded_metadata.find("nested");
+    ASSERT_NE(reloaded_nested, nullptr);
+    const auto* reloaded_note = reloaded_nested->find("note");
+    ASSERT_NE(reloaded_note, nullptr);
+    EXPECT_TRUE(reloaded_note->is_scalar());
+    EXPECT_EQ(reloaded_note->scalar, "null");
+    EXPECT_TRUE(reloaded_note->quoted);
+    (void)load_scenario(path);
+}
+
+TEST(ScenarioEditor, PreservesQuotedScalarSemantics) {
+    const auto document = import_scenario_yaml(R"(
+start_condition:
+  type: detected
+  minimum_score: 0.5
+  detector:
+    type: template_match
+    reference: "null"
+metadata:
+  tilde: "~"
+  tagged: !!str null
+splits: []
+)");
+    const auto* reference = document.start_condition->value.find("detector")->find("reference");
+    ASSERT_NE(reference, nullptr);
+    EXPECT_TRUE(reference->is_scalar());
+    EXPECT_EQ(reference->scalar, "null");
+    EXPECT_TRUE(reference->quoted);
+    EXPECT_EQ(document.extra_root.size(), 1U);
+    const auto& metadata = document.extra_root[0].second;
+    ASSERT_NE(metadata.find("tilde"), nullptr);
+    EXPECT_EQ(metadata.find("tilde")->scalar, "~");
+    EXPECT_TRUE(metadata.find("tilde")->quoted);
+    ASSERT_NE(metadata.find("tagged"), nullptr);
+    EXPECT_EQ(metadata.find("tagged")->scalar, "null");
+    EXPECT_TRUE(metadata.find("tagged")->quoted);
+
+    const std::string yaml = export_scenario_yaml(document);
+    EXPECT_NE(yaml.find("reference: \"null\""), std::string::npos) << yaml;
+    EXPECT_NE(yaml.find("tilde: \"~\""), std::string::npos) << yaml;
+    EXPECT_NE(yaml.find("tagged: \"null\""), std::string::npos) << yaml;
+
+    const auto reloaded = import_scenario_yaml(yaml);
+    const auto* reloaded_reference =
+        reloaded.start_condition->value.find("detector")->find("reference");
+    ASSERT_NE(reloaded_reference, nullptr);
+    EXPECT_TRUE(reloaded_reference->is_scalar());
+    EXPECT_EQ(reloaded_reference->scalar, "null");
+    EXPECT_TRUE(reloaded_reference->quoted);
+    ASSERT_EQ(reloaded.extra_root.size(), 1U);
+    EXPECT_EQ(reloaded.extra_root[0].second.find("tilde")->scalar, "~");
+    EXPECT_TRUE(reloaded.extra_root[0].second.find("tilde")->quoted);
+    EXPECT_EQ(reloaded.extra_root[0].second.find("tagged")->scalar, "null");
+    EXPECT_TRUE(reloaded.extra_root[0].second.find("tagged")->quoted);
+}
+
+TEST(ScenarioEditor, QuotesAmbiguousValuesCreatedByCommands) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_condition_type"},
+        {"path", nlohmann::json::array({"start_condition"})},
+        {"value", "detected"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_detector_type"},
+        {"path", nlohmann::json::array({"start_condition", "detector"})},
+        {"value", "template_match"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_setting"},
+        {"path", nlohmann::json::array({"start_condition", "detector"})},
+        {"key", "reference"},
+        {"value", "null"},
+    });
+    const std::string yaml = export_scenario_yaml(session.document);
+    EXPECT_NE(yaml.find("reference: \"null\""), std::string::npos) << yaml;
+    const auto reloaded = import_scenario_yaml(yaml);
+    const auto* reference =
+        reloaded.start_condition->value.find("detector")->find("reference");
+    ASSERT_NE(reference, nullptr);
+    EXPECT_TRUE(reference->is_scalar());
+    EXPECT_TRUE(reference->quoted);
+    EXPECT_EQ(reference->scalar, "null");
+}

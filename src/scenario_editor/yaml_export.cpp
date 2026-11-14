@@ -46,9 +46,11 @@ void write_value(ryml::NodeRef node, const Value& value) {
         break;
     case ValueKind::scalar:
         node.set_val(view(value.scalar));
-        node.set_val_style(
-            static_cast<ryml::type_bits>(ryml::scalar_style_choose_block(view(value.scalar)))
-        );
+        node.set_val_style(static_cast<ryml::type_bits>(
+            value.quoted
+                ? ryml::VAL_DQUO
+                : ryml::scalar_style_choose_block(view(value.scalar))
+        ));
         break;
     case ValueKind::alias:
         node.set_val_ref(view(value.scalar));
@@ -140,6 +142,10 @@ std::string export_scenario_yaml(const ScenarioDocument& document) {
         for (const auto& rule : split->rules) {
             write_scenario_rule(rules.append_child(), rule);
         }
+    }
+
+    for (const auto& [key, value] : document.extra_root) {
+        write_value(append_key(root, key), value);
     }
 
     std::string output = ryml::emitrs_yaml<std::string>(tree);
