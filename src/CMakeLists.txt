@@ -38,6 +38,7 @@ target_link_libraries(divergencesplitter_core
 add_library(divergencesplitter_scenario_editor STATIC
     scenario_editor/commands.cpp
     scenario_editor/model.cpp
+    scenario_editor/schema.cpp
     scenario_editor/yaml_export.cpp
     scenario_editor/yaml_import.cpp
 )

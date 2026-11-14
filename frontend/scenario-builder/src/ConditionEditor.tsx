@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   childConditionKeys,
-  conditionIds,
+  conditionId,
   conditionType,
-  conditionTypes,
   definitionByName,
   formatPath,
   isAlias,
@@ -15,6 +14,8 @@ import {
   scalar,
   usageAnchor,
   valueAtPath,
+  type EditorSchema,
+  type FieldSchema,
   type JsonValue,
   type Path,
   type ScenarioDocument,
@@ -120,129 +121,284 @@ function SettingRow({
   );
 }
 
-function NestedMappingEditor({
+function MissingOptionalFields({
+  fields,
   value,
   valuePath,
   sendCommand,
-  depth,
 }: {
+  fields: FieldSchema[];
   value: Record<string, JsonValue>;
   valuePath: Path;
   sendCommand: (command: Record<string, unknown>) => void;
-  depth: number;
 }) {
-  const [newKey, setNewKey] = useState("");
-  const [newValue, setNewValue] = useState("");
+  const [selected, setSelected] = useState("");
+  const present = new Set(Object.keys(value));
+  const missing = fields.filter((field) => !field.required && !present.has(field.name));
+  if (missing.length === 0) {
+    return null;
+  }
+  const current = missing.some((field) => field.name === selected)
+    ? selected
+    : missing[0].name;
   return (
-    <div className={`nested-editor depth-${depth}`}>
-      {Object.entries(value).map(([key, item]) => {
-        if (isMapping(item)) {
-          return (
-            <div key={key} className="nested-group">
-              <div className="nested-title">
-                {key}
-                <button
-                  className="icon"
-                  title="この設定を削除"
-                  onClick={() =>
-                    sendCommand({ type: "remove_setting", path: valuePath, key })
-                  }
-                >
-                  ×
-                </button>
-              </div>
-              <NestedMappingEditor
-                value={item}
-                valuePath={[...valuePath, key]}
-                sendCommand={sendCommand}
-                depth={depth + 1}
-              />
-            </div>
-          );
-        }
-        if (isSequence(item)) {
-          return (
-            <div key={key} className="setting-row">
-              <span className="setting-label">{key}</span>
-              <DraftInput
-                multiline
-                value={JSON.stringify(item)}
-                onCommit={(text) => {
-                  const parsed = parseInputValue(text);
-                  if (isSequence(parsed)) {
-                    sendCommand({ type: "set_setting", path: valuePath, key, value: parsed });
-                  }
-                }}
-              />
-              <button
-                className="icon"
-                title="この設定を削除"
-                onClick={() => sendCommand({ type: "remove_setting", path: valuePath, key })}
-              >
-                ×
-              </button>
-            </div>
-          );
-        }
-        return (
-          <SettingRow
-            key={key}
-            label={key}
-            value={item}
-            onCommit={(next) =>
-              sendCommand({ type: "set_setting", path: valuePath, key, value: next })
-            }
-            onRemove={() => sendCommand({ type: "remove_setting", path: valuePath, key })}
-          />
-        );
-      })}
-      <div className="inline-form">
-        <input
-          value={newKey}
-          placeholder="field"
-          onChange={(event) => setNewKey(event.target.value)}
-        />
-        <input
-          value={newValue}
-          placeholder="value"
-          onChange={(event) => setNewValue(event.target.value)}
-        />
-        <button
-          onClick={() => {
-            if (!newKey.trim()) {
-              return;
-            }
-            sendCommand({
-              type: "set_setting",
-              path: valuePath,
-              key: newKey.trim(),
-              value: parseInputValue(newValue),
-            });
-            setNewKey("");
-            setNewValue("");
-          }}
-        >
-          追加
-        </button>
-      </div>
+    <div className="inline-form">
+      <select value={current} onChange={(event) => setSelected(event.target.value)}>
+        {missing.map((field) => (
+          <option key={field.name} value={field.name}>
+            {field.name}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={() => {
+          const field = missing.find((item) => item.name === current);
+          if (!field) {
+            return;
+          }
+          sendCommand({
+            type: "set_setting",
+            path: valuePath,
+            key: field.name,
+            value: structuredClone(field.default),
+          });
+        }}
+      >
+        任意項目を追加
+      </button>
     </div>
   );
 }
 
+function RoiFieldsEditor({
+  value,
+  valuePath,
+  sendCommand,
+  onRemove,
+}: {
+  value: JsonValue | undefined;
+  valuePath: Path;
+  sendCommand: (command: Record<string, unknown>) => void;
+  onRemove?: () => void;
+}) {
+  if (!isMapping(value)) {
+    return <p className="error-text">roi は mapping である必要があります。</p>;
+  }
+  return (
+    <div className="nested-group">
+      <div className="nested-title">
+        roi
+        {onRemove ? (
+          <button className="icon" title="roi を削除" onClick={onRemove}>
+            ×
+          </button>
+        ) : null}
+      </div>
+      {(["x", "y", "width", "height"] as const).map((key) => (
+        <SettingRow
+          key={key}
+          label={key}
+          value={value[key]}
+          onCommit={(next) =>
+            sendCommand({ type: "set_setting", path: valuePath, key, value: next })
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
+function DetectorFieldsEditor({
+  schema,
+  value,
+  valuePath,
+  sendCommand,
+  onRemove,
+}: {
+  schema: EditorSchema;
+  value: JsonValue | undefined;
+  valuePath: Path;
+  sendCommand: (command: Record<string, unknown>) => void;
+  onRemove?: () => void;
+}) {
+  if (!isMapping(value)) {
+    return <p className="error-text">detector は mapping である必要があります。</p>;
+  }
+  const type = scalar(value.type) ?? "";
+  const fields = schema.detectorFields[type];
+  if (!fields) {
+    return <p className="error-text">未対応の Detector 型です: {type}</p>;
+  }
+  return (
+    <div className="nested-group">
+      <div className="nested-title">
+        detector
+        {onRemove ? (
+          <button className="icon" title="detector を削除" onClick={onRemove}>
+            ×
+          </button>
+        ) : null}
+      </div>
+      <div className="setting-row">
+        <span className="setting-label">type</span>
+        <select
+          value={type}
+          onChange={(event) =>
+            sendCommand({
+              type: "set_detector_type",
+              path: valuePath,
+              value: event.target.value,
+            })
+          }
+        >
+          {Object.keys(schema.detectorFields).map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {fields.map((field) => {
+        const item = value[field.name];
+        if (item === undefined) {
+          return null;
+        }
+        return (
+          <SchemaFieldEditor
+            key={field.name}
+            schema={schema}
+            field={field}
+            value={item}
+            valuePath={valuePath}
+            sendCommand={sendCommand}
+          />
+        );
+      })}
+      <MissingOptionalFields
+        fields={fields}
+        value={value}
+        valuePath={valuePath}
+        sendCommand={sendCommand}
+      />
+    </div>
+  );
+}
+
+function SchemaFieldEditor({
+  schema,
+  field,
+  value,
+  valuePath,
+  sendCommand,
+}: {
+  schema: EditorSchema;
+  field: FieldSchema;
+  value: JsonValue;
+  valuePath: Path;
+  sendCommand: (command: Record<string, unknown>) => void;
+}) {
+  const remove = field.required
+    ? undefined
+    : () =>
+        sendCommand({
+          type: "remove_setting",
+          path: valuePath,
+          key: field.name,
+        });
+  if (isAlias(value)) {
+    return (
+      <div className="setting-row">
+        <span className="setting-label">{field.name}</span>
+        <code>*{value.$alias}</code>
+      </div>
+    );
+  }
+  switch (field.kind) {
+  case "detector":
+    return (
+      <DetectorFieldsEditor
+        schema={schema}
+        value={value}
+        valuePath={[...valuePath, field.name]}
+        sendCommand={sendCommand}
+        onRemove={remove}
+      />
+    );
+  case "roi":
+    return (
+      <RoiFieldsEditor
+        value={value}
+        valuePath={[...valuePath, field.name]}
+        sendCommand={sendCommand}
+        onRemove={remove}
+      />
+    );
+  case "condition":
+    return (
+      <div className="setting-row">
+        <span className="setting-label">{field.name}</span>
+        <span className="muted">中央ペインで編集</span>
+      </div>
+    );
+  case "condition_list": {
+    const count = isSequence(value) ? value.length : 0;
+    return (
+      <div className="setting-row">
+        <span className="setting-label">{field.name}</span>
+        <span className="muted">{count} 件（中央ペインで編集）</span>
+      </div>
+    );
+  }
+  case "number_list":
+    return (
+      <SettingRow
+        label={field.name}
+        value={value}
+        onCommit={(next) => {
+          if (isSequence(next)) {
+            sendCommand({
+              type: "set_setting",
+              path: valuePath,
+              key: field.name,
+              value: next,
+            });
+          }
+        }}
+        onRemove={remove}
+      />
+    );
+  default:
+    return (
+      <SettingRow
+        label={field.name}
+        value={value}
+        onCommit={(next) =>
+          sendCommand({
+            type: "set_setting",
+            path: valuePath,
+            key: field.name,
+            value: next,
+          })
+        }
+        onRemove={remove}
+      />
+    );
+  }
+}
+
 function SettingsEditor({
   document,
+  schema,
   value,
   valuePath,
   sendCommand,
 }: {
   document: ScenarioDocument;
+  schema: EditorSchema;
   value: JsonValue | undefined;
   valuePath: Path;
   sendCommand: (command: Record<string, unknown>) => void;
 }) {
-  const [newKey, setNewKey] = useState("");
-  const [newValue, setNewValue] = useState("");
-
   if (isAlias(value)) {
     return (
       <div className="settings-editor">
@@ -260,6 +416,7 @@ function SettingsEditor({
     return (
       <OverridesEditor
         document={document}
+        schema={schema}
         value={value}
         valuePath={valuePath}
         sendCommand={sendCommand}
@@ -268,8 +425,26 @@ function SettingsEditor({
   }
 
   const type = conditionType(value);
-  const childKeys = childConditionKeys(type);
-  const settings = Object.entries(value).filter(([key]) => !childKeys.includes(key));
+  if (!schema.conditionFields[type]) {
+    if (schema.detectorFields[type]) {
+      return (
+        <div className="settings-editor">
+          <DetectorFieldsEditor
+            schema={schema}
+            value={value}
+            valuePath={valuePath}
+            sendCommand={sendCommand}
+          />
+        </div>
+      );
+    }
+    return <p className="error-text">未対応の Condition 型です: {type}</p>;
+  }
+
+  const fields = schema.conditionFields[type];
+  const missingRequired = fields.filter(
+    (field) => field.required && value[field.name] === undefined,
+  );
 
   return (
     <div className="settings-editor">
@@ -279,142 +454,71 @@ function SettingsEditor({
           value={type}
           onChange={(event) =>
             sendCommand({
-              type: "set_setting",
+              type: "set_condition_type",
               path: valuePath,
-              key: "type",
               value: event.target.value,
             })
           }
         >
-          {conditionTypes.map((name) => (
+          {Object.keys(schema.conditionFields).map((name) => (
             <option key={name} value={name}>
               {name}
             </option>
           ))}
         </select>
       </div>
-      {settings
-        .filter(([key]) => key !== "type")
-        .map(([key, item]) => {
-          if (isMapping(item)) {
-            return (
-              <div key={key} className="nested-group">
-                <div className="nested-title">
-                  {key}
-                  <button
-                    className="icon"
-                    title="この設定を削除"
-                    onClick={() =>
-                      sendCommand({ type: "remove_setting", path: valuePath, key })
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-                <NestedMappingEditor
-                  value={item}
-                  valuePath={[...valuePath, key]}
-                  sendCommand={sendCommand}
-                  depth={1}
-                />
-              </div>
-            );
-          }
-          if (isSequence(item)) {
-            return (
-              <div key={key} className="setting-row">
-                <span className="setting-label">{key}</span>
-                <DraftInput
-                  multiline
-                  value={JSON.stringify(item)}
-                  onCommit={(text) => {
-                    const parsed = parseInputValue(text);
-                    if (isSequence(parsed)) {
-                      sendCommand({ type: "set_setting", path: valuePath, key, value: parsed });
-                    }
-                  }}
-                />
-                <button
-                  className="icon"
-                  title="この設定を削除"
-                  onClick={() => sendCommand({ type: "remove_setting", path: valuePath, key })}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          }
-          return (
-            <SettingRow
-              key={key}
-              label={key}
-              value={item}
-              onCommit={(next) =>
-                sendCommand({ type: "set_setting", path: valuePath, key, value: next })
-              }
-              onRemove={() => sendCommand({ type: "remove_setting", path: valuePath, key })}
-            />
-          );
-        })}
-      <div className="inline-form">
-        <input
-          value={newKey}
-          placeholder="setting"
-          onChange={(event) => setNewKey(event.target.value)}
-        />
-        <input
-          value={newValue}
-          placeholder="value"
-          onChange={(event) => setNewValue(event.target.value)}
-        />
-        <button
-          onClick={() => {
-            if (!newKey.trim()) {
-              return;
+      <SettingRow
+        label="id"
+        value={value.id}
+        onCommit={(next) =>
+          sendCommand({ type: "set_setting", path: valuePath, key: "id", value: next })
+        }
+        onRemove={() =>
+          sendCommand({ type: "remove_setting", path: valuePath, key: "id" })
+        }
+      />
+      {missingRequired.map((field) => (
+        <div key={field.name} className="setting-row">
+          <span className="setting-label">{field.name}</span>
+          <span className="error-text">必須項目がありません</span>
+          <button
+            className="icon"
+            title="既定値を追加"
+            onClick={() =>
+              sendCommand({
+                type: "set_setting",
+                path: valuePath,
+                key: field.name,
+                value: structuredClone(field.default),
+              })
             }
-            sendCommand({
-              type: "set_setting",
-              path: valuePath,
-              key: newKey.trim(),
-              value: parseInputValue(newValue),
-            });
-            setNewKey("");
-            setNewValue("");
-          }}
-        >
-          設定を追加
-        </button>
-      </div>
-      {childKeys.includes("condition")
-      && !isMapping(value.condition)
-      && !isAlias(value.condition) ? (
-        <button
-          onClick={() =>
-            sendCommand({
-              type: "set_setting",
-              path: valuePath,
-              key: "condition",
-              value: defaultCondition,
-            })
-          }
-        >
-          子 Condition を追加
-        </button>
-      ) : null}
-      {childKeys.includes("reset_condition") && !isMapping(value.reset_condition) ? (
-        <button
-          onClick={() =>
-            sendCommand({
-              type: "set_setting",
-              path: valuePath,
-              key: "reset_condition",
-              value: defaultCondition,
-            })
-          }
-        >
-          Reset Condition を追加
-        </button>
-      ) : null}
+          >
+            +
+          </button>
+        </div>
+      ))}
+      {fields.map((field) => {
+        const item = value[field.name];
+        if (item === undefined) {
+          return null;
+        }
+        return (
+          <SchemaFieldEditor
+            key={field.name}
+            schema={schema}
+            field={field}
+            value={item}
+            valuePath={valuePath}
+            sendCommand={sendCommand}
+          />
+        );
+      })}
+      <MissingOptionalFields
+        fields={fields}
+        value={value}
+        valuePath={valuePath}
+        sendCommand={sendCommand}
+      />
     </div>
   );
 }
@@ -434,27 +538,110 @@ function flattenLeaves(
   return result;
 }
 
+function collectConditionIdNodes(
+  value: JsonValue,
+  result: { id: string; value: JsonValue }[] = [],
+): { id: string; value: JsonValue }[] {
+  if (!isMapping(value)) {
+    return result;
+  }
+  const id = conditionId(value);
+  if (id) {
+    result.push({ id, value });
+  }
+  const type = conditionType(value);
+  for (const key of childConditionKeys(type)) {
+    const child = value[key];
+    if (key === "conditions" && isSequence(child)) {
+      child.forEach((item) => collectConditionIdNodes(item, result));
+    } else if (child !== undefined) {
+      collectConditionIdNodes(child, result);
+    }
+  }
+  return result;
+}
+
+function overrideFieldPaths(value: JsonValue, schema: EditorSchema): string[][] {
+  if (!isMapping(value)) {
+    return [];
+  }
+  const fields = schema.conditionFields[conditionType(value)] ?? [];
+  const paths: string[][] = [];
+  for (const field of fields) {
+    if (field.kind === "condition" || field.kind === "condition_list") {
+      continue;
+    }
+    const item = value[field.name];
+    if (field.kind === "detector" && isMapping(item)) {
+      const detectorFields = schema.detectorFields[scalar(item.type) ?? ""] ?? [];
+      for (const detectorField of detectorFields) {
+        if (detectorField.kind === "roi" && isMapping(item[detectorField.name])) {
+          for (const key of ["x", "y", "width", "height"]) {
+            paths.push([field.name, detectorField.name, key]);
+          }
+        } else {
+          paths.push([field.name, detectorField.name]);
+        }
+      }
+      continue;
+    }
+    if (field.kind === "roi" && isMapping(item)) {
+      for (const key of ["x", "y", "width", "height"]) {
+        paths.push([field.name, key]);
+      }
+      continue;
+    }
+    paths.push([field.name]);
+  }
+  return paths;
+}
+
+function overrideOptions(
+  resolved: JsonValue,
+  schema: EditorSchema,
+): { id: string; paths: string[][] }[] {
+  const seen = new Set<string>();
+  const result: { id: string; paths: string[][] }[] = [];
+  for (const node of collectConditionIdNodes(resolved)) {
+    if (seen.has(node.id)) {
+      continue;
+    }
+    seen.add(node.id);
+    result.push({ id: node.id, paths: overrideFieldPaths(node.value, schema) });
+  }
+  return result;
+}
+
 function OverridesEditor({
   document,
+  schema,
   value,
   valuePath,
   sendCommand,
 }: {
   document: ScenarioDocument;
+  schema: EditorSchema;
   value: Record<string, JsonValue>;
   valuePath: Path;
   sendCommand: (command: Record<string, unknown>) => void;
 }) {
   const anchor = usageAnchor(value) ?? "";
   const definition = definitionByName(document, anchor);
-  const ids = useMemo(
-    () => (definition ? conditionIds(definition.resolved) : []),
-    [definition],
+  const options = useMemo(
+    () => (definition ? overrideOptions(definition.resolved, schema) : []),
+    [definition, schema],
   );
+  const ids = options.map((option) => option.id);
   const overrides = isMapping(value.overrides) ? value.overrides : {};
   const [targetId, setTargetId] = useState(ids[0] ?? "");
   const [fieldPath, setFieldPath] = useState("");
   const [fieldValue, setFieldValue] = useState("");
+  const availablePaths = options.find((option) => option.id === targetId)?.paths ?? [];
+  const activeFieldPath = availablePaths.some(
+    (path) => path.join(".") === fieldPath,
+  )
+    ? fieldPath
+    : (availablePaths[0]?.join(".") ?? "");
 
   useEffect(() => {
     if (!ids.includes(targetId)) {
@@ -532,28 +719,33 @@ function OverridesEditor({
               </option>
             ))}
           </select>
-          <input
-            value={fieldPath}
-            placeholder="duration / detector.roi.x"
+          <select
+            value={activeFieldPath}
             onChange={(event) => setFieldPath(event.target.value)}
-          />
+          >
+            {availablePaths.length === 0 ? <option value="">項目なし</option> : null}
+            {availablePaths.map((path) => {
+              const value = path.join(".");
+              return (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              );
+            })}
+          </select>
           <input
             value={fieldValue}
             placeholder="value"
             onChange={(event) => setFieldValue(event.target.value)}
           />
           <button
-            disabled={!targetId || !fieldPath.trim()}
+            disabled={!targetId || !activeFieldPath}
             onClick={() => {
-              const settingPath = fieldPath
-                .split(".")
-                .map((part) => part.trim())
-                .filter(Boolean);
               sendCommand({
                 type: "set_override",
                 path: valuePath,
                 condition_id: targetId,
-                setting_path: settingPath,
+                setting_path: activeFieldPath.split("."),
                 value: parseInputValue(fieldValue),
               });
             }}
@@ -982,11 +1174,13 @@ export function UsageModeToolbar({
 
 export function ConditionInspector({
   document,
+  schema,
   usagePath,
   selectedPath,
   sendCommand,
 }: {
   document: ScenarioDocument;
+  schema: EditorSchema;
   usagePath: Path;
   selectedPath: Path;
   sendCommand: (command: Record<string, unknown>) => void;
@@ -997,7 +1191,13 @@ export function ConditionInspector({
   }
   const rootInherits = isInheritanceUsage(rawRoot);
   const rootReference = isAlias(rawRoot);
-  const fixedRoot = rootInherits || rootReference;
+  const rootType = isMapping(rawRoot) ? conditionType(rawRoot) : "";
+  const rootDetector =
+    !rootInherits &&
+    !rootReference &&
+    !schema.conditionFields[rootType] &&
+    Boolean(schema.detectorFields[rootType]);
+  const fixedRoot = rootInherits || rootReference || rootDetector;
   const relative = selectedPath.slice(usagePath.length);
   const effectiveRoot = resolvedRootAtPath(document, usagePath) ?? rawRoot;
   const rawSelected = valueAtPath(rawRoot, relative);
@@ -1007,7 +1207,7 @@ export function ConditionInspector({
       ? rawRoot
       : effectiveSelected
     : rawSelected;
-  const showModeToolbar = !fixedRoot || relative.length === 0;
+  const showModeToolbar = !rootDetector && (!fixedRoot || relative.length === 0);
 
   return (
     <div className="inspector">
@@ -1029,6 +1229,7 @@ export function ConditionInspector({
           </p>
           <SettingsEditor
             document={document}
+            schema={schema}
             value={rawRoot}
             valuePath={usagePath}
             sendCommand={sendCommand}
@@ -1038,6 +1239,7 @@ export function ConditionInspector({
         relative.length === 0 ? (
           <SettingsEditor
             document={document}
+            schema={schema}
             value={rawSelected}
             valuePath={selectedPath}
             sendCommand={sendCommand}
@@ -1054,6 +1256,7 @@ export function ConditionInspector({
       ) : (
         <SettingsEditor
           document={document}
+          schema={schema}
           value={rawSelected}
           valuePath={selectedPath}
           sendCommand={sendCommand}

@@ -47,9 +47,31 @@ export interface ScenarioDocument {
   splits: (SplitDefinition | null)[];
 }
 
+export interface FieldSchema {
+  name: string;
+  kind:
+    | "text"
+    | "number"
+    | "integer"
+    | "duration"
+    | "condition"
+    | "condition_list"
+    | "detector"
+    | "roi"
+    | "number_list";
+  required: boolean;
+  default: JsonValue;
+}
+
+export interface EditorSchema {
+  conditionFields: Record<string, FieldSchema[]>;
+  detectorFields: Record<string, FieldSchema[]>;
+}
+
 export interface EditorState {
   type: "state";
   version: number;
+  schema: EditorSchema;
   document: ScenarioDocument;
   canUndo: boolean;
   canRedo: boolean;
@@ -313,6 +335,7 @@ export function emptyDemoState(): EditorState {
   return {
     type: "state",
     version: 2,
+    schema: { conditionFields: {}, detectorFields: {} },
     canUndo: false,
     canRedo: false,
     document: {

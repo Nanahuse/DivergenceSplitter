@@ -702,3 +702,130 @@ TEST(ScenarioEditor, RejectsOverrideCommandsWithUnknownConditionIds) {
         nullptr
     );
 }
+
+TEST(ScenarioEditor, RejectsUnknownAndMissingConditionFields) {
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+start_condition: {type: elapsed, duration: 1s, extra: value}
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+start_condition: {type: elapsed}
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+start_condition:
+  type: detected
+  minimum_score: 0.5
+  detector:
+    type: mean_brightness
+    reference: reference.png
+splits: []
+)"),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        (void)import_scenario_yaml(R"(
+start_condition:
+  type: detected
+  minimum_score: 0.5
+  detector:
+    type: template_match
+    reference: reference.png
+    unknown: value
+splits: []
+)"),
+        ScenarioEditorError
+    );
+}
+
+TEST(ScenarioEditor, CommandsRejectUnknownOrMissingFields) {
+    EditorSession session = new_editor_session();
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "set_setting"},
+            {"path", nlohmann::json::array({"start_condition"})},
+            {"key", "unknown"},
+            {"value", "1"},
+        }),
+        ScenarioEditorError
+    );
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "remove_setting"},
+            {"path", nlohmann::json::array({"start_condition"})},
+            {"key", "duration"},
+        }),
+        ScenarioEditorError
+    );
+    EXPECT_TRUE(session.undo_stack.empty());
+}
+
+TEST(ScenarioEditor, ChangingTypesUsesTheFixedFieldSchema) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_setting"},
+        {"path", nlohmann::json::array({"start_condition"})},
+        {"key", "id"},
+        {"value", "root"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_condition_type"},
+        {"path", nlohmann::json::array({"start_condition"})},
+        {"value", "all"},
+    });
+    const auto& start = session.document.start_condition->value;
+    EXPECT_EQ(scalar_setting(start, "type"), "all");
+    EXPECT_EQ(scalar_setting(start, "id"), "root");
+    EXPECT_NE(start.find("conditions"), nullptr);
+    EXPECT_EQ(start.find("duration"), nullptr);
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_condition_type"},
+        {"path", nlohmann::json::array({"start_condition"})},
+        {"value", "detected"},
+    });
+    const auto& detected = session.document.start_condition->value;
+    ASSERT_NE(detected.find("detector"), nullptr);
+    EXPECT_EQ(scalar_setting(*detected.find("detector"), "type"), "mean_brightness");
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_detector_type"},
+        {"path", nlohmann::json::array({"start_condition", "detector"})},
+        {"value", "template_match"},
+    });
+    const auto& detector = *session.document.start_condition->value.find("detector");
+    EXPECT_EQ(scalar_setting(detector, "type"), "template_match");
+    EXPECT_EQ(scalar_setting(detector, "reference"), "reference.png");
+    EXPECT_EQ(detector.find("roi"), nullptr);
+
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "set_setting"},
+            {"path", nlohmann::json::array({"start_condition", "detector"})},
+            {"key", "unknown"},
+            {"value", "1"},
+        }),
+        ScenarioEditorError
+    );
+}
+
+TEST(ScenarioEditor, JsonStateExposesTheFixedFieldSchema) {
+    EditorSession session = new_editor_session();
+    const auto state = editor_state_json(session);
+    ASSERT_TRUE(state["schema"]["conditionFields"].contains("elapsed"));
+    ASSERT_TRUE(state["schema"]["conditionFields"].contains("detected"));
+    ASSERT_TRUE(state["schema"]["detectorFields"].contains("mean_brightness"));
+    const auto& elapsed = state["schema"]["conditionFields"]["elapsed"];
+    ASSERT_EQ(elapsed.size(), 1U);
+    EXPECT_EQ(elapsed[0]["name"], "duration");
+    EXPECT_EQ(elapsed[0]["kind"], "duration");
+    EXPECT_TRUE(elapsed[0]["required"].get<bool>());
+    EXPECT_EQ(elapsed[0]["default"], "1s");
+}

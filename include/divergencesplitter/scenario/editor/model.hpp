@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -96,6 +97,35 @@ struct ScenarioDocument {
     std::optional<ConditionUsage> incomplete_condition;
     std::vector<std::optional<SplitDefinition>> splits;
 };
+
+enum class FieldKind {
+    text,
+    number,
+    integer,
+    duration,
+    condition,
+    condition_list,
+    detector,
+    roi,
+    number_list,
+};
+
+struct FieldSchema {
+    std::string name;
+    FieldKind kind{FieldKind::text};
+    bool required{false};
+    Value default_value;
+};
+
+struct EditorSchema {
+    std::map<std::string, std::vector<FieldSchema>> condition_fields;
+    std::map<std::string, std::vector<FieldSchema>> detector_fields;
+};
+
+[[nodiscard]] const EditorSchema& editor_schema();
+
+void validate_condition_schema(const Value& value);
+void validate_detector_schema(const Value& value);
 
 [[nodiscard]] DefinitionKind classify_definition(const Value& value);
 [[nodiscard]] const SharedDefinition* find_definition(

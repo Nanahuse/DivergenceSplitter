@@ -441,11 +441,22 @@ void validate_scenario_document(const ScenarioDocument& document) {
         if (!usage.value.is_mapping() && !usage.value.is_alias()) {
             throw ScenarioEditorError("conditions must be mappings or aliases");
         }
-        (void)resolve_condition(document, usage.value);
+        const auto resolved = resolve_condition(document, usage.value);
+        validate_condition_schema(resolved);
     };
 
     for (const auto& definition : document.definitions) {
-        (void)resolve_condition(document, definition.value);
+        const auto resolved = resolve_condition(document, definition.value);
+        switch (classify_definition(resolved)) {
+        case DefinitionKind::condition:
+            validate_condition_schema(resolved);
+            break;
+        case DefinitionKind::detector:
+            validate_detector_schema(resolved);
+            break;
+        case DefinitionKind::other:
+            break;
+        }
     }
     if (document.start_condition) {
         check_usage(*document.start_condition);

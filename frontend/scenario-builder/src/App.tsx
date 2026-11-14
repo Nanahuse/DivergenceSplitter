@@ -156,6 +156,7 @@ export default function App() {
   };
 
   const document = state?.document;
+  const schema = state?.schema ?? { conditionFields: {}, detectorFields: {} };
   const splitSelection = selection?.kind === "split" ? selection : null;
 
   return (
@@ -411,6 +412,7 @@ export default function App() {
               <>
                 <ConditionInspector
                   document={document}
+                  schema={schema}
                   usagePath={rootPath}
                   selectedPath={activePath ?? rootPath}
                   sendCommand={runCommand}

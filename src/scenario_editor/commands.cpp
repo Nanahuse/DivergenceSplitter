@@ -306,6 +306,96 @@ RuleDefinition default_rule() {
     return rule;
 }
 
+std::string field_kind_name(FieldKind kind) {
+    switch (kind) {
+    case FieldKind::text:
+        return "text";
+    case FieldKind::number:
+        return "number";
+    case FieldKind::integer:
+        return "integer";
+    case FieldKind::duration:
+        return "duration";
+    case FieldKind::condition:
+        return "condition";
+    case FieldKind::condition_list:
+        return "condition_list";
+    case FieldKind::detector:
+        return "detector";
+    case FieldKind::roi:
+        return "roi";
+    case FieldKind::number_list:
+        return "number_list";
+    }
+    return "text";
+}
+
+const std::vector<FieldSchema>& condition_fields_or_throw(const std::string& type) {
+    const auto found = editor_schema().condition_fields.find(type);
+    if (found == editor_schema().condition_fields.end()) {
+        throw ScenarioEditorError("unsupported condition type: " + type);
+    }
+    return found->second;
+}
+
+const std::vector<FieldSchema>& detector_fields_or_throw(const std::string& type) {
+    const auto found = editor_schema().detector_fields.find(type);
+    if (found == editor_schema().detector_fields.end()) {
+        throw ScenarioEditorError("unsupported detector type: " + type);
+    }
+    return found->second;
+}
+
+Value build_typed_mapping(
+    const std::string& type,
+    const std::vector<FieldSchema>& fields,
+    const Value* old_value,
+    bool preserve_id
+) {
+    Value result = Value::make_mapping();
+    result.set("type", Value::make_scalar(type));
+    if (preserve_id && old_value != nullptr && old_value->is_mapping()) {
+        if (const auto* id = old_value->find("id"); id != nullptr) {
+            result.set("id", *id);
+        }
+    }
+    for (const auto& field : fields) {
+        const auto* previous = old_value != nullptr && old_value->is_mapping()
+            ? old_value->find(field.name)
+            : nullptr;
+        if (previous != nullptr) {
+            result.set(field.name, *previous);
+        } else if (field.required) {
+            result.set(field.name, field.default_value);
+        }
+    }
+    return result;
+}
+
+nlohmann::json schema_fields_json(const std::map<std::string, std::vector<FieldSchema>>& fields) {
+    nlohmann::json result = nlohmann::json::object();
+    for (const auto& [type, definitions] : fields) {
+        nlohmann::json items = nlohmann::json::array();
+        for (const auto& definition : definitions) {
+            items.push_back(nlohmann::json{
+                {"name", definition.name},
+                {"kind", field_kind_name(definition.kind)},
+                {"required", definition.required},
+                {"default", value_to_json(definition.default_value)},
+            });
+        }
+        result[type] = std::move(items);
+    }
+    return result;
+}
+
+nlohmann::json editor_schema_json() {
+    return nlohmann::json{
+        {"conditionFields", schema_fields_json(editor_schema().condition_fields)},
+        {"detectorFields", schema_fields_json(editor_schema().detector_fields)},
+    };
+}
+
 void mutate_document(ScenarioDocument& document, const nlohmann::json& command) {
     const std::string type = command.at("type").get<std::string>();
     if (type == "set_value") {
@@ -322,6 +412,28 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
             throw ScenarioEditorError("use set_usage to change shared condition references");
         }
         target->set(key, value_from_json(command.at("value")));
+        return;
+    }
+    if (type == "set_condition_type") {
+        Value* target = resolve_path(document, parse_path(command));
+        if (!target->is_mapping() || target->find("extends") != nullptr) {
+            throw ScenarioEditorError(
+                "condition type can only be changed on an inline condition"
+            );
+        }
+        const std::string next_type = command.at("value").get<std::string>();
+        const auto& fields = condition_fields_or_throw(next_type);
+        *target = build_typed_mapping(next_type, fields, target, true);
+        return;
+    }
+    if (type == "set_detector_type") {
+        Value* target = resolve_path(document, parse_path(command));
+        if (!target->is_mapping() || target->find("type") == nullptr) {
+            throw ScenarioEditorError("detector type can only be changed on a detector mapping");
+        }
+        const std::string next_type = command.at("value").get<std::string>();
+        const auto& fields = detector_fields_or_throw(next_type);
+        *target = build_typed_mapping(next_type, fields, target, false);
         return;
     }
     if (type == "remove_setting") {
@@ -940,6 +1052,7 @@ nlohmann::json editor_state_json(const EditorSession& session) {
     };
     return nlohmann::json{
         {"version", 2},
+        {"schema", editor_schema_json()},
         {"document", std::move(document)},
         {"canUndo", !session.undo_stack.empty()},
         {"canRedo", !session.redo_stack.empty()},
