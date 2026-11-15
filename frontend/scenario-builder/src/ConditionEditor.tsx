@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   childConditionKeys,
   conditionDefinitionByName,
@@ -32,7 +32,9 @@ import { Tooltip } from "./Tooltip";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
-const addAssetOption = "__divergencesplitter_add_asset__";
+function assetName(asset: string): string {
+  return asset.replace(/^Asset\//, "");
+}
 
 function parseInputValue(text: string): JsonValue {
   const trimmed = text.trim();
@@ -579,73 +581,173 @@ function AssetSelect({
     onChange: (exposed: boolean) => void;
   };
 }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const titleId = useId();
   const current = scalar(value) ?? "";
   const known = actions.assets.includes(current);
+  const filtered = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase();
+    if (!term) {
+      return actions.assets;
+    }
+    return actions.assets.filter((asset) =>
+      asset.toLocaleLowerCase().includes(term)
+      || assetName(asset).toLocaleLowerCase().includes(term)
+    );
+  }, [actions.assets, query]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setQuery("");
+    const timer = window.setTimeout(() => searchRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="asset-setting">
-      <div className="asset-setting-header">
-        <span className="setting-label">reference</span>
-        {overridden ? <span className="override-badge">この使用箇所</span> : null}
-        {expose ? (
-          <label className="expose-toggle" title="使用箇所から変更できるようにする">
-            <input
-              type="checkbox"
-              checked={expose.exposed}
-              disabled={expose.disabled}
-              onChange={(event) => expose.onChange(event.target.checked)}
-            />
-            公開
-          </label>
-        ) : null}
-      </div>
-      <div className="asset-setting-controls">
-        <select
-          value={current}
-          disabled={readOnly}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (next === addAssetOption) {
-              if (!readOnly) {
-                actions.addAsset?.((asset) => actions.set(path, asset));
-              }
-              return;
-            }
-            actions.set(path, next);
-          }}
-        >
-          {current === "" ? <option value="">選択してください</option> : null}
-          {current !== "" && !known ? (
-            <option value={current}>{current} (見つかりません)</option>
+    <>
+      <div className="asset-setting">
+        <div className="asset-setting-header">
+          <span className="setting-label">reference</span>
+          {overridden ? <span className="override-badge">この使用箇所</span> : null}
+          {expose ? (
+            <label className="expose-toggle" title="使用箇所から変更できるようにする">
+              <input
+                type="checkbox"
+                checked={expose.exposed}
+                disabled={expose.disabled}
+                onChange={(event) => expose.onChange(event.target.checked)}
+              />
+              公開
+            </label>
           ) : null}
-          {actions.assets.map((asset) => (
-            <option key={asset} value={asset}>
-              {asset}
-            </option>
-          ))}
-          {!readOnly && actions.addAsset ? (
-            <option value={addAssetOption}>＋ 新規追加...</option>
-          ) : null}
-        </select>
-        {current ? (
-          <button
-            className="icon"
-            title="参照パスをコピー"
-            onClick={() => void navigator.clipboard?.writeText(current)}
+        </div>
+        <div className="asset-setting-controls">
+          <span
+            className={current ? "asset-current" : "asset-current empty"}
+            title={current || undefined}
           >
-            ⧉
+            {current ? assetName(current) : "未選択"}
+            {current !== "" && !known ? " (見つかりません)" : ""}
+          </span>
+          <button
+            type="button"
+            className="asset-change"
+            disabled={readOnly}
+            onClick={() => setOpen(true)}
+          >
+            変更
           </button>
-        ) : (
-          <span />
-        )}
-        {reset ? (
-          <button className="icon" title="共通定義の値に戻す" onClick={reset}>
-            ↺
-          </button>
-        ) : (
-          <span />
-        )}
+          {reset ? (
+            <button
+              type="button"
+              className="icon"
+              title="共通定義の値に戻す"
+              onClick={reset}
+            >
+              ↺
+            </button>
+          ) : (
+            <span />
+          )}
+        </div>
       </div>
-    </div>
+
+      {open ? (
+        <div
+          className="asset-dialog-backdrop"
+          onMouseDown={() => setOpen(false)}
+        >
+          <div
+            className="asset-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="asset-dialog-header">
+              <h2 id={titleId}>参照画像を選択</h2>
+              <button
+                type="button"
+                className="icon"
+                title="閉じる"
+                onClick={() => setOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="asset-dialog-search">
+              <input
+                ref={searchRef}
+                value={query}
+                aria-label="ファイル名で検索"
+                placeholder="ファイル名で検索"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+            <div className="asset-dialog-list">
+              {filtered.map((asset) => (
+                <button
+                  type="button"
+                  key={asset}
+                  className={
+                    asset === current
+                      ? "asset-dialog-option selected"
+                      : "asset-dialog-option"
+                  }
+                  onClick={() => {
+                    actions.set(path, asset);
+                    setOpen(false);
+                  }}
+                >
+                  <span title={asset}>{assetName(asset)}</span>
+                  {asset === current ? (
+                    <span className="mode-hint">選択中</span>
+                  ) : null}
+                </button>
+              ))}
+              {filtered.length === 0 ? (
+                <p className="muted asset-dialog-empty">
+                  {actions.assets.length === 0
+                    ? "Asset に画像がありません。新規追加してください。"
+                    : "一致する画像がありません。"}
+                </p>
+              ) : null}
+            </div>
+            <div className="asset-dialog-footer">
+              <span className="muted">
+                {filtered.length} / {actions.assets.length} 件
+              </span>
+              {!readOnly && actions.addAsset ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    actions.addAsset?.((asset) => {
+                      actions.set(path, asset);
+                      setOpen(false);
+                    })
+                  }
+                >
+                  ＋ 新規追加...
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 

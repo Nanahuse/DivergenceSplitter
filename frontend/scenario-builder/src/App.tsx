@@ -242,15 +242,6 @@ export default function App() {
             <section>
               <div className="section-title">
                 <h2>作業ディレクトリ</h2>
-                {workspace ? (
-                  <button
-                    className="icon"
-                    title="Asset に画像を追加"
-                    onClick={() => addAsset(() => {})}
-                  >
-                    ＋
-                  </button>
-                ) : null}
               </div>
               {workspace ? (
                 <>
@@ -284,28 +275,10 @@ export default function App() {
                   {workspace.scenarios.length === 0 ? (
                     <p className="muted">YAML ファイルはまだありません。</p>
                   ) : null}
-                  <h3 className="subsection-title">Asset</h3>
-                  <ul className="tree-list">
-                    {workspace.assets.map((asset) => (
-                      <li key={asset}>
-                        <button
-                          className="link-row"
-                          title="参照パスをコピー"
-                          onClick={() => void navigator.clipboard?.writeText(asset)}
-                        >
-                          <span className="asset-mark">A</span>
-                          {asset.replace(/^Asset\//, "")}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {workspace.assets.length === 0 ? (
-                    <p className="muted">Asset はまだありません。</p>
-                  ) : null}
                 </>
               ) : (
                 <p className="muted">
-                  作業フォルダを開くと、YAML と Asset をまとめて管理できます。
+                  作業フォルダを開くと、YAML を一覧から切り替えられます。
                 </p>
               )}
             </section>

@@ -253,11 +253,6 @@ button.link-row {
   margin-right: 3px;
 }
 
-.asset-mark {
-  color: var(--accent);
-  margin-right: 3px;
-}
-
 .subsection-title {
   margin: 10px 0 3px;
   color: var(--muted);
@@ -464,17 +459,26 @@ button.link-row {
   min-width: 0;
 }
 
-.asset-setting-controls select {
-  width: 100%;
-  min-width: 0;
-}
-
 .asset-setting-controls button {
   flex-shrink: 0;
 }
 
-.asset-setting-controls select:disabled {
-  opacity: 0.72;
+.asset-current {
+  min-width: 0;
+  overflow: hidden;
+  color: #dbe6f3;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-current.empty {
+  color: var(--muted);
+}
+
+.asset-change {
+  justify-self: start;
 }
 
 .setting-label {
@@ -786,4 +790,103 @@ pre {
 
 .breadcrumb-separator {
   color: var(--muted);
+}
+
+.asset-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.asset-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: min(640px, 90vh);
+  min-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #171e28;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.asset-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.asset-dialog-header h2 {
+  margin: 0;
+  color: #dbe6f3;
+  font-size: 15px;
+  text-transform: none;
+}
+
+.asset-dialog-search {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.asset-dialog-search input {
+  width: 100%;
+}
+
+.asset-dialog-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 6px;
+  overflow: auto;
+}
+
+.asset-dialog-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #dbe6f3;
+  text-align: left;
+}
+
+.asset-dialog-option > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-dialog-option:hover:not(:disabled),
+.asset-dialog-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.asset-dialog-empty {
+  margin: 0;
+  padding: 24px 12px;
+  text-align: center;
+}
+
+.asset-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
 }
