@@ -701,3 +701,43 @@ pre {
 .setting-row .tooltip-anchor > select {
   width: 100%;
 }
+
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breadcrumb-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.breadcrumb-link:hover:not(:disabled) {
+  border-color: transparent;
+  text-decoration: underline;
+}
+
+.breadcrumb [aria-current="page"] {
+  color: #dbe6f3;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.breadcrumb-separator {
+  color: var(--muted);
+}

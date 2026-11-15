@@ -180,6 +180,7 @@ C:\Scenarios\SuperMarioWorld\
 
 - 左ペイン: 作業ディレクトリ内のYAML一覧、共通Condition、共通Detector、Start / Reset / Incomplete、Split 一覧
 - 中央ペイン: Condition ツリー、Rule 一覧。Condition はボタンまたはドラッグ＆ドロップで並べ替え
+- Rule の Condition 編集画面では、上部のパンくずから `Split N` をクリックして Rule 一覧へ戻れます
 - 右ペイン: 選択 Condition の設定、共通定義の利用、Asset からの参照画像選択、使用箇所ごとの変更と解除
 - `+ Rule` / `+ Sequence` と Condition の `then` には、マウスホバーまたはキーボードフォーカスで説明と具体例を表示
 

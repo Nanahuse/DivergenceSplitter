@@ -29,6 +29,7 @@ import {
   type WorkspaceInfo,
 } from "./model";
 import { Tooltip } from "./Tooltip";
+import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
 
@@ -1084,6 +1085,7 @@ export function ConditionPane({
   definition,
   onSelect,
   sendCommand,
+  onNavigateSplit,
 }: {
   document: ScenarioDocument;
   rootPath: Path;
@@ -1091,6 +1093,7 @@ export function ConditionPane({
   definition: boolean;
   onSelect: (path: Path) => void;
   sendCommand: (command: Record<string, unknown>) => void;
+  onNavigateSplit?: (index: number) => void;
 }) {
   const raw = valueAtPath(conditionRootValue(document, rootPath), []);
   if (raw === undefined || raw === null) {
@@ -1100,10 +1103,36 @@ export function ConditionPane({
   const display = shared
     ? (resolvedRootAtPath(document, rootPath) ?? raw)
     : raw;
+  const splitIndex = rootPath[0] === "splits" && typeof rootPath[1] === "number"
+    ? rootPath[1]
+    : null;
+  const ruleIndex = splitIndex !== null && typeof rootPath[3] === "number"
+    ? rootPath[3]
+    : null;
+  const breadcrumbItems: BreadcrumbItem[] = splitIndex === null
+    ? []
+    : [
+        {
+          label: `Split ${splitIndex + 1}`,
+          onClick: onNavigateSplit
+            ? () => onNavigateSplit(splitIndex)
+            : undefined,
+        },
+        ...(ruleIndex === null
+          ? []
+          : [{ label: `Rule ${ruleIndex + 1}` }]),
+      ];
   return (
     <div className="condition-pane">
       <div className="condition-pane-header">
-        <h2>{formatPath(document, rootPath)}</h2>
+        {breadcrumbItems.length > 0 ? (
+          <Breadcrumb
+            items={breadcrumbItems}
+            className="condition-pane-breadcrumb"
+          />
+        ) : (
+          <h2>{formatPath(document, rootPath)}</h2>
+        )}
         <span className={`mode-badge ${shared ? "inherits" : "inline"}`}>
           {shared ? `use ${sharedUseName(raw)}` : definition ? "共通定義" : "inline"}
         </span>

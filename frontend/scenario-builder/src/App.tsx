@@ -120,6 +120,11 @@ export default function App() {
     setSelectedPath(selectionPath(next));
   }, []);
 
+  const navigateToSplit = useCallback((index: number) => {
+    setSelection({ kind: "split", index });
+    setSelectedPath(null);
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) {
@@ -538,6 +543,7 @@ export default function App() {
                 definition
                 onSelect={setSelectedPath}
                 sendCommand={runCommand}
+                onNavigateSplit={navigateToSplit}
               />
             ) : rootPath
               && (selection?.kind === "special" || selection?.kind === "rule") ? (
@@ -548,6 +554,7 @@ export default function App() {
                 definition={false}
                 onSelect={setSelectedPath}
                 sendCommand={runCommand}
+                onNavigateSplit={navigateToSplit}
               />
             ) : rootPath && selection?.kind === "detector-definition" ? (
               <DetectorPane document={document} rootPath={rootPath} />
