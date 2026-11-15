@@ -412,3 +412,42 @@ TEST(ScenarioV2, AcceptsUtf8Bom) {
     ASSERT_NE(start, nullptr);
     EXPECT_EQ(start->duration(), std::chrono::seconds{1});
 }
+
+TEST(ScenarioV2, OmitsOptionalFieldsWithNullParameterDefaults) {
+    TemporaryDirectory directory;
+    const auto path = write_scenario(directory, R"(
+schema_version: 2
+definitions:
+  conditions:
+    sequence:
+      parameters:
+        within_value: null
+      condition:
+        type: then
+        within: {param: within_value}
+        conditions:
+          - type: elapsed
+            duration: 1s
+start_condition:
+  use: sequence
+  with:
+    within_value: 3s
+splits:
+  - rules:
+      - condition:
+          use: sequence
+        action: split
+)");
+    const auto loaded = load_scenario(path);
+    const auto* start = dynamic_cast<const ThenCondition*>(
+        loaded.scenario.start_condition.get()
+    );
+    ASSERT_NE(start, nullptr);
+    EXPECT_NE(start->describe().find("within 3s"), std::string::npos);
+    ASSERT_EQ(loaded.scenario.splits.size(), 1U);
+    const auto* rule = dynamic_cast<const ThenCondition*>(
+        loaded.scenario.splits[0]->at(0)->active_condition()
+    );
+    ASSERT_NE(rule, nullptr);
+    EXPECT_EQ(rule->describe().find("within"), std::string::npos);
+}

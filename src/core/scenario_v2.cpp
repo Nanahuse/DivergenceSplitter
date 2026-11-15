@@ -179,7 +179,11 @@ Value resolve_condition_node(const Value& value, const Context& context) {
         } else if (key == "detector") {
             result.mapping.emplace_back(key, resolve_detector_node(item, context));
         } else {
-            result.mapping.emplace_back(key, resolve_value(item, context));
+            const Value resolved = resolve_value(item, context);
+            if (item.is_parameter_reference() && resolved.is_null()) {
+                continue;
+            }
+            result.mapping.emplace_back(key, resolved);
         }
     }
     return result;
@@ -219,7 +223,11 @@ Value resolve_detector_node(const Value& value, const Context& context) {
     Value result = Value::make_mapping();
     result.mapping.reserve(value.mapping.size());
     for (const auto& [key, item] : value.mapping) {
-        result.mapping.emplace_back(key, resolve_value(item, context));
+        const Value resolved = resolve_value(item, context);
+        if (item.is_parameter_reference() && resolved.is_null()) {
+            continue;
+        }
+        result.mapping.emplace_back(key, resolved);
     }
     return result;
 }

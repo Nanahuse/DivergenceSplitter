@@ -513,6 +513,49 @@ Value* resolve_without_usage(Value& root, const Path& path) {
     return current;
 }
 
+struct SettingSlot {
+    Value* parent{};
+    std::string key;
+    Value* existing{};
+};
+
+SettingSlot resolve_setting_slot(Value& root, const Path& path) {
+    if (path.empty()) {
+        throw ScenarioEditorError("setting_path must not be empty");
+    }
+    if (path.back().is_index) {
+        throw ScenarioEditorError("setting_path must end with a string key");
+    }
+    Value* parent = &root;
+    for (std::size_t index = 0; index + 1 < path.size(); ++index) {
+        if (parent->is_mapping() && parent->find("use") != nullptr) {
+            throw ScenarioEditorError(
+                "nested shared definitions cannot be changed from the outer usage"
+            );
+        }
+        const auto& token = path[index];
+        if (token.is_index) {
+            if (!parent->is_sequence() || token.index >= parent->sequence.size()) {
+                throw ScenarioEditorError("setting path index is out of range");
+            }
+            parent = &parent->sequence[token.index];
+        } else {
+            if (!parent->is_mapping()) {
+                throw ScenarioEditorError("setting path expected a mapping");
+            }
+            parent = parent->find(token.key);
+            if (parent == nullptr) {
+                throw ScenarioEditorError("setting path field was not found: " + token.key);
+            }
+        }
+    }
+    if (!parent->is_mapping()) {
+        throw ScenarioEditorError("setting path parent must be a mapping");
+    }
+    const std::string key = path.back().key;
+    return SettingSlot{parent, key, parent->find(key)};
+}
+
 Path setting_path_from_json(const nlohmann::json& command) {
     const auto found = command.find("setting_path");
     if (found == command.end() || !found->is_array()) {
@@ -557,6 +600,41 @@ void erase_usage_with(Value& usage, const std::string& parameter) {
     }
 }
 
+void parameterize_setting(
+    Value& root,
+    std::vector<scenario::v2::ParameterDefinition>& parameters,
+    const std::string& definition_name,
+    Value& usage,
+    const Path& setting_path,
+    const Value& value
+) {
+    const SettingSlot slot = resolve_setting_slot(root, setting_path);
+    if (slot.existing != nullptr && slot.existing->is_parameter_reference()) {
+        set_usage_with(usage, slot.existing->scalar, value);
+        return;
+    }
+    const std::string parameter = unique_parameter_name(
+        definition_name, setting_path, parameters
+    );
+    parameters.push_back(scenario::v2::ParameterDefinition{
+        parameter,
+        slot.existing != nullptr ? *slot.existing : Value::make_null(),
+    });
+    slot.parent->set(slot.key, Value::make_parameter_reference(parameter));
+    set_usage_with(usage, parameter, value);
+}
+
+void reset_setting(
+    Value& root,
+    Value& usage,
+    const Path& setting_path
+) {
+    const SettingSlot slot = resolve_setting_slot(root, setting_path);
+    if (slot.existing != nullptr && slot.existing->is_parameter_reference()) {
+        erase_usage_with(usage, slot.existing->scalar);
+    }
+}
+
 void parameterize_condition_setting(
     ScenarioDocument& document,
     Value& usage,
@@ -571,19 +649,14 @@ void parameterize_condition_setting(
     if (definition == nullptr) {
         throw ScenarioEditorError("condition definition was not found: " + use->scalar);
     }
-    Value* target = resolve_without_usage(definition->condition, setting_path);
-    if (target->is_parameter_reference()) {
-        set_usage_with(usage, target->scalar, value);
-        return;
-    }
-    const std::string parameter = unique_parameter_name(
-        definition->name, setting_path, definition->parameters
+    parameterize_setting(
+        definition->condition,
+        definition->parameters,
+        definition->name,
+        usage,
+        setting_path,
+        value
     );
-    definition->parameters.push_back(
-        scenario::v2::ParameterDefinition{parameter, *target}
-    );
-    *target = Value::make_parameter_reference(parameter);
-    set_usage_with(usage, parameter, value);
 }
 
 void reset_condition_setting(
@@ -599,10 +672,7 @@ void reset_condition_setting(
     if (definition == nullptr) {
         throw ScenarioEditorError("condition definition was not found: " + use->scalar);
     }
-    Value* target = resolve_without_usage(definition->condition, setting_path);
-    if (target->is_parameter_reference()) {
-        erase_usage_with(usage, target->scalar);
-    }
+    reset_setting(definition->condition, usage, setting_path);
 }
 
 void parameterize_detector_setting(
@@ -619,19 +689,14 @@ void parameterize_detector_setting(
     if (definition == nullptr) {
         throw ScenarioEditorError("detector definition was not found: " + use->scalar);
     }
-    Value* target = resolve_without_usage(definition->detector, setting_path);
-    if (target->is_parameter_reference()) {
-        set_usage_with(usage, target->scalar, value);
-        return;
-    }
-    const std::string parameter = unique_parameter_name(
-        definition->name, setting_path, definition->parameters
+    parameterize_setting(
+        definition->detector,
+        definition->parameters,
+        definition->name,
+        usage,
+        setting_path,
+        value
     );
-    definition->parameters.push_back(
-        scenario::v2::ParameterDefinition{parameter, *target}
-    );
-    *target = Value::make_parameter_reference(parameter);
-    set_usage_with(usage, parameter, value);
 }
 
 void reset_detector_setting(
@@ -647,10 +712,7 @@ void reset_detector_setting(
     if (definition == nullptr) {
         throw ScenarioEditorError("detector definition was not found: " + use->scalar);
     }
-    Value* target = resolve_without_usage(definition->detector, setting_path);
-    if (target->is_parameter_reference()) {
-        erase_usage_with(usage, target->scalar);
-    }
+    reset_setting(definition->detector, usage, setting_path);
 }
 
 void set_definition_setting(
@@ -661,49 +723,43 @@ void set_definition_setting(
     const std::string name = command.at("name").get<std::string>();
     const Path setting_path = setting_path_from_json(command);
     const Value value = value_from_json(command.at("value"));
+
+    std::vector<scenario::v2::ParameterDefinition>* parameters = nullptr;
+    Value* root = nullptr;
     if (kind == "condition") {
         auto* definition = find_condition_definition(document, name);
         if (definition == nullptr) {
             throw ScenarioEditorError("condition definition was not found: " + name);
         }
-        Value* target = resolve_without_usage(definition->condition, setting_path);
-        if (target->is_parameter_reference()) {
-            const auto found = std::find_if(
-                definition->parameters.begin(),
-                definition->parameters.end(),
-                [&](const auto& parameter) { return parameter.name == target->scalar; }
-            );
-            if (found == definition->parameters.end()) {
-                throw ScenarioEditorError("parameter definition was not found: " + target->scalar);
-            }
-            found->default_value = value;
-        } else {
-            *target = value;
-        }
-        return;
-    }
-    if (kind == "detector") {
+        root = &definition->condition;
+        parameters = &definition->parameters;
+    } else if (kind == "detector") {
         auto* definition = find_detector_definition(document, name);
         if (definition == nullptr) {
             throw ScenarioEditorError("detector definition was not found: " + name);
         }
-        Value* target = resolve_without_usage(definition->detector, setting_path);
-        if (target->is_parameter_reference()) {
-            const auto found = std::find_if(
-                definition->parameters.begin(),
-                definition->parameters.end(),
-                [&](const auto& parameter) { return parameter.name == target->scalar; }
-            );
-            if (found == definition->parameters.end()) {
-                throw ScenarioEditorError("parameter definition was not found: " + target->scalar);
-            }
-            found->default_value = value;
-        } else {
-            *target = value;
-        }
-        return;
+        root = &definition->detector;
+        parameters = &definition->parameters;
+    } else {
+        throw ScenarioEditorError("set_definition_setting kind must be condition or detector");
     }
-    throw ScenarioEditorError("set_definition_setting kind must be condition or detector");
+
+    const SettingSlot slot = resolve_setting_slot(*root, setting_path);
+    if (slot.existing != nullptr && slot.existing->is_parameter_reference()) {
+        const auto found = std::find_if(
+            parameters->begin(),
+            parameters->end(),
+            [&](const auto& parameter) { return parameter.name == slot.existing->scalar; }
+        );
+        if (found == parameters->end()) {
+            throw ScenarioEditorError("parameter definition was not found: " + slot.existing->scalar);
+        }
+        found->default_value = value;
+    } else if (slot.existing != nullptr) {
+        *slot.existing = value;
+    } else {
+        slot.parent->set(slot.key, value);
+    }
 }
 
 RuleDefinition default_rule() {
@@ -719,8 +775,24 @@ RuleDefinition default_rule() {
 void mutate_document(ScenarioDocument& document, const nlohmann::json& command) {
     const std::string type = command.at("type").get<std::string>();
     if (type == "set_value") {
-        *resolve_path(document, parse_path(command)) = value_from_json(command.at("value"));
-        return;
+        const Path edit_path = parse_path(command);
+        Value value = value_from_json(command.at("value"));
+        try {
+            *resolve_path(document, edit_path) = std::move(value);
+            return;
+        } catch (const ScenarioEditorError&) {
+            if (edit_path.back().is_index || edit_path.size() < 2) {
+                throw;
+            }
+            Path parent_path = edit_path;
+            parent_path.pop_back();
+            Value* parent = resolve_path(document, parent_path);
+            if (!parent->is_mapping()) {
+                throw ScenarioEditorError("set_value parent must be a mapping");
+            }
+            parent->set(edit_path.back().key, std::move(value));
+            return;
+        }
     }
     if (type == "set_setting") {
         Value* target = resolve_path(document, parse_path(command));

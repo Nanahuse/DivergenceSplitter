@@ -543,3 +543,152 @@ TEST(ScenarioEditorV2, RemovesOptionalDefinitionFields) {
     ASSERT_NE(definition, nullptr);
     EXPECT_EQ(definition->condition.find("within"), nullptr);
 }
+
+TEST(ScenarioEditorV2, AddsMissingOptionalFieldsToInlineAndDefinitionConditions) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_condition_type"},
+        {"path", path({"start_condition"})},
+        {"value", "then"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"start_condition", "within"})},
+        {"value", "3s"},
+    });
+    EXPECT_EQ(
+        scalar_setting(session.document.start_condition->value, "within"),
+        "3s"
+    );
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "sequence"},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_definition_setting"},
+        {"kind", "condition"},
+        {"name", "sequence"},
+        {"setting_path", path({"within"})},
+        {"value", "2s"},
+    });
+    const auto* definition = find_condition_definition(session.document, "sequence");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_EQ(scalar_setting(definition->condition, "within"), "2s");
+}
+
+TEST(ScenarioEditorV2, PerUsageOptionalFieldUsesAnOmittedDefault) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "sequence"},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"start_condition"})},
+        {"name", "sequence"},
+    });
+    apply_editor_command(session, nlohmann::json{{"type", "add_split"}, {"index", 0}});
+    apply_editor_command(session, nlohmann::json{{"type", "add_rule"}, {"split", 0}});
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"splits", 0, "rules", 0, "condition"})},
+        {"name", "sequence"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"start_condition"})},
+        {"setting_path", path({"within"})},
+        {"value", "3s"},
+    });
+
+    auto* definition = find_condition_definition(session.document, "sequence");
+    ASSERT_NE(definition, nullptr);
+    ASSERT_EQ(definition->parameters.size(), 1U);
+    EXPECT_TRUE(definition->parameters[0].default_value.is_null());
+    EXPECT_TRUE(definition->condition.find("within")->is_parameter_reference());
+
+    const auto start = resolved_condition(session.document, session.document.start_condition->value);
+    EXPECT_EQ(scalar_setting(start, "within"), "3s");
+    const auto unbound = resolved_condition(
+        session.document,
+        session.document.splits[0]->rules[0].rule.condition.value
+    );
+    EXPECT_EQ(unbound.find("within"), nullptr);
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "reset_usage_setting"},
+        {"path", path({"start_condition"})},
+        {"setting_path", path({"within"})},
+    });
+    EXPECT_EQ(
+        resolved_condition(session.document, session.document.start_condition->value)
+            .find("within"),
+        nullptr
+    );
+}
+
+TEST(ScenarioEditorV2, PerUsageOptionalRoiUsesAnOmittedDefault) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_detector_definition"},
+        {"name", "bright"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "detect"},
+        {"value", {
+            {"type", "detected"},
+            {"minimum_score", "0.5"},
+            {"detector", {{"type", "mean_brightness"}}},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_detector"},
+        {"path", path({"definitions", "conditions", "detect", "detector"})},
+        {"name", "bright"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_detector_usage_setting"},
+        {"path", path({"definitions", "conditions", "detect", "detector"})},
+        {"setting_path", path({"roi"})},
+        {"value", {
+            {"x", "0"}, {"y", "0"}, {"width", "8"}, {"height", "8"},
+        }},
+    });
+    const auto resolved = resolved_condition(
+        session.document,
+        Value::make_mapping({{"use", Value::make_scalar("detect")}})
+    );
+    const auto* detector = resolved.find("detector");
+    ASSERT_NE(detector, nullptr);
+    ASSERT_NE(detector->find("roi"), nullptr);
+    auto* definition = find_detector_definition(session.document, "bright");
+    ASSERT_NE(definition, nullptr);
+    ASSERT_EQ(definition->parameters.size(), 1U);
+    EXPECT_TRUE(definition->parameters[0].default_value.is_null());
+    EXPECT_TRUE(definition->detector.find("roi")->is_parameter_reference());
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "reset_detector_usage_setting"},
+        {"path", path({"definitions", "conditions", "detect", "detector"})},
+        {"setting_path", path({"roi"})},
+    });
+    const auto reset = resolved_condition(
+        session.document,
+        Value::make_mapping({{"use", Value::make_scalar("detect")}})
+    );
+    EXPECT_EQ(reset.find("detector")->find("roi"), nullptr);
+}
