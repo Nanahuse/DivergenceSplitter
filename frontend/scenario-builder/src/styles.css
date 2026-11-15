@@ -429,10 +429,52 @@ button.link-row {
 
 .setting-row {
   display: grid;
-  grid-template-columns: minmax(90px, 38%) 1fr auto;
+  grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
   margin: 4px 0;
+}
+
+.asset-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.asset-setting-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.asset-setting-header .expose-toggle {
+  margin-left: 0;
+}
+
+.asset-setting-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.asset-setting-controls select {
+  width: 100%;
+  min-width: 0;
+}
+
+.asset-setting-controls button {
+  flex-shrink: 0;
+}
+
+.asset-setting-controls select:disabled {
+  opacity: 0.72;
 }
 
 .setting-label {
@@ -460,11 +502,15 @@ button.link-row {
 
 .nested-title {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
   color: var(--muted);
   font-family: Consolas, monospace;
   font-size: 11px;
   margin-bottom: 3px;
+  overflow-wrap: anywhere;
 }
 
 .nested-editor.depth-1 {

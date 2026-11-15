@@ -32,6 +32,7 @@ import { Tooltip } from "./Tooltip";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
+const addAssetOption = "__divergencesplitter_add_asset__";
 
 function parseInputValue(text: string): JsonValue {
   const trimmed = text.trim();
@@ -581,9 +582,9 @@ function AssetSelect({
   const current = scalar(value) ?? "";
   const known = actions.assets.includes(current);
   return (
-    <div className="setting-row">
-      <span className="setting-label">
-        reference
+    <div className="asset-setting">
+      <div className="asset-setting-header">
+        <span className="setting-label">reference</span>
         {overridden ? <span className="override-badge">この使用箇所</span> : null}
         {expose ? (
           <label className="expose-toggle" title="使用箇所から変更できるようにする">
@@ -596,23 +597,35 @@ function AssetSelect({
             公開
           </label>
         ) : null}
-      </span>
-      <select
-        value={current}
-        disabled={readOnly}
-        onChange={(event) => actions.set(path, event.target.value)}
-      >
-        {current === "" ? <option value="">選択してください</option> : null}
-        {current !== "" && !known ? (
-          <option value={current}>{current} (見つかりません)</option>
-        ) : null}
-        {actions.assets.map((asset) => (
-          <option key={asset} value={asset}>
-            {asset}
-          </option>
-        ))}
-      </select>
-      <div className="child-actions">
+      </div>
+      <div className="asset-setting-controls">
+        <select
+          value={current}
+          disabled={readOnly}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next === addAssetOption) {
+              if (!readOnly) {
+                actions.addAsset?.((asset) => actions.set(path, asset));
+              }
+              return;
+            }
+            actions.set(path, next);
+          }}
+        >
+          {current === "" ? <option value="">選択してください</option> : null}
+          {current !== "" && !known ? (
+            <option value={current}>{current} (見つかりません)</option>
+          ) : null}
+          {actions.assets.map((asset) => (
+            <option key={asset} value={asset}>
+              {asset}
+            </option>
+          ))}
+          {!readOnly && actions.addAsset ? (
+            <option value={addAssetOption}>＋ 新規追加...</option>
+          ) : null}
+        </select>
         {current ? (
           <button
             className="icon"
@@ -621,21 +634,16 @@ function AssetSelect({
           >
             ⧉
           </button>
-        ) : null}
+        ) : (
+          <span />
+        )}
         {reset ? (
           <button className="icon" title="共通定義の値に戻す" onClick={reset}>
             ↺
           </button>
-        ) : null}
-        {actions.addAsset ? (
-          <button
-            onClick={() =>
-              actions.addAsset?.((asset) => actions.set(path, asset))
-            }
-          >
-            新規追加
-          </button>
-        ) : null}
+        ) : (
+          <span />
+        )}
       </div>
     </div>
   );
