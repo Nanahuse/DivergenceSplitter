@@ -96,7 +96,11 @@ std::filesystem::path ScenarioWorkspace::asset_directory() const {
     if (!is_open()) {
         throw ScenarioEditorError("workspace is not open");
     }
-    return root_ / "Asset";
+    const auto path = root_ / "Asset";
+    if (!contains(path)) {
+        throw ScenarioEditorError("Asset directory leaves the workspace");
+    }
+    return path;
 }
 
 std::vector<std::filesystem::path> ScenarioWorkspace::list_scenarios() const {
