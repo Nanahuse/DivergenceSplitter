@@ -10,6 +10,7 @@ import {
   isSequence,
   isSharedUse,
   pathEquals,
+  pathFromKey,
   pathKey,
   resolvedRootAtPath,
   scalar,
@@ -226,7 +227,7 @@ function MissingOptionalFields({
   }
   if (actions.usageMode) {
     const exposedMissing = missing.filter((field) =>
-      actions.isExposed([...path, field.name]),
+      !actions.readOnly([...path, field.name]),
     );
     if (exposedMissing.length === 0) {
       return null;
@@ -1467,6 +1468,113 @@ function buildActions(
   };
   return actions;
 }
+function buildNestedConditionUsageActions(
+  document: ScenarioDocument,
+  schema: EditorSchema,
+  workspace: WorkspaceInfo | null,
+  rootMode: "inline" | "definition-condition",
+  rootPath: Path,
+  usagePath: Path,
+  usageValue: JsonValue,
+  sendCommand: (command: Record<string, unknown>) => void,
+  onAddAsset?: (apply: (asset: string) => void) => void,
+): PropertyActions {
+  const usageName = sharedUseName(usageValue);
+  const childDefinition = conditionDefinitionByName(document, usageName);
+  const childExposure = definitionExposureInfo(document, "condition", usageName);
+  const parentName = rootMode === "definition-condition"
+    ? String(rootPath[2] ?? "")
+    : "";
+  const parentExposure = parentName
+    ? definitionExposureInfo(document, "condition", parentName)
+    : null;
+  const parentPrefix = usagePath.slice(rootPath.length);
+  const parentPath = (path: Path) => [...parentPrefix, ...path];
+  const parentExposed = (path: Path) => (
+    parentExposure?.exposed.has(pathKey(parentPath(path))) ?? false
+  );
+  const childExposed = (path: Path) => childExposure.exposed.has(pathKey(path));
+
+  const overrides = new Set<string>();
+  const withValues = sharedUseWith(usageValue);
+  for (const [exposedKey, parameter] of childExposure.exposed) {
+    if (
+      Object.prototype.hasOwnProperty.call(withValues, parameter)
+      && !parentExposed(pathFromKey(exposedKey))
+    ) {
+      overrides.add(exposedKey);
+    }
+  }
+
+  return {
+    schema,
+    detectorDefinitions: document.definitions.detectors,
+    assets: workspace?.assets ?? [],
+    addAsset: workspace ? onAddAsset : undefined,
+    overrides,
+    exposure: childExposure,
+    usageMode: true,
+    definitionMode: false,
+    document,
+    rawValue: (path) => valueAtPath(childDefinition?.condition, path),
+    set: (path, next) => {
+      if (parentExposed(path)) {
+        sendCommand({
+          type: "set_definition_setting",
+          kind: "condition",
+          name: parentName,
+          setting_path: parentPath(path),
+          value: next,
+        });
+      } else if (childExposed(path)) {
+        sendCommand({
+          type: "set_usage_setting",
+          path: usagePath,
+          setting_path: path,
+          value: next,
+        });
+      }
+    },
+    readOnly: (path) => !(parentExposed(path) || childExposed(path)),
+    isExposed: parentExposed,
+    canExpose: (path) => {
+      if (!parentExposure) {
+        return false;
+      }
+      const fullPath = parentPath(path);
+      if (isNestedExposurePath(parentExposure, fullPath)) {
+        return parentExposure.nestedExposed.has(pathKey(fullPath));
+      }
+      return true;
+    },
+    toggleExposure: parentExposure
+      ? (path, exposed) => {
+          if (!exposed && !window.confirm(
+            "公開を解除すると、使用箇所の個別設定は既定値に戻ります。解除しますか？",
+          )) {
+            return;
+          }
+          sendCommand({
+            type: exposed ? "expose_parameter" : "unexpose_parameter",
+            kind: "condition",
+            name: parentName,
+            setting_path: parentPath(path),
+          });
+        }
+      : undefined,
+    structureEditable: () => false,
+    reset: (path) => {
+      if (childExposed(path) && !parentExposed(path)) {
+        sendCommand({
+          type: "reset_usage_setting",
+          path: usagePath,
+          setting_path: path,
+        });
+      }
+    },
+  };
+}
+
 export function ConditionInspector({
   document,
   schema,
@@ -1500,33 +1608,59 @@ export function ConditionInspector({
   const relative = selectedPath.slice(rootPath.length).filter(
     (part): part is string | number => typeof part === "string" || typeof part === "number",
   );
+  const selectedRaw = valueAtPath(rawRoot, relative);
+  const nestedUsage = (
+    (mode === "inline" || mode === "definition-condition")
+    && isSharedUse(selectedRaw)
+  ) ? selectedRaw : undefined;
   const value = valueAtPath(displayRoot, relative);
-  const actions = buildActions(
-    document,
-    schema,
-    workspace,
-    mode,
-    rootPath,
-    relative,
-    sendCommand,
-    onAddAsset,
-  );
+  const actions = nestedUsage
+    ? buildNestedConditionUsageActions(
+        document,
+        schema,
+        workspace,
+        mode === "definition-condition" ? "definition-condition" : "inline",
+        rootPath,
+        selectedPath,
+        nestedUsage,
+        sendCommand,
+        onAddAsset,
+      )
+    : buildActions(
+        document,
+        schema,
+        workspace,
+        mode,
+        rootPath,
+        relative,
+        sendCommand,
+        onAddAsset,
+      );
   return (
     <div className="inspector">
       <h2>Properties</h2>
       <p className="muted">{formatPath(document, selectedPath)}</p>
-      {mode !== "definition-detector" && (mode !== "usage-condition" || relative.length === 0) ? (
+      {mode !== "definition-detector"
+        && (nestedUsage || mode !== "usage-condition" || relative.length === 0) ? (
         <ConditionUsageToolbar
           document={document}
-          selectedPath={mode === "usage-condition" ? rootPath : selectedPath}
-          selectedValue={mode === "usage-condition" ? rawRoot : value}
-          editable={mode !== "usage-condition" || relative.length === 0}
-          excludeName={mode === "definition-condition" ? String(rootPath[2] ?? "") : undefined}
+          selectedPath={nestedUsage ? selectedPath : (mode === "usage-condition" ? rootPath : selectedPath)}
+          selectedValue={nestedUsage ?? (mode === "usage-condition" ? rawRoot : value)}
+          editable={nestedUsage ? true : (mode !== "usage-condition" || relative.length === 0)}
+          excludeName={
+            mode === "definition-condition" && !nestedUsage
+              ? String(rootPath[2] ?? "")
+              : undefined
+          }
           onSelect={() => undefined}
           sendCommand={sendCommand}
         />
       ) : null}
-      <SettingsEditor value={value} basePath={relative} actions={actions} />
+      <SettingsEditor
+        value={value}
+        basePath={nestedUsage ? [] : relative}
+        actions={actions}
+      />
     </div>
   );
 }

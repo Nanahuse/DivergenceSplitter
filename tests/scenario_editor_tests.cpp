@@ -682,6 +682,192 @@ TEST(ScenarioEditorV2, ExposesNestedConditionParameter) {
     );
 }
 
+TEST(ScenarioEditorV2, NestedSharedConditionUsageUpdatesChildWith) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "child"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"start_condition"})},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"use", "child"}},
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "set_usage_setting"},
+            {"path", path({"start_condition", "conditions", 0})},
+            {"setting_path", path({"duration"})},
+            {"value", "3s"},
+        }),
+        ScenarioEditorError
+    );
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "child"},
+        {"setting_path", path({"duration"})},
+    });
+    auto* child = find_condition_definition(session.document, "child");
+    ASSERT_NE(child, nullptr);
+    const auto parameter = child->parameters[0].name;
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"start_condition", "conditions", 0})},
+        {"setting_path", path({"duration"})},
+        {"value", "3s"},
+    });
+    auto* child_use = session.document.start_condition->value
+        .find("conditions")->find_index(0);
+    ASSERT_NE(child_use, nullptr);
+    const auto* with = child_use->find("with");
+    ASSERT_NE(with, nullptr);
+    ASSERT_NE(with->find(parameter), nullptr);
+    EXPECT_EQ(with->find(parameter)->scalar, "3s");
+    const auto resolved = resolved_condition(
+        session.document,
+        session.document.start_condition->value
+    );
+    const auto* resolved_child = resolved.find("conditions")->find_index(0);
+    ASSERT_NE(resolved_child, nullptr);
+    EXPECT_EQ(scalar_setting(*resolved_child, "duration"), "3s");
+
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    child_use = session.document.start_condition->value.find("conditions")->find_index(0);
+    EXPECT_EQ(child_use->find("with"), nullptr);
+    apply_editor_command(session, nlohmann::json{{"type", "redo"}});
+    child_use = session.document.start_condition->value.find("conditions")->find_index(0);
+    EXPECT_NE(child_use->find("with"), nullptr);
+}
+
+TEST(ScenarioEditorV2, DefinitionNestedSharedConditionUsageUpdatesChildWith) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "child"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "child"},
+        {"setting_path", path({"duration"})},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "parent"},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"definitions", "conditions", "parent", "conditions", 0})},
+        {"name", "child"},
+    });
+    auto* child = find_condition_definition(session.document, "child");
+    ASSERT_NE(child, nullptr);
+    const auto parameter = child->parameters[0].name;
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"definitions", "conditions", "parent", "conditions", 0})},
+        {"setting_path", path({"duration"})},
+        {"value", "4s"},
+    });
+
+    auto* parent = find_condition_definition(session.document, "parent");
+    ASSERT_NE(parent, nullptr);
+    auto* child_use = parent->condition.find("conditions")->find_index(0);
+    ASSERT_NE(child_use, nullptr);
+    const auto* with = child_use->find("with");
+    ASSERT_NE(with, nullptr);
+    ASSERT_NE(with->find(parameter), nullptr);
+    EXPECT_EQ(with->find(parameter)->scalar, "4s");
+    const auto resolved = resolved_condition(
+        session.document,
+        Value::make_mapping({{"use", Value::make_scalar("parent")}})
+    );
+    EXPECT_EQ(
+        scalar_setting(*resolved.find("conditions")->find_index(0), "duration"),
+        "4s"
+    );
+}
+
+TEST(ScenarioEditorV2, NestedSharedConditionUsageStoresAssetReference) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "child"},
+        {"value", {
+            {"type", "detected"},
+            {"minimum_score", "0.5"},
+            {"detector", {
+                {"type", "template_match"},
+                {"reference", "Asset/YI1.png"},
+            }},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "child"},
+        {"setting_path", path({"detector", "reference"})},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"start_condition"})},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"use", "child"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"start_condition", "conditions", 0})},
+        {"setting_path", path({"detector", "reference"})},
+        {"value", "Asset/DPC.png"},
+    });
+
+    const auto resolved = resolved_condition(
+        session.document,
+        session.document.start_condition->value
+    );
+    EXPECT_EQ(
+        scalar_setting(
+            *resolved.find("conditions")->find_index(0)->find("detector"),
+            "reference"
+        ),
+        "Asset/DPC.png"
+    );
+    const auto exported = export_scenario_yaml(session.document);
+    EXPECT_NE(exported.find("reference: Asset/DPC.png"), std::string::npos);
+    const auto reloaded = import_scenario_yaml(exported);
+    const auto reloaded_resolved = resolved_condition(
+        reloaded,
+        reloaded.start_condition->value
+    );
+    EXPECT_EQ(
+        scalar_setting(
+            *reloaded_resolved.find("conditions")->find_index(0)->find("detector"),
+            "reference"
+        ),
+        "Asset/DPC.png"
+    );
+}
+
 TEST(ScenarioEditorV2, RenameAndDetachUpdateReferences) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
