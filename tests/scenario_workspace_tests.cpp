@@ -7,6 +7,7 @@
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "divergencesplitter/scenario/editor/document.hpp"
 #include "divergencesplitter/scenario/editor/workspace.hpp"
@@ -50,7 +51,15 @@ void write_image(const std::filesystem::path& path) {
             };
         }
     }
-    ASSERT_TRUE(cv::imwrite(path.string(), image));
+    std::vector<unsigned char> encoded;
+    ASSERT_TRUE(cv::imencode(".png", image, encoded));
+    std::ofstream stream{path, std::ios::binary};
+    ASSERT_TRUE(stream.good());
+    stream.write(
+        reinterpret_cast<const char*>(encoded.data()),
+        static_cast<std::streamsize>(encoded.size())
+    );
+    ASSERT_TRUE(stream.good());
 }
 
 std::size_t file_count(const std::filesystem::path& directory) {
