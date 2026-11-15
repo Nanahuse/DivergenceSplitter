@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -401,6 +402,21 @@ TEST(ScenarioEditorV2, ExposesNestedDetectorParameterThroughCondition) {
     );
     EXPECT_EQ(scalar_setting(*start.find("detector")->find("roi"), "x"), "2");
     EXPECT_EQ(scalar_setting(*unbound.find("detector")->find("roi"), "x"), "0");
+    const auto state = editor_state_json(session);
+    const auto usages = state["document"]["condition_usages"];
+    const auto start_usage = std::find_if(
+        usages.begin(),
+        usages.end(),
+        [&](const auto& item) {
+            return item["path"] == path({"start_condition"});
+        }
+    );
+    ASSERT_NE(start_usage, usages.end());
+    const auto start_overrides = (*start_usage)["overrides"];
+    ASSERT_EQ(start_overrides.size(), 1U);
+    EXPECT_EQ(start_overrides[0]["path"], path({"detector", "roi", "x"}));
+    EXPECT_EQ(start_overrides[0]["default"], "0");
+    EXPECT_EQ(start_overrides[0]["value"], "2");
 
     apply_editor_command(session, nlohmann::json{
         {"type", "set_definition_setting"},
@@ -852,6 +868,22 @@ TEST(ScenarioEditorV2, NestedSharedConditionUsageStoresAssetReference) {
         ),
         "Asset/DPC.png"
     );
+    const auto state = editor_state_json(session);
+    const auto usages = state["document"]["condition_usages"];
+    ASSERT_TRUE(usages.is_array());
+    const auto usage_path = path({"start_condition", "conditions", 0});
+    const auto usage = std::find_if(
+        usages.begin(),
+        usages.end(),
+        [&](const auto& item) { return item["path"] == usage_path; }
+    );
+    ASSERT_NE(usage, usages.end());
+    EXPECT_EQ((*usage)["name"], "child");
+    const auto overrides = (*usage)["overrides"];
+    ASSERT_EQ(overrides.size(), 1U);
+    EXPECT_EQ(overrides[0]["path"], path({"detector", "reference"}));
+    EXPECT_EQ(overrides[0]["default"], "Asset/YI1.png");
+    EXPECT_EQ(overrides[0]["value"], "Asset/DPC.png");
     const auto exported = export_scenario_yaml(session.document);
     EXPECT_NE(exported.find("reference: Asset/DPC.png"), std::string::npos);
     const auto reloaded = import_scenario_yaml(exported);

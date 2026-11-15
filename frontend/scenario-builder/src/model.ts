@@ -45,10 +45,26 @@ export interface SplitDefinition {
   rules: ScenarioRule[];
 }
 
+export interface ConditionUsageOverride {
+  parameter: string;
+  path: Path;
+  default: JsonValue;
+  value: JsonValue;
+}
+
+export interface ConditionUsageDetails {
+  path: Path;
+  name: string;
+  resolved: JsonValue;
+  default_resolved: JsonValue;
+  overrides: ConditionUsageOverride[];
+}
+
 export interface ScenarioDocument {
   path: string;
   dirty: boolean;
   extra_root: Record<string, JsonValue>;
+  condition_usages: ConditionUsageDetails[];
   definitions: Definitions;
   start_condition: JsonValue | null;
   start_condition_resolved: JsonValue | null;
@@ -530,6 +546,7 @@ export function emptyDemoState(): EditorState {
       path: "",
       dirty: false,
       extra_root: {},
+      condition_usages: [],
       definitions: { conditions: [], detectors: [] },
       start_condition: { type: "elapsed", duration: "2s" },
       start_condition_resolved: { type: "elapsed", duration: "2s" },

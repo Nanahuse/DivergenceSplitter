@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <locale>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -1727,6 +1728,279 @@ nlohmann::json scenario_rule_json(const ScenarioDocument& document, const Scenar
     return rule_json(document, rule.rule);
 }
 
+nlohmann::json path_to_json(const Path& path) {
+    nlohmann::json result = nlohmann::json::array();
+    for (const auto& token : path) {
+        if (token.is_index) {
+            result.push_back(token.index);
+        } else {
+            result.push_back(token.key);
+        }
+    }
+    return result;
+}
+
+Path append_path(const Path& base, const Path& suffix) {
+    Path result = base;
+    result.insert(result.end(), suffix.begin(), suffix.end());
+    return result;
+}
+
+void collect_condition_use_paths(
+    const Value& value,
+    const Path& path,
+    std::vector<std::pair<const Value*, Path>>& result
+) {
+    if (is_usage_value(value)) {
+        result.emplace_back(&value, path);
+        return;
+    }
+    if (value.is_sequence()) {
+        for (std::size_t index = 0; index < value.sequence.size(); ++index) {
+            Path child_path = path;
+            child_path.push_back(PathToken{true, index, {}});
+            collect_condition_use_paths(value.sequence[index], child_path, result);
+        }
+        return;
+    }
+    if (!value.is_mapping()) {
+        return;
+    }
+    for (const auto key : {"condition", "reset_condition", "conditions"}) {
+        auto* child = value.find(key);
+        if (child != nullptr) {
+            Path child_path = path;
+            child_path.push_back(PathToken{false, 0, key});
+            collect_condition_use_paths(*child, child_path, result);
+        }
+    }
+}
+
+std::map<std::string, std::vector<Path>> parameter_paths_for_definition(
+    ScenarioDocument& document,
+    DefinitionRef definition
+);
+
+void collect_parameter_paths(
+    ScenarioDocument& document,
+    Value& value,
+    Path& path,
+    DefinitionKind expected,
+    std::map<std::string, std::vector<Path>>& result
+) {
+    if (value.is_parameter_reference()) {
+        result[value.scalar].push_back(path);
+        return;
+    }
+    if (value.is_sequence()) {
+        for (std::size_t index = 0; index < value.sequence.size(); ++index) {
+            path.push_back(PathToken{true, index, {}});
+            collect_parameter_paths(
+                document,
+                value.sequence[index],
+                path,
+                expected,
+                result
+            );
+            path.pop_back();
+        }
+        return;
+    }
+    if (!value.is_mapping()) {
+        return;
+    }
+    if (is_usage_value(value)) {
+        auto child = find_use_definition(document, value, expected);
+        if (!child) {
+            return;
+        }
+        const auto child_paths = parameter_paths_for_definition(document, *child);
+        const auto* with = value.find("with");
+        if (with == nullptr || !with->is_mapping()) {
+            return;
+        }
+        for (const auto& [child_parameter, forwarded] : with->mapping) {
+            if (!forwarded.is_parameter_reference()) {
+                continue;
+            }
+            const auto found = child_paths.find(child_parameter);
+            if (found == child_paths.end()) {
+                continue;
+            }
+            for (const auto& child_path : found->second) {
+                result[forwarded.scalar].push_back(append_path(path, child_path));
+            }
+        }
+        return;
+    }
+    for (auto& [key, item] : value.mapping) {
+        DefinitionKind child_expected = expected;
+        if (key == "detector") {
+            child_expected = DefinitionKind::detector;
+        } else if (key == "condition" || key == "reset_condition"
+                   || key == "conditions") {
+            child_expected = DefinitionKind::condition;
+        }
+        path.push_back(PathToken{false, 0, key});
+        collect_parameter_paths(document, item, path, child_expected, result);
+        path.pop_back();
+    }
+}
+
+std::map<std::string, std::vector<Path>> parameter_paths_for_definition(
+    ScenarioDocument& document,
+    DefinitionRef definition
+) {
+    std::map<std::string, std::vector<Path>> result;
+    Path path;
+    collect_parameter_paths(document, *definition.root, path, definition.kind, result);
+    return result;
+}
+
+nlohmann::json condition_usages_json(ScenarioDocument& document) {
+    std::vector<std::pair<const Value*, Path>> usages;
+    for (auto& definition : document.definitions.conditions) {
+        collect_condition_use_paths(
+            definition.condition,
+            Path{
+                PathToken{false, 0, "definitions"},
+                PathToken{false, 0, "conditions"},
+                PathToken{false, 0, definition.name},
+            },
+            usages
+        );
+    }
+    if (document.start_condition) {
+        collect_condition_use_paths(
+            document.start_condition->value,
+            Path{PathToken{false, 0, "start_condition"}},
+            usages
+        );
+    }
+    if (document.reset_condition) {
+        collect_condition_use_paths(
+            document.reset_condition->value,
+            Path{PathToken{false, 0, "reset_condition"}},
+            usages
+        );
+    }
+    if (document.incomplete_condition) {
+        collect_condition_use_paths(
+            document.incomplete_condition->value,
+            Path{PathToken{false, 0, "incomplete_condition"}},
+            usages
+        );
+    }
+    for (std::size_t split_index = 0; split_index < document.splits.size(); ++split_index) {
+        const auto& split = document.splits[split_index];
+        if (!split) {
+            continue;
+        }
+        for (std::size_t rule_index = 0; rule_index < split->rules.size(); ++rule_index) {
+            const auto& rule = split->rules[rule_index];
+            if (rule.sequence) {
+                for (std::size_t step_index = 0;
+                     step_index < rule.sequence_rules.size();
+                     ++step_index) {
+                    Path path{
+                        PathToken{false, 0, "splits"},
+                        PathToken{true, split_index, {}},
+                        PathToken{false, 0, "rules"},
+                        PathToken{true, rule_index, {}},
+                        PathToken{false, 0, "sequence"},
+                        PathToken{true, step_index, {}},
+                        PathToken{false, 0, "condition"},
+                    };
+                    collect_condition_use_paths(
+                        rule.sequence_rules[step_index].condition.value,
+                        path,
+                        usages
+                    );
+                }
+            } else {
+                Path path{
+                    PathToken{false, 0, "splits"},
+                    PathToken{true, split_index, {}},
+                    PathToken{false, 0, "rules"},
+                    PathToken{true, rule_index, {}},
+                    PathToken{false, 0, "condition"},
+                };
+                collect_condition_use_paths(rule.rule.condition.value, path, usages);
+            }
+        }
+    }
+
+    nlohmann::json result = nlohmann::json::array();
+    for (const auto& [usage, path] : usages) {
+        const auto* use = usage->find("use");
+        if (use == nullptr || !use->is_scalar()) {
+            continue;
+        }
+        auto* definition = find_condition_definition(document, use->scalar);
+        if (definition == nullptr) {
+            continue;
+        }
+        const DefinitionRef definition_ref{
+            DefinitionKind::condition,
+            definition->name,
+            &definition->condition,
+            &definition->parameters,
+        };
+        const auto parameter_paths = parameter_paths_for_definition(
+            document,
+            definition_ref
+        );
+        const Value resolved = scenario::v2::resolve_condition(
+            document.definitions,
+            *usage
+        );
+        Value default_usage = *usage;
+        default_usage.erase("with");
+        const Value default_resolved = scenario::v2::resolve_condition(
+            document.definitions,
+            default_usage
+        );
+
+        nlohmann::json overrides = nlohmann::json::array();
+        const auto* with = usage->find("with");
+        if (with != nullptr && with->is_mapping()) {
+            const Value null_value = Value::make_null();
+            for (const auto& [parameter, forwarded] : with->mapping) {
+                (void)forwarded;
+                const auto found = parameter_paths.find(parameter);
+                if (found == parameter_paths.end()) {
+                    continue;
+                }
+                for (const auto& setting_path : found->second) {
+                    const Value* current = value_at_path(resolved, setting_path);
+                    const Value* default_value = value_at_path(
+                        default_resolved,
+                        setting_path
+                    );
+                    overrides.push_back(nlohmann::json{
+                        {"parameter", parameter},
+                        {"path", path_to_json(setting_path)},
+                        {"default", value_to_json(
+                            default_value == nullptr ? null_value : *default_value
+                        )},
+                        {"value", value_to_json(
+                            current == nullptr ? null_value : *current
+                        )},
+                    });
+                }
+            }
+        }
+        result.push_back(nlohmann::json{
+            {"path", path_to_json(path)},
+            {"name", definition->name},
+            {"resolved", value_to_json(resolved)},
+            {"default_resolved", value_to_json(default_resolved)},
+            {"overrides", std::move(overrides)},
+        });
+    }
+    return result;
+}
+
 nlohmann::json parameters_json(
     const std::vector<scenario::v2::ParameterDefinition>& parameters
 ) {
@@ -1900,6 +2174,8 @@ void save_editor_session(EditorSession& session, const std::filesystem::path& pa
 }
 
 nlohmann::json editor_state_json(const EditorSession& session) {
+    ScenarioDocument metadata_document = session.document;
+    const nlohmann::json condition_usages = condition_usages_json(metadata_document);
     nlohmann::json condition_definitions = nlohmann::json::array();
     for (const auto& definition : session.document.definitions.conditions) {
         const auto resolved = scenario::v2::resolve_condition(
@@ -1948,6 +2224,7 @@ nlohmann::json editor_state_json(const EditorSession& session) {
         {"path", path_to_utf8(session.path)},
         {"dirty", session.dirty},
         {"extra_root", std::move(extra_root)},
+        {"condition_usages", condition_usages},
         {"definitions", nlohmann::json{
             {"conditions", std::move(condition_definitions)},
             {"detectors", std::move(detector_definitions)},

@@ -890,3 +890,38 @@ pre {
   padding: 10px 14px;
   border-top: 1px solid var(--border);
 }
+
+.shared-badge {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.condition-overrides {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+}
+
+.condition-overrides-title {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.condition-override {
+  color: #d9c28d;
+  font-family: Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.condition-override-more {
+  color: var(--muted);
+  font-size: 10px;
+}
