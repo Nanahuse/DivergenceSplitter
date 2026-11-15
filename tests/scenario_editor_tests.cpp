@@ -143,7 +143,7 @@ splits: []
     EXPECT_EQ(start->duration(), std::chrono::seconds{3});
 }
 
-TEST(ScenarioEditorV2, PerUsageSettingGeneratesParametersAndResetReverts) {
+TEST(ScenarioEditorV2, ExplicitExposureAllowsPerUsageOverrideAndReset) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
         {"type", "create_condition_definition"},
@@ -156,10 +156,10 @@ TEST(ScenarioEditorV2, PerUsageSettingGeneratesParametersAndResetReverts) {
         {"name", "wait"},
     });
     apply_editor_command(session, nlohmann::json{
-        {"type", "set_usage_setting"},
-        {"path", path({"start_condition"})},
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "wait"},
         {"setting_path", path({"duration"})},
-        {"value", "2s"},
     });
 
     auto* definition = find_condition_definition(session.document, "wait");
@@ -171,6 +171,21 @@ TEST(ScenarioEditorV2, PerUsageSettingGeneratesParametersAndResetReverts) {
     ASSERT_NE(raw_duration, nullptr);
     EXPECT_TRUE(raw_duration->is_parameter_reference());
     EXPECT_EQ(raw_duration->scalar, parameter);
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "wait"},
+        {"setting_path", path({"duration"})},
+    });
+    EXPECT_EQ(definition->parameters.size(), 1U);
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"start_condition"})},
+        {"setting_path", path({"duration"})},
+        {"value", "2s"},
+    });
     ASSERT_TRUE(session.document.start_condition.has_value());
     const auto* with = session.document.start_condition->with();
     ASSERT_NE(with, nullptr);
@@ -212,6 +227,12 @@ TEST(ScenarioEditorV2, DefinitionDefaultChangeAppliesOnlyToUnboundUsages) {
         {"path", path({"start_condition"})},
         {"name", "wait"},
     });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "wait"},
+        {"setting_path", path({"duration"})},
+    });
     apply_editor_command(session, nlohmann::json{{"type", "add_split"}, {"index", 0}});
     apply_editor_command(session, nlohmann::json{{"type", "add_rule"}, {"split", 0}});
     apply_editor_command(session, nlohmann::json{
@@ -241,7 +262,6 @@ TEST(ScenarioEditorV2, DefinitionDefaultChangeAppliesOnlyToUnboundUsages) {
     EXPECT_EQ(scalar_setting(start, "duration"), "3s");
     EXPECT_EQ(scalar_setting(rule, "duration"), "2s");
 }
-
 TEST(ScenarioEditorV2, DefinitionStructureChangesPropagateToUsages) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
@@ -286,17 +306,21 @@ TEST(ScenarioEditorV2, DefinitionStructureChangesPropagateToUsages) {
     EXPECT_EQ(scalar_setting(require_condition(resolved, 0), "duration"), "1s");
 }
 
-TEST(ScenarioEditorV2, SharedDetectorDefinitionsAndPerUseValuesWork) {
+TEST(ScenarioEditorV2, ExposesNestedDetectorParameterThroughCondition) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
         {"type", "create_detector_definition"},
         {"name", "bright"},
+        {"value", {
+            {"type", "mean_brightness"},
+            {"roi", {{"x", "0"}, {"y", "0"}, {"width", "8"}, {"height", "8"}}},
+        }},
     });
     apply_editor_command(session, nlohmann::json{
-        {"type", "set_setting"},
-        {"path", path({"definitions", "detectors", "bright"})},
-        {"key", "roi"},
-        {"value", {{"x", "0"}, {"y", "0"}, {"width", "8"}, {"height", "8"}}},
+        {"type", "expose_parameter"},
+        {"kind", "detector"},
+        {"name", "bright"},
+        {"setting_path", path({"roi", "x"})},
     });
     apply_editor_command(session, nlohmann::json{
         {"type", "create_condition_definition"},
@@ -312,25 +336,350 @@ TEST(ScenarioEditorV2, SharedDetectorDefinitionsAndPerUseValuesWork) {
         {"path", path({"definitions", "conditions", "detect", "detector"})},
         {"name", "bright"},
     });
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "expose_parameter"},
+            {"kind", "condition"},
+            {"name", "detect"},
+            {"setting_path", path({"detector", "roi", "y"})},
+        }),
+        ScenarioEditorError
+    );
     apply_editor_command(session, nlohmann::json{
-        {"type", "set_detector_usage_setting"},
-        {"path", path({"definitions", "conditions", "detect", "detector"})},
-        {"setting_path", path({"roi", "x"})},
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "detect"},
+        {"setting_path", path({"detector", "roi", "x"})},
+    });
+
+    auto* detector = find_detector_definition(session.document, "bright");
+    ASSERT_NE(detector, nullptr);
+    ASSERT_EQ(detector->parameters.size(), 1U);
+    const auto detector_parameter = detector->parameters[0].name;
+    EXPECT_EQ(detector->parameters[0].default_value.scalar, "0");
+    ASSERT_TRUE(detector->detector.find("roi")->find("x")->is_parameter_reference());
+    EXPECT_EQ(
+        detector->detector.find("roi")->find("x")->scalar,
+        detector_parameter
+    );
+
+    auto* condition = find_condition_definition(session.document, "detect");
+    ASSERT_NE(condition, nullptr);
+    ASSERT_EQ(condition->parameters.size(), 1U);
+    const auto condition_parameter = condition->parameters[0].name;
+    const auto* detector_use = condition->condition.find("detector");
+    ASSERT_NE(detector_use, nullptr);
+    const auto* with = detector_use->find("with");
+    ASSERT_NE(with, nullptr);
+    ASSERT_NE(with->find(detector_parameter), nullptr);
+    EXPECT_TRUE(with->find(detector_parameter)->is_parameter_reference());
+    EXPECT_EQ(with->find(detector_parameter)->scalar, condition_parameter);
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"start_condition"})},
+        {"name", "detect"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"start_condition"})},
+        {"setting_path", path({"detector", "roi", "x"})},
         {"value", "2"},
     });
-    const auto resolved = scenario::v2::resolve_condition(
-        session.document.definitions,
-        Value::make_mapping({{"use", Value::make_scalar("detect")}})
+    apply_editor_command(session, nlohmann::json{{"type", "add_split"}, {"index", 0}});
+    apply_editor_command(session, nlohmann::json{{"type", "add_rule"}, {"split", 0}});
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"splits", 0, "rules", 0, "condition"})},
+        {"name", "detect"},
+    });
+
+    const auto start = resolved_condition(session.document, session.document.start_condition->value);
+    const auto unbound = resolved_condition(
+        session.document,
+        session.document.splits[0]->rules[0].rule.condition.value
     );
-    const auto* detector = resolved.find("detector");
-    ASSERT_NE(detector, nullptr);
-    const auto* roi = detector->find("roi");
-    ASSERT_NE(roi, nullptr);
-    EXPECT_EQ(scalar_setting(*roi, "x"), "2");
-    const auto* definition = find_detector_definition(session.document, "bright");
+    EXPECT_EQ(scalar_setting(*start.find("detector")->find("roi"), "x"), "2");
+    EXPECT_EQ(scalar_setting(*unbound.find("detector")->find("roi"), "x"), "0");
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_definition_setting"},
+        {"kind", "condition"},
+        {"name", "detect"},
+        {"setting_path", path({"detector", "roi", "x"})},
+        {"value", "3"},
+    });
+    const auto updated_start = resolved_condition(
+        session.document, session.document.start_condition->value
+    );
+    const auto updated_unbound = resolved_condition(
+        session.document,
+        session.document.splits[0]->rules[0].rule.condition.value
+    );
+    EXPECT_EQ(scalar_setting(*updated_start.find("detector")->find("roi"), "x"), "2");
+    EXPECT_EQ(scalar_setting(*updated_unbound.find("detector")->find("roi"), "x"), "3");
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "unexpose_parameter"},
+        {"kind", "condition"},
+        {"name", "detect"},
+        {"setting_path", path({"detector", "roi", "x"})},
+    });
+    auto* unexposed = find_condition_definition(session.document, "detect");
+    ASSERT_NE(unexposed, nullptr);
+    EXPECT_TRUE(unexposed->parameters.empty());
+    const auto* fixed_use = unexposed->condition.find("detector");
+    ASSERT_NE(fixed_use, nullptr);
+    const auto* fixed_with = fixed_use->find("with");
+    ASSERT_NE(fixed_with, nullptr);
+    EXPECT_EQ(fixed_with->find(detector_parameter)->scalar, "3");
+    EXPECT_EQ(session.document.start_condition->with(), nullptr);
+    EXPECT_EQ(
+        scalar_setting(
+            *resolved_condition(session.document, session.document.start_condition->value)
+                 .find("detector")->find("roi"),
+            "x"
+        ),
+        "3"
+    );
+}
+
+TEST(ScenarioEditorV2, UnexposeRestoresDefaultAndClearsUsageOverrides) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "wait"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "wait"},
+        {"setting_path", path({"duration"})},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"start_condition"})},
+        {"name", "wait"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"start_condition"})},
+        {"setting_path", path({"duration"})},
+        {"value", "2s"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "unexpose_parameter"},
+        {"kind", "condition"},
+        {"name", "wait"},
+        {"setting_path", path({"duration"})},
+    });
+
+    auto* definition = find_condition_definition(session.document, "wait");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_TRUE(definition->parameters.empty());
+    EXPECT_EQ(scalar_setting(definition->condition, "duration"), "1s");
+    EXPECT_EQ(session.document.start_condition->with(), nullptr);
+    EXPECT_EQ(
+        scalar_setting(
+            resolved_condition(session.document, session.document.start_condition->value),
+            "duration"
+        ),
+        "1s"
+    );
+
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    definition = find_condition_definition(session.document, "wait");
     ASSERT_NE(definition, nullptr);
     ASSERT_EQ(definition->parameters.size(), 1U);
-    EXPECT_TRUE(definition->detector.find("roi")->find("x")->is_parameter_reference());
+    EXPECT_TRUE(definition->condition.find("duration")->is_parameter_reference());
+    EXPECT_NE(session.document.start_condition->with(), nullptr);
+}
+TEST(ScenarioEditorV2, UnexposeReplacesEveryReferenceToTheParameter) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_detector_definition"},
+        {"name", "bright"},
+        {"value", {
+            {"type", "mean_brightness"},
+            {"roi", {{"x", "0"}, {"y", "0"}, {"width", "8"}, {"height", "8"}}},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "detector"},
+        {"name", "bright"},
+        {"setting_path", path({"roi", "x"})},
+    });
+    auto* definition = find_detector_definition(session.document, "bright");
+    ASSERT_NE(definition, nullptr);
+    ASSERT_EQ(definition->parameters.size(), 1U);
+    const auto parameter = definition->parameters[0].name;
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"definitions", "detectors", "bright", "roi", "y"})},
+        {"value", {{"$param", parameter}}},
+    });
+    definition = find_detector_definition(session.document, "bright");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_TRUE(
+        definition->detector.find("roi")->find("y")->is_parameter_reference()
+    );
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "unexpose_parameter"},
+        {"kind", "detector"},
+        {"name", "bright"},
+        {"setting_path", path({"roi", "x"})},
+    });
+    definition = find_detector_definition(session.document, "bright");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_TRUE(definition->parameters.empty());
+    const auto* roi = definition->detector.find("roi");
+    ASSERT_NE(roi, nullptr);
+    EXPECT_EQ(scalar_setting(*roi, "x"), "0");
+    EXPECT_EQ(scalar_setting(*roi, "y"), "0");
+}
+
+TEST(ScenarioEditorV2, UnexposeIsRejectedWhileParentForwardsParameter) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_detector_definition"},
+        {"name", "bright"},
+        {"value", {
+            {"type", "mean_brightness"},
+            {"roi", {{"x", "0"}, {"y", "0"}, {"width", "8"}, {"height", "8"}}},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "detector"},
+        {"name", "bright"},
+        {"setting_path", path({"roi", "x"})},
+    });
+    auto* detector = find_detector_definition(session.document, "bright");
+    ASSERT_NE(detector, nullptr);
+    const auto detector_parameter = detector->parameters[0].name;
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "detect"},
+        {"value", {
+            {"type", "detected"},
+            {"minimum_score", "0.5"},
+            {"detector", {{"type", "mean_brightness"}}},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_detector"},
+        {"path", path({"definitions", "conditions", "detect", "detector"})},
+        {"name", "bright"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "detect"},
+        {"setting_path", path({"detector", "roi", "x"})},
+    });
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "unexpose_parameter"},
+            {"kind", "detector"},
+            {"name", "bright"},
+            {"setting_path", path({"roi", "x"})},
+        }),
+        ScenarioEditorError
+    );
+    EXPECT_TRUE(
+        find_detector_definition(session.document, "bright")
+            ->detector.find("roi")->find("x")->is_parameter_reference()
+    );
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "unexpose_parameter"},
+        {"kind", "condition"},
+        {"name", "detect"},
+        {"setting_path", path({"detector", "roi", "x"})},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "unexpose_parameter"},
+        {"kind", "detector"},
+        {"name", "bright"},
+        {"setting_path", path({"roi", "x"})},
+    });
+    detector = find_detector_definition(session.document, "bright");
+    ASSERT_NE(detector, nullptr);
+    EXPECT_TRUE(detector->parameters.empty());
+    EXPECT_EQ(scalar_setting(*detector->detector.find("roi"), "x"), "0");
+}
+
+TEST(ScenarioEditorV2, ExposesNestedConditionParameter) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "child"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "child"},
+        {"setting_path", path({"duration"})},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "parent"},
+        {"value", {
+            {"type", "all"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"definitions", "conditions", "parent", "conditions", 0})},
+        {"name", "child"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "parent"},
+        {"setting_path", path({"conditions", 0, "duration"})},
+    });
+
+    auto* parent = find_condition_definition(session.document, "parent");
+    ASSERT_NE(parent, nullptr);
+    ASSERT_EQ(parent->parameters.size(), 1U);
+    const auto* child_use = parent->condition.find("conditions")->find_index(0);
+    ASSERT_NE(child_use, nullptr);
+    const auto* with = child_use->find("with");
+    ASSERT_NE(with, nullptr);
+    const auto* child = find_condition_definition(session.document, "child");
+    ASSERT_NE(child, nullptr);
+    ASSERT_EQ(child->parameters.size(), 1U);
+    ASSERT_NE(with->find(child->parameters[0].name), nullptr);
+    EXPECT_TRUE(with->find(child->parameters[0].name)->is_parameter_reference());
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"start_condition"})},
+        {"name", "parent"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_usage_setting"},
+        {"path", path({"start_condition"})},
+        {"setting_path", path({"conditions", 0, "duration"})},
+        {"value", "4s"},
+    });
+    const auto resolved = resolved_condition(
+        session.document,
+        session.document.start_condition->value
+    );
+    EXPECT_EQ(
+        scalar_setting(require_condition(resolved, 0), "duration"),
+        "4s"
+    );
 }
 
 TEST(ScenarioEditorV2, RenameAndDetachUpdateReferences) {
@@ -463,7 +812,7 @@ TEST(ScenarioEditorV2, JsonStateExposesDefinitionsParametersAndResolvedValues) {
     EXPECT_TRUE(state["schema"]["conditionFields"].contains("elapsed"));
 }
 
-TEST(ScenarioEditorV2, ParameterGenerationIsOneUndoStep) {
+TEST(ScenarioEditorV2, ExposureIsOneUndoStep) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
         {"type", "create_condition_definition"},
@@ -477,16 +826,15 @@ TEST(ScenarioEditorV2, ParameterGenerationIsOneUndoStep) {
     });
     const std::size_t undo_before = session.undo_stack.size();
     apply_editor_command(session, nlohmann::json{
-        {"type", "set_usage_setting"},
-        {"path", path({"start_condition"})},
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "wait"},
         {"setting_path", path({"duration"})},
-        {"value", "2s"},
     });
     EXPECT_EQ(session.undo_stack.size(), undo_before + 1);
     EXPECT_EQ(find_condition_definition(session.document, "wait")->parameters.size(), 1U);
     apply_editor_command(session, nlohmann::json{{"type", "undo"}});
     EXPECT_TRUE(find_condition_definition(session.document, "wait")->parameters.empty());
-    EXPECT_EQ(session.document.start_condition->with(), nullptr);
     EXPECT_FALSE(
         find_condition_definition(session.document, "wait")->condition.find("duration")
             ->is_parameter_reference()
@@ -494,8 +842,7 @@ TEST(ScenarioEditorV2, ParameterGenerationIsOneUndoStep) {
     apply_editor_command(session, nlohmann::json{{"type", "redo"}});
     EXPECT_EQ(find_condition_definition(session.document, "wait")->parameters.size(), 1U);
 }
-
-TEST(ScenarioEditorV2, RejectsMismatchedParameterValues) {
+TEST(ScenarioEditorV2, RejectsUsageChangeForUnexposedSetting) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
         {"type", "create_condition_definition"},
@@ -512,11 +859,43 @@ TEST(ScenarioEditorV2, RejectsMismatchedParameterValues) {
             {"type", "set_usage_setting"},
             {"path", path({"start_condition"})},
             {"setting_path", path({"duration"})},
-            {"value", {{"not", "a duration"}}},
+            {"value", "2s"},
         }),
         ScenarioEditorError
     );
     EXPECT_EQ(session.undo_stack.size(), 2U);
+    EXPECT_EQ(session.document.start_condition->with(), nullptr);
+    EXPECT_TRUE(find_condition_definition(session.document, "wait")->parameters.empty());
+}
+
+TEST(ScenarioEditorV2, RejectsMismatchedParameterValues) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "wait"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"start_condition"})},
+        {"name", "wait"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "wait"},
+        {"setting_path", path({"duration"})},
+    });
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "set_usage_setting"},
+            {"path", path({"start_condition"})},
+            {"setting_path", path({"duration"})},
+            {"value", {{"not", "a duration"}}},
+        }),
+        ScenarioEditorError
+    );
+    EXPECT_EQ(session.undo_stack.size(), 3U);
     EXPECT_EQ(session.document.start_condition->with(), nullptr);
 }
 
@@ -583,7 +962,7 @@ TEST(ScenarioEditorV2, AddsMissingOptionalFieldsToInlineAndDefinitionConditions)
     EXPECT_EQ(scalar_setting(definition->condition, "within"), "2s");
 }
 
-TEST(ScenarioEditorV2, PerUsageOptionalFieldUsesAnOmittedDefault) {
+TEST(ScenarioEditorV2, OptionalExposureUsesAnOmittedDefault) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
         {"type", "create_condition_definition"},
@@ -594,6 +973,26 @@ TEST(ScenarioEditorV2, PerUsageOptionalFieldUsesAnOmittedDefault) {
                 {{"type", "elapsed"}, {"duration", "1s"}},
             })},
         }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_definition_setting"},
+        {"kind", "condition"},
+        {"name", "sequence"},
+        {"setting_path", path({"within"})},
+        {"value", "2s"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "sequence"},
+        {"setting_path", path({"within"})},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_definition_setting"},
+        {"kind", "condition"},
+        {"name", "sequence"},
+        {"setting_path", path({"within"})},
+        {"value", nullptr},
     });
     apply_editor_command(session, nlohmann::json{
         {"type", "use_condition"},
@@ -640,55 +1039,54 @@ TEST(ScenarioEditorV2, PerUsageOptionalFieldUsesAnOmittedDefault) {
     );
 }
 
-TEST(ScenarioEditorV2, PerUsageOptionalRoiUsesAnOmittedDefault) {
-    EditorSession session = new_editor_session();
-    apply_editor_command(session, nlohmann::json{
-        {"type", "create_detector_definition"},
-        {"name", "bright"},
-    });
-    apply_editor_command(session, nlohmann::json{
-        {"type", "create_condition_definition"},
-        {"name", "detect"},
-        {"value", {
-            {"type", "detected"},
-            {"minimum_score", "0.5"},
-            {"detector", {{"type", "mean_brightness"}}},
-        }},
-    });
-    apply_editor_command(session, nlohmann::json{
-        {"type", "use_detector"},
-        {"path", path({"definitions", "conditions", "detect", "detector"})},
-        {"name", "bright"},
-    });
-    apply_editor_command(session, nlohmann::json{
-        {"type", "set_detector_usage_setting"},
-        {"path", path({"definitions", "conditions", "detect", "detector"})},
-        {"setting_path", path({"roi"})},
-        {"value", {
-            {"x", "0"}, {"y", "0"}, {"width", "8"}, {"height", "8"},
-        }},
-    });
+TEST(ScenarioEditorV2, RoundTripKeepsExplicitExposureAndNestedForwarding) {
+    const std::string source = R"(
+schema_version: 2
+definitions:
+  detectors:
+    course_name_detector:
+      parameters:
+        image: Asset/YI1.png
+      detector:
+        type: root_mean_square_similarity
+        reference: {param: image}
+  conditions:
+    course_name_condition:
+      parameters:
+        image: Asset/YI1.png
+      condition:
+        type: detected
+        minimum_score: 0.9
+        detector:
+          use: course_name_detector
+          with:
+            image: {param: image}
+start_condition:
+  use: course_name_condition
+  with:
+    image: Asset/DPC.png
+splits: []
+)";
+    auto document = import_scenario_yaml(source);
+    const auto exported = export_scenario_yaml(document);
+    const auto reloaded = import_scenario_yaml(exported);
+
+    const auto* condition = find_condition_definition(reloaded, "course_name_condition");
+    ASSERT_NE(condition, nullptr);
+    ASSERT_EQ(condition->parameters.size(), 1U);
+    EXPECT_EQ(condition->parameters[0].name, "image");
+    const auto* detector_use = condition->condition.find("detector");
+    ASSERT_NE(detector_use, nullptr);
+    const auto* with = detector_use->find("with");
+    ASSERT_NE(with, nullptr);
+    ASSERT_NE(with->find("image"), nullptr);
+    EXPECT_TRUE(with->find("image")->is_parameter_reference());
+
     const auto resolved = resolved_condition(
-        session.document,
-        Value::make_mapping({{"use", Value::make_scalar("detect")}})
+        reloaded,
+        reloaded.start_condition->value
     );
     const auto* detector = resolved.find("detector");
     ASSERT_NE(detector, nullptr);
-    ASSERT_NE(detector->find("roi"), nullptr);
-    auto* definition = find_detector_definition(session.document, "bright");
-    ASSERT_NE(definition, nullptr);
-    ASSERT_EQ(definition->parameters.size(), 1U);
-    EXPECT_TRUE(definition->parameters[0].default_value.is_null());
-    EXPECT_TRUE(definition->detector.find("roi")->is_parameter_reference());
-
-    apply_editor_command(session, nlohmann::json{
-        {"type", "reset_detector_usage_setting"},
-        {"path", path({"definitions", "conditions", "detect", "detector"})},
-        {"setting_path", path({"roi"})},
-    });
-    const auto reset = resolved_condition(
-        session.document,
-        Value::make_mapping({{"use", Value::make_scalar("detect")}})
-    );
-    EXPECT_EQ(reset.find("detector")->find("roi"), nullptr);
+    EXPECT_EQ(detector->find("reference")->scalar, "Asset/DPC.png");
 }

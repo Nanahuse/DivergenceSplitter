@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <locale>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -51,6 +52,9 @@ struct PathToken {
 };
 
 using Path = std::vector<PathToken>;
+
+Path setting_path_from_json(const nlohmann::json& command);
+void erase_usage_with(Value& usage, const std::string& parameter);
 
 Path parse_path(const nlohmann::json& command) {
     const auto found = command.find("path");
@@ -488,13 +492,186 @@ std::string unique_parameter_name(
     return candidate;
 }
 
-Value* resolve_without_usage(Value& root, const Path& path) {
-    Value* current = &root;
-    for (const auto& token : path) {
-        if (current->is_mapping() && current->find("use") != nullptr) {
+enum class DefinitionKind {
+    condition,
+    detector,
+};
+
+struct DefinitionRef {
+    DefinitionKind kind{DefinitionKind::condition};
+    std::string name;
+    Value* root{};
+    std::vector<scenario::v2::ParameterDefinition>* parameters{};
+};
+
+std::string_view definition_kind_name(DefinitionKind kind) {
+    return kind == DefinitionKind::condition ? "condition" : "detector";
+}
+
+DefinitionKind definition_kind_from_command(const nlohmann::json& command) {
+    const std::string kind = command.at("kind").get<std::string>();
+    if (kind == "condition") {
+        return DefinitionKind::condition;
+    }
+    if (kind == "detector") {
+        return DefinitionKind::detector;
+    }
+    throw ScenarioEditorError("kind must be condition or detector");
+}
+
+DefinitionRef require_definition(
+    ScenarioDocument& document,
+    DefinitionKind kind,
+    const std::string& name
+) {
+    if (kind == DefinitionKind::condition) {
+        auto* definition = find_condition_definition(document, name);
+        if (definition == nullptr) {
+            throw ScenarioEditorError("condition definition was not found: " + name);
+        }
+        return DefinitionRef{kind, definition->name, &definition->condition, &definition->parameters};
+    }
+    auto* definition = find_detector_definition(document, name);
+    if (definition == nullptr) {
+        throw ScenarioEditorError("detector definition was not found: " + name);
+    }
+    return DefinitionRef{kind, definition->name, &definition->detector, &definition->parameters};
+}
+
+std::optional<DefinitionRef> find_use_definition(
+    ScenarioDocument& document,
+    const Value& usage,
+    DefinitionKind expected
+) {
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar() || use->scalar.empty()) {
+        return std::nullopt;
+    }
+    auto* condition = find_condition_definition(document, use->scalar);
+    auto* detector = find_detector_definition(document, use->scalar);
+    if (expected == DefinitionKind::condition) {
+        if (condition != nullptr) {
+            return DefinitionRef{
+                DefinitionKind::condition,
+                condition->name,
+                &condition->condition,
+                &condition->parameters,
+            };
+        }
+        if (detector != nullptr) {
             throw ScenarioEditorError(
-                "nested shared definitions cannot be changed from the outer usage"
+                "condition use refers to a detector definition: " + use->scalar
             );
+        }
+    } else {
+        if (detector != nullptr) {
+            return DefinitionRef{
+                DefinitionKind::detector,
+                detector->name,
+                &detector->detector,
+                &detector->parameters,
+            };
+        }
+        if (condition != nullptr) {
+            throw ScenarioEditorError(
+                "detector use refers to a condition definition: " + use->scalar
+            );
+        }
+    }
+    throw ScenarioEditorError(
+        std::string(definition_kind_name(expected)) + " definition was not found: "
+        + use->scalar
+    );
+}
+
+scenario::v2::ParameterDefinition* find_mutable_parameter(
+    DefinitionRef definition,
+    std::string_view name
+) {
+    const auto found = std::find_if(
+        definition.parameters->begin(),
+        definition.parameters->end(),
+        [&](const auto& parameter) { return parameter.name == name; }
+    );
+    return found == definition.parameters->end() ? nullptr : &*found;
+}
+
+const scenario::v2::ParameterDefinition* find_parameter(
+    const DefinitionRef& definition,
+    std::string_view name
+) {
+    const auto found = std::find_if(
+        definition.parameters->begin(),
+        definition.parameters->end(),
+        [&](const auto& parameter) { return parameter.name == name; }
+    );
+    return found == definition.parameters->end() ? nullptr : &*found;
+}
+
+struct UseStep {
+    DefinitionRef parent;
+    DefinitionRef child;
+    Value* use{};
+};
+
+struct LocatedSetting {
+    DefinitionRef owner;
+    Value* parent{};
+    std::string key;
+    Value* field{};
+    std::vector<UseStep> chain;
+};
+
+DefinitionKind expected_kind_for_key(std::string_view key, DefinitionKind current) {
+    if (key == "detector") {
+        return DefinitionKind::detector;
+    }
+    if (key == "condition" || key == "reset_condition" || key == "conditions") {
+        return DefinitionKind::condition;
+    }
+    return current;
+}
+
+LocatedSetting locate_setting(
+    ScenarioDocument& document,
+    DefinitionRef requested,
+    const Path& setting_path
+) {
+    if (setting_path.empty()) {
+        throw ScenarioEditorError("setting_path must not be empty");
+    }
+    DefinitionRef owner = requested;
+    Value* current = owner.root;
+    DefinitionKind expected = owner.kind;
+    std::vector<UseStep> chain;
+    std::size_t index = 0;
+    while (true) {
+        if (is_usage_value(*current)) {
+            auto child = find_use_definition(document, *current, expected);
+            if (!child) {
+                throw ScenarioEditorError("shared definition use is missing a name");
+            }
+            chain.push_back(UseStep{owner, *child, current});
+            owner = *child;
+            current = owner.root;
+            expected = owner.kind;
+            continue;
+        }
+        const auto& token = setting_path[index];
+        if (index + 1 == setting_path.size()) {
+            if (token.is_index) {
+                throw ScenarioEditorError("setting_path must end with a string key");
+            }
+            if (!current->is_mapping()) {
+                throw ScenarioEditorError("setting path parent must be a mapping");
+            }
+            return LocatedSetting{
+                owner,
+                current,
+                token.key,
+                current->find(token.key),
+                std::move(chain),
+            };
         }
         if (token.is_index) {
             if (!current->is_sequence() || token.index >= current->sequence.size()) {
@@ -509,52 +686,248 @@ Value* resolve_without_usage(Value& root, const Path& path) {
             if (current == nullptr) {
                 throw ScenarioEditorError("setting path field was not found: " + token.key);
             }
+            expected = expected_kind_for_key(token.key, expected);
+        }
+        ++index;
+    }
+}
+
+std::optional<std::string> exposed_parameter_at(
+    ScenarioDocument& document,
+    DefinitionRef requested,
+    const Path& setting_path
+) {
+    LocatedSetting located = locate_setting(document, requested, setting_path);
+    if (located.field == nullptr || !located.field->is_parameter_reference()) {
+        return std::nullopt;
+    }
+    std::string parameter = located.field->scalar;
+    if (find_parameter(located.owner, parameter) == nullptr) {
+        throw ScenarioEditorError(
+            "parameter definition was not found: " + parameter
+        );
+    }
+    for (auto step = located.chain.rbegin(); step != located.chain.rend(); ++step) {
+        const auto* with = step->use->find("with");
+        if (with == nullptr || !with->is_mapping()) {
+            return std::nullopt;
+        }
+        const auto* forwarded = with->find(parameter);
+        if (forwarded == nullptr || !forwarded->is_parameter_reference()) {
+            return std::nullopt;
+        }
+        if (find_parameter(step->parent, forwarded->scalar) == nullptr) {
+            throw ScenarioEditorError(
+                "parameter definition was not found: " + forwarded->scalar
+            );
+        }
+        parameter = forwarded->scalar;
+    }
+    return parameter;
+}
+
+const Value* value_at_path(const Value& root, const Path& path) {
+    const Value* current = &root;
+    for (const auto& token : path) {
+        if (token.is_index) {
+            if (!current->is_sequence() || token.index >= current->sequence.size()) {
+                return nullptr;
+            }
+            current = &current->sequence[token.index];
+        } else {
+            if (!current->is_mapping()) {
+                return nullptr;
+            }
+            current = current->find(token.key);
+            if (current == nullptr) {
+                return nullptr;
+            }
         }
     }
     return current;
 }
 
-struct SettingSlot {
-    Value* parent{};
-    std::string key;
-    Value* existing{};
-};
+Value effective_setting_value(
+    const ScenarioDocument& document,
+    DefinitionRef requested,
+    const Path& setting_path,
+    const Value& fallback
+) {
+    Value usage = Value::make_mapping({{"use", Value::make_scalar(requested.name)}});
+    const Value resolved = requested.kind == DefinitionKind::condition
+        ? scenario::v2::resolve_condition(document.definitions, usage)
+        : scenario::v2::resolve_detector(document.definitions, usage);
+    const Value* value = value_at_path(resolved, setting_path);
+    return value == nullptr ? fallback : *value;
+}
 
-SettingSlot resolve_setting_slot(Value& root, const Path& path) {
-    if (path.empty()) {
-        throw ScenarioEditorError("setting_path must not be empty");
+Value* ensure_usage_with(Value& usage) {
+    Value* with = usage.find("with");
+    if (with == nullptr) {
+        usage.set("with", Value::make_mapping());
+        with = usage.find("with");
     }
-    if (path.back().is_index) {
-        throw ScenarioEditorError("setting_path must end with a string key");
+    if (!with->is_mapping()) {
+        throw ScenarioEditorError("usage.with must be a mapping");
     }
-    Value* parent = &root;
-    for (std::size_t index = 0; index + 1 < path.size(); ++index) {
-        if (parent->is_mapping() && parent->find("use") != nullptr) {
+    return with;
+}
+
+std::string add_parameter(
+    DefinitionRef definition,
+    const Path& setting_path,
+    const Value& default_value
+) {
+    const std::string parameter = unique_parameter_name(
+        definition.name, setting_path, *definition.parameters
+    );
+    definition.parameters->push_back(scenario::v2::ParameterDefinition{
+        parameter,
+        default_value,
+    });
+    return parameter;
+}
+
+void expose_parameter(ScenarioDocument& document, const nlohmann::json& command) {
+    const DefinitionKind kind = definition_kind_from_command(command);
+    const std::string name = command.at("name").get<std::string>();
+    const Path setting_path = setting_path_from_json(command);
+    const DefinitionRef requested = require_definition(document, kind, name);
+
+    LocatedSetting located = locate_setting(document, requested, setting_path);
+    if (located.field == nullptr) {
+        throw ScenarioEditorError("setting field was not found");
+    }
+    if (is_usage_value(*located.field)) {
+        throw ScenarioEditorError("shared definition references cannot be parameters");
+    }
+    if (exposed_parameter_at(document, requested, setting_path).has_value()) {
+        return;
+    }
+
+    const Value fallback = located.field->is_parameter_reference()
+        ? find_parameter(located.owner, located.field->scalar)->default_value
+        : *located.field;
+    const Value effective = effective_setting_value(
+        document,
+        requested,
+        setting_path,
+        fallback
+    );
+
+    if (located.chain.empty()) {
+        const std::string parameter = add_parameter(requested, setting_path, effective);
+        located.parent->set(located.key, Value::make_parameter_reference(parameter));
+        return;
+    }
+
+    if (!located.field->is_parameter_reference()) {
+        throw ScenarioEditorError(
+            "a nested definition setting can only be exposed when the nested definition "
+            "already exposes it"
+        );
+    }
+    std::string child_parameter = located.field->scalar;
+    if (find_parameter(located.owner, child_parameter) == nullptr) {
+        throw ScenarioEditorError(
+            "parameter definition was not found: " + child_parameter
+        );
+    }
+
+    for (auto step = located.chain.rbegin(); step != located.chain.rend(); ++step) {
+        Value* with = ensure_usage_with(*step->use);
+        Value* forwarded = with->find(child_parameter);
+        if (forwarded != nullptr && forwarded->is_parameter_reference()) {
+            if (find_parameter(step->parent, forwarded->scalar) == nullptr) {
+                throw ScenarioEditorError(
+                    "parameter definition was not found: " + forwarded->scalar
+                );
+            }
+            child_parameter = forwarded->scalar;
+            continue;
+        }
+        const std::string parameter = add_parameter(step->parent, setting_path, effective);
+        with->set(child_parameter, Value::make_parameter_reference(parameter));
+        child_parameter = parameter;
+    }
+}
+
+void replace_parameter_references(
+    Value& value,
+    std::string_view parameter,
+    const Value& replacement
+) {
+    if (value.is_parameter_reference() && value.scalar == parameter) {
+        value = replacement;
+        return;
+    }
+    for (auto& item : value.sequence) {
+        replace_parameter_references(item, parameter, replacement);
+    }
+    for (auto& [key, item] : value.mapping) {
+        (void)key;
+        replace_parameter_references(item, parameter, replacement);
+    }
+}
+
+void unexpose_parameter(ScenarioDocument& document, const nlohmann::json& command) {
+    const DefinitionKind kind = definition_kind_from_command(command);
+    const std::string name = command.at("name").get<std::string>();
+    const Path setting_path = setting_path_from_json(command);
+    const DefinitionRef requested = require_definition(document, kind, name);
+
+    const auto exposed = exposed_parameter_at(document, requested, setting_path);
+    if (!exposed) {
+        return;
+    }
+    auto* parameter = find_mutable_parameter(requested, *exposed);
+    if (parameter == nullptr) {
+        throw ScenarioEditorError("parameter definition was not found: " + *exposed);
+    }
+
+    const auto inspect = [&](Value& usage) {
+        const auto* use = usage.find("use");
+        if (use == nullptr || !use->is_scalar() || use->scalar != name) {
+            return;
+        }
+        const auto* with = usage.find("with");
+        if (with == nullptr || !with->is_mapping()) {
+            return;
+        }
+        const auto* forwarded = with->find(*exposed);
+        if (forwarded != nullptr && forwarded->is_parameter_reference()) {
             throw ScenarioEditorError(
-                "nested shared definitions cannot be changed from the outer usage"
+                "parameter is exposed by a parent definition; unexpose it there first"
             );
         }
-        const auto& token = path[index];
-        if (token.is_index) {
-            if (!parent->is_sequence() || token.index >= parent->sequence.size()) {
-                throw ScenarioEditorError("setting path index is out of range");
-            }
-            parent = &parent->sequence[token.index];
-        } else {
-            if (!parent->is_mapping()) {
-                throw ScenarioEditorError("setting path expected a mapping");
-            }
-            parent = parent->find(token.key);
-            if (parent == nullptr) {
-                throw ScenarioEditorError("setting path field was not found: " + token.key);
-            }
+    };
+    if (kind == DefinitionKind::condition) {
+        visit_all_conditions(document, inspect);
+    } else {
+        visit_all_detector_usages(document, inspect);
+    }
+
+    const Value default_value = parameter->default_value;
+    replace_parameter_references(*requested.root, *exposed, default_value);
+    const auto clear = [&](Value& usage) {
+        const auto* use = usage.find("use");
+        if (use != nullptr && use->is_scalar() && use->scalar == name) {
+            erase_usage_with(usage, *exposed);
         }
+    };
+    if (kind == DefinitionKind::condition) {
+        visit_all_conditions(document, clear);
+    } else {
+        visit_all_detector_usages(document, clear);
     }
-    if (!parent->is_mapping()) {
-        throw ScenarioEditorError("setting path parent must be a mapping");
-    }
-    const std::string key = path.back().key;
-    return SettingSlot{parent, key, parent->find(key)};
+    requested.parameters->erase(
+        std::remove_if(
+            requested.parameters->begin(),
+            requested.parameters->end(),
+            [&](const auto& item) { return item.name == *exposed; }
+        ),
+        requested.parameters->end()
+    );
 }
 
 Path setting_path_from_json(const nlohmann::json& command) {
@@ -601,165 +974,97 @@ void erase_usage_with(Value& usage, const std::string& parameter) {
     }
 }
 
-void parameterize_setting(
-    Value& root,
-    std::vector<scenario::v2::ParameterDefinition>& parameters,
-    const std::string& definition_name,
+DefinitionRef require_usage_definition(
+    ScenarioDocument& document,
     Value& usage,
+    DefinitionKind kind
+) {
+    if (!is_usage_value(usage)) {
+        throw ScenarioEditorError(
+            std::string("this command requires a shared ")
+            + std::string(definition_kind_name(kind)) + " usage"
+        );
+    }
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar()) {
+        throw ScenarioEditorError("shared definition use must have a name");
+    }
+    return require_definition(document, kind, use->scalar);
+}
+
+std::string require_exposed_parameter(
+    ScenarioDocument& document,
+    DefinitionRef definition,
+    const Path& setting_path
+) {
+    const auto exposed = exposed_parameter_at(document, definition, setting_path);
+    if (!exposed) {
+        throw ScenarioEditorError(
+            "setting is not exposed by the shared definition: "
+            + definition.name
+        );
+    }
+    return *exposed;
+}
+
+void set_usage_setting(
+    ScenarioDocument& document,
+    Value& usage,
+    DefinitionKind kind,
     const Path& setting_path,
     const Value& value
 ) {
-    const SettingSlot slot = resolve_setting_slot(root, setting_path);
-    if (slot.existing != nullptr && slot.existing->is_parameter_reference()) {
-        set_usage_with(usage, slot.existing->scalar, value);
-        return;
-    }
-    const std::string parameter = unique_parameter_name(
-        definition_name, setting_path, parameters
+    const DefinitionRef definition = require_usage_definition(document, usage, kind);
+    const std::string parameter = require_exposed_parameter(
+        document, definition, setting_path
     );
-    parameters.push_back(scenario::v2::ParameterDefinition{
-        parameter,
-        slot.existing != nullptr ? *slot.existing : Value::make_null(),
-    });
-    slot.parent->set(slot.key, Value::make_parameter_reference(parameter));
     set_usage_with(usage, parameter, value);
 }
 
-void reset_setting(
-    Value& root,
-    Value& usage,
-    const Path& setting_path
-) {
-    const SettingSlot slot = resolve_setting_slot(root, setting_path);
-    if (slot.existing != nullptr && slot.existing->is_parameter_reference()) {
-        erase_usage_with(usage, slot.existing->scalar);
-    }
-}
-
-void parameterize_condition_setting(
+void reset_usage_setting(
     ScenarioDocument& document,
     Value& usage,
-    const Path& setting_path,
-    const Value& value
+    DefinitionKind kind,
+    const Path& setting_path
 ) {
-    const auto* use = usage.find("use");
-    if (use == nullptr || !use->is_scalar()) {
-        throw ScenarioEditorError("per-use settings require a shared condition usage");
-    }
-    auto* definition = find_condition_definition(document, use->scalar);
-    if (definition == nullptr) {
-        throw ScenarioEditorError("condition definition was not found: " + use->scalar);
-    }
-    parameterize_setting(
-        definition->condition,
-        definition->parameters,
-        definition->name,
-        usage,
-        setting_path,
-        value
+    const DefinitionRef definition = require_usage_definition(document, usage, kind);
+    const std::string parameter = require_exposed_parameter(
+        document, definition, setting_path
     );
-}
-
-void reset_condition_setting(
-    ScenarioDocument& document,
-    Value& usage,
-    const Path& setting_path
-) {
-    const auto* use = usage.find("use");
-    if (use == nullptr || !use->is_scalar()) {
-        return;
-    }
-    auto* definition = find_condition_definition(document, use->scalar);
-    if (definition == nullptr) {
-        throw ScenarioEditorError("condition definition was not found: " + use->scalar);
-    }
-    reset_setting(definition->condition, usage, setting_path);
-}
-
-void parameterize_detector_setting(
-    ScenarioDocument& document,
-    Value& usage,
-    const Path& setting_path,
-    const Value& value
-) {
-    const auto* use = usage.find("use");
-    if (use == nullptr || !use->is_scalar()) {
-        throw ScenarioEditorError("per-use settings require a shared detector usage");
-    }
-    auto* definition = find_detector_definition(document, use->scalar);
-    if (definition == nullptr) {
-        throw ScenarioEditorError("detector definition was not found: " + use->scalar);
-    }
-    parameterize_setting(
-        definition->detector,
-        definition->parameters,
-        definition->name,
-        usage,
-        setting_path,
-        value
-    );
-}
-
-void reset_detector_setting(
-    ScenarioDocument& document,
-    Value& usage,
-    const Path& setting_path
-) {
-    const auto* use = usage.find("use");
-    if (use == nullptr || !use->is_scalar()) {
-        return;
-    }
-    auto* definition = find_detector_definition(document, use->scalar);
-    if (definition == nullptr) {
-        throw ScenarioEditorError("detector definition was not found: " + use->scalar);
-    }
-    reset_setting(definition->detector, usage, setting_path);
+    erase_usage_with(usage, parameter);
 }
 
 void set_definition_setting(
     ScenarioDocument& document,
     const nlohmann::json& command
 ) {
-    const std::string kind = command.at("kind").get<std::string>();
+    const DefinitionKind kind = definition_kind_from_command(command);
     const std::string name = command.at("name").get<std::string>();
     const Path setting_path = setting_path_from_json(command);
     const Value value = value_from_json(command.at("value"));
+    const DefinitionRef requested = require_definition(document, kind, name);
 
-    std::vector<scenario::v2::ParameterDefinition>* parameters = nullptr;
-    Value* root = nullptr;
-    if (kind == "condition") {
-        auto* definition = find_condition_definition(document, name);
-        if (definition == nullptr) {
-            throw ScenarioEditorError("condition definition was not found: " + name);
+    const auto exposed = exposed_parameter_at(document, requested, setting_path);
+    if (exposed) {
+        auto* parameter = find_mutable_parameter(requested, *exposed);
+        if (parameter == nullptr) {
+            throw ScenarioEditorError("parameter definition was not found: " + *exposed);
         }
-        root = &definition->condition;
-        parameters = &definition->parameters;
-    } else if (kind == "detector") {
-        auto* definition = find_detector_definition(document, name);
-        if (definition == nullptr) {
-            throw ScenarioEditorError("detector definition was not found: " + name);
-        }
-        root = &definition->detector;
-        parameters = &definition->parameters;
-    } else {
-        throw ScenarioEditorError("set_definition_setting kind must be condition or detector");
+        parameter->default_value = value;
+        return;
     }
 
-    const SettingSlot slot = resolve_setting_slot(*root, setting_path);
-    if (slot.existing != nullptr && slot.existing->is_parameter_reference()) {
-        const auto found = std::find_if(
-            parameters->begin(),
-            parameters->end(),
-            [&](const auto& parameter) { return parameter.name == slot.existing->scalar; }
+    LocatedSetting located = locate_setting(document, requested, setting_path);
+    if (!located.chain.empty()) {
+        throw ScenarioEditorError(
+            "nested definition settings can only be changed when exposed by the "
+            "outer definition"
         );
-        if (found == parameters->end()) {
-            throw ScenarioEditorError("parameter definition was not found: " + slot.existing->scalar);
-        }
-        found->default_value = value;
-    } else if (slot.existing != nullptr) {
-        *slot.existing = value;
+    }
+    if (located.field != nullptr) {
+        *located.field = value;
     } else {
-        slot.parent->set(slot.key, value);
+        located.parent->set(located.key, value);
     }
 }
 
@@ -1208,12 +1513,10 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
     }
     if (type == "set_usage_setting") {
         Value* usage = resolve_path(document, parse_path(command));
-        if (!is_usage_value(*usage)) {
-            throw ScenarioEditorError("set_usage_setting requires a shared condition usage");
-        }
-        parameterize_condition_setting(
+        set_usage_setting(
             document,
             *usage,
+            DefinitionKind::condition,
             setting_path_from_json(command),
             value_from_json(command.at("value"))
         );
@@ -1221,17 +1524,20 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
     }
     if (type == "reset_usage_setting") {
         Value* usage = resolve_path(document, parse_path(command));
-        reset_condition_setting(document, *usage, setting_path_from_json(command));
+        reset_usage_setting(
+            document,
+            *usage,
+            DefinitionKind::condition,
+            setting_path_from_json(command)
+        );
         return;
     }
     if (type == "set_detector_usage_setting") {
         Value* usage = resolve_path(document, parse_path(command));
-        if (!is_usage_value(*usage)) {
-            throw ScenarioEditorError("set_detector_usage_setting requires a shared detector usage");
-        }
-        parameterize_detector_setting(
+        set_usage_setting(
             document,
             *usage,
+            DefinitionKind::detector,
             setting_path_from_json(command),
             value_from_json(command.at("value"))
         );
@@ -1239,7 +1545,20 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
     }
     if (type == "reset_detector_usage_setting") {
         Value* usage = resolve_path(document, parse_path(command));
-        reset_detector_setting(document, *usage, setting_path_from_json(command));
+        reset_usage_setting(
+            document,
+            *usage,
+            DefinitionKind::detector,
+            setting_path_from_json(command)
+        );
+        return;
+    }
+    if (type == "expose_parameter") {
+        expose_parameter(document, command);
+        return;
+    }
+    if (type == "unexpose_parameter") {
+        unexpose_parameter(document, command);
         return;
     }
     if (type == "set_definition_setting") {
@@ -1247,36 +1566,24 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         return;
     }
     if (type == "remove_definition_setting") {
-        const std::string kind = command.at("kind").get<std::string>();
+        const DefinitionKind kind = definition_kind_from_command(command);
         const std::string name = command.at("name").get<std::string>();
         const Path setting_path = setting_path_from_json(command);
-        const PathToken& last = setting_path.back();
-        if (last.is_index) {
-            throw ScenarioEditorError("definition setting paths must end with a key");
+        const DefinitionRef requested = require_definition(document, kind, name);
+        LocatedSetting located = locate_setting(document, requested, setting_path);
+        if (!located.chain.empty()) {
+            throw ScenarioEditorError(
+                "nested definition settings cannot be removed from the outer definition"
+            );
         }
-        Path parent_path = setting_path;
-        parent_path.pop_back();
-        Value* root = nullptr;
-        if (kind == "condition") {
-            auto* definition = find_condition_definition(document, name);
-            if (definition == nullptr) {
-                throw ScenarioEditorError("condition definition was not found: " + name);
-            }
-            root = &definition->condition;
-        } else if (kind == "detector") {
-            auto* definition = find_detector_definition(document, name);
-            if (definition == nullptr) {
-                throw ScenarioEditorError("detector definition was not found: " + name);
-            }
-            root = &definition->detector;
-        } else {
-            throw ScenarioEditorError("remove_definition_setting kind must be condition or detector");
+        if (located.field != nullptr && located.field->is_parameter_reference()) {
+            throw ScenarioEditorError(
+                "unexpose the setting before removing the field"
+            );
         }
-        Value* parent = resolve_without_usage(*root, parent_path);
-        if (!parent->is_mapping()) {
-            throw ScenarioEditorError("definition setting parent must be a mapping");
+        if (located.field != nullptr) {
+            located.parent->erase(located.key);
         }
-        parent->erase(last.key);
         return;
     }
     if (type == "create_condition_definition") {

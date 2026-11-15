@@ -195,6 +195,149 @@ export function isPrefix(prefix: Path, path: Path): boolean {
   return prefix.length <= path.length && prefix.every((part, index) => part === path[index]);
 }
 
+export function pathFromKey(key: string): Path {
+  return JSON.parse(key) as Path;
+}
+
+export type DefinitionKind = "condition" | "detector";
+
+export interface DefinitionExposureInfo {
+  exposed: Map<string, string>;
+  nestedExposed: Set<string>;
+  nestedPrefixes: Set<string>;
+}
+
+interface SharedUseTarget {
+  kind: DefinitionKind;
+  name: string;
+  raw: JsonValue;
+}
+
+function sharedUseTarget(
+  document: ScenarioDocument,
+  value: JsonValue | undefined,
+  expected?: DefinitionKind,
+): SharedUseTarget | undefined {
+  if (!isSharedUse(value)) {
+    return undefined;
+  }
+  const name = sharedUseName(value);
+  const condition = conditionDefinitionByName(document, name);
+  const detector = detectorDefinitionByName(document, name);
+  if (expected === "condition" && condition) {
+    return { kind: "condition", name, raw: condition.condition };
+  }
+  if (expected === "detector" && detector) {
+    return { kind: "detector", name, raw: detector.detector };
+  }
+  if (condition) {
+    return { kind: "condition", name, raw: condition.condition };
+  }
+  if (detector) {
+    return { kind: "detector", name, raw: detector.detector };
+  }
+  return undefined;
+}
+
+function collectExposure(
+  document: ScenarioDocument,
+  value: JsonValue,
+  stack: Set<string>,
+  path: Path = [],
+  expected?: DefinitionKind,
+): DefinitionExposureInfo {
+  const result: DefinitionExposureInfo = {
+    exposed: new Map(),
+    nestedExposed: new Set(),
+    nestedPrefixes: new Set(),
+  };
+  if (isParameterReference(value)) {
+    result.exposed.set(pathKey(path), value.$param);
+    return result;
+  }
+  if (isSequence(value)) {
+    value.forEach((item, index) => {
+      const child = collectExposure(document, item, stack, [...path, index], expected);
+      for (const [key, parameter] of child.exposed) {
+        result.exposed.set(key, parameter);
+      }
+      child.nestedExposed.forEach((key) => result.nestedExposed.add(key));
+      child.nestedPrefixes.forEach((key) => result.nestedPrefixes.add(key));
+    });
+    return result;
+  }
+  if (!isMapping(value)) {
+    return result;
+  }
+  if (isSharedUse(value)) {
+    const target = sharedUseTarget(document, value, expected);
+    const key = target ? `${target.kind}:${target.name}` : "";
+    result.nestedPrefixes.add(pathKey(path));
+    if (!target || stack.has(key)) {
+      return result;
+    }
+    const nestedStack = new Set(stack);
+    nestedStack.add(key);
+    const child = collectExposure(document, target.raw, nestedStack, [], target.kind);
+    const withValues = sharedUseWith(value);
+    for (const [childKey, childParameter] of child.exposed) {
+      const fullPath = [...path, ...pathFromKey(childKey)];
+      result.nestedExposed.add(pathKey(fullPath));
+      const forwarded = withValues[childParameter];
+      if (isParameterReference(forwarded)) {
+        result.exposed.set(pathKey(fullPath), forwarded.$param);
+      }
+    }
+    for (const prefix of child.nestedPrefixes) {
+      result.nestedPrefixes.add(pathKey([...path, ...pathFromKey(prefix)]));
+    }
+    return result;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    const childExpected = key === "detector"
+      ? "detector" as const
+      : (key === "condition" || key === "reset_condition" || key === "conditions")
+        ? "condition" as const
+        : expected;
+    const child = collectExposure(document, item, stack, [...path, key], childExpected);
+    for (const [childKey, parameter] of child.exposed) {
+      result.exposed.set(childKey, parameter);
+    }
+    child.nestedExposed.forEach((itemKey) => result.nestedExposed.add(itemKey));
+    child.nestedPrefixes.forEach((itemKey) => result.nestedPrefixes.add(itemKey));
+  }
+  return result;
+}
+
+export function definitionExposureInfo(
+  document: ScenarioDocument,
+  kind: DefinitionKind,
+  name: string,
+): DefinitionExposureInfo {
+  const raw = kind === "condition"
+    ? conditionDefinitionByName(document, name)?.condition
+    : detectorDefinitionByName(document, name)?.detector;
+  if (raw === undefined) {
+    return { exposed: new Map(), nestedExposed: new Set(), nestedPrefixes: new Set() };
+  }
+  return collectExposure(document, raw, new Set([`${kind}:${name}`]), [], kind);
+}
+
+export function isNestedExposurePath(
+  info: DefinitionExposureInfo | null,
+  path: Path,
+): boolean {
+  if (!info) {
+    return false;
+  }
+  for (const prefixKey of info.nestedPrefixes) {
+    if (isPrefix(pathFromKey(prefixKey), path)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function conditionDefinitionByName(
   document: ScenarioDocument,
   name: string,

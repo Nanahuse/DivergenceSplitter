@@ -573,8 +573,8 @@ export default function App() {
                   を選択してください。
                 </p>
                 <p className="muted">
-                  共通Conditionは通常のConditionと同じプロパティで編集できます。
-                  使用箇所だけ変更すると、C++がパラメーターを自動生成します。
+                  共通Conditionの設定は共通定義側で編集し、
+                  「公開」した項目だけを使用箇所から変更できます。
                 </p>
               </div>
             )}

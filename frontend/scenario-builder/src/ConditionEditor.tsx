@@ -9,7 +9,6 @@ import {
   isParameterReference,
   isSequence,
   isSharedUse,
-  parameterPathMap,
   pathEquals,
   pathKey,
   resolvedRootAtPath,
@@ -17,6 +16,9 @@ import {
   sharedUseName,
   sharedUseWith,
   valueAtPath,
+  definitionExposureInfo,
+  isNestedExposurePath,
+  type DefinitionExposureInfo,
   type EditorSchema,
   type FieldSchema,
   type JsonValue,
@@ -64,11 +66,13 @@ function DraftInput({
   onCommit,
   placeholder,
   multiline = false,
+  disabled = false,
 }: {
   value: string;
   onCommit: (value: string) => void;
   placeholder?: string;
   multiline?: boolean;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
@@ -82,6 +86,7 @@ function DraftInput({
       <textarea
         value={draft}
         placeholder={placeholder}
+        disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
       />
@@ -91,6 +96,7 @@ function DraftInput({
     <input
       value={draft}
       placeholder={placeholder}
+      disabled={disabled}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -109,6 +115,8 @@ function SettingRow({
   onRemove,
   onReset,
   overridden = false,
+  readOnly = false,
+  expose,
 }: {
   label: string;
   value: JsonValue | undefined;
@@ -116,15 +124,33 @@ function SettingRow({
   onRemove?: () => void;
   onReset?: () => void;
   overridden?: boolean;
+  readOnly?: boolean;
+  expose?: {
+    exposed: boolean;
+    disabled: boolean;
+    onChange: (exposed: boolean) => void;
+  };
 }) {
   return (
     <div className="setting-row">
       <span className="setting-label">
         {label}
         {overridden ? <span className="override-badge">この使用箇所</span> : null}
+        {expose ? (
+          <label className="expose-toggle" title="使用箇所から変更できるようにする">
+            <input
+              type="checkbox"
+              checked={expose.exposed}
+              disabled={expose.disabled}
+              onChange={(event) => expose.onChange(event.target.checked)}
+            />
+            公開
+          </label>
+        ) : null}
       </span>
       <DraftInput
         value={value === undefined || value === null ? "" : compactValue(value)}
+        disabled={readOnly}
         onCommit={(text) => onCommit(parseInputValue(text))}
       />
       {onReset ? (
@@ -147,16 +173,37 @@ interface PropertyActions {
   assets: string[];
   addAsset?: (apply: (asset: string) => void) => void;
   overrides: Set<string>;
+  exposure: DefinitionExposureInfo | null;
+  document: ScenarioDocument;
+  usageMode: boolean;
+  definitionMode: boolean;
   rawValue: (path: Path) => JsonValue | undefined;
   set: (path: Path, value: JsonValue) => void;
   remove?: (path: Path) => void;
   reset?: (path: Path) => void;
+  readOnly: (path: Path) => boolean;
+  isExposed: (path: Path) => boolean;
+  canExpose: (path: Path) => boolean;
+  toggleExposure?: (path: Path, exposed: boolean) => void;
+  structureEditable: (path: Path) => boolean;
   changeConditionType?: (type: string) => void;
   changeDetectorType?: (path: Path, type: string) => void;
   useDetector?: (path: Path, name: string) => void;
   inlineDetector?: (path: Path) => void;
   setDetectorUsage?: (path: Path, settingPath: Path, value: JsonValue) => void;
   resetDetectorUsage?: (path: Path, settingPath: Path) => void;
+}
+
+function exposureControl(actions: PropertyActions, path: Path) {
+  if (!actions.toggleExposure) {
+    return undefined;
+  }
+  const exposed = actions.isExposed(path);
+  return {
+    exposed,
+    disabled: !exposed && !actions.canExpose(path),
+    onChange: (next: boolean) => actions.toggleExposure?.(path, next),
+  };
 }
 
 function MissingOptionalFields({
@@ -175,6 +222,50 @@ function MissingOptionalFields({
   const missing = fields.filter((field) => !field.required && !present.has(field.name));
   if (missing.length === 0) {
     return null;
+  }
+  if (actions.usageMode) {
+    const exposedMissing = missing.filter((field) =>
+      actions.isExposed([...path, field.name]),
+    );
+    if (exposedMissing.length === 0) {
+      return null;
+    }
+    return (
+      <div className="nested-group">
+        <div className="nested-title">公開パラメーター</div>
+        {exposedMissing.map((field) => (
+          <SettingRow
+            key={field.name}
+            label={field.name}
+            value={undefined}
+            onCommit={(next) => actions.set([...path, field.name], next)}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (isNestedExposurePath(actions.exposure, path)) {
+    const exposableMissing = missing.filter((field) =>
+      actions.canExpose([...path, field.name]),
+    );
+    if (exposableMissing.length === 0) {
+      return null;
+    }
+    return (
+      <div className="nested-group">
+        <div className="nested-title">公開できるパラメーター</div>
+        {exposableMissing.map((field) => (
+          <SettingRow
+            key={field.name}
+            label={field.name}
+            value={undefined}
+            readOnly={actions.readOnly([...path, field.name])}
+            expose={exposureControl(actions, [...path, field.name])}
+            onCommit={(next) => actions.set([...path, field.name], next)}
+          />
+        ))}
+      </div>
+    );
   }
   const current = missing.some((field) => field.name === selected)
     ? selected
@@ -220,7 +311,7 @@ function RoiFieldsEditor({
     <div className="nested-group">
       <div className="nested-title">
         roi
-        {!field.required && actions.remove ? (
+        {!field.required && actions.remove && !actions.readOnly(path) ? (
           <button className="icon" title="roi を削除" onClick={() => actions.remove?.(path)}>
             ×
           </button>
@@ -232,6 +323,8 @@ function RoiFieldsEditor({
           label={key}
           value={value[key]}
           overridden={actions.overrides.has(pathKey([...path, key]))}
+          readOnly={actions.readOnly([...path, key])}
+          expose={exposureControl(actions, [...path, key])}
           onReset={
             actions.reset && actions.overrides.has(pathKey([...path, key]))
               ? () => actions.reset?.([...path, key])
@@ -266,12 +359,56 @@ function DetectorFieldsEditor({
     if (!definition) {
       return <p className="error-text">共通Detectorが見つかりません: {name}</p>;
     }
-    const pathMap = parameterPathMap(definition.detector);
+    if (!isMapping(value)) {
+      return <p className="error-text">Detector の解決結果がありません。</p>;
+    }
+    const fields = actions.schema.detectorFields[conditionType(value)] ?? [];
+    const nestedExposure = definitionExposureInfo(actions.document, "detector", name);
+    const useParentActions = actions.usageMode || actions.definitionMode;
+    if (useParentActions) {
+      return (
+        <div className="nested-group">
+          <div className="nested-title">
+            共通Detector: {name}
+            {actions.inlineDetector && actions.structureEditable(path) ? (
+              <button
+                className="icon"
+                title="インライン化"
+                onClick={() => actions.inlineDetector?.(path)}
+              >
+                ↧
+              </button>
+            ) : null}
+          </div>
+          {fields.map((field) => {
+            const item = value[field.name];
+            if (item === undefined) {
+              return null;
+            }
+            return (
+              <SchemaFieldEditor
+                key={field.name}
+                actions={actions}
+                field={field}
+                path={[...path, field.name]}
+                value={item}
+                raw={actions.rawValue([...path, field.name])}
+              />
+            );
+          })}
+          <MissingOptionalFields
+            actions={actions}
+            path={path}
+            value={value}
+            fields={fields}
+          />
+        </div>
+      );
+    }
     const overrides = new Set<string>();
-    for (const parameter of Object.keys(sharedUseWith(raw))) {
-      const parameterPath = pathMap.get(parameter);
-      if (parameterPath) {
-        overrides.add(pathKey(parameterPath));
+    for (const [exposedPath, parameter] of nestedExposure.exposed) {
+      if (sharedUseWith(raw)[parameter] !== undefined) {
+        overrides.add(exposedPath);
       }
     }
     const nested: PropertyActions = {
@@ -280,11 +417,19 @@ function DetectorFieldsEditor({
       assets: actions.assets,
       addAsset: actions.addAsset,
       overrides,
+      exposure: nestedExposure,
+      usageMode: true,
+      definitionMode: false,
+      document: actions.document,
       rawValue: (itemPath) => valueAtPath(value, itemPath),
       set: (itemPath, next) => actions.setDetectorUsage?.(path, itemPath, next),
       reset: actions.resetDetectorUsage
         ? (itemPath) => actions.resetDetectorUsage?.(path, itemPath)
         : undefined,
+      readOnly: (itemPath) => !nestedExposure.exposed.has(pathKey(itemPath)),
+      isExposed: (itemPath) => nestedExposure.exposed.has(pathKey(itemPath)),
+      canExpose: () => false,
+      structureEditable: () => false,
       inlineDetector: actions.inlineDetector
         ? () => actions.inlineDetector?.(path)
         : undefined,
@@ -293,20 +438,20 @@ function DetectorFieldsEditor({
       return (
         <div className="usage-banner">
           <strong>共通Detector: {name}</strong>
-          <span>共通Condition内のDetectorは共通定義側で編集してください。</span>
+          <span>共通Detectorの公開済みパラメーターをここで変更できます。</span>
         </div>
       );
     }
-    if (!isMapping(value)) {
-      return <p className="error-text">Detector の解決結果がありません。</p>;
-    }
-    const fields = actions.schema.detectorFields[conditionType(value)] ?? [];
     return (
       <div className="nested-group">
         <div className="nested-title">
           共通Detector: {name}
           {actions.inlineDetector ? (
-            <button className="icon" title="インライン化" onClick={() => actions.inlineDetector?.(path)}>
+            <button
+              className="icon"
+              title="インライン化"
+              onClick={() => actions.inlineDetector?.(path)}
+            >
               ↧
             </button>
           ) : null}
@@ -323,7 +468,7 @@ function DetectorFieldsEditor({
               field={field}
               path={[field.name]}
               value={item}
-              raw={actions.rawValue([...path, field.name])}
+              raw={valueAtPath(value, [field.name])}
             />
           );
         })}
@@ -340,7 +485,7 @@ function DetectorFieldsEditor({
     <div className="nested-group">
       <div className="nested-title">
         detector
-        {optional && actions.remove ? (
+        {optional && actions.remove && !actions.readOnly(path) ? (
           <button
             className="icon"
             title="detector を削除"
@@ -352,7 +497,7 @@ function DetectorFieldsEditor({
       </div>
       <div className="setting-row">
         <span className="setting-label">type</span>
-        {actions.changeDetectorType ? (
+        {actions.changeDetectorType && actions.structureEditable(path) ? (
           <select
             value={type}
             onChange={(event) => actions.changeDetectorType?.(path, event.target.value)}
@@ -384,7 +529,9 @@ function DetectorFieldsEditor({
         );
       })}
       <MissingOptionalFields actions={actions} path={path} value={value} fields={fields} />
-      {actions.useDetector && actions.detectorDefinitions.length > 0 ? (
+      {actions.useDetector
+        && actions.structureEditable(path)
+        && actions.detectorDefinitions.length > 0 ? (
         <div className="inline-form">
           <select
             value={selectedDefinition}
@@ -407,19 +554,26 @@ function DetectorFieldsEditor({
     </div>
   );
 }
-
 function AssetSelect({
   actions,
   path,
   value,
   overridden,
   reset,
+  readOnly = false,
+  expose,
 }: {
   actions: PropertyActions;
   path: Path;
   value: JsonValue | undefined;
   overridden: boolean;
   reset?: () => void;
+  readOnly?: boolean;
+  expose?: {
+    exposed: boolean;
+    disabled: boolean;
+    onChange: (exposed: boolean) => void;
+  };
 }) {
   const current = scalar(value) ?? "";
   const known = actions.assets.includes(current);
@@ -428,9 +582,21 @@ function AssetSelect({
       <span className="setting-label">
         reference
         {overridden ? <span className="override-badge">この使用箇所</span> : null}
+        {expose ? (
+          <label className="expose-toggle" title="使用箇所から変更できるようにする">
+            <input
+              type="checkbox"
+              checked={expose.exposed}
+              disabled={expose.disabled}
+              onChange={(event) => expose.onChange(event.target.checked)}
+            />
+            公開
+          </label>
+        ) : null}
       </span>
       <select
         value={current}
+        disabled={readOnly}
         onChange={(event) => actions.set(path, event.target.value)}
       >
         {current === "" ? <option value="">選択してください</option> : null}
@@ -486,8 +652,16 @@ function SchemaFieldEditor({
   raw: JsonValue | undefined;
 }) {
   const overridden = actions.overrides.has(pathKey(path));
-  const remove = field.required ? undefined : () => actions.remove?.(path);
-  const reset = actions.reset && overridden ? () => actions.reset?.(path) : undefined;
+  const readOnly = actions.readOnly(path);
+  const nested = isNestedExposurePath(actions.exposure, path);
+  const exposed = actions.isExposed(path);
+  const remove = field.required || readOnly || nested || exposed
+    ? undefined
+    : () => actions.remove?.(path);
+  const reset = actions.reset && overridden && !readOnly
+    ? () => actions.reset?.(path)
+    : undefined;
+  const expose = exposureControl(actions, path);
   if (field.kind === "detector") {
     return (
       <DetectorFieldsEditor
@@ -528,6 +702,8 @@ function SchemaFieldEditor({
         value={value}
         overridden={overridden}
         reset={reset}
+        readOnly={readOnly}
+        expose={expose}
       />
     );
   }
@@ -537,6 +713,8 @@ function SchemaFieldEditor({
         label={field.name}
         value={value}
         overridden={overridden}
+        readOnly={readOnly}
+        expose={expose}
         onCommit={(next) => {
           if (isSequence(next)) {
             actions.set(path, next);
@@ -552,6 +730,8 @@ function SchemaFieldEditor({
       label={field.name}
       value={value}
       overridden={overridden}
+      readOnly={readOnly}
+      expose={expose}
       onCommit={(next) => actions.set(path, next)}
       onReset={reset}
       onRemove={remove}
@@ -605,7 +785,7 @@ function SettingsEditor({
     <div className="settings-editor">
       <div className="setting-row">
         <span className="setting-label">type</span>
-        {actions.changeConditionType ? (
+        {actions.changeConditionType && actions.structureEditable(basePath) ? (
           <select
             value={type}
             onChange={(event) => actions.changeConditionType?.(event.target.value)}
@@ -624,14 +804,16 @@ function SettingsEditor({
         <div key={field.name} className="setting-row">
           <span className="setting-label">{field.name}</span>
           <span className="error-text">必須項目がありません</span>
-          <button
-            className="icon"
-            onClick={() =>
-              actions.set([...basePath, field.name], structuredClone(field.default))
-            }
-          >
-            +
-          </button>
+          {!actions.readOnly([...basePath, field.name]) ? (
+            <button
+              className="icon"
+              onClick={() =>
+                actions.set([...basePath, field.name], structuredClone(field.default))
+              }
+            >
+              +
+            </button>
+          ) : null}
         </div>
       ))}
       {fields.map((field) => {
@@ -657,7 +839,11 @@ function SettingsEditor({
         fields={fields}
       />
       <div className="muted">
-        編集すると、共通定義にパラメーターが自動生成されます。
+        {actions.usageMode
+          ? "共通定義で公開された項目だけ変更できます。"
+          : actions.definitionMode
+            ? "各項目の「公開」を選ぶと、使用箇所から値を変更できます。"
+            : null}
       </div>
     </div>
   );
@@ -1080,26 +1266,63 @@ function buildActions(
     : mode === "usage-condition"
       ? overrideDefinition?.condition
       : valueAtPathRawRoot(document, rootPath);
+  const usageMode = mode === "usage-condition";
+  const definitionMode = mode === "definition-condition" || mode === "definition-detector";
+  const exposure = mode === "definition-condition"
+    ? definitionExposureInfo(document, "condition", definitionName)
+    : mode === "definition-detector"
+      ? definitionExposureInfo(document, "detector", definitionName)
+      : usageMode
+        ? definitionExposureInfo(document, "condition", usageName)
+        : null;
   const overridden = new Set<string>();
-  if (mode === "usage-condition" && overrideDefinition) {
-    const pathMap = parameterPathMap(overrideDefinition.condition);
-    const usage = valueAtPathRawRoot(document, rootPath);
-    for (const parameter of Object.keys(sharedUseWith(usage))) {
-      const path = pathMap.get(parameter);
-      if (path) {
-        overridden.add(pathKey(path));
+  if (usageMode && exposure) {
+    const withValues = sharedUseWith(valueAtPathRawRoot(document, rootPath));
+    for (const [pathKeyValue, parameter] of exposure.exposed) {
+      if (Object.prototype.hasOwnProperty.call(withValues, parameter)) {
+        overridden.add(pathKeyValue);
       }
     }
   }
   const absolute = (path: Path) => [...rootPath, ...path];
+  const readOnly = (path: Path) => {
+    const exposed = exposure?.exposed.has(pathKey(path)) ?? false;
+    if (usageMode) {
+      return !exposed;
+    }
+    if (definitionMode && isNestedExposurePath(exposure, path)) {
+      return !exposed;
+    }
+    return false;
+  };
+  const isExposed = (path: Path) => exposure?.exposed.has(pathKey(path)) ?? false;
+  const canExpose = (path: Path) => {
+    if (!definitionMode || !exposure) {
+      return false;
+    }
+    if (isNestedExposurePath(exposure, path)) {
+      return exposure.nestedExposed.has(pathKey(path));
+    }
+    return true;
+  };
+  const structureEditable = (path: Path) => (
+    !usageMode && !isNestedExposurePath(exposure, path)
+  );
   const actions: PropertyActions = {
     schema,
     detectorDefinitions: document.definitions.detectors,
     assets: workspace?.assets ?? [],
     addAsset: workspace ? onAddAsset : undefined,
     overrides: overridden,
+    exposure,
+    usageMode,
+    definitionMode,
+    document,
     rawValue: (path) => valueAtPath(rawRoot, path),
     set: (path, next) => {
+      if (readOnly(path)) {
+        return;
+      }
       if (mode === "usage-condition") {
         sendCommand({
           type: "set_usage_setting",
@@ -1131,7 +1354,7 @@ function buildActions(
       ? undefined
       : (path) => {
           const last = path[path.length - 1];
-          if (typeof last !== "string") {
+          if (typeof last !== "string" || readOnly(path)) {
             return;
           }
           if (mode === "definition-condition" || mode === "definition-detector") {
@@ -1151,6 +1374,9 @@ function buildActions(
         },
     reset: mode === "usage-condition"
       ? (path) => {
+          if (readOnly(path)) {
+            return;
+          }
           sendCommand({
             type: "reset_usage_setting",
             path: rootPath,
@@ -1158,6 +1384,25 @@ function buildActions(
           });
         }
       : undefined,
+    readOnly,
+    isExposed,
+    canExpose,
+    toggleExposure: definitionMode
+      ? (path, exposed) => {
+          if (!exposed && !window.confirm(
+            "公開を解除すると、使用箇所の個別設定は既定値に戻ります。解除しますか？",
+          )) {
+            return;
+          }
+          sendCommand({
+            type: exposed ? "expose_parameter" : "unexpose_parameter",
+            kind: mode === "definition-detector" ? "detector" : "condition",
+            name: definitionName,
+            setting_path: path,
+          });
+        }
+      : undefined,
+    structureEditable,
     changeConditionType: mode === "usage-condition"
       ? undefined
       : (type) => {
@@ -1208,7 +1453,6 @@ function buildActions(
   };
   return actions;
 }
-
 export function ConditionInspector({
   document,
   schema,
