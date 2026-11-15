@@ -177,6 +177,7 @@ C:\Scenarios\SuperMarioWorld\
 - 左ペイン: 作業ディレクトリ内のYAML一覧、共通Condition、共通Detector、Start / Reset / Incomplete、Split 一覧
 - 中央ペイン: Condition ツリー、Rule 一覧。Condition はボタンまたはドラッグ＆ドロップで並べ替え
 - 右ペイン: 選択 Condition の設定、共通定義の利用、Asset からの参照画像選択、使用箇所ごとの変更と解除
+- `+ Rule` / `+ Sequence` と Condition の `then` には、マウスホバーまたはキーボードフォーカスで説明と具体例を表示
 
 共通Conditionを使用している場合も、中央には解決済み Condition が通常のツリーとして
 表示されます。右ペインでは公開済み項目だけ編集でき、変更はその使用箇所の `with` に

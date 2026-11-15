@@ -27,6 +27,7 @@ import {
   type SharedDetectorDefinition,
   type WorkspaceInfo,
 } from "./model";
+import { Tooltip } from "./Tooltip";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
 
@@ -781,24 +782,37 @@ function SettingsEditor({
   const missingRequired = fields.filter(
     (field) => field.required && value[field.name] === undefined,
   );
+  const typeControl = actions.changeConditionType && actions.structureEditable(basePath) ? (
+    <select
+      value={type}
+      onChange={(event) => actions.changeConditionType?.(event.target.value)}
+    >
+      {Object.keys(actions.schema.conditionFields).map((name) => (
+        <option key={name} value={name}>
+          {name}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <span tabIndex={type === "then" ? 0 : undefined}>{type}</span>
+  );
   return (
     <div className="settings-editor">
       <div className="setting-row">
         <span className="setting-label">type</span>
-        {actions.changeConditionType && actions.structureEditable(basePath) ? (
-          <select
-            value={type}
-            onChange={(event) => actions.changeConditionType?.(event.target.value)}
-          >
-            {Object.keys(actions.schema.conditionFields).map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span>{type}</span>
-        )}
+        <Tooltip
+          align="end"
+          content={type === "then" ? (
+            <>
+              <strong>then</strong>
+              <span>
+                複数の条件を順番に判定し、すべて成立したときに1つの操作を実行します。
+              </span>
+            </>
+          ) : undefined}
+        >
+          {typeControl}
+        </Tooltip>
       </div>
       {missingRequired.map((field) => (
         <div key={field.name} className="setting-row">

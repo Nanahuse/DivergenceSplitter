@@ -8,6 +8,7 @@ import {
   type ScenarioDocument,
   type ScenarioRule,
 } from "./model";
+import { Tooltip } from "./Tooltip";
 
 function conditionSummary(condition: JsonValue): string {
   if (isSharedUse(condition)) {
@@ -52,18 +53,43 @@ export function RulesEditor({
         </button>
         {split ? (
           <>
-            <button
-              onClick={() => sendCommand({ type: "add_rule", split: splitIndex })}
-            >
-              + Rule
-            </button>
-            <button
-              onClick={() =>
-                sendCommand({ type: "add_rule", split: splitIndex, sequence: true })
+            <Tooltip
+              align="start"
+              content={
+                <>
+                  <strong>+ Rule</strong>
+                  <span>1つの条件と1つの Action を設定します。</span>
+                  <span>例：画像を検出したら Split</span>
+                </>
               }
             >
-              + Sequence
-            </button>
+              <button
+                onClick={() => sendCommand({ type: "add_rule", split: splitIndex })}
+              >
+                + Rule
+              </button>
+            </Tooltip>
+            <Tooltip
+              align="start"
+              content={
+                <>
+                  <strong>+ Sequence</strong>
+                  <span>
+                    条件と Action の組を順番に並べます。各ステップの条件が成立すると、
+                    そのステップの Action を実行します。
+                  </span>
+                  <span>例：画像を検出して Split → 3秒後に再び Split</span>
+                </>
+              }
+            >
+              <button
+                onClick={() =>
+                  sendCommand({ type: "add_rule", split: splitIndex, sequence: true })
+                }
+              >
+                + Sequence
+              </button>
+            </Tooltip>
           </>
         ) : null}
       </div>
