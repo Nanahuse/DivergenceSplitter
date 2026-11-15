@@ -42,6 +42,15 @@ target_link_libraries(divergencesplitter_scenario_editor_tests
 )
 gtest_discover_tests(divergencesplitter_scenario_editor_tests)
 
+add_executable(divergencesplitter_scenario_v2_tests scenario_v2_tests.cpp)
+target_compile_features(divergencesplitter_scenario_v2_tests PRIVATE cxx_std_23)
+target_link_libraries(divergencesplitter_scenario_v2_tests
+    PRIVATE
+        divergencesplitter::core
+        GTest::gtest_main
+)
+gtest_discover_tests(divergencesplitter_scenario_v2_tests)
+
 add_executable(divergencesplitter_ndi_loopback_tests ndi_loopback_tests.cpp)
 target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/third_party/ndi/include")

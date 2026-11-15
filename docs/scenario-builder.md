@@ -1,13 +1,13 @@
 # Scenario Builder PoC
 
-Scenario Builder は、DivergenceSplitter の YAML シナリオを GUI で編集するための
+Scenario Builder は、DivergenceSplitter の YAML v2 シナリオを GUI で編集するための
 WebView2 + React の検証用アプリです。既定ではビルドされず、従来の
 DivergenceSplitter とテストには影響しません。
 
 ## 目的
 
-- 共通 Condition（YAML の `&anchor` / `*anchor`）の作成と再利用
-- `extends` と `overrides` による使用箇所ごとの設定変更
+- パラメーター付き共通 Condition / Detector の作成と再利用
+- 使用箇所ごとの値変更を、ユーザーに ID やパスを入力させず自動パラメーター化
 - Condition ツリーの追加・削除・並べ替え
 - YAML の読み書きと、DivergenceSplitter の実行用ローダーとの互換性確認
 - Undo / Redo と保存・再読み込み
@@ -34,72 +34,117 @@ cmake --build --preset full
 ctest --preset full
 ```
 
+`cmake --build --preset builder --target ScenarioBuilder` の後、
+`cmake --install build/builder --prefix <dir> --component ScenarioBuilder` で
+実行ファイル、Web UI、必要な DLL、ライセンスをまとめて配置できます。
+
 ## 構成
 
 | 層 | 内容 |
 | --- | --- |
-| `src/scenario_editor` | YAML 非解決インポート、編集モデル、コマンド、Undo / Redo、YAML エクスポート |
+| `src/core/scenario_v2.cpp` | YAML v2 の共通定義・パラメーター解決（実行用と編集用で共有） |
+| `src/scenario_editor` | 編集モデル、コマンド、Undo / Redo、YAML v2 入出力 |
 | `src/scenario_builder` | Win32 + WebView2 ホスト、JSON IPC、ファイルダイアログ |
 | `frontend/scenario-builder` | React + TypeScript + Vite の 3 ペイン UI |
-| `tests/scenario_editor_tests.cpp` | モデル、YAML 往復、実行用ローダー互換性のテスト |
+| `tests/scenario_editor_tests.cpp` | 編集コマンド、パラメーター生成、保存、往復 |
+| `tests/scenario_v2_tests.cpp` | ローダー v2 解決、循環・型検証、旧形式との一致 |
 
-編集モデル、YAML の解決結果、履歴の正本は C++ 側にあります。React は表示と
-操作状態を担当し、変更は `{ "type": "command", "command": { ... } }` の JSON
-メッセージで送ります。ホストは変更後のドキュメントと `extends` / `overrides`
-適用済みの解決結果を `state` メッセージで返します。React 側では継承を再解決しません。
+編集モデル、解決結果、履歴の正本は C++ 側にあります。React は表示と操作状態を担当し、
+変更は `{ "type": "command", "command": { ... } }` の JSON メッセージで送ります。
+ホストは変更後のドキュメントと解決済み Condition を `state` メッセージで返します。
 
-## YAML の扱い
+## YAML v2
 
-- インポート時は `ryml::Tree::resolve()` を呼ばず、アンカーとエイリアスを保持します。
-- 共通定義は `definitions` 配下に `&name` 付きで保存します。
-- 直接参照は `*name`、使用箇所ごとの変更は `extends: *name` と `overrides` で保存します。
-- 条件配列の順序、スカラー値、Detector 設定を保持します。
-- ルート直下の未対応フィールド（`metadata` など）は、実行用ローダーが許容する
-  追加データとしてそのまま保持し、保存時にも出力します。UI では編集しません。
-- 引用符付きスカラーと `!!str` タグ付きスカラーは文字列として保持します。
-  `"null"`、`"~"`、`!!str null` などは保存時に引用符付きで出力し、null 値へ
-  変化しないようにします。
-- コメント、空白、インデントは保持しません。
-- YAML マージキー `<<` はインポート時に内容へ展開します。エディタからは
-  アンカー参照または `extends` として保存されます。
-- 条件や Detector の定義箇所に付いたアンカーは共通定義へ移し、元の使用箇所は
-  `*anchor` 参照に置き換えます。これにより定義元と参照先の共有関係を維持します。
-- ネストしたアンカーは依存関係を解決し、参照先の共通定義を先に出力します。
-- スカラー・配列・マッピングキー・Split/Rule 構造に付いたアンカー、アンカー名の
-  再定義は、共有関係を保持できないため読み込み時に明示的に拒否します。
-- `extends` / `overrides` の解決規則と検証は実行用ローダーに合わせています。
-  存在しない Override ID、重複 ID、不正な上書きフィールドはエラーになります。
-- Condition / Detector の項目は型ごとの固定スキーマで管理します。未定義の項目、
-  必須項目の欠落、型に合わない値は読み込み・編集コマンド・保存の各段階で拒否します。
-- UI はスキーマに定義された項目だけを表示し、任意キーの追加はできません。
-  省略可能な項目だけを既定値付きで追加できます。`overrides` の対象項目も
-  Condition ID とスキーマから選択します。
+```yaml
+schema_version: 2
 
-## 保存
+definitions:
+  conditions:
+    course_finish:
+      parameters:
+        course_image: assets/default.png
+      condition:
+        type: then
+        conditions:
+          - type: detected
+            minimum_score: 0.9
+            detector:
+              type: root_mean_square_similarity
+              reference: {param: course_image}
+          - type: elapsed
+            duration: 1s
 
-- 編集コマンド適用後に C++ モデルの参照関係を検証します。
+start_condition:
+  type: elapsed
+  duration: 0s
+
+splits:
+  - rules:
+      - condition:
+          use: course_finish
+          with:
+            course_image: assets/YI1.png
+        action: split
+  - rules:
+      - condition:
+          use: course_finish
+          with:
+            course_image: assets/DPC.png
+        action: split
+```
+
+- `definitions.conditions` / `definitions.detectors` に共通定義を置きます。
+- 各定義の `parameters` は既定値を持ちます。
+- 設定値全体を `{param: name}` で参照できます。文字列置換ではありません。
+- `use` は使用箇所から Condition / Detector の種類が決まります。種類が異なる参照はエラーです。
+- `with` を省略した場合は既定値を使います。未知のパラメーターはエラーです。
+- 定義の参照順序に依存しません。未定義参照、型不一致、循環参照は読み込み時に拒否します。
+
+サンプルは [`examples/scenario-v2.yaml`](../examples/scenario-v2.yaml) と
+[`examples/scenario-v2-shared.yaml`](../examples/scenario-v2-shared.yaml) にあります。
+
+## 共通定義と使用箇所
+
+- 共通定義の設定・条件追加・削除・順序変更は、すべての使用箇所に反映されます。
+- 使用箇所の設定を変更すると、C++ が必要なパラメーターを共通定義に自動生成し、
+  元の値を既定値として `with` に新しい値を保存します。
+- パラメーター名は C++ が生成します。UI で名前や上書きパスを入力する必要はありません。
+- 「共通定義の値に戻す」で使用箇所の `with` を削除できます。
+- 使用箇所を共通定義から切り離す場合は、解決済み Condition をインライン化します。
+
+旧形式（アンカー・エイリアス・`extends` / `overrides`）は DivergenceSplitter の
+実行用ローダーで引き続き読み込めます。Scenario Builder の v2 編集および旧形式から
+v2 への変換は段階的対応のため、現時点では旧形式ファイルを編集用に開くと明示的な
+エラーになります。
+
+## 保存と検証
+
+- 編集コマンド適用時に C++ モデルと解決済み Condition を検証します。
 - 保存時は同じディレクトリの一時 YAML に書き出し、既存の
   `load_scenario()` で読み込めることを確認します。
 - 検証と書き込みが成功した場合だけ、一時ファイルを元のファイルへ置き換えます。
   失敗時は元のファイルを変更しません。
+- ルート直下の `metadata` などの未知フィールドは保持し、保存時にも出力します。
+- 引用符付きスカラーと `!!str` タグ付きスカラーは文字列として保持します。
+  `"null"`、`"~"`、`!!str null` は引用符付きで出力し、null 値へ変化しません。
 - 新規作成・ファイルを開く・ウィンドウを閉じるときは、未保存の変更について
   保存・破棄・キャンセルを確認します。
 
-`tests/scenario_editor_tests.cpp` では、アンカー参照、ネストした Detector
-アンカー、`extends` / `overrides`、無効な参照、保存失敗時のファイル保護、
-実行用ローダーでの読み込みを検証しています。
-
 ## UI
 
-- 左ペイン: 共通定義、Start / Reset / Incomplete、Split 一覧
-- 中央ペイン: Condition ツリー、Rule 一覧。Condition はドラッグ＆ドロップまたは
-  上下ボタンで並べ替え
-- 右ペイン: 選択 Condition の設定、共通定義への参照、`extends` の `overrides`
+- 左ペイン: 共通Condition、共通Detector、Start / Reset / Incomplete、Split 一覧
+- 中央ペイン: Condition ツリー、Rule 一覧。Condition はボタンまたはドラッグ＆ドロップで並べ替え
+- 右ペイン: 選択 Condition の設定、共通定義の利用、使用箇所ごとの変更と解除
+
+共通Conditionを使用している場合も、中央には解決済み Condition が通常のツリーとして
+表示されます。右ペインで値を変更すると、その使用箇所の `with` が更新されます。
 
 ## PoC の制限
 
 - 映像・カメラ・NDI の入力、プレビュー、Detector 実行は行いません。
 - ROI を画像上で選択する機能はありません。数値で編集します。
-- Rule Sequence の条件は表示できますが、ステップの追加・編集は限定的です。
+- 使用箇所から、ネストした共通定義の内部構造は変更できません。共通定義側で編集します。
+- Rule Sequence の条件は表示できますが、ステップ構造の編集は限定的です。
+- 旧 YAML の編集用インポートと v2 への自動変換は未実装です。
 - 既存 Dear ImGui UI とは統合していません。
 - コメントや書式の完全維持、完成版の配布物・インストーラーは対象外です。

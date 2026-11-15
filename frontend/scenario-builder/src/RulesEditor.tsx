@@ -1,9 +1,8 @@
 import {
   actions,
   conditionType,
-  isAlias,
-  isInheritanceUsage,
-  usageAnchor,
+  isSharedUse,
+  sharedUseName,
   type JsonValue,
   type Path,
   type ScenarioDocument,
@@ -11,11 +10,8 @@ import {
 } from "./model";
 
 function conditionSummary(condition: JsonValue): string {
-  if (isAlias(condition)) {
-    return `*${condition.$alias}`;
-  }
-  if (isInheritanceUsage(condition)) {
-    return `extends *${usageAnchor(condition)}`;
+  if (isSharedUse(condition)) {
+    return `use ${sharedUseName(condition)}`;
   }
   return conditionType(condition) || "condition";
 }

@@ -4,20 +4,44 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
-#include <locale>
-#include <sstream>
 #include <functional>
+#include <locale>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace divergencesplitter::scenario_editor {
 namespace {
 
 constexpr std::size_t max_undo_steps = 256;
+
+bool yaml_ambiguous_string(std::string_view text) {
+    if (text.empty()) {
+        return true;
+    }
+    std::string lowered{text};
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    static const std::set<std::string> ambiguous{
+        "~", "null", "true", "false", "yes", "no", "on", "off",
+        ".nan", ".inf", "-.inf", "+.inf",
+    };
+    if (ambiguous.contains(lowered)) {
+        return true;
+    }
+    std::istringstream stream{std::string{text}};
+    stream.imbue(std::locale::classic());
+    stream.unsetf(std::ios::dec);
+    double number{};
+    if ((stream >> std::noskipws >> number) && (stream >> std::ws).eof()) {
+        return true;
+    }
+    return false;
+}
 
 struct PathToken {
     bool is_index{false};
@@ -88,12 +112,57 @@ Value* traverse(Value* value, const Path& path, std::size_t from) {
 Value* resolve_path(ScenarioDocument& document, const Path& path) {
     const auto& first = require_key(path, 0, "edit");
     if (first.key == "definitions") {
-        const auto& name = require_key(path, 1, "edit");
-        auto* definition = find_definition(document, name.key);
-        if (definition == nullptr) {
-            throw ScenarioEditorError("shared definition was not found: " + name.key);
+        const auto& section = require_key(path, 1, "edit");
+        const auto& name = require_key(path, 2, "edit");
+        if (section.key == "conditions") {
+            auto* definition = find_condition_definition(document, name.key);
+            if (definition == nullptr) {
+                throw ScenarioEditorError("condition definition was not found: " + name.key);
+            }
+            if (path.size() == 3) {
+                return &definition->condition;
+            }
+            if (!path[3].is_index && path[3].key == "parameters") {
+                const auto& parameter_name = require_key(path, 4, "edit");
+                const auto found = std::find_if(
+                    definition->parameters.begin(),
+                    definition->parameters.end(),
+                    [&](const auto& parameter) { return parameter.name == parameter_name.key; }
+                );
+                if (found == definition->parameters.end()) {
+                    throw ScenarioEditorError(
+                        "parameter definition was not found: " + parameter_name.key
+                    );
+                }
+                return &found->default_value;
+            }
+            return traverse(&definition->condition, path, 3);
         }
-        return traverse(&definition->value, path, 2);
+        if (section.key == "detectors") {
+            auto* definition = find_detector_definition(document, name.key);
+            if (definition == nullptr) {
+                throw ScenarioEditorError("detector definition was not found: " + name.key);
+            }
+            if (path.size() == 3) {
+                return &definition->detector;
+            }
+            if (!path[3].is_index && path[3].key == "parameters") {
+                const auto& parameter_name = require_key(path, 4, "edit");
+                const auto found = std::find_if(
+                    definition->parameters.begin(),
+                    definition->parameters.end(),
+                    [&](const auto& parameter) { return parameter.name == parameter_name.key; }
+                );
+                if (found == definition->parameters.end()) {
+                    throw ScenarioEditorError(
+                        "parameter definition was not found: " + parameter_name.key
+                    );
+                }
+                return &found->default_value;
+            }
+            return traverse(&definition->detector, path, 3);
+        }
+        throw ScenarioEditorError("definitions path must use conditions or detectors");
     }
     if (first.key == "start_condition" || first.key == "reset_condition"
         || first.key == "incomplete_condition") {
@@ -136,202 +205,163 @@ Value* resolve_path(ScenarioDocument& document, const Path& path) {
     throw ScenarioEditorError("unknown edit path root: " + first.key);
 }
 
-Value* resolve_condition_container(ScenarioDocument& document, const Path& path) {
+Value* resolve_inline_container(ScenarioDocument& document, const Path& path) {
     Value* value = resolve_path(document, path);
-    if (value->is_alias() || (value->is_mapping() && value->find("extends") != nullptr)) {
-        throw ScenarioEditorError("children of a referenced shared condition cannot be edited");
+    if (value->is_mapping() && value->find("use") != nullptr) {
+        throw ScenarioEditorError("shared definition usages cannot change their structure");
     }
     return value;
 }
 
-void replace_aliases(Value& value, std::string_view from, std::string_view to) {
-    if (value.is_alias()) {
-        if (value.scalar == from) {
-            value.scalar = std::string{to};
+bool is_usage_value(const Value& value) {
+    return value.is_mapping() && value.find("use") != nullptr;
+}
+
+void visit_condition_usages(Value& value, const std::function<void(Value&)>& visit) {
+    if (is_usage_value(value)) {
+        visit(value);
+        return;
+    }
+    if (value.is_sequence()) {
+        for (auto& item : value.sequence) {
+            visit_condition_usages(item, visit);
         }
         return;
     }
-    for (auto& [key, item] : value.mapping) {
-        (void)key;
-        replace_aliases(item, from, to);
+    if (!value.is_mapping()) {
+        return;
     }
-    for (auto& item : value.sequence) {
-        replace_aliases(item, from, to);
+    for (const auto key : {"condition", "reset_condition"}) {
+        if (auto* child = value.find(key); child != nullptr) {
+            visit_condition_usages(*child, visit);
+        }
+    }
+    if (auto* conditions = value.find("conditions"); conditions != nullptr) {
+        visit_condition_usages(*conditions, visit);
     }
 }
 
-void materialize_definition_refs(
-    Value& value,
-    std::string_view name,
-    const ScenarioDocument& document,
-    const Value& replacement
+void visit_scenario_conditions(
+    ScenarioDocument& document,
+    const std::function<void(Value&)>& visit
 ) {
-    if (value.is_alias()) {
-        if (value.scalar == name) {
-            value = replacement;
+    if (document.start_condition) {
+        visit_condition_usages(document.start_condition->value, visit);
+    }
+    if (document.reset_condition) {
+        visit_condition_usages(document.reset_condition->value, visit);
+    }
+    if (document.incomplete_condition) {
+        visit_condition_usages(document.incomplete_condition->value, visit);
+    }
+    for (auto& split : document.splits) {
+        if (!split) {
+            continue;
         }
-        return;
-    }
-    if (value.is_mapping()) {
-        const auto* extends = value.find("extends");
-        if (extends != nullptr && extends->is_alias() && extends->scalar == name) {
-            value = resolve_condition(document, value);
-            return;
-        }
-    }
-    for (auto& [key, item] : value.mapping) {
-        (void)key;
-        materialize_definition_refs(item, name, document, replacement);
-    }
-    for (auto& item : value.sequence) {
-        materialize_definition_refs(item, name, document, replacement);
-    }
-}
-
-bool forbidden_override_key(std::string_view key) {
-    return key == "type" || key == "id" || key == "conditions" || key == "condition"
-        || key == "reset_condition" || key == "extends" || key == "overrides";
-}
-
-void set_nested_override(Value& overrides, const std::string& condition_id, const nlohmann::json& command) {
-    if (!overrides.is_mapping()) {
-        overrides = Value::make_mapping();
-    }
-    Value* patch = overrides.find(condition_id);
-    if (patch == nullptr) {
-        overrides.set(condition_id, Value::make_mapping());
-        patch = overrides.find(condition_id);
-    }
-    if (!patch->is_mapping()) {
-        *patch = Value::make_mapping();
-    }
-
-    const auto setting_path = command.find("setting_path");
-    if (setting_path == command.end() || setting_path->empty()) {
-        if (setting_path != command.end() && !setting_path->is_array()) {
-            throw ScenarioEditorError("setting_path must be an array");
-        }
-        const auto value = command.find("value");
-        if (value == command.end()) {
-            throw ScenarioEditorError("set_override requires value");
-        }
-        if (!value->is_object()) {
-            throw ScenarioEditorError("a condition override must be a mapping");
-        }
-        for (const auto& [key, item] : value->items()) {
-            (void)item;
-            if (forbidden_override_key(key)) {
-                throw ScenarioEditorError("field cannot be overridden: " + key);
+        for (auto& rule : split->rules) {
+            if (rule.sequence) {
+                for (auto& step : rule.sequence_rules) {
+                    visit_condition_usages(step.condition.value, visit);
+                }
+            } else {
+                visit_condition_usages(rule.rule.condition.value, visit);
             }
         }
-        *patch = value_from_json(*value);
-        return;
     }
-    if (!setting_path->is_array()) {
-        throw ScenarioEditorError("setting_path must be an array");
-    }
-
-    Value* target = patch;
-    for (std::size_t index = 0; index + 1 < setting_path->size(); ++index) {
-        const auto& token = (*setting_path)[index];
-        if (!token.is_string()) {
-            throw ScenarioEditorError("override setting paths must use string keys");
-        }
-        const std::string key = token.get<std::string>();
-        if (forbidden_override_key(key)) {
-            throw ScenarioEditorError("field cannot be overridden: " + key);
-        }
-        Value* next = target->find(key);
-        if (next == nullptr) {
-            target->set(key, Value::make_mapping());
-            next = target->find(key);
-        }
-        if (!next->is_mapping()) {
-            *next = Value::make_mapping();
-        }
-        target = next;
-    }
-    const auto& final_token = setting_path->back();
-    if (!final_token.is_string()) {
-        throw ScenarioEditorError("override setting paths must end with a key");
-    }
-    const std::string final_key = final_token.get<std::string>();
-    if (forbidden_override_key(final_key)) {
-        throw ScenarioEditorError("field cannot be overridden: " + final_key);
-    }
-    const auto value = command.find("value");
-    if (value == command.end()) {
-        throw ScenarioEditorError("set_override requires value");
-    }
-    target->set(final_key, value_from_json(*value));
 }
 
-void remove_nested_override(Value& overrides, const std::string& condition_id, const nlohmann::json& command) {
-    if (!overrides.is_mapping()) {
-        return;
+void visit_all_conditions(
+    ScenarioDocument& document,
+    const std::function<void(Value&)>& visit
+) {
+    for (auto& definition : document.definitions.conditions) {
+        visit_condition_usages(definition.condition, visit);
     }
-    Value* patch = overrides.find(condition_id);
-    if (patch == nullptr) {
-        return;
-    }
-    const auto setting_path = command.find("setting_path");
-    if (setting_path == command.end() || setting_path->empty()) {
-        overrides.erase(condition_id);
-        return;
-    }
-    if (!setting_path->is_array()) {
-        throw ScenarioEditorError("setting_path must be an array");
-    }
-    Value* target = patch;
-    for (std::size_t index = 0; index + 1 < setting_path->size(); ++index) {
-        const auto& token = (*setting_path)[index];
-        if (!token.is_string()) {
-            throw ScenarioEditorError("override setting paths must use string keys");
-        }
-        target = target->find(token.get<std::string>());
-        if (target == nullptr) {
-            return;
-        }
-    }
-    if (!setting_path->back().is_string()) {
-        throw ScenarioEditorError("override setting paths must end with a key");
-    }
-    target->erase(setting_path->back().get<std::string>());
+    visit_scenario_conditions(document, visit);
 }
 
-RuleDefinition default_rule() {
-    RuleDefinition rule;
-    rule.condition.value = Value::make_mapping({
-        {"type", Value::make_scalar("elapsed")},
-        {"duration", Value::make_scalar("1s")},
+void visit_detector_usages(Value& condition, const std::function<void(Value&)>& visit) {
+    if (condition.is_sequence()) {
+        for (auto& item : condition.sequence) {
+            visit_detector_usages(item, visit);
+        }
+        return;
+    }
+    if (!condition.is_mapping() || is_usage_value(condition)) {
+        return;
+    }
+    if (auto* detector = condition.find("detector"); detector != nullptr) {
+        if (is_usage_value(*detector)) {
+            visit(*detector);
+        }
+    }
+    for (const auto key : {"condition", "reset_condition"}) {
+        if (auto* child = condition.find(key); child != nullptr) {
+            visit_detector_usages(*child, visit);
+        }
+    }
+    if (auto* conditions = condition.find("conditions"); conditions != nullptr) {
+        visit_detector_usages(*conditions, visit);
+    }
+}
+
+void visit_all_detector_usages(
+    ScenarioDocument& document,
+    const std::function<void(Value&)>& visit
+) {
+    for (auto& definition : document.definitions.conditions) {
+        visit_detector_usages(definition.condition, visit);
+    }
+    for (auto& definition : document.definitions.detectors) {
+        if (is_usage_value(definition.detector)) {
+            visit(definition.detector);
+        }
+    }
+    if (document.start_condition) {
+        visit_detector_usages(document.start_condition->value, visit);
+    }
+    if (document.reset_condition) {
+        visit_detector_usages(document.reset_condition->value, visit);
+    }
+    if (document.incomplete_condition) {
+        visit_detector_usages(document.incomplete_condition->value, visit);
+    }
+    for (auto& split : document.splits) {
+        if (!split) {
+            continue;
+        }
+        for (auto& rule : split->rules) {
+            if (rule.sequence) {
+                for (auto& step : rule.sequence_rules) {
+                    visit_detector_usages(step.condition.value, visit);
+                }
+            } else {
+                visit_detector_usages(rule.rule.condition.value, visit);
+            }
+        }
+    }
+}
+
+std::size_t count_condition_uses(ScenarioDocument& document, std::string_view name) {
+    std::size_t count = 0;
+    visit_all_conditions(document, [&](Value& value) {
+        const auto* use = value.find("use");
+        if (use != nullptr && use->is_scalar() && use->scalar == name) {
+            ++count;
+        }
     });
-    rule.action = "split";
-    return rule;
+    return count;
 }
 
-bool yaml_ambiguous_string(std::string_view text) {
-    if (text.empty()) {
-        return true;
-    }
-    std::string lowered{text};
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char value) {
-        return static_cast<char>(std::tolower(value));
+std::size_t count_detector_uses(ScenarioDocument& document, std::string_view name) {
+    std::size_t count = 0;
+    visit_all_detector_usages(document, [&](Value& value) {
+        const auto* use = value.find("use");
+        if (use != nullptr && use->is_scalar() && use->scalar == name) {
+            ++count;
+        }
     });
-    static const std::set<std::string> ambiguous{
-        "~", "null", "true", "false", "yes", "no", "on", "off",
-        ".nan", ".inf", "-.inf", "+.inf",
-    };
-    if (ambiguous.contains(lowered)) {
-        return true;
-    }
-    std::istringstream stream{std::string{text}};
-    stream.imbue(std::locale::classic());
-    stream.unsetf(std::ios::dec);
-    double number{};
-    if ((stream >> std::noskipws >> number) && (stream >> std::ws).eof()) {
-        return true;
-    }
-    return false;
+    return count;
 }
 
 std::string field_kind_name(FieldKind kind) {
@@ -377,16 +407,10 @@ const std::vector<FieldSchema>& detector_fields_or_throw(const std::string& type
 Value build_typed_mapping(
     const std::string& type,
     const std::vector<FieldSchema>& fields,
-    const Value* old_value,
-    bool preserve_id
+    const Value* old_value
 ) {
     Value result = Value::make_mapping();
     result.set("type", Value::make_scalar(type));
-    if (preserve_id && old_value != nullptr && old_value->is_mapping()) {
-        if (const auto* id = old_value->find("id"); id != nullptr) {
-            result.set("id", *id);
-        }
-    }
     for (const auto& field : fields) {
         const auto* previous = old_value != nullptr && old_value->is_mapping()
             ? old_value->find(field.name)
@@ -424,6 +448,274 @@ nlohmann::json editor_schema_json() {
     };
 }
 
+std::string unique_parameter_name(
+    const std::string& definition_name,
+    const Path& setting_path,
+    const std::vector<scenario::v2::ParameterDefinition>& parameters
+) {
+    std::string base = definition_name;
+    for (const auto& token : setting_path) {
+        base += "_";
+        if (token.is_index) {
+            base += std::to_string(token.index);
+        } else {
+            base += token.key;
+        }
+    }
+    std::string sanitized;
+    sanitized.reserve(base.size());
+    for (const unsigned char character : base) {
+        if (std::isalnum(character) || character == '_') {
+            sanitized.push_back(static_cast<char>(character));
+        } else {
+            sanitized.push_back('_');
+        }
+    }
+    if (sanitized.empty() || std::isdigit(static_cast<unsigned char>(sanitized.front()))) {
+        sanitized.insert(sanitized.begin(), 'p');
+    }
+    std::string candidate = sanitized;
+    std::size_t suffix = 2;
+    const auto exists = [&](const std::string& name) {
+        return std::any_of(parameters.begin(), parameters.end(), [&](const auto& parameter) {
+            return parameter.name == name;
+        });
+    };
+    while (exists(candidate)) {
+        candidate = sanitized + "_" + std::to_string(suffix++);
+    }
+    return candidate;
+}
+
+Value* resolve_without_usage(Value& root, const Path& path) {
+    Value* current = &root;
+    for (const auto& token : path) {
+        if (current->is_mapping() && current->find("use") != nullptr) {
+            throw ScenarioEditorError(
+                "nested shared definitions cannot be changed from the outer usage"
+            );
+        }
+        if (token.is_index) {
+            if (!current->is_sequence() || token.index >= current->sequence.size()) {
+                throw ScenarioEditorError("setting path index is out of range");
+            }
+            current = &current->sequence[token.index];
+        } else {
+            if (!current->is_mapping()) {
+                throw ScenarioEditorError("setting path expected a mapping");
+            }
+            current = current->find(token.key);
+            if (current == nullptr) {
+                throw ScenarioEditorError("setting path field was not found: " + token.key);
+            }
+        }
+    }
+    return current;
+}
+
+Path setting_path_from_json(const nlohmann::json& command) {
+    const auto found = command.find("setting_path");
+    if (found == command.end() || !found->is_array()) {
+        throw ScenarioEditorError("setting_path must be an array");
+    }
+    Path path;
+    for (const auto& token : *found) {
+        if (token.is_number_integer() && token.get<std::int64_t>() >= 0) {
+            path.push_back(PathToken{true, static_cast<std::size_t>(token.get<std::int64_t>()), {}});
+        } else if (token.is_string()) {
+            path.push_back(PathToken{false, 0, token.get<std::string>()});
+        } else {
+            throw ScenarioEditorError("setting_path entries must be strings or indexes");
+        }
+    }
+    if (path.empty()) {
+        throw ScenarioEditorError("setting_path must not be empty");
+    }
+    return path;
+}
+
+void set_usage_with(Value& usage, const std::string& parameter, const Value& value) {
+    Value* with = usage.find("with");
+    if (with == nullptr) {
+        usage.set("with", Value::make_mapping());
+        with = usage.find("with");
+    }
+    if (!with->is_mapping()) {
+        throw ScenarioEditorError("usage.with must be a mapping");
+    }
+    with->set(parameter, value);
+}
+
+void erase_usage_with(Value& usage, const std::string& parameter) {
+    auto* with = usage.find("with");
+    if (with == nullptr || !with->is_mapping()) {
+        return;
+    }
+    with->erase(parameter);
+    if (with->mapping.empty()) {
+        usage.erase("with");
+    }
+}
+
+void parameterize_condition_setting(
+    ScenarioDocument& document,
+    Value& usage,
+    const Path& setting_path,
+    const Value& value
+) {
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar()) {
+        throw ScenarioEditorError("per-use settings require a shared condition usage");
+    }
+    auto* definition = find_condition_definition(document, use->scalar);
+    if (definition == nullptr) {
+        throw ScenarioEditorError("condition definition was not found: " + use->scalar);
+    }
+    Value* target = resolve_without_usage(definition->condition, setting_path);
+    if (target->is_parameter_reference()) {
+        set_usage_with(usage, target->scalar, value);
+        return;
+    }
+    const std::string parameter = unique_parameter_name(
+        definition->name, setting_path, definition->parameters
+    );
+    definition->parameters.push_back(
+        scenario::v2::ParameterDefinition{parameter, *target}
+    );
+    *target = Value::make_parameter_reference(parameter);
+    set_usage_with(usage, parameter, value);
+}
+
+void reset_condition_setting(
+    ScenarioDocument& document,
+    Value& usage,
+    const Path& setting_path
+) {
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar()) {
+        return;
+    }
+    auto* definition = find_condition_definition(document, use->scalar);
+    if (definition == nullptr) {
+        throw ScenarioEditorError("condition definition was not found: " + use->scalar);
+    }
+    Value* target = resolve_without_usage(definition->condition, setting_path);
+    if (target->is_parameter_reference()) {
+        erase_usage_with(usage, target->scalar);
+    }
+}
+
+void parameterize_detector_setting(
+    ScenarioDocument& document,
+    Value& usage,
+    const Path& setting_path,
+    const Value& value
+) {
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar()) {
+        throw ScenarioEditorError("per-use settings require a shared detector usage");
+    }
+    auto* definition = find_detector_definition(document, use->scalar);
+    if (definition == nullptr) {
+        throw ScenarioEditorError("detector definition was not found: " + use->scalar);
+    }
+    Value* target = resolve_without_usage(definition->detector, setting_path);
+    if (target->is_parameter_reference()) {
+        set_usage_with(usage, target->scalar, value);
+        return;
+    }
+    const std::string parameter = unique_parameter_name(
+        definition->name, setting_path, definition->parameters
+    );
+    definition->parameters.push_back(
+        scenario::v2::ParameterDefinition{parameter, *target}
+    );
+    *target = Value::make_parameter_reference(parameter);
+    set_usage_with(usage, parameter, value);
+}
+
+void reset_detector_setting(
+    ScenarioDocument& document,
+    Value& usage,
+    const Path& setting_path
+) {
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar()) {
+        return;
+    }
+    auto* definition = find_detector_definition(document, use->scalar);
+    if (definition == nullptr) {
+        throw ScenarioEditorError("detector definition was not found: " + use->scalar);
+    }
+    Value* target = resolve_without_usage(definition->detector, setting_path);
+    if (target->is_parameter_reference()) {
+        erase_usage_with(usage, target->scalar);
+    }
+}
+
+void set_definition_setting(
+    ScenarioDocument& document,
+    const nlohmann::json& command
+) {
+    const std::string kind = command.at("kind").get<std::string>();
+    const std::string name = command.at("name").get<std::string>();
+    const Path setting_path = setting_path_from_json(command);
+    const Value value = value_from_json(command.at("value"));
+    if (kind == "condition") {
+        auto* definition = find_condition_definition(document, name);
+        if (definition == nullptr) {
+            throw ScenarioEditorError("condition definition was not found: " + name);
+        }
+        Value* target = resolve_without_usage(definition->condition, setting_path);
+        if (target->is_parameter_reference()) {
+            const auto found = std::find_if(
+                definition->parameters.begin(),
+                definition->parameters.end(),
+                [&](const auto& parameter) { return parameter.name == target->scalar; }
+            );
+            if (found == definition->parameters.end()) {
+                throw ScenarioEditorError("parameter definition was not found: " + target->scalar);
+            }
+            found->default_value = value;
+        } else {
+            *target = value;
+        }
+        return;
+    }
+    if (kind == "detector") {
+        auto* definition = find_detector_definition(document, name);
+        if (definition == nullptr) {
+            throw ScenarioEditorError("detector definition was not found: " + name);
+        }
+        Value* target = resolve_without_usage(definition->detector, setting_path);
+        if (target->is_parameter_reference()) {
+            const auto found = std::find_if(
+                definition->parameters.begin(),
+                definition->parameters.end(),
+                [&](const auto& parameter) { return parameter.name == target->scalar; }
+            );
+            if (found == definition->parameters.end()) {
+                throw ScenarioEditorError("parameter definition was not found: " + target->scalar);
+            }
+            found->default_value = value;
+        } else {
+            *target = value;
+        }
+        return;
+    }
+    throw ScenarioEditorError("set_definition_setting kind must be condition or detector");
+}
+
+RuleDefinition default_rule() {
+    RuleDefinition rule;
+    rule.condition.value = Value::make_mapping({
+        {"type", Value::make_scalar("elapsed")},
+        {"duration", Value::make_scalar("1s")},
+    });
+    rule.action = "split";
+    return rule;
+}
+
 void mutate_document(ScenarioDocument& document, const nlohmann::json& command) {
     const std::string type = command.at("type").get<std::string>();
     if (type == "set_value") {
@@ -436,32 +728,30 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
             throw ScenarioEditorError("set_setting target must be a mapping");
         }
         const std::string key = command.at("key").get<std::string>();
-        if (key == "extends" || key == "overrides") {
-            throw ScenarioEditorError("use set_usage to change shared condition references");
+        if (key == "use" || key == "with") {
+            throw ScenarioEditorError("use use_condition/use_detector to change shared references");
         }
         target->set(key, value_from_json(command.at("value")));
         return;
     }
     if (type == "set_condition_type") {
-        Value* target = resolve_path(document, parse_path(command));
-        if (!target->is_mapping() || target->find("extends") != nullptr) {
-            throw ScenarioEditorError(
-                "condition type can only be changed on an inline condition"
-            );
+        Value* target = resolve_inline_container(document, parse_path(command));
+        if (!target->is_mapping()) {
+            throw ScenarioEditorError("condition type can only be changed on a condition mapping");
         }
         const std::string next_type = command.at("value").get<std::string>();
         const auto& fields = condition_fields_or_throw(next_type);
-        *target = build_typed_mapping(next_type, fields, target, true);
+        *target = build_typed_mapping(next_type, fields, target);
         return;
     }
     if (type == "set_detector_type") {
-        Value* target = resolve_path(document, parse_path(command));
+        Value* target = resolve_inline_container(document, parse_path(command));
         if (!target->is_mapping() || target->find("type") == nullptr) {
             throw ScenarioEditorError("detector type can only be changed on a detector mapping");
         }
         const std::string next_type = command.at("value").get<std::string>();
         const auto& fields = detector_fields_or_throw(next_type);
-        *target = build_typed_mapping(next_type, fields, target, false);
+        *target = build_typed_mapping(next_type, fields, target);
         return;
     }
     if (type == "remove_setting") {
@@ -469,11 +759,18 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         if (!target->is_mapping()) {
             throw ScenarioEditorError("remove_setting target must be a mapping");
         }
-        target->erase(command.at("key").get<std::string>());
+        const std::string key = command.at("key").get<std::string>();
+        if (key == "use" || key == "with") {
+            throw ScenarioEditorError("shared definition references cannot be removed directly");
+        }
+        target->erase(key);
         return;
     }
     if (type == "add_condition" || type == "insert_condition") {
-        Value* target = resolve_condition_container(document, parse_path(command));
+        Value* target = resolve_inline_container(document, parse_path(command));
+        if (!target->is_mapping()) {
+            throw ScenarioEditorError("condition node must be a mapping");
+        }
         Value* conditions = target->find("conditions");
         if (conditions == nullptr) {
             target->set("conditions", Value::make_sequence());
@@ -491,11 +788,17 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         Value value = command.contains("value")
             ? value_from_json(command.at("value"))
             : default_rule().condition.value;
-        conditions->sequence.insert(conditions->sequence.begin() + static_cast<std::ptrdiff_t>(index), std::move(value));
+        conditions->sequence.insert(
+            conditions->sequence.begin() + static_cast<std::ptrdiff_t>(index),
+            std::move(value)
+        );
         return;
     }
     if (type == "remove_condition") {
-        Value* target = resolve_condition_container(document, parse_path(command));
+        Value* target = resolve_inline_container(document, parse_path(command));
+        if (!target->is_mapping()) {
+            throw ScenarioEditorError("condition node must be a mapping");
+        }
         Value* conditions = target->find("conditions");
         if (conditions == nullptr || !conditions->is_sequence()) {
             throw ScenarioEditorError("conditions must be a sequence");
@@ -504,11 +807,16 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         if (index >= conditions->sequence.size()) {
             throw ScenarioEditorError("condition index is out of range");
         }
-        conditions->sequence.erase(conditions->sequence.begin() + static_cast<std::ptrdiff_t>(index));
+        conditions->sequence.erase(
+            conditions->sequence.begin() + static_cast<std::ptrdiff_t>(index)
+        );
         return;
     }
     if (type == "move_condition") {
-        Value* target = resolve_condition_container(document, parse_path(command));
+        Value* target = resolve_inline_container(document, parse_path(command));
+        if (!target->is_mapping()) {
+            throw ScenarioEditorError("condition node must be a mapping");
+        }
         Value* conditions = target->find("conditions");
         if (conditions == nullptr || !conditions->is_sequence()) {
             throw ScenarioEditorError("conditions must be a sequence");
@@ -522,150 +830,13 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
             return;
         }
         Value moved = std::move(conditions->sequence[from]);
-        conditions->sequence.erase(conditions->sequence.begin() + static_cast<std::ptrdiff_t>(from));
-        conditions->sequence.insert(conditions->sequence.begin() + static_cast<std::ptrdiff_t>(to), std::move(moved));
-        return;
-    }
-    if (type == "set_usage") {
-        Value* target = resolve_path(document, parse_path(command));
-        const std::string mode = command.at("mode").get<std::string>();
-        if (mode == "reference") {
-            const std::string anchor = command.at("anchor").get<std::string>();
-            if (anchor.empty()) {
-                throw ScenarioEditorError("a shared condition reference requires an anchor");
-            }
-            *target = Value::make_alias(anchor);
-            return;
-        }
-        if (mode == "inherits") {
-            const std::string anchor = command.at("anchor").get<std::string>();
-            if (anchor.empty()) {
-                throw ScenarioEditorError("a shared condition inheritance requires an anchor");
-            }
-            Value replacement = Value::make_mapping();
-            replacement.set("extends", Value::make_alias(anchor));
-            if (target->is_mapping()) {
-                const auto* extends = target->find("extends");
-                const auto* overrides = target->find("overrides");
-                if (extends != nullptr && extends->is_alias() && extends->scalar == anchor
-                    && overrides != nullptr) {
-                    replacement.set("overrides", *overrides);
-                }
-            }
-            *target = std::move(replacement);
-            return;
-        }
-        if (mode == "inline") {
-            if (command.contains("value")) {
-                *target = value_from_json(command.at("value"));
-            } else {
-                *target = resolve_condition(document, *target);
-                if (target->is_alias()) {
-                    throw ScenarioEditorError("the shared condition could not be resolved");
-                }
-            }
-            return;
-        }
-        throw ScenarioEditorError("unknown condition usage mode: " + mode);
-    }
-    if (type == "set_definition") {
-        const std::string name = command.at("name").get<std::string>();
-        if (name.empty()) {
-            throw ScenarioEditorError("shared definition names must not be empty");
-        }
-        Value value = value_from_json(command.at("value"));
-        if (!value.is_mapping()) {
-            throw ScenarioEditorError("shared definitions must be mappings");
-        }
-        auto* definition = find_definition(document, name);
-        if (definition == nullptr) {
-            document.definitions.push_back(SharedDefinition{
-                name, classify_definition(value), std::move(value)
-            });
-        } else {
-            definition->kind = classify_definition(value);
-            definition->value = std::move(value);
-        }
-        return;
-    }
-    if (type == "rename_definition") {
-        const std::string from = command.at("from").get<std::string>();
-        const std::string to = command.at("to").get<std::string>();
-        if (to.empty()) {
-            throw ScenarioEditorError("shared definition names must not be empty");
-        }
-        auto* definition = find_definition(document, from);
-        if (definition == nullptr) {
-            throw ScenarioEditorError("shared definition was not found: " + from);
-        }
-        if (find_definition(document, to) != nullptr) {
-            throw ScenarioEditorError("shared definition already exists: " + to);
-        }
-        definition->name = to;
-        for (auto& other : document.definitions) {
-            replace_aliases(other.value, from, to);
-        }
-        const auto replace_usage = [&](std::optional<ConditionUsage>& usage) {
-            if (usage) {
-                replace_aliases(usage->value, from, to);
-            }
-        };
-        replace_usage(document.start_condition);
-        replace_usage(document.reset_condition);
-        replace_usage(document.incomplete_condition);
-        for (auto& split : document.splits) {
-            if (!split) {
-                continue;
-            }
-            for (auto& rule : split->rules) {
-                if (rule.sequence) {
-                    for (auto& step : rule.sequence_rules) {
-                        replace_aliases(step.condition.value, from, to);
-                    }
-                } else {
-                    replace_aliases(rule.rule.condition.value, from, to);
-                }
-            }
-        }
-        return;
-    }
-    if (type == "delete_definition") {
-        const std::string name = command.at("name").get<std::string>();
-        const auto found = std::find_if(document.definitions.begin(), document.definitions.end(), [&](const auto& definition) {
-            return definition.name == name;
-        });
-        if (found == document.definitions.end()) {
-            throw ScenarioEditorError("shared definition was not found: " + name);
-        }
-        const Value replacement = found->value;
-        for (auto& definition : document.definitions) {
-            if (definition.name != name) {
-                materialize_definition_refs(definition.value, name, document, replacement);
-            }
-        }
-        const auto materialize_usage = [&](std::optional<ConditionUsage>& usage) {
-            if (usage) {
-                materialize_definition_refs(usage->value, name, document, replacement);
-            }
-        };
-        materialize_usage(document.start_condition);
-        materialize_usage(document.reset_condition);
-        materialize_usage(document.incomplete_condition);
-        for (auto& split : document.splits) {
-            if (!split) {
-                continue;
-            }
-            for (auto& rule : split->rules) {
-                if (rule.sequence) {
-                    for (auto& step : rule.sequence_rules) {
-                        materialize_definition_refs(step.condition.value, name, document, replacement);
-                    }
-                } else {
-                    materialize_definition_refs(rule.rule.condition.value, name, document, replacement);
-                }
-            }
-        }
-        document.definitions.erase(found);
+        conditions->sequence.erase(
+            conditions->sequence.begin() + static_cast<std::ptrdiff_t>(from)
+        );
+        conditions->sequence.insert(
+            conditions->sequence.begin() + static_cast<std::ptrdiff_t>(to),
+            std::move(moved)
+        );
         return;
     }
     if (type == "set_optional_condition") {
@@ -689,8 +860,8 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
             {"duration", Value::make_scalar("1s")},
         });
         Value value = command.contains("value") ? value_from_json(command.at("value")) : fallback;
-        if (!value.is_mapping() && !value.is_alias()) {
-            throw ScenarioEditorError("a Condition must be a mapping or alias");
+        if (!value.is_mapping()) {
+            throw ScenarioEditorError("a Condition must be a mapping");
         }
         if (!slot->has_value() || command.value("replace", false)) {
             *slot = ConditionUsage{std::move(value)};
@@ -704,10 +875,17 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         if (index > document.splits.size()) {
             throw ScenarioEditorError("split index is out of range");
         }
-        document.splits.insert(
-            document.splits.begin() + static_cast<std::ptrdiff_t>(index),
-            command.value("manual", false) ? std::optional<SplitDefinition>{} : std::optional<SplitDefinition>{SplitDefinition{}}
-        );
+        if (command.value("manual", false)) {
+            document.splits.insert(
+                document.splits.begin() + static_cast<std::ptrdiff_t>(index),
+                std::nullopt
+            );
+        } else {
+            document.splits.insert(
+                document.splits.begin() + static_cast<std::ptrdiff_t>(index),
+                SplitDefinition{}
+            );
+        }
         return;
     }
     if (type == "remove_split") {
@@ -729,7 +907,10 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         }
         auto moved = std::move(document.splits[from]);
         document.splits.erase(document.splits.begin() + static_cast<std::ptrdiff_t>(from));
-        document.splits.insert(document.splits.begin() + static_cast<std::ptrdiff_t>(to), std::move(moved));
+        document.splits.insert(
+            document.splits.begin() + static_cast<std::ptrdiff_t>(to),
+            std::move(moved)
+        );
         return;
     }
     if (type == "set_split_manual") {
@@ -822,45 +1003,250 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         }
         return;
     }
-    if (type == "set_override" || type == "add_override") {
+    if (type == "use_condition") {
         Value* target = resolve_path(document, parse_path(command));
-        if (!target->is_mapping()) {
-            throw ScenarioEditorError("condition overrides require a condition mapping");
+        const std::string name = command.at("name").get<std::string>();
+        if (find_condition_definition(document, name) == nullptr) {
+            throw ScenarioEditorError("condition definition was not found: " + name);
         }
-        const auto* extends = target->find("extends");
-        if (extends == nullptr || !extends->is_alias()) {
-            throw ScenarioEditorError("condition overrides require an extends reference");
-        }
-        Value* overrides = target->find("overrides");
-        if (overrides == nullptr) {
-            target->set("overrides", Value::make_mapping());
-            overrides = target->find("overrides");
-        }
-        const std::string condition_id = command.at("condition_id").get<std::string>();
-        if (condition_id.empty()) {
-            throw ScenarioEditorError("override condition_id must not be empty");
-        }
-        if (const auto* definition = find_definition(document, extends->scalar)) {
-            const auto inherited = resolve_condition(document, definition->value);
-            const auto ids = condition_ids(inherited);
-            if (std::find(ids.begin(), ids.end(), condition_id) == ids.end()) {
-                throw ScenarioEditorError(
-                    "override condition ID was not found in the inherited definition: "
-                    + condition_id
-                );
+        Value replacement = Value::make_mapping();
+        replacement.set("use", Value::make_scalar(name));
+        if (target->is_mapping()) {
+            const auto* old_use = target->find("use");
+            const auto* old_with = target->find("with");
+            if (old_use != nullptr && old_use->is_scalar() && old_use->scalar == name
+                && old_with != nullptr) {
+                replacement.set("with", *old_with);
             }
         }
-        set_nested_override(*overrides, condition_id, command);
+        *target = std::move(replacement);
         return;
     }
-    if (type == "remove_override") {
+    if (type == "use_detector") {
         Value* target = resolve_path(document, parse_path(command));
-        Value* overrides = target->is_mapping() ? target->find("overrides") : nullptr;
-        if (overrides == nullptr) {
+        const std::string name = command.at("name").get<std::string>();
+        if (find_detector_definition(document, name) == nullptr) {
+            throw ScenarioEditorError("detector definition was not found: " + name);
+        }
+        Value replacement = Value::make_mapping();
+        replacement.set("use", Value::make_scalar(name));
+        if (target->is_mapping()) {
+            const auto* old_use = target->find("use");
+            const auto* old_with = target->find("with");
+            if (old_use != nullptr && old_use->is_scalar() && old_use->scalar == name
+                && old_with != nullptr) {
+                replacement.set("with", *old_with);
+            }
+        }
+        *target = std::move(replacement);
+        return;
+    }
+    if (type == "inline_condition") {
+        Value* target = resolve_path(document, parse_path(command));
+        if (!is_usage_value(*target)) {
             return;
         }
-        const std::string condition_id = command.at("condition_id").get<std::string>();
-        remove_nested_override(*overrides, condition_id, command);
+        *target = resolved_condition(document, *target);
+        return;
+    }
+    if (type == "inline_detector") {
+        Value* target = resolve_path(document, parse_path(command));
+        if (!is_usage_value(*target)) {
+            return;
+        }
+        *target = resolved_detector(document, *target);
+        return;
+    }
+    if (type == "set_usage_setting") {
+        Value* usage = resolve_path(document, parse_path(command));
+        if (!is_usage_value(*usage)) {
+            throw ScenarioEditorError("set_usage_setting requires a shared condition usage");
+        }
+        parameterize_condition_setting(
+            document,
+            *usage,
+            setting_path_from_json(command),
+            value_from_json(command.at("value"))
+        );
+        return;
+    }
+    if (type == "reset_usage_setting") {
+        Value* usage = resolve_path(document, parse_path(command));
+        reset_condition_setting(document, *usage, setting_path_from_json(command));
+        return;
+    }
+    if (type == "set_detector_usage_setting") {
+        Value* usage = resolve_path(document, parse_path(command));
+        if (!is_usage_value(*usage)) {
+            throw ScenarioEditorError("set_detector_usage_setting requires a shared detector usage");
+        }
+        parameterize_detector_setting(
+            document,
+            *usage,
+            setting_path_from_json(command),
+            value_from_json(command.at("value"))
+        );
+        return;
+    }
+    if (type == "reset_detector_usage_setting") {
+        Value* usage = resolve_path(document, parse_path(command));
+        reset_detector_setting(document, *usage, setting_path_from_json(command));
+        return;
+    }
+    if (type == "set_definition_setting") {
+        set_definition_setting(document, command);
+        return;
+    }
+    if (type == "remove_definition_setting") {
+        const std::string kind = command.at("kind").get<std::string>();
+        const std::string name = command.at("name").get<std::string>();
+        const Path setting_path = setting_path_from_json(command);
+        const PathToken& last = setting_path.back();
+        if (last.is_index) {
+            throw ScenarioEditorError("definition setting paths must end with a key");
+        }
+        Path parent_path = setting_path;
+        parent_path.pop_back();
+        Value* root = nullptr;
+        if (kind == "condition") {
+            auto* definition = find_condition_definition(document, name);
+            if (definition == nullptr) {
+                throw ScenarioEditorError("condition definition was not found: " + name);
+            }
+            root = &definition->condition;
+        } else if (kind == "detector") {
+            auto* definition = find_detector_definition(document, name);
+            if (definition == nullptr) {
+                throw ScenarioEditorError("detector definition was not found: " + name);
+            }
+            root = &definition->detector;
+        } else {
+            throw ScenarioEditorError("remove_definition_setting kind must be condition or detector");
+        }
+        Value* parent = resolve_without_usage(*root, parent_path);
+        if (!parent->is_mapping()) {
+            throw ScenarioEditorError("definition setting parent must be a mapping");
+        }
+        parent->erase(last.key);
+        return;
+    }
+    if (type == "create_condition_definition") {
+        const std::string name = command.at("name").get<std::string>();
+        if (name.empty()) {
+            throw ScenarioEditorError("condition definition names must not be empty");
+        }
+        if (find_condition_definition(document, name) != nullptr) {
+            throw ScenarioEditorError("condition definition already exists: " + name);
+        }
+        Value condition = command.contains("value")
+            ? value_from_json(command.at("value"))
+            : Value::make_mapping({
+                {"type", Value::make_scalar("elapsed")},
+                {"duration", Value::make_scalar("1s")},
+            });
+        if (!condition.is_mapping()) {
+            throw ScenarioEditorError("condition definition must be a mapping");
+        }
+        document.definitions.conditions.push_back(
+            scenario::v2::SharedCondition{name, {}, std::move(condition)}
+        );
+        return;
+    }
+    if (type == "create_detector_definition") {
+        const std::string name = command.at("name").get<std::string>();
+        if (name.empty()) {
+            throw ScenarioEditorError("detector definition names must not be empty");
+        }
+        if (find_detector_definition(document, name) != nullptr) {
+            throw ScenarioEditorError("detector definition already exists: " + name);
+        }
+        Value detector = command.contains("value")
+            ? value_from_json(command.at("value"))
+            : Value::make_mapping({{"type", Value::make_scalar("mean_brightness")}});
+        if (!detector.is_mapping()) {
+            throw ScenarioEditorError("detector definition must be a mapping");
+        }
+        document.definitions.detectors.push_back(
+            scenario::v2::SharedDetector{name, {}, std::move(detector)}
+        );
+        return;
+    }
+    if (type == "rename_condition_definition") {
+        const std::string from = command.at("from").get<std::string>();
+        const std::string to = command.at("to").get<std::string>();
+        if (to.empty()) {
+            throw ScenarioEditorError("condition definition names must not be empty");
+        }
+        auto* definition = find_condition_definition(document, from);
+        if (definition == nullptr) {
+            throw ScenarioEditorError("condition definition was not found: " + from);
+        }
+        if (find_condition_definition(document, to) != nullptr) {
+            throw ScenarioEditorError("condition definition already exists: " + to);
+        }
+        definition->name = to;
+        visit_all_conditions(document, [&](Value& value) {
+            auto* use = value.find("use");
+            if (use != nullptr && use->is_scalar() && use->scalar == from) {
+                use->scalar = to;
+            }
+        });
+        return;
+    }
+    if (type == "rename_detector_definition") {
+        const std::string from = command.at("from").get<std::string>();
+        const std::string to = command.at("to").get<std::string>();
+        if (to.empty()) {
+            throw ScenarioEditorError("detector definition names must not be empty");
+        }
+        auto* definition = find_detector_definition(document, from);
+        if (definition == nullptr) {
+            throw ScenarioEditorError("detector definition was not found: " + from);
+        }
+        if (find_detector_definition(document, to) != nullptr) {
+            throw ScenarioEditorError("detector definition already exists: " + to);
+        }
+        definition->name = to;
+        visit_all_detector_usages(document, [&](Value& value) {
+            auto* use = value.find("use");
+            if (use != nullptr && use->is_scalar() && use->scalar == from) {
+                use->scalar = to;
+            }
+        });
+        return;
+    }
+    if (type == "delete_condition_definition") {
+        const std::string name = command.at("name").get<std::string>();
+        if (count_condition_uses(document, name) != 0) {
+            throw ScenarioEditorError("condition definition is still in use: " + name);
+        }
+        auto& definitions = document.definitions.conditions;
+        const auto found = std::find_if(
+            definitions.begin(), definitions.end(), [&](const auto& definition) {
+                return definition.name == name;
+            }
+        );
+        if (found == definitions.end()) {
+            throw ScenarioEditorError("condition definition was not found: " + name);
+        }
+        definitions.erase(found);
+        return;
+    }
+    if (type == "delete_detector_definition") {
+        const std::string name = command.at("name").get<std::string>();
+        if (count_detector_uses(document, name) != 0) {
+            throw ScenarioEditorError("detector definition is still in use: " + name);
+        }
+        auto& definitions = document.definitions.detectors;
+        const auto found = std::find_if(
+            definitions.begin(), definitions.end(), [&](const auto& definition) {
+                return definition.name == name;
+            }
+        );
+        if (found == definitions.end()) {
+            throw ScenarioEditorError("detector definition was not found: " + name);
+        }
+        definitions.erase(found);
         return;
     }
     throw ScenarioEditorError("unknown editor command: " + type);
@@ -869,7 +1255,7 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
 nlohmann::json rule_json(const ScenarioDocument& document, const RuleDefinition& rule) {
     return nlohmann::json{
         {"condition", value_to_json(rule.condition.value)},
-        {"condition_resolved", value_to_json(resolve_condition(document, rule.condition.value))},
+        {"condition_resolved", value_to_json(resolved_condition(document, rule.condition.value))},
         {"action", rule.action},
     };
 }
@@ -885,6 +1271,19 @@ nlohmann::json scenario_rule_json(const ScenarioDocument& document, const Scenar
     return rule_json(document, rule.rule);
 }
 
+nlohmann::json parameters_json(
+    const std::vector<scenario::v2::ParameterDefinition>& parameters
+) {
+    nlohmann::json result = nlohmann::json::array();
+    for (const auto& parameter : parameters) {
+        result.push_back(nlohmann::json{
+            {"name", parameter.name},
+            {"default", value_to_json(parameter.default_value)},
+        });
+    }
+    return result;
+}
+
 nlohmann::json resolved_usage_json(
     const ScenarioDocument& document,
     const std::optional<ConditionUsage>& usage
@@ -892,7 +1291,7 @@ nlohmann::json resolved_usage_json(
     if (!usage) {
         return nullptr;
     }
-    return value_to_json(resolve_condition(document, usage->value));
+    return value_to_json(resolved_condition(document, usage->value));
 }
 
 }  // namespace
@@ -905,6 +1304,8 @@ nlohmann::json value_to_json(const Value& value) {
         return value.scalar;
     case ValueKind::alias:
         return nlohmann::json{{"$alias", value.scalar}};
+    case ValueKind::parameter_reference:
+        return nlohmann::json{{"$param", value.scalar}};
     case ValueKind::sequence: {
         nlohmann::json result = nlohmann::json::array();
         for (const auto& item : value.sequence) {
@@ -947,6 +1348,9 @@ Value value_from_json(const nlohmann::json& value) {
         return result;
     }
     if (value.is_object()) {
+        if (value.size() == 1 && value.contains("$param") && value["$param"].is_string()) {
+            return Value::make_parameter_reference(value["$param"].get<std::string>());
+        }
         if (value.size() == 1 && value.contains("$alias") && value["$alias"].is_string()) {
             return Value::make_alias(value["$alias"].get<std::string>());
         }
@@ -1029,21 +1433,30 @@ void save_editor_session(EditorSession& session, const std::filesystem::path& pa
 }
 
 nlohmann::json editor_state_json(const EditorSession& session) {
-    nlohmann::json definitions = nlohmann::json::array();
-    for (const auto& definition : session.document.definitions) {
-        const auto resolved = resolve_condition(session.document, definition.value);
-        const char* kind = "other";
-        if (definition.kind == DefinitionKind::condition) {
-            kind = "condition";
-        } else if (definition.kind == DefinitionKind::detector) {
-            kind = "detector";
-        }
-        definitions.push_back(nlohmann::json{
+    nlohmann::json condition_definitions = nlohmann::json::array();
+    for (const auto& definition : session.document.definitions.conditions) {
+        const auto resolved = scenario::v2::resolve_condition(
+            session.document.definitions,
+            Value::make_mapping({{"use", Value::make_scalar(definition.name)}})
+        );
+        condition_definitions.push_back(nlohmann::json{
             {"name", definition.name},
-            {"kind", kind},
-            {"value", value_to_json(definition.value)},
-            {"resolved", value_to_json(resolved)},
-            {"ids", condition_ids(resolved)},
+            {"parameters", parameters_json(definition.parameters)},
+            {"condition", value_to_json(definition.condition)},
+            {"condition_resolved", value_to_json(resolved)},
+        });
+    }
+    nlohmann::json detector_definitions = nlohmann::json::array();
+    for (const auto& definition : session.document.definitions.detectors) {
+        const auto resolved = scenario::v2::resolve_detector(
+            session.document.definitions,
+            Value::make_mapping({{"use", Value::make_scalar(definition.name)}})
+        );
+        detector_definitions.push_back(nlohmann::json{
+            {"name", definition.name},
+            {"parameters", parameters_json(definition.parameters)},
+            {"detector", value_to_json(definition.detector)},
+            {"detector_resolved", value_to_json(resolved)},
         });
     }
     nlohmann::json splits = nlohmann::json::array();
@@ -1068,7 +1481,10 @@ nlohmann::json editor_state_json(const EditorSession& session) {
         {"path", path_to_utf8(session.path)},
         {"dirty", session.dirty},
         {"extra_root", std::move(extra_root)},
-        {"definitions", std::move(definitions)},
+        {"definitions", nlohmann::json{
+            {"conditions", std::move(condition_definitions)},
+            {"detectors", std::move(detector_definitions)},
+        }},
         {"start_condition", session.document.start_condition
                 ? value_to_json(session.document.start_condition->value)
                 : nlohmann::json(nullptr)},
@@ -1087,7 +1503,7 @@ nlohmann::json editor_state_json(const EditorSession& session) {
         {"splits", std::move(splits)},
     };
     return nlohmann::json{
-        {"version", 2},
+        {"version", 3},
         {"schema", editor_schema_json()},
         {"document", std::move(document)},
         {"canUndo", !session.undo_stack.empty()},

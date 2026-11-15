@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listenToHost, sendCommand, sendToHost, isWebViewHost } from "./bridge";
 import {
+  conditionAtPath,
   emptyDemoState,
   formatPath,
-  isAlias,
-  isInheritanceUsage,
-  isMapping,
-  usageAnchor,
+  isSharedUse,
+  sharedUseName,
   type EditorState,
   type JsonValue,
   type Path,
 } from "./model";
-import { ConditionInspector, ConditionPane, UsageModeToolbar } from "./ConditionEditor";
+import { ConditionInspector, ConditionPane, DetectorPane } from "./ConditionEditor";
 import { RulesEditor } from "./RulesEditor";
 
 type Selection =
-  | { kind: "definition"; name: string }
+  | { kind: "condition-definition"; name: string }
+  | { kind: "detector-definition"; name: string }
   | { kind: "special"; name: SpecialCondition }
   | { kind: "split"; index: number }
   | { kind: "rule"; split: number; rule: number }
@@ -30,8 +30,10 @@ function selectionPath(selection: Selection): Path | null {
     return null;
   }
   switch (selection.kind) {
-    case "definition":
-      return ["definitions", selection.name];
+    case "condition-definition":
+      return ["definitions", "conditions", selection.name];
+    case "detector-definition":
+      return ["definitions", "detectors", selection.name];
     case "special":
       return [selection.name];
     case "rule":
@@ -45,13 +47,7 @@ function conditionMode(value: JsonValue | null | undefined): string {
   if (value === null || value === undefined) {
     return "未設定";
   }
-  if (isAlias(value)) {
-    return `*${usageAnchor(value)}`;
-  }
-  if (isInheritanceUsage(value)) {
-    return `extends *${usageAnchor(value)}`;
-  }
-  return "inline";
+  return isSharedUse(value) ? `use ${sharedUseName(value)}` : "inline";
 }
 
 export default function App() {
@@ -61,7 +57,8 @@ export default function App() {
   const [selection, setSelection] = useState<Selection>(null);
   const [selectedPath, setSelectedPath] = useState<Path | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [newDefinitionName, setNewDefinitionName] = useState("");
+  const [newConditionName, setNewConditionName] = useState("");
+  const [newDetectorName, setNewDetectorName] = useState("");
   const preview = !isWebViewHost();
 
   useEffect(() => {
@@ -79,10 +76,6 @@ export default function App() {
   useEffect(() => {
     if (!state) {
       return;
-    }
-    if (selection?.kind === "definition"
-      && !state.document.definitions.some((definition) => definition.name === selection.name)) {
-      setSelection(null);
     }
     if (selection?.kind === "split" && selection.index >= state.document.splits.length) {
       setSelection(null);
@@ -136,35 +129,50 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [runCommand]);
 
-  const createDefinition = () => {
-    const name = newDefinitionName.trim();
+  const createConditionDefinition = () => {
+    const name = newConditionName.trim();
     if (!name) {
       return;
     }
-    runCommand({
-      type: "set_definition",
-      name,
-      value: {
-        type: "all",
-        conditions: [
-          { id: "step", type: "elapsed", duration: "1s" },
-        ],
-      },
-    });
-    setNewDefinitionName("");
-    chooseSelection({ kind: "definition", name });
+    runCommand({ type: "create_condition_definition", name });
+    setNewConditionName("");
+    chooseSelection({ kind: "condition-definition", name });
+  };
+
+  const createDetectorDefinition = () => {
+    const name = newDetectorName.trim();
+    if (!name) {
+      return;
+    }
+    runCommand({ type: "create_detector_definition", name });
+    setNewDetectorName("");
+    chooseSelection({ kind: "detector-definition", name });
   };
 
   const document = state?.document;
   const schema = state?.schema ?? { conditionFields: {}, detectorFields: {} };
   const splitSelection = selection?.kind === "split" ? selection : null;
 
+  const inspectorMode = useMemo(() => {
+    if (!document || !rootPath) {
+      return null;
+    }
+    if (selection?.kind === "condition-definition") {
+      return "definition-condition" as const;
+    }
+    if (selection?.kind === "detector-definition") {
+      return "definition-detector" as const;
+    }
+    const raw = conditionAtPath(document, rootPath);
+    return isSharedUse(raw) ? ("usage-condition" as const) : ("inline" as const);
+  }, [document, selection, rootPath]);
+
   return (
     <div className="app">
       <header className="toolbar">
         <div className="brand">
           <strong>Scenario Builder</strong>
-          <span className="poc">PoC</span>
+          <span className="poc">YAML v2</span>
         </div>
         <div className="toolbar-group">
           <button onClick={() => sendToHost({ type: "new" })}>新規</button>
@@ -173,16 +181,10 @@ export default function App() {
           <button onClick={() => sendToHost({ type: "saveAs" })}>名前を付けて保存</button>
         </div>
         <div className="toolbar-group">
-          <button
-            disabled={!state?.canUndo}
-            onClick={() => runCommand({ type: "undo" })}
-          >
+          <button disabled={!state?.canUndo} onClick={() => runCommand({ type: "undo" })}>
             Undo
           </button>
-          <button
-            disabled={!state?.canRedo}
-            onClick={() => runCommand({ type: "redo" })}
-          >
+          <button disabled={!state?.canRedo} onClick={() => runCommand({ type: "redo" })}>
             Redo
           </button>
         </div>
@@ -212,28 +214,28 @@ export default function App() {
           <aside className="pane left-pane">
             <section>
               <div className="section-title">
-                <h2>共通定義</h2>
-                <span className="count">{document.definitions.length}</span>
+                <h2>共通Condition</h2>
+                <span className="count">{document.definitions.conditions.length}</span>
               </div>
               <div className="inline-form">
                 <input
-                  value={newDefinitionName}
+                  value={newConditionName}
                   placeholder="course_finish"
-                  onChange={(event) => setNewDefinitionName(event.target.value)}
+                  onChange={(event) => setNewConditionName(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
-                      createDefinition();
+                      createConditionDefinition();
                     }
                   }}
                 />
-                <button onClick={createDefinition}>作成</button>
+                <button onClick={createConditionDefinition}>作成</button>
               </div>
               <ul className="tree-list">
-                {document.definitions.map((definition) => (
+                {document.definitions.conditions.map((definition) => (
                   <li
                     key={definition.name}
                     className={
-                      selection?.kind === "definition"
+                      selection?.kind === "condition-definition"
                       && selection.name === definition.name
                         ? "active"
                         : ""
@@ -242,20 +244,90 @@ export default function App() {
                     <button
                       className="link-row"
                       onClick={() =>
-                        chooseSelection({ kind: "definition", name: definition.name })
+                        chooseSelection({
+                          kind: "condition-definition",
+                          name: definition.name,
+                        })
                       }
                     >
-                      <span className="anchor-mark">
-                        {definition.kind === "condition" ? "&" : "#"}
-                      </span>
+                      <span className="anchor-mark">◇</span>
                       {definition.name}
+                      <span className="mode-hint">
+                        {definition.parameters.length} params
+                      </span>
                     </button>
                     <button
                       className="icon"
-                      title="共通定義を削除"
+                      title="共通Conditionを削除"
                       onClick={() => {
-                        if (window.confirm(`共通定義 ${definition.name} を削除しますか？`)) {
-                          runCommand({ type: "delete_definition", name: definition.name });
+                        if (window.confirm(`${definition.name} を削除しますか？`)) {
+                          runCommand({
+                            type: "delete_condition_definition",
+                            name: definition.name,
+                          });
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section>
+              <div className="section-title">
+                <h2>共通Detector</h2>
+                <span className="count">{document.definitions.detectors.length}</span>
+              </div>
+              <div className="inline-form">
+                <input
+                  value={newDetectorName}
+                  placeholder="shared_detector"
+                  onChange={(event) => setNewDetectorName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      createDetectorDefinition();
+                    }
+                  }}
+                />
+                <button onClick={createDetectorDefinition}>作成</button>
+              </div>
+              <ul className="tree-list">
+                {document.definitions.detectors.map((definition) => (
+                  <li
+                    key={definition.name}
+                    className={
+                      selection?.kind === "detector-definition"
+                      && selection.name === definition.name
+                        ? "active"
+                        : ""
+                    }
+                  >
+                    <button
+                      className="link-row"
+                      onClick={() =>
+                        chooseSelection({
+                          kind: "detector-definition",
+                          name: definition.name,
+                        })
+                      }
+                    >
+                      <span className="anchor-mark">#</span>
+                      {definition.name}
+                      <span className="mode-hint">
+                        {definition.parameters.length} params
+                      </span>
+                    </button>
+                    <button
+                      className="icon"
+                      title="共通Detectorを削除"
+                      onClick={() => {
+                        if (window.confirm(`${definition.name} を削除しますか？`)) {
+                          runCommand({
+                            type: "delete_detector_definition",
+                            name: definition.name,
+                          });
                         }
                       }}
                     >
@@ -366,16 +438,27 @@ export default function App() {
           </aside>
 
           <section className="pane center-pane">
-            {rootPath && (selection?.kind === "definition"
-              || selection?.kind === "special"
-              || selection?.kind === "rule") ? (
+            {rootPath && selection?.kind === "condition-definition" ? (
               <ConditionPane
                 document={document}
-                usagePath={rootPath}
+                rootPath={rootPath}
                 selectedPath={activePath ?? rootPath}
+                definition
                 onSelect={setSelectedPath}
                 sendCommand={runCommand}
               />
+            ) : rootPath
+              && (selection?.kind === "special" || selection?.kind === "rule") ? (
+              <ConditionPane
+                document={document}
+                rootPath={rootPath}
+                selectedPath={activePath ?? rootPath}
+                definition={false}
+                onSelect={setSelectedPath}
+                sendCommand={runCommand}
+              />
+            ) : rootPath && selection?.kind === "detector-definition" ? (
+              <DetectorPane document={document} rootPath={rootPath} />
             ) : splitSelection ? (
               <RulesEditor
                 document={document}
@@ -394,34 +477,30 @@ export default function App() {
               <div className="welcome">
                 <h2>Scenario Builder</h2>
                 <p>
-                  左の一覧から共通定義・Start / Reset / Incomplete・Split
+                  左の一覧から共通Condition・共通Detector・Start / Reset / Incomplete・Split
                   を選択してください。
                 </p>
                 <p className="muted">
-                  共通定義を作成し、Condition の参照や継承、使用箇所ごとの
-                  overrides を編集できます。
+                  共通Conditionは通常のConditionと同じプロパティで編集できます。
+                  使用箇所だけ変更すると、C++がパラメーターを自動生成します。
                 </p>
               </div>
             )}
           </section>
 
           <aside className="pane right-pane">
-            {rootPath && (selection?.kind === "definition"
-              || selection?.kind === "special"
-              || selection?.kind === "rule") ? (
+            {rootPath && inspectorMode ? (
               <>
                 <ConditionInspector
                   document={document}
                   schema={schema}
-                  usagePath={rootPath}
+                  rootPath={rootPath}
                   selectedPath={activePath ?? rootPath}
+                  mode={inspectorMode}
                   sendCommand={runCommand}
                 />
                 {activePath && rootPath && activePath.join("/") !== rootPath.join("/") ? (
-                  <button
-                    className="secondary"
-                    onClick={() => setSelectedPath(rootPath)}
-                  >
+                  <button className="secondary" onClick={() => setSelectedPath(rootPath)}>
                     root に戻る
                   </button>
                 ) : null}
@@ -439,16 +518,8 @@ export default function App() {
               <div className="inspector">
                 <h2>Properties</h2>
                 <p className="muted">
-                  Condition を選択すると、設定・参照・上書きを編集できます。
+                  Condition を選択すると、設定と共通定義の利用方法を編集できます。
                 </p>
-                {rootPath ? (
-                  <UsageModeToolbar
-                    document={document}
-                    selectedValue={undefined}
-                    selectedPath={rootPath}
-                    sendCommand={runCommand}
-                  />
-                ) : null}
               </div>
             )}
           </aside>
@@ -458,13 +529,10 @@ export default function App() {
       <footer className="statusbar">
         <span>
           {selection
-            ? formatPath(
-                document ?? emptyDemoState().document,
-                rootPath ?? [],
-              )
+            ? formatPath(document ?? emptyDemoState().document, rootPath ?? [])
             : "No selection"}
         </span>
-        <span>{isMapping(document?.start_condition) ? "start condition ready" : ""}</span>
+        <span>{document?.start_condition ? "start condition ready" : ""}</span>
       </footer>
     </div>
   );

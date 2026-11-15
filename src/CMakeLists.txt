@@ -9,7 +9,10 @@ add_library(divergencesplitter_core STATIC
     core/rules.cpp
     core/scenario_inheritance.cpp
     core/scenario_loader.cpp
+    core/scenario_v2.cpp
     core/text.cpp
+    core/value.cpp
+    core/yaml_value.cpp
 )
 
 add_library(divergencesplitter::core ALIAS divergencesplitter_core)

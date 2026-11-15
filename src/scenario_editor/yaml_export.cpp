@@ -23,77 +23,46 @@
 #endif
 
 #include "divergencesplitter/scenario/scenario.hpp"
+#include "divergencesplitter/scenario/yaml_value.hpp"
 
 namespace divergencesplitter::scenario_editor {
 namespace {
 
-ryml::csubstr view(const std::string& value) {
-    return ryml::csubstr{value.data(), value.size()};
-}
-
-ryml::NodeRef append_key(ryml::NodeRef parent, const std::string& key) {
-    ryml::NodeRef child = parent.append_child();
-    const ryml::csubstr stored_key = parent.tree()->copy_to_arena(view(key));
-    child.set_key(stored_key);
-    child.set_key_style(static_cast<ryml::type_bits>(ryml::scalar_style_choose_block(stored_key)));
-    return child;
-}
-
-void write_value(ryml::NodeRef node, const Value& value) {
-    switch (value.kind) {
-    case ValueKind::null_value:
-        node.set_val("null");
-        break;
-    case ValueKind::scalar:
-        node.set_val(view(value.scalar));
-        node.set_val_style(static_cast<ryml::type_bits>(
-            value.quoted
-                ? ryml::VAL_DQUO
-                : ryml::scalar_style_choose_block(view(value.scalar))
-        ));
-        break;
-    case ValueKind::alias:
-        node.set_val_ref(view(value.scalar));
-        break;
-    case ValueKind::sequence:
-        node.set_seq();
-        for (const auto& item : value.sequence) {
-            write_value(node.append_child(), item);
-        }
-        break;
-    case ValueKind::mapping:
-        node.set_map();
-        for (const auto& [key, item] : value.mapping) {
-            write_value(append_key(node, key), item);
-        }
-        break;
+Value definition_parameters(const std::vector<scenario::v2::ParameterDefinition>& parameters) {
+    Value result = Value::make_mapping();
+    for (const auto& parameter : parameters) {
+        result.set(parameter.name, parameter.default_value);
     }
+    return result;
 }
 
-void write_usage(ryml::NodeRef node, const ConditionUsage& usage) {
-    write_value(node, usage.value);
-}
-
-void write_rule(ryml::NodeRef node, const RuleDefinition& rule) {
-    write_usage(append_key(node, "condition"), rule.condition);
-    auto action = append_key(node, "action");
-    action.set_val(view(rule.action));
-    action.set_val_style(
-        static_cast<ryml::type_bits>(ryml::scalar_style_choose_block(view(rule.action)))
-    );
-}
-
-void write_scenario_rule(ryml::NodeRef node, const ScenarioRule& rule) {
-    node.set_map();
-    if (rule.sequence) {
-        auto sequence = append_key(node, "sequence");
-        sequence.set_seq();
-        for (const auto& step : rule.sequence_rules) {
-            write_rule(sequence.append_child(), step);
+Value definitions_value(const ScenarioDocument& document) {
+    Value definitions = Value::make_mapping();
+    if (!document.definitions.conditions.empty()) {
+        Value conditions = Value::make_mapping();
+        for (const auto& definition : document.definitions.conditions) {
+            Value entry = Value::make_mapping();
+            if (!definition.parameters.empty()) {
+                entry.set("parameters", definition_parameters(definition.parameters));
+            }
+            entry.set("condition", definition.condition);
+            conditions.set(definition.name, std::move(entry));
         }
-        return;
+        definitions.set("conditions", std::move(conditions));
     }
-    write_rule(node, rule.rule);
+    if (!document.definitions.detectors.empty()) {
+        Value detectors = Value::make_mapping();
+        for (const auto& definition : document.definitions.detectors) {
+            Value entry = Value::make_mapping();
+            if (!definition.parameters.empty()) {
+                entry.set("parameters", definition_parameters(definition.parameters));
+            }
+            entry.set("detector", definition.detector);
+            detectors.set(definition.name, std::move(entry));
+        }
+        definitions.set("detectors", std::move(detectors));
+    }
+    return definitions;
 }
 
 }  // namespace
@@ -103,53 +72,33 @@ std::string export_scenario_yaml(const ScenarioDocument& document) {
         throw ScenarioEditorError("scenario.start_condition is required");
     }
     validate_scenario_document(document);
+    const auto source = to_v2_document(document);
+
+    Value root = Value::make_mapping();
+    root.set("schema_version", Value::make_scalar("2"));
+    Value definitions = definitions_value(document);
+    if (!definitions.mapping.empty()) {
+        root.set("definitions", std::move(definitions));
+    }
+    root.set("start_condition", source.start_condition);
+    if (source.reset_condition) {
+        root.set("reset_condition", *source.reset_condition);
+    }
+    if (source.incomplete_condition) {
+        root.set("incomplete_condition", *source.incomplete_condition);
+    }
+    root.set("splits", source.splits);
+    for (const auto& [key, value] : document.extra_root) {
+        root.set(key, value);
+    }
 
     ryml::Tree tree;
-    ryml::NodeRef root = tree.rootref();
-    root.set_map();
-
-    if (!document.definitions.empty()) {
-        auto definitions = append_key(root, "definitions");
-        definitions.set_map();
-        for (const auto* definition : ordered_definitions(document)) {
-            auto node = append_key(definitions, definition->name);
-            write_value(node, definition->value);
-            node.set_val_anchor(view(definition->name));
-        }
-    }
-
-    if (document.start_condition) {
-        write_usage(append_key(root, "start_condition"), *document.start_condition);
-    }
-    if (document.reset_condition) {
-        write_usage(append_key(root, "reset_condition"), *document.reset_condition);
-    }
-    if (document.incomplete_condition) {
-        write_usage(append_key(root, "incomplete_condition"), *document.incomplete_condition);
-    }
-
-    auto splits = append_key(root, "splits");
-    splits.set_seq();
-    for (const auto& split : document.splits) {
-        auto node = splits.append_child();
-        if (!split) {
-            node.set_val("null");
-            continue;
-        }
-        node.set_map();
-        auto rules = append_key(node, "rules");
-        rules.set_seq();
-        for (const auto& rule : split->rules) {
-            write_scenario_rule(rules.append_child(), rule);
-        }
-    }
-
-    for (const auto& [key, value] : document.extra_root) {
-        write_value(append_key(root, key), value);
-    }
+    ryml::NodeRef tree_root = tree.rootref();
+    tree_root.set_map();
+    scenario::write_yaml_value(tree_root, root);
 
     std::string output = ryml::emitrs_yaml<std::string>(tree);
-    return "# Generated by DivergenceSplitter Scenario Builder.\n" + output;
+    return "# Generated by DivergenceSplitter Scenario Builder (YAML v2).\n" + output;
 }
 
 void save_scenario_document(const ScenarioDocument& document, const std::filesystem::path& path) {

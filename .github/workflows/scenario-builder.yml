@@ -15,6 +15,8 @@ on:
       - "tests/CMakeLists.txt"
       - "tests/scenario_editor_tests.cpp"
       - "frontend/scenario-builder/**"
+      - "examples/scenario-v2.yaml"
+      - "docs/scenario-builder.md"
   push:
     branches: [main]
   workflow_dispatch:
@@ -89,13 +91,13 @@ jobs:
       - name: Build
         run: >-
           cmake --build build/builder
-          --target ScenarioBuilder divergencesplitter_scenario_editor_tests
+          --target ScenarioBuilder divergencesplitter_scenario_editor_tests divergencesplitter_scenario_v2_tests
           --parallel
 
       - name: Test
         run: >-
           ctest --test-dir build/builder
-          -R ScenarioEditor
+          -R "ScenarioEditor|ScenarioV2"
           --output-on-failure
           --interactive-debug-mode 0
           --output-junit scenario-builder-ctest.xml
@@ -112,7 +114,7 @@ jobs:
           if (-not (Test-Path "$dist/scenario-builder-ui/index.html")) {
             throw "scenario-builder-ui/index.html was not installed"
           }
-          $checkPath = (Resolve-Path "examples/minimal-scenario.yaml").Path
+          $checkPath = (Resolve-Path "examples/scenario-v2.yaml").Path
           & "$dist/ScenarioBuilder.exe" --check $checkPath
           if ($LASTEXITCODE -ne 0) {
             throw "Packaged ScenarioBuilder failed its --check smoke test"
