@@ -956,3 +956,72 @@ button.icon.rename-button:hover:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+.condition-summary-block {
+  min-width: 0;
+}
+
+.condition-summary-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #e5eefb;
+  font-weight: 600;
+}
+
+.condition-summary-name {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.condition-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.condition-summary-line > span {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.condition-summary-type {
+  color: #e5eefb;
+  font-weight: 600;
+}
+
+.condition-override {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-body {
+  align-items: flex-start;
+}
+
+.condition-link .condition-summary-block {
+  width: 100%;
+}
+
+.sequence-step {
+  align-items: flex-start;
+}
+
+.sequence-condition-summary {
+  flex: 1;
+  min-width: 0;
+}

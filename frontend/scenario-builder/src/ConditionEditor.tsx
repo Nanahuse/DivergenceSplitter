@@ -29,46 +29,12 @@ import {
   type WorkspaceInfo,
 } from "./model";
 import { Tooltip } from "./Tooltip";
+import { ConditionSummary } from "./ConditionSummary";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
 function assetName(asset: string): string {
   return asset.replace(/^Asset\//, "");
-}
-
-function detectorTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    root_mean_square_similarity: "RMSE",
-    mean_absolute_similarity: "MAE",
-    template_match: "template match",
-    histogram_similarity: "histogram",
-    perceptual_hash_similarity: "pHash",
-    difference_hash_similarity: "dHash",
-    mean_brightness: "brightness",
-    color_range: "color range",
-    phase_correlation: "phase correlation",
-  };
-  return labels[type] ?? type;
-}
-
-function settingLabel(path: Path): string {
-  const leaf = String(path[path.length - 1] ?? "");
-  if (leaf === "reference") {
-    return "参照画像";
-  }
-  return path
-    .map((part) => typeof part === "number" ? `[${part}]` : part)
-    .join(".");
-}
-
-function settingValue(path: Path, value: JsonValue): string {
-  if (value === null) {
-    return "(未設定)";
-  }
-  if (String(path[path.length - 1] ?? "") === "reference" && typeof value === "string") {
-    return assetName(value);
-  }
-  return compactValue(value);
 }
 
 function parseInputValue(text: string): JsonValue {
@@ -1040,23 +1006,6 @@ function ConditionTree({
     );
   }
   if (isSharedUse(value)) {
-    const usageName = sharedUseName(value);
-    const usageDetails = (document.condition_usages ?? []).find((item) =>
-      pathEquals(item.path, nodePath),
-    );
-    const resolved = usageDetails?.resolved
-      ?? conditionDefinitionByName(document, usageName)?.condition_resolved
-      ?? value;
-    const resolvedMapping = isMapping(resolved) ? resolved : {};
-    const detector = isMapping(resolvedMapping.detector)
-      ? resolvedMapping.detector
-      : undefined;
-    const detectorType = detector ? scalar(detector.type) : null;
-    const reference = detector ? scalar(detector.reference) : null;
-    const overrides = usageDetails?.overrides ?? [];
-    const referenceOverridden = overrides.some(
-      (item) => String(item.path[item.path.length - 1] ?? "") === "reference",
-    );
     return (
       <div
         className={`condition-card shared-condition ${selected ? "selected" : ""}`}
@@ -1065,50 +1014,14 @@ function ConditionTree({
           onSelect(nodePath);
         }}
       >
-        <div className="condition-header">
-          <span className="condition-type">{usageName}</span>
-          <span className="shared-badge" title="共通定義を参照">共通</span>
-        </div>
-        <div className="condition-summary">
-          <span>{conditionType(resolvedMapping) || "condition"}</span>
-          {resolvedMapping.minimum_score !== undefined ? (
-            <span>score {compactValue(resolvedMapping.minimum_score)}</span>
-          ) : null}
-          {resolvedMapping.duration !== undefined ? (
-            <span>{compactValue(resolvedMapping.duration)}</span>
-          ) : null}
-          {resolvedMapping.within !== undefined ? (
-            <span>within {compactValue(resolvedMapping.within)}</span>
-          ) : null}
-          {detectorType ? <span>{detectorTypeLabel(detectorType)}</span> : null}
-          {reference && !referenceOverridden ? (
-            <span>参照画像 {assetName(reference)}</span>
-          ) : null}
-        </div>
-        {overrides.length > 0 ? (
-          <div className="condition-overrides">
-            <span className="condition-overrides-title">個別設定</span>
-            {overrides.slice(0, 2).map((item, index) => (
-              <span
-                key={`${item.parameter}-${index}`}
-                className="condition-override"
-              >
-                {settingLabel(item.path)}：{settingValue(item.path, item.default)}
-                {" → "}
-                {settingValue(item.path, item.value)}
-              </span>
-            ))}
-            {overrides.length > 2 ? (
-              <span className="condition-override-more">
-                ほか{overrides.length - 2}項目
-              </span>
-            ) : null}
-          </div>
-        ) : null}
+        <ConditionSummary
+          document={document}
+          condition={value}
+          path={nodePath}
+        />
       </div>
     );
-  }
-  if (!isMapping(value)) {
+  }  if (!isMapping(value)) {
     return <div className="condition-card scalar">{compactValue(value)}</div>;
   }
   const type = conditionType(value);
@@ -1124,19 +1037,12 @@ function ConditionTree({
       <div className="condition-header">
         <span className="condition-type">{type || "condition"}</span>
       </div>
-      <div className="condition-summary">
-        {value.minimum_score !== undefined ? (
-          <span>score {compactValue(value.minimum_score)}</span>
-        ) : null}
-        {value.duration !== undefined ? <span>{compactValue(value.duration)}</span> : null}
-        {value.within !== undefined ? <span>within {compactValue(value.within)}</span> : null}
-        {value.count !== undefined ? <span>count {compactValue(value.count)}</span> : null}
-        {isSharedUse(value.detector) ? (
-          <span>detector use {sharedUseName(value.detector)}</span>
-        ) : isMapping(value.detector) ? (
-          <span>detector {scalar(value.detector.type) ?? ""}</span>
-        ) : null}
-      </div>
+      <ConditionSummary
+        document={document}
+        condition={value}
+        path={nodePath}
+        showType={false}
+      />
       {childKeys.map((key) => {
         const child = value[key];
         if (key === "conditions") {

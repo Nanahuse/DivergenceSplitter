@@ -1,21 +1,11 @@
 import {
   actions,
-  conditionType,
-  isSharedUse,
-  sharedUseName,
-  type JsonValue,
   type Path,
   type ScenarioDocument,
   type ScenarioRule,
 } from "./model";
 import { Tooltip } from "./Tooltip";
-
-function conditionSummary(condition: JsonValue): string {
-  if (isSharedUse(condition)) {
-    return `use ${sharedUseName(condition)}`;
-  }
-  return conditionType(condition) || "condition";
-}
+import { ConditionSummary } from "./ConditionSummary";
 
 export function RulesEditor({
   document,
@@ -152,7 +142,22 @@ export function RulesEditor({
                 <div className="sequence-steps">
                   {rule.sequence.map((step, stepIndex) => (
                     <div key={stepIndex} className="sequence-step">
-                      <span>{conditionSummary(step.condition)}</span>
+                      <div className="sequence-condition-summary">
+                        <ConditionSummary
+                          document={document}
+                          condition={step.condition}
+                          resolved={step.condition_resolved}
+                          path={[
+                            "splits",
+                            splitIndex,
+                            "rules",
+                            index,
+                            "sequence",
+                            stepIndex,
+                            "condition",
+                          ]}
+                        />
+                      </div>
                       <select
                         value={step.action}
                         onChange={(event) =>
@@ -188,7 +193,12 @@ export function RulesEditor({
                       ])
                     }
                   >
-                    {conditionSummary(rule.condition ?? null)}
+                    <ConditionSummary
+                      document={document}
+                      condition={rule.condition ?? null}
+                      resolved={rule.condition_resolved}
+                      path={["splits", splitIndex, "rules", index, "condition"]}
+                    />
                   </button>
                   <select
                     value={rule.action}
