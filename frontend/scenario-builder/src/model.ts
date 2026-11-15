@@ -423,6 +423,13 @@ export function conditionAtPath(
     }
     const split = document.splits[splitIndex];
     const rule = split?.rules[ruleIndex];
+    if (path[4] === "sequence") {
+      const stepIndex = path[5];
+      if (typeof stepIndex !== "number") {
+        return undefined;
+      }
+      return rule?.sequence?.[stepIndex]?.condition;
+    }
     return rule?.condition;
   }
   return undefined;
@@ -459,7 +466,15 @@ export function resolvedRootAtPath(
     return document.incomplete_condition_resolved ?? undefined;
   }
   if (path[0] === "splits" && typeof path[1] === "number" && typeof path[3] === "number") {
-    return document.splits[path[1]]?.rules[path[3]]?.condition_resolved;
+    const rule = document.splits[path[1]]?.rules[path[3]];
+    if (path[4] === "sequence") {
+      const stepIndex = path[5];
+      if (typeof stepIndex !== "number") {
+        return undefined;
+      }
+      return rule?.sequence?.[stepIndex]?.condition_resolved;
+    }
+    return rule?.condition_resolved;
   }
   return undefined;
 }
@@ -503,6 +518,9 @@ export function formatPath(_document: ScenarioDocument, path: Path): string {
   if (path[0] === "splits" && typeof path[1] === "number") {
     const split = path[1] + 1;
     if (typeof path[3] === "number") {
+      if (path[4] === "sequence" && typeof path[5] === "number") {
+        return `Split ${split} / Rule ${path[3] + 1} / Step ${path[5] + 1}`;
+      }
       return `Split ${split} / Rule ${path[3] + 1}`;
     }
     return `Split ${split}`;

@@ -142,7 +142,21 @@ export function RulesEditor({
                 <div className="sequence-steps">
                   {rule.sequence.map((step, stepIndex) => (
                     <div key={stepIndex} className="sequence-step">
-                      <div className="sequence-condition-summary">
+                      <button
+                        type="button"
+                        className="sequence-condition-link"
+                        onClick={() =>
+                          onSelectCondition([
+                            "splits",
+                            splitIndex,
+                            "rules",
+                            index,
+                            "sequence",
+                            stepIndex,
+                            "condition",
+                          ])
+                        }
+                      >
                         <ConditionSummary
                           document={document}
                           condition={step.condition}
@@ -157,7 +171,7 @@ export function RulesEditor({
                             "condition",
                           ]}
                         />
-                      </div>
+                      </button>
                       <select
                         value={step.action}
                         onChange={(event) =>

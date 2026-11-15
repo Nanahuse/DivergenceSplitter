@@ -200,11 +200,22 @@ Value* resolve_path(ScenarioDocument& document, const Path& path) {
             throw ScenarioEditorError("rule index is out of range");
         }
         auto& rule = split.rules[rule_index];
-        if (require_key(path, 4, "splits").key != "condition") {
-            throw ScenarioEditorError("only rule conditions can be edited");
-        }
+        const auto& condition_segment = require_key(path, 4, "splits");
         if (rule.sequence) {
-            throw ScenarioEditorError("sequence rules must address a condition step");
+            if (condition_segment.key != "sequence") {
+                throw ScenarioEditorError("sequence rules must address a condition step");
+            }
+            const auto step_index = require_index(path, 5, "splits").index;
+            if (step_index >= rule.sequence_rules.size()) {
+                throw ScenarioEditorError("sequence step is out of range");
+            }
+            if (require_key(path, 6, "splits").key != "condition") {
+                throw ScenarioEditorError("only sequence step conditions can be edited");
+            }
+            return traverse(&rule.sequence_rules[step_index].condition.value, path, 7);
+        }
+        if (condition_segment.key != "condition") {
+            throw ScenarioEditorError("only rule conditions can be edited");
         }
         return traverse(&rule.rule.condition.value, path, 5);
     }
@@ -1069,6 +1080,60 @@ void set_definition_setting(
     }
 }
 
+bool contains_parameter_reference(const Value& value) {
+    if (value.is_parameter_reference()) {
+        return true;
+    }
+    for (const auto& item : value.sequence) {
+        if (contains_parameter_reference(item)) {
+            return true;
+        }
+    }
+    for (const auto& [key, item] : value.mapping) {
+        (void)key;
+        if (contains_parameter_reference(item)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void extract_condition_definition(
+    ScenarioDocument& document,
+    const nlohmann::json& command
+) {
+    const Path path = parse_path(command);
+    const std::string name = command.at("name").get<std::string>();
+    if (name.empty()) {
+        throw ScenarioEditorError("condition definition names must not be empty");
+    }
+    if (find_condition_definition(document, name) != nullptr) {
+        throw ScenarioEditorError("condition definition already exists: " + name);
+    }
+    if (path.size() == 3 && !path[0].is_index && path[0].key == "definitions"
+        && !path[1].is_index && path[1].key == "conditions") {
+        throw ScenarioEditorError("a condition definition itself cannot be extracted");
+    }
+    Value* target = resolve_path(document, path);
+    if (is_usage_value(*target)) {
+        throw ScenarioEditorError("shared definition usages cannot be extracted");
+    }
+    if (!target->is_mapping() || target->find("type") == nullptr) {
+        throw ScenarioEditorError("only inline conditions can be extracted");
+    }
+    if (contains_parameter_reference(*target)) {
+        throw ScenarioEditorError(
+            "conditions that reference parent parameters cannot be extracted"
+        );
+    }
+
+    Value condition = *target;
+    *target = Value::make_mapping({{"use", Value::make_scalar(name)}});
+    document.definitions.conditions.push_back(
+        scenario::v2::SharedCondition{name, {}, std::move(condition)}
+    );
+}
+
 RuleDefinition default_rule() {
     RuleDefinition rule;
     rule.condition.value = Value::make_mapping({
@@ -1456,6 +1521,10 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         } else {
             rules[index].rule.action = action;
         }
+        return;
+    }
+    if (type == "extract_condition_definition") {
+        extract_condition_definition(document, command);
         return;
     }
     if (type == "use_condition") {

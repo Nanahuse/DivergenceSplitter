@@ -20,6 +20,7 @@ type Selection =
   | { kind: "special"; name: SpecialCondition }
   | { kind: "split"; index: number }
   | { kind: "rule"; split: number; rule: number }
+  | { kind: "sequence-rule"; split: number; rule: number; step: number }
   | null;
 
 type SpecialCondition = "start_condition" | "reset_condition" | "incomplete_condition";
@@ -45,6 +46,16 @@ function selectionPath(selection: Selection): Path | null {
       return [selection.name];
     case "rule":
       return ["splits", selection.split, "rules", selection.rule, "condition"];
+    case "sequence-rule":
+      return [
+        "splits",
+        selection.split,
+        "rules",
+        selection.rule,
+        "sequence",
+        selection.step,
+        "condition",
+      ];
     case "split":
       return null;
   }
@@ -127,6 +138,13 @@ export default function App() {
         setSelection(null);
       }
     }
+    if (selection?.kind === "sequence-rule") {
+      const split = state.document.splits[selection.split];
+      const rule = split?.rules[selection.rule];
+      if (!rule?.sequence || selection.step >= rule.sequence.length) {
+        setSelection(null);
+      }
+    }
   }, [state, selection]);
 
   const rootPath = useMemo(() => selectionPath(selection), [selection]);
@@ -157,6 +175,17 @@ export default function App() {
         : "rename_detector_definition",
       from,
       to,
+    });
+  }, [preview, runCommand]);
+
+  const extractConditionDefinition = useCallback((path: Path, name: string) => {
+    if (preview) {
+      return;
+    }
+    runCommand({
+      type: "extract_condition_definition",
+      path,
+      name,
     });
   }, [preview, runCommand]);
 
@@ -567,7 +596,9 @@ export default function App() {
                 }
               />
             ) : rootPath
-              && (selection?.kind === "special" || selection?.kind === "rule") ? (
+              && (selection?.kind === "special"
+                || selection?.kind === "rule"
+                || selection?.kind === "sequence-rule") ? (
               <ConditionPane
                 document={document}
                 rootPath={rootPath}
@@ -593,11 +624,20 @@ export default function App() {
                 document={document}
                 splitIndex={splitSelection.index}
                 onSelectCondition={(path) => {
-                  setSelection({
-                    kind: "rule",
-                    split: splitSelection.index,
-                    rule: path[3] as number,
-                  });
+                  if (path[4] === "sequence" && typeof path[5] === "number") {
+                    setSelection({
+                      kind: "sequence-rule",
+                      split: splitSelection.index,
+                      rule: path[3] as number,
+                      step: path[5],
+                    });
+                  } else {
+                    setSelection({
+                      kind: "rule",
+                      split: splitSelection.index,
+                      rule: path[3] as number,
+                    });
+                  }
                   setSelectedPath(path);
                 }}
                 sendCommand={runCommand}
@@ -629,6 +669,7 @@ export default function App() {
                   selectedPath={activePath ?? rootPath}
                   mode={inspectorMode}
                   sendCommand={runCommand}
+                  onExtractCondition={extractConditionDefinition}
                 />
                 {activePath && rootPath && activePath.join("/") !== rootPath.join("/") ? (
                   <button className="secondary" onClick={() => setSelectedPath(rootPath)}>

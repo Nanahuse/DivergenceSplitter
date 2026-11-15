@@ -1040,3 +1040,42 @@ button.icon.rename-button:hover:not(:disabled) {
 .left-pane > section > .section-title + * {
   margin-top: 7px;
 }
+
+.sequence-condition-link {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: #dbe6f3;
+  text-align: left;
+}
+
+.extract-condition-button {
+  align-self: flex-start;
+  margin: 8px 0;
+}
+
+.extract-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.extract-dialog-body p {
+  margin: 0;
+}
+
+.extract-dialog-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+}

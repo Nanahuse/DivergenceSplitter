@@ -1181,6 +1181,90 @@ function ConditionTree({
   );
 }
 
+function ExtractConditionDialog({
+  existingNames,
+  onClose,
+  onSubmit,
+}: {
+  existingNames: string[];
+  onClose: () => void;
+  onSubmit: (name: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const submit = () => {
+    const next = name.trim();
+    if (!next) {
+      setError("共通定義名を入力してください。");
+      return;
+    }
+    if (existingNames.includes(next)) {
+      setError("同名の共通Conditionが既に存在します。");
+      return;
+    }
+    onSubmit(next);
+    onClose();
+  };
+
+  return (
+    <div className="asset-dialog-backdrop" onMouseDown={onClose}>
+      <form
+        className="asset-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="extract-condition-title"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <div className="asset-dialog-header">
+          <h2 id="extract-condition-title">共通 Condition として登録</h2>
+          <button type="button" className="icon" title="閉じる" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="extract-dialog-body">
+          <p className="muted">
+            現在の Condition を共通定義に移動し、この場所を共通定義への参照に置き換えます。
+          </p>
+          <label className="extract-dialog-name">
+            <span>共通定義名</span>
+            <input
+              autoFocus
+              value={name}
+              placeholder="course_clear_condition"
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          {error ? <p className="error-text">{error}</p> : null}
+        </div>
+        <div className="asset-dialog-footer">
+          <span />
+          <div className="dialog-actions">
+            <button type="button" className="secondary" onClick={onClose}>
+              取消
+            </button>
+            <button type="submit">登録</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function DefinitionNameEditor({
   label,
   name,
@@ -1307,6 +1391,10 @@ export function ConditionPane({
   const ruleIndex = splitIndex !== null && typeof rootPath[3] === "number"
     ? rootPath[3]
     : null;
+  const stepIndex = splitIndex !== null && rootPath[4] === "sequence"
+    && typeof rootPath[5] === "number"
+    ? rootPath[5]
+    : null;
   const breadcrumbItems: BreadcrumbItem[] = splitIndex === null
     ? []
     : [
@@ -1319,6 +1407,9 @@ export function ConditionPane({
         ...(ruleIndex === null
           ? []
           : [{ label: `Rule ${ruleIndex + 1}` }]),
+        ...(stepIndex === null
+          ? []
+          : [{ label: `Step ${stepIndex + 1}` }]),
       ];
   const definitionName = definition ? String(rootPath[2] ?? "") : "";
   const definitionNames = document.definitions.conditions.map(
@@ -1392,7 +1483,15 @@ function valueAtPathRawRoot(
     return document.incomplete_condition ?? undefined;
   }
   if (rootPath[0] === "splits" && typeof rootPath[1] === "number") {
-    return document.splits[rootPath[1]]?.rules[rootPath[3] as number]?.condition;
+    const rule = document.splits[rootPath[1]]?.rules[rootPath[3] as number];
+    if (rootPath[4] === "sequence") {
+      const stepIndex = rootPath[5];
+      if (typeof stepIndex !== "number") {
+        return undefined;
+      }
+      return rule?.sequence?.[stepIndex]?.condition;
+    }
+    return rule?.condition;
   }
   return undefined;
 }
@@ -1829,6 +1928,7 @@ export function ConditionInspector({
   mode,
   sendCommand,
   onAddAsset,
+  onExtractCondition,
 }: {
   document: ScenarioDocument;
   schema: EditorSchema;
@@ -1838,6 +1938,7 @@ export function ConditionInspector({
   mode: "inline" | "definition-condition" | "usage-condition" | "definition-detector";
   sendCommand: (command: Record<string, unknown>) => void;
   onAddAsset?: (apply: (asset: string) => void) => void;
+  onExtractCondition?: (path: Path, name: string) => void;
 }) {
   const rawRoot = mode === "definition-detector"
     ? detectorDefinitionByName(document, String(rootPath[2]))?.detector
@@ -1859,6 +1960,11 @@ export function ConditionInspector({
     && isSharedUse(selectedRaw)
   ) ? selectedRaw : undefined;
   const value = valueAtPath(displayRoot, relative);
+  const canExtract = mode === "inline"
+    && isMapping(selectedRaw)
+    && !isSharedUse(selectedRaw)
+    && !isParameterReference(selectedRaw);
+  const [extractOpen, setExtractOpen] = useState(false);
   const actions = nestedUsage
     ? buildNestedConditionUsageActions(
         document,
@@ -1901,11 +2007,27 @@ export function ConditionInspector({
           sendCommand={sendCommand}
         />
       ) : null}
+      {canExtract && onExtractCondition ? (
+        <button
+          type="button"
+          className="secondary extract-condition-button"
+          onClick={() => setExtractOpen(true)}
+        >
+          共通 Condition として登録
+        </button>
+      ) : null}
       <SettingsEditor
         value={value}
         basePath={nestedUsage ? [] : relative}
         actions={actions}
       />
+      {extractOpen ? (
+        <ExtractConditionDialog
+          existingNames={document.definitions.conditions.map((item) => item.name)}
+          onClose={() => setExtractOpen(false)}
+          onSubmit={(name) => onExtractCondition?.(selectedPath, name)}
+        />
+      ) : null}
     </div>
   );
 }

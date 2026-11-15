@@ -1000,6 +1000,143 @@ TEST(ScenarioEditorV2, RenameDetectorDefinitionUpdatesAllUsagesAndUndo) {
     EXPECT_EQ(definition->condition.find("detector")->find("use")->scalar, "luma");
 }
 
+TEST(ScenarioEditorV2, ExtractConditionDefinitionMovesInlineRuleCondition) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{{"type", "add_split"}, {"index", 0}});
+    apply_editor_command(session, nlohmann::json{{"type", "add_rule"}, {"split", 0}});
+    apply_editor_command(session, nlohmann::json{
+        {"type", "extract_condition_definition"},
+        {"path", path({"splits", 0, "rules", 0, "condition"})},
+        {"name", "extracted"},
+    });
+
+    auto* definition = find_condition_definition(session.document, "extracted");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_TRUE(definition->parameters.empty());
+    ASSERT_NE(definition->condition.find("type"), nullptr);
+    EXPECT_EQ(definition->condition.find("type")->scalar, "elapsed");
+    const auto& rule = session.document.splits[0]->rules[0].rule;
+    EXPECT_TRUE(rule.condition.is_shared_use());
+    EXPECT_EQ(rule.condition.use_name(), "extracted");
+
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    EXPECT_EQ(find_condition_definition(session.document, "extracted"), nullptr);
+    EXPECT_FALSE(session.document.splits[0]->rules[0].rule.condition.is_shared_use());
+    apply_editor_command(session, nlohmann::json{{"type", "redo"}});
+    EXPECT_NE(find_condition_definition(session.document, "extracted"), nullptr);
+    EXPECT_TRUE(session.document.splits[0]->rules[0].rule.condition.is_shared_use());
+}
+
+TEST(ScenarioEditorV2, ExtractConditionDefinitionMovesNestedChild) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"start_condition"})},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "detected"}, {"minimum_score", "0.9"},
+                 {"detector", {{"type", "mean_brightness"}}}},
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "extract_condition_definition"},
+        {"path", path({"start_condition", "conditions", 0})},
+        {"name", "child_condition"},
+    });
+
+    auto* definition = find_condition_definition(session.document, "child_condition");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_EQ(definition->condition.find("type")->scalar, "detected");
+    const auto& start_conditions = session.document.start_condition->value
+        .find("conditions")->sequence;
+    ASSERT_EQ(start_conditions.size(), 2U);
+    ASSERT_NE(start_conditions[0].find("use"), nullptr);
+    EXPECT_EQ(start_conditions[0].find("use")->scalar, "child_condition");
+    EXPECT_EQ(start_conditions[1].find("type")->scalar, "elapsed");
+}
+
+TEST(ScenarioEditorV2, ExtractConditionDefinitionSupportsSequenceStep) {
+    EditorSession session;
+    session.document = import_scenario_yaml(R"(
+schema_version: 2
+start_condition: {type: elapsed, duration: 1s}
+splits:
+  - rules:
+      - sequence:
+          - condition: {type: elapsed, duration: 2s}
+            action: split
+)");
+    apply_editor_command(session, nlohmann::json{
+        {"type", "extract_condition_definition"},
+        {"path", path({"splits", 0, "rules", 0, "sequence", 0, "condition"})},
+        {"name", "sequence_condition"},
+    });
+
+    auto* definition = find_condition_definition(session.document, "sequence_condition");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_EQ(definition->condition.find("type")->scalar, "elapsed");
+    const auto& step = session.document.splits[0]->rules[0].sequence_rules[0];
+    EXPECT_TRUE(step.condition.is_shared_use());
+    EXPECT_EQ(step.condition.use_name(), "sequence_condition");
+
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    EXPECT_EQ(find_condition_definition(session.document, "sequence_condition"), nullptr);
+    EXPECT_FALSE(
+        session.document.splits[0]->rules[0].sequence_rules[0]
+            .condition.is_shared_use()
+    );
+}
+
+TEST(ScenarioEditorV2, ExtractConditionDefinitionRejectsSharedAndParameterizedConditions) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "wait"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"start_condition"})},
+        {"name", "wait"},
+    });
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "extract_condition_definition"},
+            {"path", path({"start_condition"})},
+            {"name", "copy"},
+        }),
+        ScenarioEditorError
+    );
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "parent"},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "parent"},
+        {"setting_path", path({"conditions", 0, "duration"})},
+    });
+    EXPECT_THROW(
+        apply_editor_command(session, nlohmann::json{
+            {"type", "extract_condition_definition"},
+            {"path", path({"definitions", "conditions", "parent", "conditions", 0})},
+            {"name", "child"},
+        }),
+        ScenarioEditorError
+    );
+}
+
 TEST(ScenarioEditorV2, RenameAndDetachUpdateReferences) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
