@@ -1147,7 +1147,6 @@ function ConditionTree({
                     sendCommand({
                       type: "add_condition",
                       path: nodePath,
-                      index: child.length,
                       value: defaultCondition,
                     });
                   }}

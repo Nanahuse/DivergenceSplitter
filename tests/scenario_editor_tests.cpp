@@ -696,6 +696,114 @@ TEST(ScenarioEditorV2, ExposesNestedConditionParameter) {
         scalar_setting(require_condition(resolved, 0), "duration"),
         "4s"
     );
+
+    const auto state = editor_state_json(session);
+    const auto usages = state["document"]["condition_usages"];
+    const auto nested_usage = std::find_if(
+        usages.begin(),
+        usages.end(),
+        [&](const auto& item) {
+            return item["path"] == path({
+                "definitions", "conditions", "parent", "conditions", 0
+            });
+        }
+    );
+    ASSERT_NE(nested_usage, usages.end());
+    EXPECT_EQ((*nested_usage)["name"], "child");
+    EXPECT_TRUE((*nested_usage)["overrides"].empty());
+    EXPECT_EQ((*nested_usage)["resolved"]["duration"], "1s");
+    const auto start_usage = std::find_if(
+        usages.begin(),
+        usages.end(),
+        [&](const auto& item) {
+            return item["path"] == path({"start_condition"});
+        }
+    );
+    ASSERT_NE(start_usage, usages.end());
+    ASSERT_EQ((*start_usage)["overrides"].size(), 1U);
+    EXPECT_EQ(
+        (*start_usage)["overrides"][0]["path"],
+        path({"conditions", 0, "duration"})
+    );
+    EXPECT_EQ((*start_usage)["overrides"][0]["default"], "1s");
+    EXPECT_EQ((*start_usage)["overrides"][0]["value"], "4s");
+}
+
+TEST(ScenarioEditorV2, EditorStateResolvesNestedSharedConditionInsideAny) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "child"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "child"},
+        {"setting_path", path({"duration"})},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "parent"},
+        {"value", {
+            {"type", "any"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "elapsed"}, {"duration", "1s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"definitions", "conditions", "parent", "conditions", 0})},
+        {"name", "child"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "expose_parameter"},
+        {"kind", "condition"},
+        {"name", "parent"},
+        {"setting_path", path({"conditions", 0, "duration"})},
+    });
+
+    const auto state = editor_state_json(session);
+    const auto usages = state["document"]["condition_usages"];
+    const auto usage = std::find_if(
+        usages.begin(),
+        usages.end(),
+        [&](const auto& item) {
+            return item["path"] == path({
+                "definitions", "conditions", "parent", "conditions", 0
+            });
+        }
+    );
+    ASSERT_NE(usage, usages.end());
+    EXPECT_EQ((*usage)["resolved"]["duration"], "1s");
+    EXPECT_TRUE((*usage)["overrides"].empty());
+}
+
+TEST(ScenarioEditorV2, AppendingConditionWithoutIndexKeepsEditorStateValid) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"start_condition"})},
+        {"value", {
+            {"type", "then"},
+            {"conditions", nlohmann::json::array({
+                {{"type", "elapsed"}, {"duration", "1s"}},
+                {{"type", "elapsed"}, {"duration", "2s"}},
+                {{"type", "elapsed"}, {"duration", "3s"}},
+            })},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "add_condition"},
+        {"path", path({"start_condition"})},
+        {"value", {{"type", "elapsed"}, {"duration", "4s"}}},
+    });
+    const auto& conditions = session.document.start_condition->value
+        .find("conditions")->sequence;
+    ASSERT_EQ(conditions.size(), 4U);
+    EXPECT_EQ(conditions.back().find("duration")->scalar, "4s");
+    EXPECT_NO_THROW((void)editor_state_json(session));
 }
 
 TEST(ScenarioEditorV2, NestedSharedConditionUsageUpdatesChildWith) {

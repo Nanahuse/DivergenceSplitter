@@ -1926,38 +1926,181 @@ std::map<std::string, std::vector<Path>> parameter_paths_for_definition(
     return result;
 }
 
-nlohmann::json condition_usages_json(ScenarioDocument& document) {
+nlohmann::json condition_usage_json(
+    ScenarioDocument& document,
+    const Value& root,
+    const std::string& owner_name,
+    const Path& absolute_base,
+    const Path& relative_path,
+    const Value& usage
+) {
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar()) {
+        return nullptr;
+    }
+    auto* definition = find_condition_definition(document, use->scalar);
+    if (definition == nullptr) {
+        return nullptr;
+    }
+    const DefinitionRef definition_ref{
+        DefinitionKind::condition,
+        definition->name,
+        &definition->condition,
+        &definition->parameters,
+    };
+
+    Value resolved_parent = owner_name.empty()
+        ? scenario::v2::resolve_condition(document.definitions, root)
+        : scenario::v2::resolve_condition(
+            document.definitions,
+            Value::make_mapping({{"use", Value::make_scalar(owner_name)}})
+        );
+
+    Value default_parent;
+    if (owner_name.empty()) {
+        Value modified_root = root;
+        Value* modified_usage = traverse(&modified_root, relative_path, 0);
+        modified_usage->erase("with");
+        default_parent = scenario::v2::resolve_condition(
+            document.definitions,
+            modified_root
+        );
+    } else {
+        scenario::v2::Definitions modified_definitions = document.definitions;
+        auto* modified_definition = scenario::v2::find_condition(
+            modified_definitions,
+            owner_name
+        );
+        if (modified_definition == nullptr) {
+            return nullptr;
+        }
+        Value* modified_usage = traverse(
+            &modified_definition->condition,
+            relative_path,
+            0
+        );
+        modified_usage->erase("with");
+        default_parent = scenario::v2::resolve_condition(
+            modified_definitions,
+            Value::make_mapping({{"use", Value::make_scalar(owner_name)}})
+        );
+    }
+
+    const Value null_value = Value::make_null();
+    const Value* resolved = value_at_path(resolved_parent, relative_path);
+    const Value* default_resolved = value_at_path(default_parent, relative_path);
+    const auto parameter_paths = parameter_paths_for_definition(
+        document,
+        definition_ref
+    );
+
+    nlohmann::json overrides = nlohmann::json::array();
+    const auto* with = usage.find("with");
+    if (with != nullptr && with->is_mapping()) {
+        for (const auto& [parameter, forwarded] : with->mapping) {
+            if (forwarded.is_parameter_reference()) {
+                continue;
+            }
+            const auto found = parameter_paths.find(parameter);
+            if (found == parameter_paths.end()) {
+                continue;
+            }
+            for (const auto& setting_path : found->second) {
+                const Value* current = resolved == nullptr
+                    ? nullptr
+                    : value_at_path(*resolved, setting_path);
+                const Value* default_value = default_resolved == nullptr
+                    ? nullptr
+                    : value_at_path(*default_resolved, setting_path);
+                overrides.push_back(nlohmann::json{
+                    {"parameter", parameter},
+                    {"path", path_to_json(setting_path)},
+                    {"default", value_to_json(
+                        default_value == nullptr ? null_value : *default_value
+                    )},
+                    {"value", value_to_json(
+                        current == nullptr ? null_value : *current
+                    )},
+                });
+            }
+        }
+    }
+
+    return nlohmann::json{
+        {"path", path_to_json(append_path(absolute_base, relative_path))},
+        {"name", definition->name},
+        {"resolved", value_to_json(resolved == nullptr ? null_value : *resolved)},
+        {"default_resolved", value_to_json(
+            default_resolved == nullptr ? null_value : *default_resolved
+        )},
+        {"overrides", std::move(overrides)},
+    };
+}
+
+void append_condition_usages(
+    ScenarioDocument& document,
+    const Value& root,
+    const std::string& owner_name,
+    const Path& absolute_base,
+    nlohmann::json& result
+) {
     std::vector<std::pair<const Value*, Path>> usages;
+    collect_condition_use_paths(root, Path{}, usages);
+    for (const auto& [usage, relative_path] : usages) {
+        nlohmann::json entry = condition_usage_json(
+            document,
+            root,
+            owner_name,
+            absolute_base,
+            relative_path,
+            *usage
+        );
+        if (!entry.is_null()) {
+            result.push_back(std::move(entry));
+        }
+    }
+}
+
+nlohmann::json condition_usages_json(ScenarioDocument& document) {
+    nlohmann::json result = nlohmann::json::array();
     for (auto& definition : document.definitions.conditions) {
-        collect_condition_use_paths(
+        append_condition_usages(
+            document,
             definition.condition,
+            definition.name,
             Path{
                 PathToken{false, 0, "definitions"},
                 PathToken{false, 0, "conditions"},
                 PathToken{false, 0, definition.name},
             },
-            usages
+            result
         );
     }
     if (document.start_condition) {
-        collect_condition_use_paths(
+        append_condition_usages(
+            document,
             document.start_condition->value,
+            "",
             Path{PathToken{false, 0, "start_condition"}},
-            usages
+            result
         );
     }
     if (document.reset_condition) {
-        collect_condition_use_paths(
+        append_condition_usages(
+            document,
             document.reset_condition->value,
+            "",
             Path{PathToken{false, 0, "reset_condition"}},
-            usages
+            result
         );
     }
     if (document.incomplete_condition) {
-        collect_condition_use_paths(
+        append_condition_usages(
+            document,
             document.incomplete_condition->value,
+            "",
             Path{PathToken{false, 0, "incomplete_condition"}},
-            usages
+            result
         );
     }
     for (std::size_t split_index = 0; split_index < document.splits.size(); ++split_index) {
@@ -1980,10 +2123,12 @@ nlohmann::json condition_usages_json(ScenarioDocument& document) {
                         PathToken{true, step_index, {}},
                         PathToken{false, 0, "condition"},
                     };
-                    collect_condition_use_paths(
+                    append_condition_usages(
+                        document,
                         rule.sequence_rules[step_index].condition.value,
+                        "",
                         path,
-                        usages
+                        result
                     );
                 }
             } else {
@@ -1994,78 +2139,15 @@ nlohmann::json condition_usages_json(ScenarioDocument& document) {
                     PathToken{true, rule_index, {}},
                     PathToken{false, 0, "condition"},
                 };
-                collect_condition_use_paths(rule.rule.condition.value, path, usages);
+                append_condition_usages(
+                    document,
+                    rule.rule.condition.value,
+                    "",
+                    path,
+                    result
+                );
             }
         }
-    }
-
-    nlohmann::json result = nlohmann::json::array();
-    for (const auto& [usage, path] : usages) {
-        const auto* use = usage->find("use");
-        if (use == nullptr || !use->is_scalar()) {
-            continue;
-        }
-        auto* definition = find_condition_definition(document, use->scalar);
-        if (definition == nullptr) {
-            continue;
-        }
-        const DefinitionRef definition_ref{
-            DefinitionKind::condition,
-            definition->name,
-            &definition->condition,
-            &definition->parameters,
-        };
-        const auto parameter_paths = parameter_paths_for_definition(
-            document,
-            definition_ref
-        );
-        const Value resolved = scenario::v2::resolve_condition(
-            document.definitions,
-            *usage
-        );
-        Value default_usage = *usage;
-        default_usage.erase("with");
-        const Value default_resolved = scenario::v2::resolve_condition(
-            document.definitions,
-            default_usage
-        );
-
-        nlohmann::json overrides = nlohmann::json::array();
-        const auto* with = usage->find("with");
-        if (with != nullptr && with->is_mapping()) {
-            const Value null_value = Value::make_null();
-            for (const auto& [parameter, forwarded] : with->mapping) {
-                (void)forwarded;
-                const auto found = parameter_paths.find(parameter);
-                if (found == parameter_paths.end()) {
-                    continue;
-                }
-                for (const auto& setting_path : found->second) {
-                    const Value* current = value_at_path(resolved, setting_path);
-                    const Value* default_value = value_at_path(
-                        default_resolved,
-                        setting_path
-                    );
-                    overrides.push_back(nlohmann::json{
-                        {"parameter", parameter},
-                        {"path", path_to_json(setting_path)},
-                        {"default", value_to_json(
-                            default_value == nullptr ? null_value : *default_value
-                        )},
-                        {"value", value_to_json(
-                            current == nullptr ? null_value : *current
-                        )},
-                    });
-                }
-            }
-        }
-        result.push_back(nlohmann::json{
-            {"path", path_to_json(path)},
-            {"name", definition->name},
-            {"resolved", value_to_json(resolved)},
-            {"default_resolved", value_to_json(default_resolved)},
-            {"overrides", std::move(overrides)},
-        });
     }
     return result;
 }

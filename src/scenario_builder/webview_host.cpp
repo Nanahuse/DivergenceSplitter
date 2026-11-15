@@ -473,9 +473,12 @@ private:
                 return;
             }
             if (type == "command") {
-                apply_editor_command(session_, message.at("command"));
+                EditorSession next = session_;
+                apply_editor_command(next, message.at("command"));
+                const json state = state_json(next);
+                session_ = std::move(next);
                 update_title();
-                publish_state();
+                post_state(state);
                 return;
             }
             if (type == "new") {
@@ -652,18 +655,29 @@ private:
         SetWindowTextW(window_, (L"Scenario Builder - " + name + dirty).c_str());
     }
 
+    [[nodiscard]] json state_json(const EditorSession& session) const {
+        json state = editor_state_json(session);
+        state["type"] = "state";
+        state["workspace"] = workspace_.is_open()
+            ? workspace_json()
+            : json(nullptr);
+        return state;
+    }
+
+    void post_state(const json& state) {
+        if (!webview_) {
+            return;
+        }
+        const std::wstring serialized = to_wide(state.dump());
+        webview_->PostWebMessageAsJson(serialized.c_str());
+    }
+
     void publish_state() {
         if (!webview_) {
             return;
         }
         try {
-            json state = editor_state_json(session_);
-            state["type"] = "state";
-            state["workspace"] = workspace_.is_open()
-                ? workspace_json()
-                : json(nullptr);
-            const std::wstring serialized = to_wide(state.dump());
-            webview_->PostWebMessageAsJson(serialized.c_str());
+            post_state(state_json(session_));
         } catch (const std::exception& error) {
             publish_error(error.what());
         }
