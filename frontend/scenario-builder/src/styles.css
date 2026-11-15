@@ -1025,3 +1025,18 @@ button.icon.rename-button:hover:not(:disabled) {
   flex: 1;
   min-width: 0;
 }
+
+.left-pane > section > .section-title {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+  padding: 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.left-pane > section > .section-title + * {
+  margin-top: 7px;
+}
