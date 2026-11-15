@@ -1275,6 +1275,99 @@ function ConditionTree({
   );
 }
 
+function DefinitionNameEditor({
+  label,
+  name,
+  existingNames,
+  onRename,
+}: {
+  label: string;
+  name: string;
+  existingNames: string[];
+  onRename?: (from: string, to: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setEditing(false);
+    setDraft(name);
+    setError(null);
+  }, [name]);
+
+  const cancel = () => {
+    setDraft(name);
+    setEditing(false);
+    setError(null);
+  };
+
+  const commit = () => {
+    const next = draft.trim();
+    if (!next) {
+      setError("名前を入力してください。");
+      return;
+    }
+    if (next === name) {
+      setEditing(false);
+      setError(null);
+      return;
+    }
+    if (existingNames.includes(next)) {
+      setError("同名の定義が既に存在します。");
+      return;
+    }
+    setEditing(false);
+    setError(null);
+    onRename?.(name, next);
+  };
+
+  return (
+    <div className="definition-heading">
+      {editing ? (
+        <div className="definition-name-editor">
+          <input
+            autoFocus
+            value={draft}
+            aria-label={`${label}の名前`}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commit();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                cancel();
+              }
+            }}
+          />
+          <button type="button" onClick={commit}>保存</button>
+          <button type="button" className="secondary" onClick={cancel}>取消</button>
+          {error ? <span className="error-text">{error}</span> : null}
+        </div>
+      ) : (
+        <>
+          <h2>{label}: {name}</h2>
+          {onRename ? (
+            <button
+              type="button"
+              className="icon rename-button"
+              title="名前を変更"
+              aria-label="名前を変更"
+              onClick={() => {
+                setDraft(name);
+                setError(null);
+                setEditing(true);
+              }}
+            >
+              ✎
+            </button>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ConditionPane({
   document,
   rootPath,
@@ -1283,6 +1376,7 @@ export function ConditionPane({
   onSelect,
   sendCommand,
   onNavigateSplit,
+  onRenameDefinition,
 }: {
   document: ScenarioDocument;
   rootPath: Path;
@@ -1291,6 +1385,7 @@ export function ConditionPane({
   onSelect: (path: Path) => void;
   sendCommand: (command: Record<string, unknown>) => void;
   onNavigateSplit?: (index: number) => void;
+  onRenameDefinition?: (from: string, to: string) => void;
 }) {
   const raw = valueAtPath(conditionRootValue(document, rootPath), []);
   if (raw === undefined || raw === null) {
@@ -1319,10 +1414,21 @@ export function ConditionPane({
           ? []
           : [{ label: `Rule ${ruleIndex + 1}` }]),
       ];
+  const definitionName = definition ? String(rootPath[2] ?? "") : "";
+  const definitionNames = document.definitions.conditions.map(
+    (item) => item.name,
+  );
   return (
     <div className="condition-pane">
       <div className="condition-pane-header">
-        {breadcrumbItems.length > 0 ? (
+        {definition && definitionName ? (
+          <DefinitionNameEditor
+            label="共通Condition"
+            name={definitionName}
+            existingNames={definitionNames}
+            onRename={onRenameDefinition}
+          />
+        ) : breadcrumbItems.length > 0 ? (
           <Breadcrumb
             items={breadcrumbItems}
             className="condition-pane-breadcrumb"
@@ -1388,9 +1494,11 @@ function valueAtPathRawRoot(
 export function DetectorPane({
   document,
   rootPath,
+  onRenameDefinition,
 }: {
   document: ScenarioDocument;
   rootPath: Path;
+  onRenameDefinition?: (from: string, to: string) => void;
 }) {
   const definition = detectorDefinitionByName(document, String(rootPath[2]));
   if (!definition) {
@@ -1400,8 +1508,13 @@ export function DetectorPane({
   return (
     <div className="condition-pane">
       <div className="condition-pane-header">
-        <h2>{formatPath(document, rootPath)}</h2>
-        <span className="mode-badge inherits">共通Detector</span>
+        <DefinitionNameEditor
+          label="共通Detector"
+          name={definition.name}
+          existingNames={document.definitions.detectors.map((item) => item.name)}
+          onRename={onRenameDefinition}
+        />
+        <span className="mode-badge inherits">共通定義</span>
       </div>
       <div className="condition-card">
         <div className="condition-header">

@@ -925,3 +925,34 @@ pre {
   color: var(--muted);
   font-size: 10px;
 }
+
+.definition-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.definition-name-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.definition-name-editor input {
+  flex: 1 1 180px;
+  min-width: 120px;
+}
+
+button.icon.rename-button {
+  padding: 1px 6px;
+  color: var(--muted);
+}
+
+button.icon.rename-button:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}

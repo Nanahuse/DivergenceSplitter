@@ -900,6 +900,106 @@ TEST(ScenarioEditorV2, NestedSharedConditionUsageStoresAssetReference) {
     );
 }
 
+TEST(ScenarioEditorV2, RenameConditionDefinitionUpdatesAllUsagesAndUndo) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "wait"},
+        {"value", {{"type", "elapsed"}, {"duration", "1s"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"start_condition"})},
+        {"name", "wait"},
+    });
+    apply_editor_command(session, nlohmann::json{{"type", "add_split"}, {"index", 0}});
+    apply_editor_command(session, nlohmann::json{{"type", "add_rule"}, {"split", 0}});
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_condition"},
+        {"path", path({"splits", 0, "rules", 0, "condition"})},
+        {"name", "wait"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "rename_condition_definition"},
+        {"from", "wait"},
+        {"to", "delay"},
+    });
+    EXPECT_EQ(session.document.start_condition->use_name(), "delay");
+    EXPECT_EQ(
+        session.document.splits[0]->rules[0].rule.condition.use_name(),
+        "delay"
+    );
+
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    EXPECT_EQ(session.document.start_condition->use_name(), "wait");
+    EXPECT_EQ(
+        session.document.splits[0]->rules[0].rule.condition.use_name(),
+        "wait"
+    );
+    apply_editor_command(session, nlohmann::json{{"type", "redo"}});
+    EXPECT_EQ(session.document.start_condition->use_name(), "delay");
+    EXPECT_EQ(
+        session.document.splits[0]->rules[0].rule.condition.use_name(),
+        "delay"
+    );
+}
+
+TEST(ScenarioEditorV2, RenameDetectorDefinitionUpdatesAllUsagesAndUndo) {
+    EditorSession session = new_editor_session();
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_detector_definition"},
+        {"name", "bright"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "create_condition_definition"},
+        {"name", "detect"},
+        {"value", {
+            {"type", "detected"},
+            {"minimum_score", "0.5"},
+            {"detector", {{"type", "mean_brightness"}}},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "use_detector"},
+        {"path", path({"definitions", "conditions", "detect", "detector"})},
+        {"name", "bright"},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"start_condition"})},
+        {"value", {
+            {"type", "detected"},
+            {"minimum_score", "0.5"},
+            {"detector", {{"use", "bright"}}},
+        }},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "rename_detector_definition"},
+        {"from", "bright"},
+        {"to", "luma"},
+    });
+
+    const auto* definition = find_condition_definition(session.document, "detect");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_EQ(definition->condition.find("detector")->find("use")->scalar, "luma");
+    EXPECT_EQ(
+        session.document.start_condition->value.find("detector")->find("use")->scalar,
+        "luma"
+    );
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    definition = find_condition_definition(session.document, "detect");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_EQ(definition->condition.find("detector")->find("use")->scalar, "bright");
+    EXPECT_EQ(
+        session.document.start_condition->value.find("detector")->find("use")->scalar,
+        "bright"
+    );
+    apply_editor_command(session, nlohmann::json{{"type", "redo"}});
+    definition = find_condition_definition(session.document, "detect");
+    ASSERT_NE(definition, nullptr);
+    EXPECT_EQ(definition->condition.find("detector")->find("use")->scalar, "luma");
+}
+
 TEST(ScenarioEditorV2, RenameAndDetachUpdateReferences) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{

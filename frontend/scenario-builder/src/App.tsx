@@ -24,6 +24,12 @@ type Selection =
 
 type SpecialCondition = "start_condition" | "reset_condition" | "incomplete_condition";
 
+interface PendingRename {
+  kind: "condition-definition" | "detector-definition";
+  from: string;
+  to: string;
+}
+
 const starterCondition = { type: "elapsed", duration: "1s" };
 
 function selectionPath(selection: Selection): Path | null {
@@ -61,16 +67,33 @@ export default function App() {
   const [newConditionName, setNewConditionName] = useState("");
   const [newDetectorName, setNewDetectorName] = useState("");
   const pendingAssetRef = useRef<((asset: string) => void) | null>(null);
+  const pendingRenameRef = useRef<PendingRename | null>(null);
   const preview = !isWebViewHost();
 
   useEffect(() => {
     const detach = listenToHost(
       (nextState) => {
+        const pendingRename = pendingRenameRef.current;
+        if (pendingRename) {
+          const names = pendingRename.kind === "condition-definition"
+            ? nextState.document.definitions.conditions.map((item) => item.name)
+            : nextState.document.definitions.detectors.map((item) => item.name);
+          if (names.includes(pendingRename.to)) {
+            pendingRenameRef.current = null;
+            const nextSelection: Selection = {
+              kind: pendingRename.kind,
+              name: pendingRename.to,
+            };
+            setSelection(nextSelection);
+            setSelectedPath(selectionPath(nextSelection));
+          }
+        }
         setState(nextState);
         setError(null);
       },
       (hostError) => {
         pendingAssetRef.current = null;
+        pendingRenameRef.current = null;
         setError(hostError.message);
       },
       (asset) => {
@@ -114,6 +137,28 @@ export default function App() {
       sendCommand(command);
     }
   }, [preview]);
+
+  const requestRenameDefinition = useCallback((
+    kind: "condition" | "detector",
+    from: string,
+    to: string,
+  ) => {
+    if (preview || from === to) {
+      return;
+    }
+    pendingRenameRef.current = {
+      kind: kind === "condition" ? "condition-definition" : "detector-definition",
+      from,
+      to,
+    };
+    runCommand({
+      type: kind === "condition"
+        ? "rename_condition_definition"
+        : "rename_detector_definition",
+      from,
+      to,
+    });
+  }, [preview, runCommand]);
 
   const chooseSelection = useCallback((next: Selection) => {
     setSelection(next);
@@ -517,6 +562,9 @@ export default function App() {
                 onSelect={setSelectedPath}
                 sendCommand={runCommand}
                 onNavigateSplit={navigateToSplit}
+                onRenameDefinition={(from, to) =>
+                  requestRenameDefinition("condition", from, to)
+                }
               />
             ) : rootPath
               && (selection?.kind === "special" || selection?.kind === "rule") ? (
@@ -528,9 +576,18 @@ export default function App() {
                 onSelect={setSelectedPath}
                 sendCommand={runCommand}
                 onNavigateSplit={navigateToSplit}
+                onRenameDefinition={(from, to) =>
+                  requestRenameDefinition("condition", from, to)
+                }
               />
             ) : rootPath && selection?.kind === "detector-definition" ? (
-              <DetectorPane document={document} rootPath={rootPath} />
+              <DetectorPane
+                document={document}
+                rootPath={rootPath}
+                onRenameDefinition={(from, to) =>
+                  requestRenameDefinition("detector", from, to)
+                }
+              />
             ) : splitSelection ? (
               <RulesEditor
                 document={document}
