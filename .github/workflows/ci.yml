@@ -16,6 +16,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      artifact-id: ${{ steps.distribution.outputs.artifact-id }}
     env:
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
       NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
@@ -157,17 +160,28 @@ jobs:
       - name: Package ZIP
         run: cmake --build --preset ci --target package
 
-      - name: Record ZIP size
-        run: Get-ChildItem build/ci/*.zip | Select-Object Name, Length | Format-Table -AutoSize
-
       - name: Verify extracted ZIP
         run: python tools/verify_windows_zip.py --build-dir build/ci
 
+      - name: Record verified ZIP metadata
+        id: package
+        run: |
+          $zip = Get-ChildItem build/ci/*.zip -File
+          if ($zip.Name -cnotmatch '^DivergenceSplitter-([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)-windows-x64\.zip$') {
+            throw "Unexpected distribution filename: $($zip.Name)"
+          }
+          "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
+          "filename=$($zip.Name)" >> $env:GITHUB_OUTPUT
+          $zip | Select-Object Name, Length | Format-Table -AutoSize
+
       - name: Upload distribution
+        id: distribution
         uses: actions/upload-artifact@v7
         with:
-          path: build/ci/*.zip
+          name: ${{ steps.package.outputs.filename }}
+          path: build/ci/${{ steps.package.outputs.filename }}
           archive: false
+          overwrite: true
           if-no-files-found: error
 
       - name: Upload test results
@@ -176,6 +190,7 @@ jobs:
         with:
           name: cpp23-tests
           path: build/ci/ctest-results.xml
+          overwrite: true
           if-no-files-found: warn
 
       - name: Save sccache
@@ -184,3 +199,42 @@ jobs:
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: ${{ steps.sccache.outputs.cache-primary-key }}
+
+  release:
+    name: Publish Release
+    needs: windows
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: divergencesplitter-release
+      queue: max
+    env:
+      RELEASE_VERSION: ${{ needs.windows.outputs.version }}
+      RELEASE_ARTIFACT_ID: ${{ needs.windows.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check release eligibility
+        id: eligibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/publish_release.py check
+
+      - name: Download verified distribution
+        if: steps.eligibility.outputs.publish == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ env.RELEASE_ARTIFACT_ID }}
+          path: release-assets
+          skip-decompress: true
+
+      - name: Publish verified distribution
+        if: steps.eligibility.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/publish_release.py publish
