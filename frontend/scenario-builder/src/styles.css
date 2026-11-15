@@ -1079,3 +1079,37 @@ button.icon.rename-button:hover:not(:disabled) {
   display: flex;
   gap: 8px;
 }
+
+.drag-hint {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.split-list li {
+  position: relative;
+}
+
+.drag-handle {
+  padding: 0 3px;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.split-item-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.split-list li.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.split-list li.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}

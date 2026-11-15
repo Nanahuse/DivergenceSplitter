@@ -79,6 +79,10 @@ export default function App() {
   const [newDetectorName, setNewDetectorName] = useState("");
   const pendingAssetRef = useRef<((asset: string) => void) | null>(null);
   const pendingRenameRef = useRef<PendingRename | null>(null);
+  const pendingSplitMoveRef = useRef<{ from: number; to: number } | null>(null);
+  const previousSplitsRef = useRef<EditorState["document"]["splits"] | null>(null);
+  const [draggedSplit, setDraggedSplit] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ index: number; after: boolean } | null>(null);
   const preview = !isWebViewHost();
 
   useEffect(() => {
@@ -105,6 +109,7 @@ export default function App() {
       (hostError) => {
         pendingAssetRef.current = null;
         pendingRenameRef.current = null;
+        pendingSplitMoveRef.current = null;
         setError(hostError.message);
       },
       (asset) => {
@@ -124,6 +129,51 @@ export default function App() {
     pendingAssetRef.current = apply;
     sendToHost({ type: "addAsset" });
   }, [preview]);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+    const previousSplits = previousSplitsRef.current;
+    const nextSplits = state.document.splits;
+    if (previousSplits && previousSplits !== nextSplits && selection
+        && (selection.kind === "split" || selection.kind === "rule"
+          || selection.kind === "sequence-rule")) {
+      const oldIndex = selection.kind === "split" ? selection.index : selection.split;
+      let nextIndex = oldIndex;
+      const pending = pendingSplitMoveRef.current;
+      if (pending && pending.from === oldIndex) {
+        nextIndex = pending.to;
+      } else if (oldIndex < previousSplits.length) {
+        const anchor = JSON.stringify(previousSplits[oldIndex]);
+        const occurrence = previousSplits.slice(0, oldIndex)
+          .filter((item) => JSON.stringify(item) === anchor).length;
+        const matches: number[] = [];
+        nextSplits.forEach((item, index) => {
+          if (JSON.stringify(item) === anchor) {
+            matches.push(index);
+          }
+        });
+        if (matches.length > 0) {
+          nextIndex = matches[Math.min(occurrence, matches.length - 1)];
+        }
+      }
+      if (nextIndex !== oldIndex && nextIndex >= 0 && nextIndex < nextSplits.length) {
+        if (selection.kind === "split") {
+          setSelection({ ...selection, index: nextIndex });
+        } else {
+          setSelection({ ...selection, split: nextIndex });
+        }
+        setSelectedPath((path) => (
+          path && path[0] === "splits"
+            ? path.map((part, index) => index === 1 ? nextIndex : part)
+            : path
+        ));
+      }
+      pendingSplitMoveRef.current = null;
+    }
+    previousSplitsRef.current = nextSplits;
+  }, [state, selection, selectedPath]);
 
   useEffect(() => {
     if (!state) {
@@ -177,6 +227,14 @@ export default function App() {
       to,
     });
   }, [preview, runCommand]);
+
+  const moveSplit = useCallback((from: number, to: number) => {
+    if (from === to) {
+      return;
+    }
+    pendingSplitMoveRef.current = { from, to };
+    runCommand({ type: "move_split", from, to });
+  }, [runCommand]);
 
   const extractConditionDefinition = useCallback((path: Path, name: string) => {
     if (preview) {
@@ -545,38 +603,104 @@ export default function App() {
                   + Split
                 </button>
               </div>
-              <ul className="tree-list">
-                {document.splits.map((split, index) => (
-                  <li
-                    key={index}
-                    className={
-                      selection?.kind === "split" && selection.index === index
-                        ? "active"
-                        : ""
-                    }
-                  >
-                    <button
-                      className="link-row"
-                      onClick={() => chooseSelection({ kind: "split", index })}
-                    >
-                      <span>Split {index + 1}</span>
-                      <span className="mode-hint">
-                        {split ? `${split.rules.length} rules` : "manual"}
-                      </span>
-                    </button>
-                    <button
-                      className="icon"
-                      title="Split を削除"
-                      onClick={() => {
-                        if (window.confirm(`Split ${index + 1} を削除しますか？`)) {
-                          runCommand({ type: "remove_split", index });
+              {document.splits.length > 1 ? (
+                <p className="drag-hint">ドラッグして並び替え</p>
+              ) : null}
+              <ul className="tree-list split-list">
+                {document.splits.map((split, index) => {
+                  const drop = dropTarget?.index === index ? dropTarget.after : null;
+                  return (
+                    <li
+                      key={index}
+                      className={[
+                        selection?.kind === "split" && selection.index === index
+                          ? "active"
+                          : "",
+                        drop === false ? "drop-before" : "",
+                        drop === true ? "drop-after" : "",
+                      ].filter(Boolean).join(" ")}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setDropTarget({
+                          index,
+                          after: event.clientY > rect.top + rect.height / 2,
+                        });
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const raw = event.dataTransfer.getData("text/plain");
+                        const from = draggedSplit ?? (raw === "" ? null : Number(raw));
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const after = event.clientY > rect.top + rect.height / 2;
+                        if (from !== null && Number.isInteger(from)) {
+                          const insertAt = index + (after ? 1 : 0);
+                          const to = from < insertAt ? insertAt - 1 : insertAt;
+                          moveSplit(from, to);
                         }
+                        setDraggedSplit(null);
+                        setDropTarget(null);
                       }}
                     >
-                      ×
-                    </button>
-                  </li>
-                ))}
+                      <span
+                        className="drag-handle"
+                        draggable
+                        title="ドラッグして並び替え"
+                        aria-label="ドラッグして並び替え"
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", String(index));
+                          setDraggedSplit(index);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedSplit(null);
+                          setDropTarget(null);
+                        }}
+                      >
+                        ⠿
+                      </span>
+                      <button
+                        className="link-row"
+                        onClick={() => chooseSelection({ kind: "split", index })}
+                      >
+                        <span>Split {index + 1}</span>
+                        <span className="mode-hint">
+                          {split ? `${split.rules.length} rules` : "manual"}
+                        </span>
+                      </button>
+                      <div className="split-item-actions">
+                        <button
+                          className="icon"
+                          title="上へ"
+                          disabled={index === 0}
+                          onClick={() => moveSplit(index, index - 1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="icon"
+                          title="下へ"
+                          disabled={index === document.splits.length - 1}
+                          onClick={() => moveSplit(index, index + 1)}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          className="icon"
+                          title="Split を削除"
+                          onClick={() => {
+                            if (window.confirm(`Split ${index + 1} を削除しますか？`)) {
+                              runCommand({ type: "remove_split", index });
+                            }
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           </aside>

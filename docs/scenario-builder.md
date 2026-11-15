@@ -183,6 +183,7 @@ C:\Scenarios\SuperMarioWorld\
 
 - 左ペイン: 作業ディレクトリ内のYAML一覧、共通Condition、共通Detector、Start / Reset / Incomplete、Split 一覧
 - 左ペインの各セクション見出しは、スクロール中も上部に固定
+- Split 一覧は左端のハンドルをドラッグするか、上下ボタンで並び替えできます。移動後も選択中の Split / Rule を追跡します
 - 中央ペイン: Condition ツリー、Rule 一覧。Condition はボタンまたはドラッグ＆ドロップで並べ替え
 - Rule 一覧と Condition ツリーは同じ概要表示を使い、判定種類、スコア、Detector、画像、個別設定を表示
 - Sequence の各ステップにも同じ Condition 概要を表示し、Action は独立した選択欄で編集

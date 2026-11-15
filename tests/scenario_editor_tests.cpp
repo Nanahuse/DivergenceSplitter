@@ -1245,6 +1245,66 @@ TEST(ScenarioEditorV2, ExtractConditionDefinitionRejectsSharedAndParameterizedCo
     );
 }
 
+TEST(ScenarioEditorV2, MoveSplitReordersWholeSplitAndUndoRedo) {
+    EditorSession session;
+    session.document = import_scenario_yaml(R"(
+schema_version: 2
+start_condition: {type: elapsed, duration: 1s}
+splits:
+  - rules:
+      - condition: {type: elapsed, duration: 1s}
+        action: split
+  - rules:
+      - condition: {type: elapsed, duration: 2s}
+        action: skip
+  - null
+)");
+    apply_editor_command(session, nlohmann::json{
+        {"type", "move_split"},
+        {"from", 2},
+        {"to", 0},
+    });
+    ASSERT_EQ(session.document.splits.size(), 3U);
+    EXPECT_FALSE(session.document.splits[0].has_value());
+    ASSERT_TRUE(session.document.splits[1]->rules[0].rule.condition.value
+        .find("duration"));
+    EXPECT_EQ(
+        session.document.splits[1]->rules[0].rule.condition.value
+            .find("duration")->scalar,
+        "1s"
+    );
+    EXPECT_EQ(
+        session.document.splits[2]->rules[0].rule.condition.value
+            .find("duration")->scalar,
+        "2s"
+    );
+
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    EXPECT_TRUE(session.document.splits[2] == std::nullopt);
+    apply_editor_command(session, nlohmann::json{{"type", "redo"}});
+    EXPECT_TRUE(session.document.splits[0] == std::nullopt);
+
+    TemporaryDirectory directory;
+    const auto path = directory.path() / "ordered.yaml";
+    save_scenario_document(session.document, path);
+    const auto reloaded = load_scenario_document(path);
+    ASSERT_EQ(reloaded.splits.size(), 3U);
+    EXPECT_FALSE(reloaded.splits[0].has_value());
+    EXPECT_EQ(
+        reloaded.splits[1]->rules[0].rule.condition.value.find("duration")->scalar,
+        "1s"
+    );
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "move_split"},
+        {"from", 0},
+        {"to", 2},
+    });
+    EXPECT_FALSE(session.document.splits[2].has_value());
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    EXPECT_FALSE(session.document.splits[0].has_value());
+}
+
 TEST(ScenarioEditorV2, RenameAndDetachUpdateReferences) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{
