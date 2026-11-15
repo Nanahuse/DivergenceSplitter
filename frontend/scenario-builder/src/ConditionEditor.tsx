@@ -23,6 +23,7 @@ import {
   type Path,
   type ScenarioDocument,
   type SharedDetectorDefinition,
+  type WorkspaceInfo,
 } from "./model";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
@@ -143,6 +144,8 @@ function SettingRow({
 interface PropertyActions {
   schema: EditorSchema;
   detectorDefinitions: SharedDetectorDefinition[];
+  assets: string[];
+  addAsset?: (apply: (asset: string) => void) => void;
   overrides: Set<string>;
   rawValue: (path: Path) => JsonValue | undefined;
   set: (path: Path, value: JsonValue) => void;
@@ -274,6 +277,8 @@ function DetectorFieldsEditor({
     const nested: PropertyActions = {
       schema: actions.schema,
       detectorDefinitions: actions.detectorDefinitions,
+      assets: actions.assets,
+      addAsset: actions.addAsset,
       overrides,
       rawValue: (itemPath) => valueAtPath(value, itemPath),
       set: (itemPath, next) => actions.setDetectorUsage?.(path, itemPath, next),
@@ -403,6 +408,70 @@ function DetectorFieldsEditor({
   );
 }
 
+function AssetSelect({
+  actions,
+  path,
+  value,
+  overridden,
+  reset,
+}: {
+  actions: PropertyActions;
+  path: Path;
+  value: JsonValue | undefined;
+  overridden: boolean;
+  reset?: () => void;
+}) {
+  const current = scalar(value) ?? "";
+  const known = actions.assets.includes(current);
+  return (
+    <div className="setting-row">
+      <span className="setting-label">
+        reference
+        {overridden ? <span className="override-badge">この使用箇所</span> : null}
+      </span>
+      <select
+        value={current}
+        onChange={(event) => actions.set(path, event.target.value)}
+      >
+        {current === "" ? <option value="">選択してください</option> : null}
+        {current !== "" && !known ? (
+          <option value={current}>{current} (見つかりません)</option>
+        ) : null}
+        {actions.assets.map((asset) => (
+          <option key={asset} value={asset}>
+            {asset}
+          </option>
+        ))}
+      </select>
+      <div className="child-actions">
+        {current ? (
+          <button
+            className="icon"
+            title="参照パスをコピー"
+            onClick={() => void navigator.clipboard?.writeText(current)}
+          >
+            ⧉
+          </button>
+        ) : null}
+        {reset ? (
+          <button className="icon" title="共通定義の値に戻す" onClick={reset}>
+            ↺
+          </button>
+        ) : null}
+        {actions.addAsset ? (
+          <button
+            onClick={() =>
+              actions.addAsset?.((asset) => actions.set(path, asset))
+            }
+          >
+            新規追加
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function SchemaFieldEditor({
   actions,
   field,
@@ -449,6 +518,17 @@ function SchemaFieldEditor({
           {isSequence(value) ? value.length : 0} 件（中央ペインで編集）
         </span>
       </div>
+    );
+  }
+  if (field.name === "reference" && field.kind === "text") {
+    return (
+      <AssetSelect
+        actions={actions}
+        path={path}
+        value={value}
+        overridden={overridden}
+        reset={reset}
+      />
     );
   }
   if (field.kind === "number_list") {
@@ -981,10 +1061,12 @@ export function ConditionUsageToolbar({
 function buildActions(
   document: ScenarioDocument,
   schema: EditorSchema,
+  workspace: WorkspaceInfo | null,
   mode: "inline" | "definition-condition" | "usage-condition" | "definition-detector",
   rootPath: Path,
   basePath: Path,
   sendCommand: (command: Record<string, unknown>) => void,
+  onAddAsset?: (apply: (asset: string) => void) => void,
 ): PropertyActions {
   const definitionName = String(rootPath[2] ?? "");
   const usageName = isSharedUse(valueAtPathRawRoot(document, rootPath))
@@ -1013,6 +1095,8 @@ function buildActions(
   const actions: PropertyActions = {
     schema,
     detectorDefinitions: document.definitions.detectors,
+    assets: workspace?.assets ?? [],
+    addAsset: workspace ? onAddAsset : undefined,
     overrides: overridden,
     rawValue: (path) => valueAtPath(rawRoot, path),
     set: (path, next) => {
@@ -1128,17 +1212,21 @@ function buildActions(
 export function ConditionInspector({
   document,
   schema,
+  workspace,
   rootPath,
   selectedPath,
   mode,
   sendCommand,
+  onAddAsset,
 }: {
   document: ScenarioDocument;
   schema: EditorSchema;
+  workspace: WorkspaceInfo | null;
   rootPath: Path;
   selectedPath: Path;
   mode: "inline" | "definition-condition" | "usage-condition" | "definition-detector";
   sendCommand: (command: Record<string, unknown>) => void;
+  onAddAsset?: (apply: (asset: string) => void) => void;
 }) {
   const rawRoot = mode === "definition-detector"
     ? detectorDefinitionByName(document, String(rootPath[2]))?.detector
@@ -1158,10 +1246,12 @@ export function ConditionInspector({
   const actions = buildActions(
     document,
     schema,
+    workspace,
     mode,
     rootPath,
     relative,
     sendCommand,
+    onAddAsset,
   );
   return (
     <div className="inspector">

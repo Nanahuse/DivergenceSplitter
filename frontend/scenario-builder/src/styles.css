@@ -598,3 +598,11 @@ pre {
   border-radius: 999px;
   padding: 0 5px;
 }
+
+.workspace-root {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

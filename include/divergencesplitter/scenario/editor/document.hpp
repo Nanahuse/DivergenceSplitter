@@ -29,13 +29,19 @@ void save_scenario_document(const ScenarioDocument& document, const std::filesys
 struct EditorSession {
     ScenarioDocument document;
     std::filesystem::path path;
+    std::filesystem::path workspace_root;
     bool dirty{false};
     std::vector<ScenarioDocument> undo_stack;
     std::vector<ScenarioDocument> redo_stack;
 };
 
-[[nodiscard]] EditorSession new_editor_session();
-[[nodiscard]] EditorSession open_editor_session(const std::filesystem::path& path);
+[[nodiscard]] EditorSession new_editor_session(
+    std::filesystem::path workspace_root = {}
+);
+[[nodiscard]] EditorSession open_editor_session(
+    const std::filesystem::path& path,
+    std::filesystem::path workspace_root = {}
+);
 
 // Mutating commands take a snapshot of the document before applying the edit.
 // A failed command leaves both the document and the history untouched.

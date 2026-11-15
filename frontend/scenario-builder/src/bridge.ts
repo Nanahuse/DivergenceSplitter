@@ -31,6 +31,7 @@ export function sendCommand(command: Record<string, unknown>): void {
 export function listenToHost(
   onState: (state: EditorState) => void,
   onError: (error: HostError) => void,
+  onAssetAdded?: (asset: string) => void,
 ): () => void {
   const webview = window.chrome?.webview;
   if (!webview) {
@@ -45,6 +46,11 @@ export function listenToHost(
       onState(event.data as EditorState);
     } else if (message.type === "error") {
       onError(event.data as HostError);
+    } else if (message.type === "assetAdded") {
+      const asset = (event.data as { asset?: string }).asset;
+      if (typeof asset === "string") {
+        onAssetAdded?.(asset);
+      }
     }
   };
   webview.addEventListener("message", listener);

@@ -16,6 +16,7 @@ on:
       - "tests/CMakeLists.txt"
       - "tests/scenario_editor_tests.cpp"
       - "tests/scenario_v2_tests.cpp"
+      - "tests/scenario_workspace_tests.cpp"
       - "frontend/scenario-builder/**"
       - "examples/scenario-v2.yaml"
       - "docs/scenario-builder.md"
@@ -93,13 +94,13 @@ jobs:
       - name: Build
         run: >-
           cmake --build build/builder
-          --target ScenarioBuilder divergencesplitter_scenario_editor_tests divergencesplitter_scenario_v2_tests
+          --target ScenarioBuilder divergencesplitter_scenario_editor_tests divergencesplitter_scenario_v2_tests divergencesplitter_scenario_workspace_tests
           --parallel
 
       - name: Test
         run: >-
           ctest --test-dir build/builder
-          -R "ScenarioEditor|ScenarioV2"
+          -R "ScenarioEditor|ScenarioV2|ScenarioWorkspace"
           --output-on-failure
           --interactive-debug-mode 0
           --output-junit scenario-builder-ctest.xml

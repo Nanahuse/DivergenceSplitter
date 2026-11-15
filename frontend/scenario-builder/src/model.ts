@@ -80,10 +80,17 @@ export interface EditorSchema {
   detectorFields: Record<string, FieldSchema[]>;
 }
 
+export interface WorkspaceInfo {
+  root: string;
+  assets: string[];
+  scenarios: string[];
+}
+
 export interface EditorState {
   type: "state";
   version: number;
   schema: EditorSchema;
+  workspace: WorkspaceInfo | null;
   document: ScenarioDocument;
   canUndo: boolean;
   canRedo: boolean;
@@ -373,6 +380,7 @@ export function emptyDemoState(): EditorState {
     type: "state",
     version: 3,
     schema: { conditionFields: {}, detectorFields: {} },
+    workspace: null,
     canUndo: false,
     canRedo: false,
     document: {

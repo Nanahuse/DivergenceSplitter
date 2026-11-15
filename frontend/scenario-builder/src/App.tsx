@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listenToHost, sendCommand, sendToHost, isWebViewHost } from "./bridge";
 import {
   conditionAtPath,
@@ -9,6 +9,7 @@ import {
   type EditorState,
   type JsonValue,
   type Path,
+  type WorkspaceInfo,
 } from "./model";
 import { ConditionInspector, ConditionPane, DetectorPane } from "./ConditionEditor";
 import { RulesEditor } from "./RulesEditor";
@@ -59,6 +60,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [newConditionName, setNewConditionName] = useState("");
   const [newDetectorName, setNewDetectorName] = useState("");
+  const pendingAssetRef = useRef<((asset: string) => void) | null>(null);
   const preview = !isWebViewHost();
 
   useEffect(() => {
@@ -67,11 +69,27 @@ export default function App() {
         setState(nextState);
         setError(null);
       },
-      (hostError) => setError(hostError.message),
+      (hostError) => {
+        pendingAssetRef.current = null;
+        setError(hostError.message);
+      },
+      (asset) => {
+        const apply = pendingAssetRef.current;
+        pendingAssetRef.current = null;
+        apply?.(asset);
+      },
     );
     sendToHost({ type: "ready" });
     return detach;
   }, []);
+
+  const addAsset = useCallback((apply: (asset: string) => void) => {
+    if (preview) {
+      return;
+    }
+    pendingAssetRef.current = apply;
+    sendToHost({ type: "addAsset" });
+  }, [preview]);
 
   useEffect(() => {
     if (!state) {
@@ -151,6 +169,7 @@ export default function App() {
 
   const document = state?.document;
   const schema = state?.schema ?? { conditionFields: {}, detectorFields: {} };
+  const workspace: WorkspaceInfo | null = state?.workspace ?? null;
   const splitSelection = selection?.kind === "split" ? selection : null;
 
   const inspectorMode = useMemo(() => {
@@ -175,6 +194,9 @@ export default function App() {
           <span className="poc">YAML v2</span>
         </div>
         <div className="toolbar-group">
+          <button onClick={() => sendToHost({ type: "openWorkspace" })}>
+            作業フォルダ
+          </button>
           <button onClick={() => sendToHost({ type: "new" })}>新規</button>
           <button onClick={() => sendToHost({ type: "open" })}>開く</button>
           <button onClick={() => sendToHost({ type: "save" })}>保存</button>
@@ -212,6 +234,48 @@ export default function App() {
       ) : (
         <main className="panes">
           <aside className="pane left-pane">
+            <section>
+              <div className="section-title">
+                <h2>作業ディレクトリ</h2>
+              </div>
+              {workspace ? (
+                <>
+                  <p className="workspace-root" title={workspace.root}>
+                    {workspace.root}
+                  </p>
+                  <ul className="tree-list">
+                    {workspace.scenarios.map((scenario) => (
+                      <li
+                        key={scenario}
+                        className={
+                          document.path.endsWith(`\\${scenario}`)
+                          || document.path.endsWith(`/${scenario}`)
+                            ? "active"
+                            : ""
+                        }
+                      >
+                        <button
+                          className="link-row"
+                          onClick={() =>
+                            sendToHost({ type: "openScenario", name: scenario })
+                          }
+                        >
+                          <span className="anchor-mark">Y</span>
+                          {scenario}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {workspace.scenarios.length === 0 ? (
+                    <p className="muted">YAML ファイルはまだありません。</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="muted">
+                  作業フォルダを開くと、YAML と Asset をまとめて管理できます。
+                </p>
+              )}
+            </section>
             <section>
               <div className="section-title">
                 <h2>共通Condition</h2>
@@ -494,6 +558,8 @@ export default function App() {
                 <ConditionInspector
                   document={document}
                   schema={schema}
+                  workspace={workspace}
+                  onAddAsset={addAsset}
                   rootPath={rootPath}
                   selectedPath={activePath ?? rootPath}
                   mode={inspectorMode}

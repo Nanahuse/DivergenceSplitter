@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <shlobj.h>
+#include <shobjidl.h>
 #include <wrl.h>
 
 #include <WebView2.h>
@@ -16,6 +17,7 @@
 #include <string_view>
 
 #include "divergencesplitter/scenario/editor/document.hpp"
+#include "divergencesplitter/scenario/editor/workspace.hpp"
 
 namespace divergencesplitter::scenario_builder {
 namespace {
@@ -29,6 +31,7 @@ using scenario_editor::editor_state_json;
 using scenario_editor::new_editor_session;
 using scenario_editor::open_editor_session;
 using scenario_editor::save_editor_session;
+using scenario_editor::ScenarioWorkspace;
 
 constexpr wchar_t window_class[] = L"DivergenceSplitterScenarioBuilder";
 
@@ -98,7 +101,10 @@ std::filesystem::path local_app_data() {
     return result;
 }
 
-std::filesystem::path pick_open_file(HWND owner) {
+std::filesystem::path pick_open_file(
+    HWND owner,
+    const std::filesystem::path& initial_directory = {}
+) {
     std::wstring buffer(32768, L'\0');
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
@@ -106,6 +112,9 @@ std::filesystem::path pick_open_file(HWND owner) {
     dialog.lpstrFilter = L"Scenario YAML (*.yaml;*.yml)\0*.yaml;*.yml\0All files (*.*)\0*.*\0";
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    if (!initial_directory.empty()) {
+        dialog.lpstrInitialDir = initial_directory.c_str();
+    }
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     if (!GetOpenFileNameW(&dialog)) {
         return {};
@@ -113,7 +122,11 @@ std::filesystem::path pick_open_file(HWND owner) {
     return std::filesystem::path{buffer.c_str()};
 }
 
-std::filesystem::path pick_save_file(HWND owner, const std::filesystem::path& current) {
+std::filesystem::path pick_save_file(
+    HWND owner,
+    const std::filesystem::path& current,
+    const std::filesystem::path& initial_directory = {}
+) {
     std::wstring buffer(32768, L'\0');
     const std::wstring suggested = current.empty()
         ? std::wstring{L"scenario.yaml"}
@@ -129,11 +142,66 @@ std::filesystem::path pick_save_file(HWND owner, const std::filesystem::path& cu
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.lpstrDefExt = L"yaml";
+    if (!initial_directory.empty()) {
+        dialog.lpstrInitialDir = initial_directory.c_str();
+    }
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
     if (!GetSaveFileNameW(&dialog)) {
         return {};
     }
     return std::filesystem::path{buffer.c_str()};
+}
+
+std::filesystem::path pick_image_file(HWND owner, const std::filesystem::path& initial_directory) {
+    std::wstring buffer(32768, L'\0');
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = owner;
+    dialog.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.webp;*.ppm;*.pgm)\0"
+        L"*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.webp;*.ppm;*.pgm\0All files (*.*)\0*.*\0";
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    if (!initial_directory.empty()) {
+        dialog.lpstrInitialDir = initial_directory.c_str();
+    }
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&dialog)) {
+        return {};
+    }
+    return std::filesystem::path{buffer.c_str()};
+}
+
+std::filesystem::path pick_workspace_directory(HWND owner) {
+    ComPtr<IFileOpenDialog> dialog;
+    if (FAILED(CoCreateInstance(
+            CLSID_FileOpenDialog,
+            nullptr,
+            CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(&dialog)
+        ))) {
+        throw std::runtime_error("could not open the workspace folder picker");
+    }
+    DWORD options = 0;
+    if (FAILED(dialog->GetOptions(&options))
+        || FAILED(dialog->SetOptions(
+            options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST
+        ))) {
+        throw std::runtime_error("could not configure the workspace folder picker");
+    }
+    if (FAILED(dialog->Show(owner))) {
+        return {};
+    }
+    ComPtr<IShellItem> item;
+    if (FAILED(dialog->GetResult(&item))) {
+        return {};
+    }
+    PWSTR raw = nullptr;
+    if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &raw)) || raw == nullptr) {
+        return {};
+    }
+    std::filesystem::path result{raw};
+    CoTaskMemFree(raw);
+    return result;
 }
 
 class WebViewHost {
@@ -151,7 +219,8 @@ public:
 
         if (!initial_document_.empty()) {
             try {
-                session_ = open_editor_session(initial_document_);
+                workspace_.open(initial_document_.parent_path());
+                session_ = open_editor_session(initial_document_, workspace_.root());
             } catch (const std::exception& error) {
                 const std::wstring message = to_wide(error.what());
                 MessageBoxW(
@@ -413,21 +482,27 @@ private:
                 if (!confirm_discard_changes()) {
                     return;
                 }
-                session_ = new_editor_session();
+                session_ = new_editor_session(
+                    workspace_.is_open() ? workspace_.root() : std::filesystem::path{}
+                );
                 update_title();
                 publish_state();
                 return;
             }
+            if (type == "openWorkspace") {
+                open_workspace();
+                return;
+            }
+            if (type == "openScenario") {
+                open_scenario(message.value("name", ""));
+                return;
+            }
             if (type == "open") {
-                if (!confirm_discard_changes()) {
-                    return;
-                }
-                const auto path = pick_open_file(window_);
-                if (!path.empty()) {
-                    session_ = open_editor_session(path);
-                    update_title();
-                    publish_state();
-                }
+                open_scenario_dialog();
+                return;
+            }
+            if (type == "addAsset") {
+                add_asset();
                 return;
             }
             if (type == "save" || type == "saveAs") {
@@ -437,6 +512,84 @@ private:
         } catch (const std::exception& error) {
             publish_error(error.what());
         }
+    }
+
+    void open_workspace() {
+        if (!confirm_discard_changes()) {
+            return;
+        }
+        const auto directory = pick_workspace_directory(window_);
+        if (directory.empty()) {
+            return;
+        }
+        workspace_.open(directory);
+        session_ = new_editor_session(workspace_.root());
+        update_title();
+        publish_state();
+    }
+
+    void open_scenario(const std::string& name) {
+        if (!workspace_.is_open()) {
+            throw std::runtime_error("workspace is not open");
+        }
+        if (!confirm_discard_changes()) {
+            return;
+        }
+        const auto path = workspace_.scenario_path(name);
+        session_ = open_editor_session(path, workspace_.root());
+        update_title();
+        publish_state();
+    }
+
+    void open_scenario_dialog() {
+        if (!confirm_discard_changes()) {
+            return;
+        }
+        const auto path = pick_open_file(
+            window_, workspace_.is_open() ? workspace_.root() : std::filesystem::path{}
+        );
+        if (path.empty()) {
+            return;
+        }
+        if (!workspace_.is_open()) {
+            workspace_.open(path.parent_path());
+        } else {
+            workspace_.validate_scenario_destination(path);
+        }
+        session_ = open_editor_session(path, workspace_.root());
+        update_title();
+        publish_state();
+    }
+
+    void add_asset() {
+        if (!workspace_.is_open()) {
+            throw std::runtime_error("open a workspace before adding an image");
+        }
+        const auto source = pick_image_file(window_, workspace_.asset_directory());
+        if (source.empty()) {
+            return;
+        }
+        const std::string asset = workspace_.import_asset(source);
+        publish_state();
+        const json event{{"type", "assetAdded"}, {"asset", asset}};
+        const std::wstring serialized = to_wide(event.dump());
+        webview_->PostWebMessageAsJson(serialized.c_str());
+    }
+
+    [[nodiscard]] json workspace_json() const {
+        json result{
+            {"root", scenario_editor::path_to_utf8(workspace_.root())},
+            {"assets", workspace_.list_assets()},
+            {"scenarios", json::array()},
+        };
+        for (const auto& scenario : workspace_.list_scenarios()) {
+            result["scenarios"].push_back(scenario_to_utf8(scenario));
+        }
+        return result;
+    }
+
+    static std::string scenario_to_utf8(const std::filesystem::path& path) {
+        return scenario_editor::path_to_utf8(path);
     }
 
     bool confirm_discard_changes() {
@@ -466,11 +619,24 @@ private:
 
     bool save(bool force_picker) {
         std::filesystem::path path = session_.path;
-        if (force_picker || path.empty()) {
-            path = pick_save_file(window_, path);
-        }
-        if (path.empty()) {
-            return false;
+        if (!workspace_.is_open()) {
+            if (force_picker || path.empty()) {
+                path = pick_save_file(window_, path);
+            }
+            if (path.empty()) {
+                return false;
+            }
+            workspace_.open(path.parent_path());
+            session_.workspace_root = workspace_.root();
+        } else {
+            if (force_picker || path.empty()) {
+                path = pick_save_file(window_, path, workspace_.root());
+            }
+            if (path.empty()) {
+                return false;
+            }
+            workspace_.validate_scenario_destination(path);
+            session_.workspace_root = workspace_.root();
         }
         save_editor_session(session_, path);
         update_title();
@@ -493,6 +659,9 @@ private:
         try {
             json state = editor_state_json(session_);
             state["type"] = "state";
+            state["workspace"] = workspace_.is_open()
+                ? workspace_json()
+                : json(nullptr);
             const std::wstring serialized = to_wide(state.dump());
             webview_->PostWebMessageAsJson(serialized.c_str());
         } catch (const std::exception& error) {
@@ -511,6 +680,7 @@ private:
 
     std::filesystem::path initial_document_;
     EditorSession session_;
+    ScenarioWorkspace workspace_;
     HWND window_{};
     ComPtr<ICoreWebView2Controller> controller_;
     ComPtr<ICoreWebView2> webview_;
