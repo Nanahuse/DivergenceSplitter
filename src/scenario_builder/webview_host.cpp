@@ -263,8 +263,8 @@ std::filesystem::path pick_workspace_directory(HWND owner) {
 
 class WebViewHost {
 public:
-    explicit WebViewHost(std::filesystem::path initial_document)
-        : initial_document_(std::move(initial_document)) {}
+    explicit WebViewHost(std::filesystem::path initial_document, bool smoke_test)
+        : initial_document_(std::move(initial_document)), smoke_test_(smoke_test) {}
 
     int run() {
         const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -279,6 +279,12 @@ public:
                 workspace_.open(initial_document_.parent_path());
                 session_ = open_editor_session(initial_document_, workspace_.root());
             } catch (const std::exception& error) {
+                if (smoke_test_) {
+                    if (com_initialized) {
+                        CoUninitialize();
+                    }
+                    return 1;
+                }
                 const std::wstring message = to_wide(error.what());
                 MessageBoxW(
                     nullptr,
@@ -296,9 +302,13 @@ public:
         initialize_webview();
 
         MSG message{};
+        int exit_code = 0;
         while (GetMessageW(&message, nullptr, 0, 0) > 0) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
+        }
+        if (message.message == WM_QUIT) {
+            exit_code = static_cast<int>(message.wParam);
         }
 
         webview_.Reset();
@@ -306,7 +316,7 @@ public:
         if (com_initialized) {
             CoUninitialize();
         }
-        return 0;
+        return exit_code;
     }
 
 private:
@@ -517,7 +527,9 @@ private:
     }
 
     void webview_failed(const wchar_t* message) {
-        MessageBoxW(window_, message, L"Scenario Builder", MB_ICONERROR);
+        if (!smoke_test_) {
+            MessageBoxW(window_, message, L"Scenario Builder", MB_ICONERROR);
+        }
         PostQuitMessage(1);
     }
 
@@ -527,6 +539,9 @@ private:
             const std::string type = message.value("type", "");
             if (type == "ready") {
                 publish_state();
+                if (smoke_test_) {
+                    PostQuitMessage(0);
+                }
                 return;
             }
             if (type == "command") {
@@ -792,6 +807,7 @@ private:
     }
 
     std::filesystem::path initial_document_;
+    bool smoke_test_;
     EditorSession session_;
     ScenarioWorkspace workspace_;
     HWND window_{};
@@ -801,18 +817,23 @@ private:
 
 }  // namespace
 
-int run_scenario_builder(const std::filesystem::path& initial_document) {
+int run_scenario_builder(
+    const std::filesystem::path& initial_document,
+    bool smoke_test
+) {
     try {
-        WebViewHost host{initial_document};
+        WebViewHost host{initial_document, smoke_test};
         return host.run();
     } catch (const std::exception& error) {
-        const std::wstring message = to_wide(error.what());
-        MessageBoxW(
-            nullptr,
-            message.c_str(),
-            L"Scenario Builder",
-            MB_ICONERROR
-        );
+        if (!smoke_test) {
+            const std::wstring message = to_wide(error.what());
+            MessageBoxW(
+                nullptr,
+                message.c_str(),
+                L"Scenario Builder",
+                MB_ICONERROR
+            );
+        }
         return 1;
     }
 }

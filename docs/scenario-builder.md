@@ -1,8 +1,9 @@
 # Scenario Builder PoC
 
 Scenario Builder は、DivergenceSplitter の YAML v2 シナリオを GUI で編集するための
-WebView2 + React の検証用アプリです。既定ではビルドされず、従来の
-DivergenceSplitter とテストには影響しません。
+WebView2 + React アプリです。通常の配布ZIPには `ScenarioBuilder.exe` と
+`scenario-builder-ui/` が同梱されます。開発者向けの既定ビルドでは無効で、
+`DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER=ON` のときだけビルドされます。
 
 ## 目的
 
@@ -37,6 +38,28 @@ ctest --preset full
 `cmake --build --preset builder --target ScenarioBuilder` の後、
 `cmake --install build/builder --prefix <dir> --component ScenarioBuilder` で
 実行ファイル、Web UI、必要な DLL、ライセンスをまとめて配置できます。
+
+## 配布ZIPへの同梱
+
+`ci` プリセットは `DIVERGENCESPLITTER_BUILD_UI=ON` と
+`DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER=ON` の両方を有効にし、次の構成で
+1つの `DivergenceSplitter-<version>-windows-x64.zip` を生成します。
+
+```text
+DivergenceSplitter.exe
+ScenarioBuilder.exe
+scenario-builder-ui/
+licenses/
+docs/scenario-builder.md
+LICENSE.txt
+DISTRIBUTION-NOTICE.txt
+```
+
+両アプリは同じDLLを共有し、Node.js、npm、WebView2 SDK、WebView2 Runtimeは
+配布ZIPに含まれません。Scenario Builderはシステムにインストールされた
+Microsoft Edge WebView2 Evergreen Runtimeを使用します。Runtimeがない場合は
+インストール方法が表示されます。配布ZIPの検証では `ScenarioBuilder.exe --check`
+に加えて、WebView2で画面を起動するスモークテストも実行します。
 
 ## 構成
 
@@ -208,9 +231,10 @@ C:\Scenarios\SuperMarioWorld\
 ## PoC の制限
 
 - 映像・カメラ・NDI の入力、プレビュー、Detector 実行は行いません。
-- ROI を画像上で選択する機能はありません。数値で編集します。\n- Asset 内の画像削除は行いません。
+- ROI を画像上で選択する機能はありません。数値で編集します。
+- Asset 内の画像削除は行いません。
 - 使用箇所から、ネストした共通定義の内部構造は変更できません。共通定義側で編集します。
 - Rule Sequence の条件は表示できますが、ステップ構造の編集は限定的です。
 - 旧 YAML の編集用インポートと v2 への自動変換は未実装です。
 - 既存 Dear ImGui UI とは統合していません。
-- コメントや書式の完全維持、完成版の配布物・インストーラーは対象外です。
+- コメントや書式の完全維持、インストーラーは対象外です。通常の配布ZIPには同梱されます。

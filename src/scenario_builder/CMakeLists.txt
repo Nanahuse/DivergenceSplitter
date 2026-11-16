@@ -157,11 +157,16 @@ add_custom_target(scenario_builder_frontend
 )
 add_dependencies(ScenarioBuilder scenario_builder_frontend)
 
-install(TARGETS ScenarioBuilder
-    RUNTIME_DEPENDENCY_SET scenario_builder_runtime
-    RUNTIME DESTINATION . COMPONENT ScenarioBuilder
-)
-install(RUNTIME_DEPENDENCY_SET scenario_builder_runtime
+if(DIVERGENCESPLITTER_COMBINED_DISTRIBUTION)
+    install(TARGETS ScenarioBuilder
+        RUNTIME DESTINATION . COMPONENT ScenarioBuilder
+    )
+else()
+    install(TARGETS ScenarioBuilder
+        RUNTIME_DEPENDENCY_SET scenario_builder_runtime
+        RUNTIME DESTINATION . COMPONENT ScenarioBuilder
+    )
+    install(RUNTIME_DEPENDENCY_SET scenario_builder_runtime
         DESTINATION .
         COMPONENT ScenarioBuilder
         DIRECTORIES "$<TARGET_FILE_DIR:ScenarioBuilder>"
@@ -202,14 +207,15 @@ install(RUNTIME_DEPENDENCY_SET scenario_builder_runtime
             "[Dd][Ww][Mm][Aa][Pp][Ii]\\.dll"
         POST_EXCLUDE_REGEXES
             ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\][Ss][Yy][Ss][Tt][Ee][Mm]32.*"
-)
+    )
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION "licenses" COMPONENT ScenarioBuilder)
+    install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION . RENAME LICENSE.txt COMPONENT ScenarioBuilder)
+    install(FILES
+        "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt"
+        DESTINATION . COMPONENT ScenarioBuilder
+    )
+endif()
 install(DIRECTORY "${_scenario_builder_frontend}/dist/" DESTINATION "scenario-builder-ui" COMPONENT ScenarioBuilder)
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION "licenses" COMPONENT ScenarioBuilder)
-install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION . RENAME LICENSE.txt COMPONENT ScenarioBuilder)
-install(FILES
-    "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt"
-    DESTINATION . COMPONENT ScenarioBuilder
-)
 install(FILES
     "${PROJECT_SOURCE_DIR}/docs/scenario-builder.md"
     DESTINATION docs COMPONENT ScenarioBuilder

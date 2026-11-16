@@ -13,6 +13,7 @@ namespace {
 struct CommandLine {
     std::filesystem::path document;
     std::filesystem::path check;
+    bool smoke_test = false;
 };
 
 CommandLine parse_command_line() {
@@ -22,14 +23,14 @@ CommandLine parse_command_line() {
         return {};
     }
     CommandLine result;
-    for (int index = 1; index + 1 < count; ++index) {
+    for (int index = 1; index < count; ++index) {
         const std::wstring_view argument{arguments[index]};
-        if (argument == L"--open") {
-            result.document = arguments[index + 1];
-            ++index;
-        } else if (argument == L"--check") {
-            result.check = arguments[index + 1];
-            ++index;
+        if (argument == L"--open" && index + 1 < count) {
+            result.document = arguments[++index];
+        } else if (argument == L"--check" && index + 1 < count) {
+            result.check = arguments[++index];
+        } else if (argument == L"--smoke-test") {
+            result.smoke_test = true;
         }
     }
     LocalFree(arguments);
@@ -54,5 +55,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     if (!arguments.check.empty()) {
         return check_document(arguments.check);
     }
-    return divergencesplitter::scenario_builder::run_scenario_builder(arguments.document);
+    return divergencesplitter::scenario_builder::run_scenario_builder(
+        arguments.document,
+        arguments.smoke_test
+    );
 }

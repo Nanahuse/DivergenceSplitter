@@ -19,6 +19,7 @@ jobs:
     outputs:
       version: ${{ steps.package.outputs.version }}
       artifact-id: ${{ steps.distribution.outputs.artifact-id }}
+      zip-size: ${{ steps.package.outputs.size }}
     env:
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
       NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
@@ -35,6 +36,13 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/scenario-builder/package-lock.json
 
       - name: Test distribution scripts
         run: python -m unittest discover -s tools/tests -v
@@ -131,11 +139,21 @@ jobs:
           restore-keys: |
             sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-
 
+      - name: Cache WebView2 SDK
+        uses: actions/cache@v6
+        with:
+          path: build/ci/_deps/webview2
+          key: webview2-sdk-1.0.2903.40-${{ runner.os }}-${{ runner.arch }}
+
       - name: Configure
         run: cmake --preset ci -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DFETCHCONTENT_QUIET=OFF
 
       - name: Build
         run: cmake --build --preset ci --parallel
+
+      - name: Test frontend
+        working-directory: frontend/scenario-builder
+        run: npm test
 
       - name: Show sccache statistics
         if: always() && steps.sccache.outcome == 'success'
@@ -174,7 +192,9 @@ jobs:
           }
           "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
           "filename=$($zip.Name)" >> $env:GITHUB_OUTPUT
+          "size=$($zip.Length)" >> $env:GITHUB_OUTPUT
           $zip | Select-Object Name, Length | Format-Table -AutoSize
+          "Distribution ZIP: $($zip.Name), $($zip.Length) bytes" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload distribution
         id: distribution

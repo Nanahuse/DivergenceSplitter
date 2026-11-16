@@ -10,23 +10,68 @@ import re
 import subprocess
 import tempfile
 import zipfile
-from pathlib import Path
+from collections import Counter
+from pathlib import Path, PurePosixPath
 
 import collect_licenses
+
+
+SCENARIO = """schema_version: 2
+start_condition: {type: elapsed, duration: 1s}
+splits: []
+"""
+
+
+def verify_archive_names(names: list[str]) -> None:
+    normalized = [name.casefold() for name in names if name and not name.endswith("/")]
+    duplicates = sorted(
+        name for name, count in Counter(normalized).items() if count > 1
+    )
+    if duplicates:
+        raise RuntimeError(
+            "ZIP contains duplicate entries: " + ", ".join(duplicates)
+        )
+
+    dlls = [
+        PurePosixPath(name)
+        for name in names
+        if name and PurePosixPath(name).suffix.casefold() == ".dll"
+    ]
+    duplicate_dlls = sorted(
+        name for name, count in Counter(path.name.casefold() for path in dlls).items()
+        if count > 1
+    )
+    if duplicate_dlls:
+        raise RuntimeError(
+            "ZIP contains duplicate DLL copies: " + ", ".join(duplicate_dlls)
+        )
+    outside_root = [str(path) for path in dlls if len(path.parts) != 1]
+    if outside_root:
+        raise RuntimeError(
+            "ZIP stores DLLs outside the package root: " + ", ".join(outside_root)
+        )
 
 
 def verify_contents(root: Path, lock: dict[str, str]) -> None:
     required = [
         "DivergenceSplitter.exe",
+        "ScenarioBuilder.exe",
+        "scenario-builder-ui/index.html",
         "opencv_core4.dll",
         "LICENSE.txt",
         "DISTRIBUTION-NOTICE.txt",
         "licenses/components.json",
         "licenses/NDI-TERMS.txt",
+        "licenses/webview2.txt",
     ]
     for name in required:
         if not (root / name).is_file() or not (root / name).stat().st_size:
             raise RuntimeError(f"ZIP missing required distribution file: {name}")
+    ui_assets = root / "scenario-builder-ui" / "assets"
+    if not ui_assets.is_dir() or not any(
+        file.is_file() and file.stat().st_size for file in ui_assets.rglob("*")
+    ):
+        raise RuntimeError("ZIP is missing the built Scenario Builder UI assets")
     if (root / "divergencesplitter-cli.exe").exists():
         raise RuntimeError("ZIP still contains the removed product CLI")
     if (root / "vc_redist.x64.exe").exists():
@@ -39,6 +84,11 @@ def verify_contents(root: Path, lock: dict[str, str]) -> None:
             raise RuntimeError(f"ZIP contains the optional NDI runtime: {name}")
     if (root / "licenses/ndi-sdk").exists():
         raise RuntimeError("ZIP contains the SDK agreement directory")
+    for name in ("WebView2Loader.dll", "Microsoft.Web.WebView2.Core.dll"):
+        if (root / name).exists():
+            raise RuntimeError(f"ZIP contains the WebView2 SDK runtime: {name}")
+    if (root / "EBWebView").exists():
+        raise RuntimeError("ZIP contains a fixed-version WebView2 runtime")
 
     inventory = collect_licenses.load_inventory(root)
     collect_licenses.validate_application(root, inventory)
@@ -58,6 +108,10 @@ def verify_contents(root: Path, lock: dict[str, str]) -> None:
             raise RuntimeError(
                 f"ZIP contains development files or installers: {file.name}"
             )
+        if file.name.casefold() in ("node.exe", "npm", "npm.cmd", "npx.cmd"):
+            raise RuntimeError(f"ZIP contains Node.js tooling: {file.name}")
+        if "node_modules" in (part.casefold() for part in file.parts):
+            raise RuntimeError("ZIP contains Node.js dependencies")
 
 
 def launch(root: Path) -> None:
@@ -77,6 +131,33 @@ def launch(root: Path) -> None:
         **hidden,
     )
 
+    scenario = root / "scenario-builder-smoke.yaml"
+    scenario.write_text(SCENARIO, encoding="utf-8")
+    try:
+        subprocess.run(
+            [str(root / "ScenarioBuilder.exe"), "--check", str(scenario)],
+            cwd=root,
+            env=environment,
+            check=True,
+            timeout=30,
+            **hidden,
+        )
+        subprocess.run(
+            [
+                str(root / "ScenarioBuilder.exe"),
+                "--open",
+                str(scenario),
+                "--smoke-test",
+            ],
+            cwd=root,
+            env=environment,
+            check=True,
+            timeout=60,
+            **hidden,
+        )
+    finally:
+        scenario.unlink(missing_ok=True)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -93,10 +174,14 @@ def main() -> None:
     ) as temporary:
         root = Path(temporary).resolve()
         with zipfile.ZipFile(packages[0]) as package:
+            verify_archive_names(package.namelist())
             package.extractall(root)
         verify_contents(root, lock)
         launch(root)
-    print("Verified ZIP licenses, SDK exclusions and GUI startup without NDI runtime")
+    print(
+        "Verified combined ZIP contents, licenses, SDK exclusions, "
+        "and both GUI startup paths without NDI runtime"
+    )
 
 
 if __name__ == "__main__":

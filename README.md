@@ -14,6 +14,7 @@ DivergenceSplitterは、映像を判定し、LiveSplitのStart、Split、Reset�
 - カメラ、キャプチャーカード、動画ファイル、NDI®の映像を使えます。入力映像の切り取り（Crop）とサイズ変更（Resize）も設定できます。
 - 画像を調べるDetectorと、スコアや経過時間を判定するConditionを組み合わせて、YAMLでシナリオを作れます。
 - 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。Monitorで映像、接続状態、判定結果を確認できます。
+- 同梱のScenario Builder（`ScenarioBuilder.exe`）で、共通Condition / DetectorとYAML v2のシナリオをGUIで編集できます。
 
 ## インストール
 
@@ -22,7 +23,9 @@ DivergenceSplitterは、映像を判定し、LiveSplitのStart、Split、Reset�
 
 NDI入力を使う場合は、[NDI Runtime](https://ndi.video/)もインストールしてください。配布ZIPには含まれていません。
 
-起動したら、[はじめに](docs/getting-started.md)の手順でLiveSplitを接続し、自動Splitを試してください。
+Scenario Builderを起動するときは、同じフォルダーの`ScenarioBuilder.exe`を使います。Scenario BuilderはMicrosoft Edge WebView2 Runtimeを使用します。未インストールの場合は、案内に従ってEvergreen Runtimeをインストールしてください。WebView2 Runtimeは配布ZIPに含まれていません。
+
+DivergenceSplitterを起動したら、[はじめに](docs/getting-started.md)の手順でLiveSplitを接続し、自動Splitを試してください。Scenario Builderの使い方は[Scenario Builder](docs/scenario-builder.md)を参照してください。
 
 ## ドキュメント
 

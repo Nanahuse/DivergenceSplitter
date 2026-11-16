@@ -263,6 +263,9 @@ class PackageTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         names = [
             "DivergenceSplitter.exe",
+            "ScenarioBuilder.exe",
+            "scenario-builder-ui/index.html",
+            "scenario-builder-ui/assets/index.js",
             "opencv_core4.dll",
             "LICENSE.txt",
             "DISTRIBUTION-NOTICE.txt",
@@ -283,6 +286,7 @@ class PackageTests(unittest.TestCase):
                 "nlohmann-json",
                 "livesplit-bridge-client-cpp",
                 "windows-capture-device-list",
+                "webview2",
             )
         ]
         for name in names:
@@ -313,6 +317,40 @@ class PackageTests(unittest.TestCase):
                     verify_windows_zip.verify_contents(self.root, self.lock)
             notice.write_bytes(b"test")
 
+    def test_scenario_builder_files_are_required(self):
+        for name in ("ScenarioBuilder.exe", "scenario-builder-ui/index.html"):
+            file = self.root / name
+            original = file.read_bytes()
+            file.unlink()
+            with self.subTest(name=name), self.assertRaisesRegex(
+                RuntimeError, "missing required distribution file"
+            ):
+                verify_windows_zip.verify_contents(self.root, self.lock)
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(original)
+
+    def test_scenario_builder_ui_assets_are_required(self):
+        asset = self.root / "scenario-builder-ui/assets/index.js"
+        original = asset.read_bytes()
+        asset.unlink()
+        with self.assertRaisesRegex(RuntimeError, "UI assets"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
+        asset.write_bytes(original)
+
+    def test_duplicate_archive_entries_are_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "duplicate entries"):
+            verify_windows_zip.verify_archive_names(
+                ["ScenarioBuilder.exe", "scenariobuilder.exe"]
+            )
+
+    def test_nested_and_duplicate_dlls_are_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "outside the package root"):
+            verify_windows_zip.verify_archive_names(["bin/opencv_core4.dll"])
+        with self.assertRaisesRegex(RuntimeError, "duplicate DLL copies"):
+            verify_windows_zip.verify_archive_names(
+                ["opencv_core4.dll", "assets/opencv_core4.dll"]
+            )
+
     def test_ndi_runtime_is_rejected(self):
         for name in ("Processing.NDI.Lib.x64.dll", "Processing.NDI.Lib.Licenses.txt"):
             file = self.root / name
@@ -322,6 +360,28 @@ class PackageTests(unittest.TestCase):
             ):
                 verify_windows_zip.verify_contents(self.root, self.lock)
             file.unlink()
+
+    def test_webview2_runtime_is_rejected(self):
+        for name in ("WebView2Loader.dll", "Microsoft.Web.WebView2.Core.dll"):
+            file = self.root / name
+            file.write_bytes(b"runtime")
+            with self.subTest(name=name), self.assertRaisesRegex(
+                RuntimeError, "WebView2 SDK runtime"
+            ):
+                verify_windows_zip.verify_contents(self.root, self.lock)
+            file.unlink()
+        fixed = self.root / "EBWebView/x64/EmbeddedBrowserWebView.dll"
+        fixed.parent.mkdir(parents=True)
+        fixed.write_bytes(b"runtime")
+        with self.assertRaisesRegex(RuntimeError, "fixed-version WebView2"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
+
+    def test_node_tooling_is_rejected(self):
+        file = self.root / "scenario-builder-ui/node_modules/pkg/node.exe"
+        file.parent.mkdir(parents=True)
+        file.write_bytes(b"node")
+        with self.assertRaisesRegex(RuntimeError, "Node.js"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
 
     def test_qt_runtime_is_rejected(self):
         for name in ("Qt6Core.dll", "platforms/qwindows.dll"):
