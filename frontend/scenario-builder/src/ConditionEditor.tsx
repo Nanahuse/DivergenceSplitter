@@ -33,6 +33,10 @@ import { Tooltip } from "./Tooltip";
 import { ConditionSummary } from "./ConditionSummary";
 import { DetectorPreview } from "./InputPreview";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
+import {
+  conditionExposurePanel,
+  nestedConditionUsageExposure,
+} from "./conditionExposure";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
 function assetName(asset: string): string {
@@ -844,13 +848,11 @@ function ExposedParametersPanel({
   conditionName,
   exposure,
   resolvedRoot,
-  usageWith,
   actions,
 }: {
   conditionName: string;
   exposure: DefinitionExposureInfo | null;
   resolvedRoot: JsonValue | undefined;
-  usageWith: Record<string, JsonValue> | null;
   actions: PropertyActions;
 }) {
   if (!exposure || exposure.exposed.size === 0) {
@@ -877,9 +879,7 @@ function ExposedParametersPanel({
       path,
       label: `${owner} / ${leaf}`,
       value: valueAtPath(resolvedRoot, path),
-      overridden: usageWith
-        ? Object.prototype.hasOwnProperty.call(usageWith, parameter)
-        : false,
+      overridden: actions.overrides.has(pathKey(path)),
     });
   }
   if (entries.length === 0) {
@@ -2012,32 +2012,22 @@ function buildNestedConditionUsageActions(
   sendCommand: (command: Record<string, unknown>) => void,
   onAddAsset?: (apply: (asset: string) => void) => void,
 ): PropertyActions {
-  const usageName = sharedUseName(usageValue);
-  const childDefinition = conditionDefinitionByName(document, usageName);
-  const childExposure = definitionExposureInfo(document, "condition", usageName);
-  const parentName = rootMode === "definition-condition"
-    ? String(rootPath[2] ?? "")
-    : "";
-  const parentExposure = parentName
-    ? definitionExposureInfo(document, "condition", parentName)
-    : null;
-  const parentPrefix = usagePath.slice(rootPath.length);
-  const parentPath = (path: Path) => [...parentPrefix, ...path];
-  const parentExposed = (path: Path) => (
-    parentExposure?.exposed.has(pathKey(parentPath(path))) ?? false
+  const exposure = nestedConditionUsageExposure(
+    document,
+    rootMode,
+    rootPath,
+    usagePath,
+    usageValue,
   );
-  const childExposed = (path: Path) => childExposure.exposed.has(pathKey(path));
-
-  const overrides = new Set<string>();
-  const withValues = sharedUseWith(usageValue);
-  for (const [exposedKey, parameter] of childExposure.exposed) {
-    if (
-      Object.prototype.hasOwnProperty.call(withValues, parameter)
-      && !parentExposed(pathFromKey(exposedKey))
-    ) {
-      overrides.add(exposedKey);
-    }
-  }
+  const usageName = exposure.usageName;
+  const childDefinition = conditionDefinitionByName(document, usageName);
+  const childExposure = exposure.childExposure;
+  const parentName = exposure.parentName;
+  const parentExposure = exposure.parentExposure;
+  const parentPath = exposure.parentPath;
+  const parentExposed = exposure.parentExposed;
+  const childExposed = exposure.childExposed;
+  const overrides = exposure.overrides;
 
   return {
     schema,
@@ -2051,21 +2041,9 @@ function buildNestedConditionUsageActions(
     document,
     rawValue: (path) => valueAtPath(childDefinition?.condition, path),
     set: (path, next) => {
-      if (parentExposed(path)) {
-        sendCommand({
-          type: "set_definition_setting",
-          kind: "condition",
-          name: parentName,
-          setting_path: parentPath(path),
-          value: next,
-        });
-      } else if (childExposed(path)) {
-        sendCommand({
-          type: "set_usage_setting",
-          path: usagePath,
-          setting_path: path,
-          value: next,
-        });
+      const command = exposure.writeCommand(path, next);
+      if (command) {
+        sendCommand(command);
       }
     },
     readOnly: (path) => !(parentExposed(path) || childExposed(path)),
@@ -2097,12 +2075,9 @@ function buildNestedConditionUsageActions(
       : undefined,
     structureEditable: () => false,
     reset: (path) => {
-      if (childExposed(path) && !parentExposed(path)) {
-        sendCommand({
-          type: "reset_usage_setting",
-          path: usagePath,
-          setting_path: path,
-        });
+      const command = exposure.resetCommand(path);
+      if (command) {
+        sendCommand(command);
       }
     },
   };
@@ -2191,23 +2166,16 @@ export function ConditionInspector({
     onPickInputImage,
     onRequestReferenceImage,
   };
-  const exposureConditionName = mode === "usage-condition"
-    ? sharedUseName(valueAtPathRawRoot(document, rootPath))
-    : mode === "definition-condition"
-      ? String(rootPath[2] ?? "")
-      : "";
-  const exposureInfo = exposureConditionName
-    ? definitionExposureInfo(document, "condition", exposureConditionName)
-    : null;
-  const exposureWith = mode === "usage-condition"
-    ? sharedUseWith(valueAtPathRawRoot(document, rootPath))
-    : null;
-  const exposureResolved = mode === "usage-condition" || mode === "definition-condition"
-    ? resolvedRootAtPath(document, rootPath)
-    : undefined;
-  const showExposurePanel = relative.length === 0
-    && exposureInfo !== null
-    && (mode === "usage-condition" || mode === "definition-condition");
+  const panel = conditionExposurePanel(
+    document,
+    mode,
+    rootPath,
+    selectedPath,
+    rawRoot,
+    nestedUsage,
+    value,
+  );
+  const showExposurePanel = panel.exposure !== null && panel.conditionName !== "";
   return (
     <div className="inspector">
       <h2>Properties</h2>
@@ -2230,10 +2198,9 @@ export function ConditionInspector({
       ) : null}
       {showExposurePanel ? (
         <ExposedParametersPanel
-          conditionName={exposureConditionName}
-          exposure={exposureInfo}
-          resolvedRoot={exposureResolved}
-          usageWith={exposureWith}
+          conditionName={panel.conditionName}
+          exposure={panel.exposure}
+          resolvedRoot={panel.resolvedRoot}
           actions={actions}
         />
       ) : null}
