@@ -99,6 +99,10 @@ jobs:
           --target ScenarioBuilder divergencesplitter_scenario_editor_tests divergencesplitter_scenario_v2_tests divergencesplitter_scenario_workspace_tests
           --parallel
 
+      - name: Test frontend
+        working-directory: frontend/scenario-builder
+        run: npm test
+
       - name: Test
         run: >-
           ctest --test-dir build/builder

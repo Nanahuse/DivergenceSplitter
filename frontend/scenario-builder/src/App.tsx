@@ -14,17 +14,15 @@ import {
 } from "./model";
 import { ConditionInspector, ConditionPane, DetectorPane } from "./ConditionEditor";
 import { RulesEditor } from "./RulesEditor";
-
-type Selection =
-  | { kind: "condition-definition"; name: string }
-  | { kind: "detector-definition"; name: string }
-  | { kind: "special"; name: SpecialCondition }
-  | { kind: "split"; index: number }
-  | { kind: "rule"; split: number; rule: number }
-  | { kind: "sequence-rule"; split: number; rule: number; step: number }
-  | null;
-
-type SpecialCondition = "start_condition" | "reset_condition" | "incomplete_condition";
+import {
+  adjustSelectionForSplitMutation,
+  inverseSplitMutation,
+  selectionPath,
+  splitMutationForCommand,
+  type Selection,
+  type SpecialCondition,
+  type SplitMutation,
+} from "./selection";
 
 interface PendingRename {
   kind: "condition-definition" | "detector-definition";
@@ -34,39 +32,20 @@ interface PendingRename {
 
 const starterCondition = { type: "elapsed", duration: "1s" };
 
-function selectionPath(selection: Selection): Path | null {
-  if (!selection) {
-    return null;
-  }
-  switch (selection.kind) {
-    case "condition-definition":
-      return ["definitions", "conditions", selection.name];
-    case "detector-definition":
-      return ["definitions", "detectors", selection.name];
-    case "special":
-      return [selection.name];
-    case "rule":
-      return ["splits", selection.split, "rules", selection.rule, "condition"];
-    case "sequence-rule":
-      return [
-        "splits",
-        selection.split,
-        "rules",
-        selection.rule,
-        "sequence",
-        selection.step,
-        "condition",
-      ];
-    case "split":
-      return null;
-  }
-}
-
 function conditionMode(value: JsonValue | null | undefined): string {
   if (value === null || value === undefined) {
     return "未設定";
   }
   return isSharedUse(value) ? `use ${sharedUseName(value)}` : "inline";
+}
+
+interface PendingCommand {
+  action: "command" | "undo" | "redo";
+  mutation: SplitMutation | null;
+}
+
+interface HistoryEntry {
+  mutation: SplitMutation | null;
 }
 
 export default function App() {
@@ -80,8 +59,13 @@ export default function App() {
   const [newDetectorName, setNewDetectorName] = useState("");
   const pendingAssetRef = useRef<((asset: string) => void) | null>(null);
   const pendingRenameRef = useRef<PendingRename | null>(null);
-  const pendingSplitMoveRef = useRef<{ from: number; to: number } | null>(null);
-  const previousSplitsRef = useRef<EditorState["document"]["splits"] | null>(null);
+  const pendingCommandsRef = useRef<PendingCommand[]>([]);
+  const undoHistoryRef = useRef<HistoryEntry[]>([]);
+  const redoHistoryRef = useRef<HistoryEntry[]>([]);
+  const selectionRef = useRef<Selection>(selection);
+  const selectedPathRef = useRef<Path | null>(selectedPath);
+  selectionRef.current = selection;
+  selectedPathRef.current = selectedPath;
   const [draggedSplit, setDraggedSplit] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<{ index: number; after: boolean } | null>(null);
   const [inputImage, setInputImage] = useState<PreviewImage | null>(null);
@@ -91,6 +75,65 @@ export default function App() {
   useEffect(() => {
     const detach = listenToHost(
       (nextState) => {
+        const pending = pendingCommandsRef.current.shift();
+        let nextSelection = selectionRef.current;
+        let nextPath = selectedPathRef.current;
+        if (pending) {
+          if (pending.action === "command") {
+            const adjusted = adjustSelectionForSplitMutation(
+              nextSelection,
+              nextPath,
+              pending.mutation,
+              nextState.document.splits.length,
+            );
+            nextSelection = adjusted.selection;
+            nextPath = adjusted.selectedPath;
+            undoHistoryRef.current.push({ mutation: pending.mutation });
+            redoHistoryRef.current = [];
+          } else if (pending.action === "undo") {
+            const entry = undoHistoryRef.current.pop();
+            if (entry) {
+              redoHistoryRef.current.push(entry);
+              if (entry.mutation) {
+                const adjusted = adjustSelectionForSplitMutation(
+                  nextSelection,
+                  nextPath,
+                  inverseSplitMutation(entry.mutation),
+                  nextState.document.splits.length,
+                );
+                nextSelection = adjusted.selection;
+                nextPath = adjusted.selectedPath;
+              }
+            }
+          } else {
+            const entry = redoHistoryRef.current.pop();
+            if (entry) {
+              undoHistoryRef.current.push(entry);
+              if (entry.mutation) {
+                const adjusted = adjustSelectionForSplitMutation(
+                  nextSelection,
+                  nextPath,
+                  entry.mutation,
+                  nextState.document.splits.length,
+                );
+                nextSelection = adjusted.selection;
+                nextPath = adjusted.selectedPath;
+              }
+            }
+          }
+          if (nextSelection !== selectionRef.current
+              || nextPath !== selectedPathRef.current) {
+            selectionRef.current = nextSelection;
+            selectedPathRef.current = nextPath;
+            setSelection(nextSelection);
+            setSelectedPath(nextPath);
+          }
+        }
+        if (!nextState.canUndo && !nextState.canRedo
+            && pendingCommandsRef.current.length === 0) {
+          undoHistoryRef.current = [];
+          redoHistoryRef.current = [];
+        }
         const pendingRename = pendingRenameRef.current;
         if (pendingRename) {
           const names = pendingRename.kind === "condition-definition"
@@ -112,7 +155,9 @@ export default function App() {
       (hostError) => {
         pendingAssetRef.current = null;
         pendingRenameRef.current = null;
-        pendingSplitMoveRef.current = null;
+        if (pendingCommandsRef.current.length > 0) {
+          pendingCommandsRef.current.shift();
+        }
         setError(hostError.message);
       },
       (asset) => {
@@ -146,51 +191,6 @@ export default function App() {
     if (!state) {
       return;
     }
-    const previousSplits = previousSplitsRef.current;
-    const nextSplits = state.document.splits;
-    if (previousSplits && previousSplits !== nextSplits && selection
-        && (selection.kind === "split" || selection.kind === "rule"
-          || selection.kind === "sequence-rule")) {
-      const oldIndex = selection.kind === "split" ? selection.index : selection.split;
-      let nextIndex = oldIndex;
-      const pending = pendingSplitMoveRef.current;
-      if (pending && pending.from === oldIndex) {
-        nextIndex = pending.to;
-      } else if (oldIndex < previousSplits.length) {
-        const anchor = JSON.stringify(previousSplits[oldIndex]);
-        const occurrence = previousSplits.slice(0, oldIndex)
-          .filter((item) => JSON.stringify(item) === anchor).length;
-        const matches: number[] = [];
-        nextSplits.forEach((item, index) => {
-          if (JSON.stringify(item) === anchor) {
-            matches.push(index);
-          }
-        });
-        if (matches.length > 0) {
-          nextIndex = matches[Math.min(occurrence, matches.length - 1)];
-        }
-      }
-      if (nextIndex !== oldIndex && nextIndex >= 0 && nextIndex < nextSplits.length) {
-        if (selection.kind === "split") {
-          setSelection({ ...selection, index: nextIndex });
-        } else {
-          setSelection({ ...selection, split: nextIndex });
-        }
-        setSelectedPath((path) => (
-          path && path[0] === "splits"
-            ? path.map((part, index) => index === 1 ? nextIndex : part)
-            : path
-        ));
-      }
-      pendingSplitMoveRef.current = null;
-    }
-    previousSplitsRef.current = nextSplits;
-  }, [state, selection, selectedPath]);
-
-  useEffect(() => {
-    if (!state) {
-      return;
-    }
     if (selection?.kind === "split" && selection.index >= state.document.splits.length) {
       setSelection(null);
     }
@@ -213,9 +213,21 @@ export default function App() {
   const activePath = selectedPath && rootPath ? selectedPath : rootPath;
 
   const runCommand = useCallback((command: Record<string, unknown>) => {
-    if (!preview) {
-      sendCommand(command);
+    if (preview) {
+      return;
     }
+    const type = typeof command.type === "string" ? command.type : "";
+    if (type === "undo") {
+      pendingCommandsRef.current.push({ action: "undo", mutation: null });
+    } else if (type === "redo") {
+      pendingCommandsRef.current.push({ action: "redo", mutation: null });
+    } else {
+      pendingCommandsRef.current.push({
+        action: "command",
+        mutation: splitMutationForCommand(command),
+      });
+    }
+    sendCommand(command);
   }, [preview]);
 
   const requestRenameDefinition = useCallback((
@@ -256,7 +268,6 @@ export default function App() {
     if (from === to) {
       return;
     }
-    pendingSplitMoveRef.current = { from, to };
     runCommand({ type: "move_split", from, to });
   }, [runCommand]);
 
