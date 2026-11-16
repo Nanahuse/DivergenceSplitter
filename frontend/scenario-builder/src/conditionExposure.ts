@@ -1,5 +1,8 @@
 import {
+  conditionAtPath,
+  conditionDefinitionByName,
   definitionExposureInfo,
+  detectorDefinitionByName,
   isSharedUse,
   pathFromKey,
   pathKey,
@@ -20,6 +23,29 @@ export type ConditionInspectorMode =
 
 export type NestedConditionRootMode = "inline" | "definition-condition";
 
+export function conditionUsageName(value: JsonValue | undefined): string {
+  return isSharedUse(value) ? sharedUseName(value) : "";
+}
+
+export interface ConditionInspectorRoots {
+  rawUsage: JsonValue | undefined;
+  rawRoot: JsonValue | undefined;
+}
+
+export function conditionInspectorRoots(
+  document: ScenarioDocument,
+  mode: ConditionInspectorMode,
+  rootPath: Path,
+): ConditionInspectorRoots {
+  const rawUsage = conditionAtPath(document, rootPath);
+  const rawRoot = mode === "definition-detector"
+    ? detectorDefinitionByName(document, String(rootPath[2] ?? ""))?.detector
+    : mode === "usage-condition"
+      ? conditionDefinitionByName(document, sharedUseName(rawUsage))?.condition
+      : rawUsage;
+  return { rawUsage, rawRoot };
+}
+
 export interface ConditionExposurePanel {
   conditionName: string;
   exposure: DefinitionExposureInfo | null;
@@ -31,7 +57,7 @@ export function conditionExposurePanel(
   mode: ConditionInspectorMode,
   rootPath: Path,
   selectedPath: Path,
-  rawRoot: JsonValue | undefined,
+  rawUsage: JsonValue | undefined,
   nestedUsage: JsonValue | undefined,
   value: JsonValue | undefined,
 ): ConditionExposurePanel {
@@ -39,7 +65,7 @@ export function conditionExposurePanel(
   const panelUsage = nestedUsage
     ?? (
       mode === "usage-condition" && relative.length === 0
-        ? rawRoot
+        ? rawUsage
         : undefined
     );
   const conditionName = isSharedUse(panelUsage)

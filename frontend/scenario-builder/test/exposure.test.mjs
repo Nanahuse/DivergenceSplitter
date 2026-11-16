@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   conditionExposurePanel,
+  conditionInspectorRoots,
+  conditionUsageName,
   nestedConditionUsageExposure,
 } from "../src/conditionExposure.ts";
 import { pathKey, valueAtPath } from "../src/model.ts";
@@ -59,6 +61,10 @@ const parentResolved = {
 };
 
 const rootUse = { use: "sp_even", with: { reference: "Asset/SP2.png" } };
+const parentRootUse = {
+  use: "sp_parent",
+  with: { course_name_reference: "Asset/SP3.png" },
+};
 
 const nestedRaw = {
   type: "then",
@@ -137,6 +143,21 @@ const document = {
         },
       ],
     },
+    {
+      rules: [
+        {
+          condition: parentRootUse,
+          condition_resolved: {
+            type: "then",
+            conditions: [
+              spEvenResolved("Asset/SP3.png"),
+              { type: "elapsed", duration: "2s" },
+            ],
+          },
+          action: "c",
+        },
+      ],
+    },
   ],
 };
 
@@ -159,13 +180,18 @@ function nestedSelection(root, selectedRelativePath) {
   };
 }
 
-test("root shared condition exposes its parameters", () => {
+test("rule root keeps shared usage metadata separate from the definition body", () => {
+  const roots = conditionInspectorRoots(document, "usage-condition", ruleRoot);
+  assert.equal(conditionUsageName(roots.rawUsage), "sp_even");
+  assert.equal(roots.rawUsage.use, "sp_even");
+  assert.equal(roots.rawRoot.type, "all");
+
   const panel = conditionExposurePanel(
     document,
     "usage-condition",
     ruleRoot,
     ruleRoot,
-    document.splits[0].rules[0].condition,
+    roots.rawUsage,
     undefined,
     document.splits[0].rules[0].condition_resolved,
   );
@@ -175,6 +201,30 @@ test("root shared condition exposes its parameters", () => {
     valueAtPath(panel.resolvedRoot, referencePath),
     "Asset/SP2.png",
   );
+});
+
+test("root use of a then-based shared condition exposes effective child values", () => {
+  const parentRootUsePath = ["splits", 2, "rules", 0, "condition"];
+  const roots = conditionInspectorRoots(document, "usage-condition", parentRootUsePath);
+  assert.equal(conditionUsageName(roots.rawUsage), "sp_parent");
+  assert.equal(roots.rawRoot.type, "then");
+
+  const panel = conditionExposurePanel(
+    document,
+    "usage-condition",
+    parentRootUsePath,
+    parentRootUsePath,
+    roots.rawUsage,
+    undefined,
+    document.splits[2].rules[0].condition_resolved,
+  );
+  const forwarded = ["conditions", 0, ...referencePath];
+  assert.equal(panel.conditionName, "sp_parent");
+  assert.equal(
+    panel.exposure.exposed.get(pathKey(forwarded)),
+    "course_name_reference",
+  );
+  assert.equal(valueAtPath(panel.resolvedRoot, forwarded), "Asset/SP3.png");
 });
 
 test("shared condition nested under then exposes its parameters", () => {
@@ -254,12 +304,14 @@ test("deeply nested shared condition uses the selected child definition", () => 
 });
 
 test("forwarded child parameter is exposed on the parent definition", () => {
+  const roots = conditionInspectorRoots(document, "definition-condition", parentRoot);
+  assert.equal(roots.rawUsage.type, "then");
   const panel = conditionExposurePanel(
     document,
     "definition-condition",
     parentRoot,
     parentRoot,
-    parentRaw,
+    roots.rawUsage,
     undefined,
     parentResolved,
   );
@@ -325,6 +377,22 @@ test("changing a nested reference targets only the selected usage", () => {
     path: usagePath,
     setting_path: referencePath,
     value: "Asset/SP2.png",
+  });
+});
+
+test("resetting a root usage returns to the definition default", () => {
+  const context = nestedConditionUsageExposure(
+    document,
+    "inline",
+    ruleRoot,
+    ruleRoot,
+    rootUse,
+  );
+  assert.equal(context.overrides.has(pathKey(referencePath)), true);
+  assert.deepEqual(context.resetCommand(referencePath), {
+    type: "reset_usage_setting",
+    path: ruleRoot,
+    setting_path: referencePath,
   });
 });
 

@@ -35,6 +35,8 @@ import { DetectorPreview } from "./InputPreview";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 import {
   conditionExposurePanel,
+  conditionInspectorRoots,
+  conditionUsageName,
   nestedConditionUsageExposure,
 } from "./conditionExposure";
 
@@ -1746,11 +1748,22 @@ export function ConditionUsageToolbar({
   const available = document.definitions.conditions.filter(
     (definition) => definition.name !== excludeName,
   );
-  const [selected, setSelected] = useState(available[0]?.name ?? "");
+  const currentName = conditionUsageName(selectedValue);
+  const hasCurrent = available.some(
+    (definition) => definition.name === currentName,
+  );
+  const [selected, setSelected] = useState(
+    currentName || (available[0]?.name ?? ""),
+  );
+  useEffect(() => {
+    if (currentName && hasCurrent) {
+      setSelected(currentName);
+    }
+  }, [currentName, hasCurrent]);
   const active = available.some((definition) => definition.name === selected)
     ? selected
     : (available[0]?.name ?? "");
-  const shared = isSharedUse(selectedValue);
+  const shared = currentName !== "";
   return (
     <div className="mode-toolbar">
       <div className="mode-current">
@@ -2112,14 +2125,7 @@ export function ConditionInspector({
   onPickInputImage?: () => void;
   onRequestReferenceImage?: (reference: string) => void;
 }) {
-  const rawRoot = mode === "definition-detector"
-    ? detectorDefinitionByName(document, String(rootPath[2]))?.detector
-    : mode === "usage-condition"
-      ? conditionDefinitionByName(
-          document,
-          sharedUseName(valueAtPathRawRoot(document, rootPath)),
-        )?.condition
-      : valueAtPathRawRoot(document, rootPath);
+  const { rawUsage, rawRoot } = conditionInspectorRoots(document, mode, rootPath);
   const displayRoot = mode === "definition-detector"
     ? detectorDefinitionByName(document, String(rootPath[2]))?.detector_resolved
     : (resolvedRootAtPath(document, rootPath) ?? rawRoot);
@@ -2171,7 +2177,7 @@ export function ConditionInspector({
     mode,
     rootPath,
     selectedPath,
-    rawRoot,
+    rawUsage,
     nestedUsage,
     value,
   );
@@ -2185,7 +2191,7 @@ export function ConditionInspector({
         <ConditionUsageToolbar
           document={document}
           selectedPath={nestedUsage ? selectedPath : (mode === "usage-condition" ? rootPath : selectedPath)}
-          selectedValue={nestedUsage ?? (mode === "usage-condition" ? rawRoot : value)}
+          selectedValue={nestedUsage ?? (mode === "usage-condition" ? rawUsage : value)}
           editable={nestedUsage ? true : (mode !== "usage-condition" || relative.length === 0)}
           excludeName={
             mode === "definition-condition" && !nestedUsage
