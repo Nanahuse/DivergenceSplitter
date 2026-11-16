@@ -96,6 +96,12 @@ export interface EditorSchema {
   detectorFields: Record<string, FieldSchema[]>;
 }
 
+export interface PreviewImage {
+  name: string;
+  path?: string;
+  url: string;
+}
+
 export interface WorkspaceInfo {
   root: string;
   assets: string[];

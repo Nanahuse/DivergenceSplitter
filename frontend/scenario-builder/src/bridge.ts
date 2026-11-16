@@ -1,4 +1,4 @@
-import type { EditorState, HostError } from "./model";
+import type { EditorState, HostError, PreviewImage } from "./model";
 
 interface WebView2Api {
   postMessage: (message: unknown) => void;
@@ -32,6 +32,8 @@ export function listenToHost(
   onState: (state: EditorState) => void,
   onError: (error: HostError) => void,
   onAssetAdded?: (asset: string) => void,
+  onInputImage?: (image: PreviewImage) => void,
+  onReferenceImage?: (reference: string, url: string) => void,
 ): () => void {
   const webview = window.chrome?.webview;
   if (!webview) {
@@ -50,6 +52,20 @@ export function listenToHost(
       const asset = (event.data as { asset?: string }).asset;
       if (typeof asset === "string") {
         onAssetAdded?.(asset);
+      }
+    } else if (message.type === "inputImage") {
+      const image = event.data as Partial<PreviewImage>;
+      if (typeof image.url === "string" && typeof image.name === "string") {
+        onInputImage?.({
+          name: image.name,
+          path: typeof image.path === "string" ? image.path : undefined,
+          url: image.url,
+        });
+      }
+    } else if (message.type === "referenceImage") {
+      const payload = event.data as { reference?: string; url?: string };
+      if (typeof payload.reference === "string" && typeof payload.url === "string") {
+        onReferenceImage?.(payload.reference, payload.url);
       }
     }
   };

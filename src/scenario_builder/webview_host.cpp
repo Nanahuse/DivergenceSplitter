@@ -9,12 +9,16 @@
 #include <WebView2.h>
 
 #include <nlohmann/json.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "divergencesplitter/scenario/editor/document.hpp"
 #include "divergencesplitter/scenario/editor/workspace.hpp"
@@ -169,6 +173,59 @@ std::filesystem::path pick_image_file(HWND owner, const std::filesystem::path& i
         return {};
     }
     return std::filesystem::path{buffer.c_str()};
+}
+
+std::vector<unsigned char> read_binary_file(const std::filesystem::path& path) {
+    std::ifstream stream{path, std::ios::binary};
+    if (!stream) {
+        throw std::runtime_error(
+            "could not open image file: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    return {
+        std::istreambuf_iterator<char>{stream},
+        std::istreambuf_iterator<char>{},
+    };
+}
+
+std::string base64_encode(const std::vector<unsigned char>& bytes) {
+    static constexpr char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string result;
+    result.reserve((bytes.size() + 2) / 3 * 4);
+    for (std::size_t index = 0; index < bytes.size(); index += 3) {
+        const std::uint32_t first = bytes[index];
+        const std::uint32_t second = index + 1 < bytes.size() ? bytes[index + 1] : 0;
+        const std::uint32_t third = index + 2 < bytes.size() ? bytes[index + 2] : 0;
+        const std::uint32_t value = (first << 16) | (second << 8) | third;
+        result.push_back(alphabet[(value >> 18) & 0x3F]);
+        result.push_back(alphabet[(value >> 12) & 0x3F]);
+        result.push_back(index + 1 < bytes.size() ? alphabet[(value >> 6) & 0x3F] : '=');
+        result.push_back(index + 2 < bytes.size() ? alphabet[value & 0x3F] : '=');
+    }
+    return result;
+}
+
+std::string image_data_url(const std::filesystem::path& path) {
+    const auto bytes = read_binary_file(path);
+    if (bytes.empty()) {
+        throw std::runtime_error(
+            "image file is empty: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    cv::Mat image = cv::imdecode(bytes, cv::IMREAD_UNCHANGED);
+    if (image.empty()) {
+        throw std::runtime_error(
+            "could not decode image: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    std::vector<unsigned char> png;
+    if (!cv::imencode(".png", image, png)) {
+        throw std::runtime_error(
+            "could not encode image for preview: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    return "data:image/png;base64," + base64_encode(png);
 }
 
 std::filesystem::path pick_workspace_directory(HWND owner) {
@@ -508,6 +565,14 @@ private:
                 add_asset();
                 return;
             }
+            if (type == "pickInputImage") {
+                pick_input_image();
+                return;
+            }
+            if (type == "loadReferenceImage") {
+                load_reference_image(message.value("reference", ""));
+                return;
+            }
             if (type == "save" || type == "saveAs") {
                 (void)save(type == "saveAs");
                 return;
@@ -574,8 +639,42 @@ private:
         }
         const std::string asset = workspace_.import_asset(source);
         publish_state();
-        const json event{{"type", "assetAdded"}, {"asset", asset}};
-        const std::wstring serialized = to_wide(event.dump());
+        post_message(json{{"type", "assetAdded"}, {"asset", asset}});
+    }
+
+    void pick_input_image() {
+        const auto source = pick_image_file(window_, {});
+        if (source.empty()) {
+            return;
+        }
+        post_message(json{
+            {"type", "inputImage"},
+            {"name", scenario_editor::path_to_utf8(source.filename())},
+            {"path", scenario_editor::path_to_utf8(source)},
+            {"url", image_data_url(source)},
+        });
+    }
+
+    void load_reference_image(const std::string& reference) {
+        if (!workspace_.is_open()) {
+            throw std::runtime_error("open a workspace before previewing an image");
+        }
+        if (reference.empty()) {
+            throw std::runtime_error("reference image is empty");
+        }
+        const auto path = workspace_.resolve_asset_reference(reference);
+        post_message(json{
+            {"type", "referenceImage"},
+            {"reference", reference},
+            {"url", image_data_url(path)},
+        });
+    }
+
+    void post_message(const json& message) {
+        if (!webview_) {
+            return;
+        }
+        const std::wstring serialized = to_wide(message.dump());
         webview_->PostWebMessageAsJson(serialized.c_str());
     }
 

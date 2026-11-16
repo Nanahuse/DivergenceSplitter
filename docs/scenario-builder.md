@@ -189,6 +189,10 @@ C:\Scenarios\SuperMarioWorld\
 - Sequence の各ステップにも同じ Condition 概要を表示し、Action は独立した選択欄で編集
 - Rule の Condition 編集画面では、上部のパンくずから `Split N` をクリックして Rule 一覧へ戻れます
 - 右ペイン: 選択 Condition の設定、共通定義の利用、Asset からの参照画像選択、使用箇所ごとの変更と解除
+- Detectorの参照画像と入力画像を別々にプレビューし、ROIは入力画像にのみ重ねて表示
+- 入力画像は標準のファイル選択ダイアログから読み込み、ROI表示のON/OFFは画面内だけで切り替えます
+- 参照画像とROIは同じ倍率で拡大表示し、ROIが入力画像の範囲を超える場合は警告します
+- 入力画像とROI表示のON/OFFはプレビュー専用で、YAMLには保存しません
 - `+ Rule` / `+ Sequence` と Condition の `then` には、マウスホバーまたはキーボードフォーカスで説明と具体例を表示
 
 共通Conditionを使用している場合も、中央には解決済み Condition が通常のツリーとして

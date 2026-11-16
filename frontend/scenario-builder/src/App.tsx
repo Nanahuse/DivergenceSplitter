@@ -9,6 +9,7 @@ import {
   type EditorState,
   type JsonValue,
   type Path,
+  type PreviewImage,
   type WorkspaceInfo,
 } from "./model";
 import { ConditionInspector, ConditionPane, DetectorPane } from "./ConditionEditor";
@@ -83,6 +84,8 @@ export default function App() {
   const previousSplitsRef = useRef<EditorState["document"]["splits"] | null>(null);
   const [draggedSplit, setDraggedSplit] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<{ index: number; after: boolean } | null>(null);
+  const [inputImage, setInputImage] = useState<PreviewImage | null>(null);
+  const [referenceImages, setReferenceImages] = useState<Record<string, string>>({});
   const preview = !isWebViewHost();
 
   useEffect(() => {
@@ -117,10 +120,19 @@ export default function App() {
         pendingAssetRef.current = null;
         apply?.(asset);
       },
+      (image) => setInputImage(image),
+      (reference, url) =>
+        setReferenceImages((images) => ({ ...images, [reference]: url })),
     );
     sendToHost({ type: "ready" });
     return detach;
   }, []);
+
+  const workspaceRoot = state?.workspace?.root ?? null;
+  useEffect(() => {
+    setInputImage(null);
+    setReferenceImages({});
+  }, [workspaceRoot]);
 
   const addAsset = useCallback((apply: (asset: string) => void) => {
     if (preview) {
@@ -227,6 +239,18 @@ export default function App() {
       to,
     });
   }, [preview, runCommand]);
+
+  const pickInputImage = useCallback(() => {
+    if (!preview) {
+      sendToHost({ type: "pickInputImage" });
+    }
+  }, [preview]);
+
+  const requestReferenceImage = useCallback((reference: string) => {
+    if (!preview && reference) {
+      sendToHost({ type: "loadReferenceImage", reference });
+    }
+  }, [preview]);
 
   const moveSplit = useCallback((from: number, to: number) => {
     if (from === to) {
@@ -794,6 +818,10 @@ export default function App() {
                   mode={inspectorMode}
                   sendCommand={runCommand}
                   onExtractCondition={extractConditionDefinition}
+                  inputImage={inputImage}
+                  referenceImages={referenceImages}
+                  onPickInputImage={pickInputImage}
+                  onRequestReferenceImage={requestReferenceImage}
                 />
                 {activePath && rootPath && activePath.join("/") !== rootPath.join("/") ? (
                   <button className="secondary" onClick={() => setSelectedPath(rootPath)}>

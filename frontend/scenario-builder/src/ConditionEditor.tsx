@@ -24,12 +24,14 @@ import {
   type FieldSchema,
   type JsonValue,
   type Path,
+  type PreviewImage,
   type ScenarioDocument,
   type SharedDetectorDefinition,
   type WorkspaceInfo,
 } from "./model";
 import { Tooltip } from "./Tooltip";
 import { ConditionSummary } from "./ConditionSummary";
+import { DetectorPreview } from "./InputPreview";
 import { Breadcrumb, type BreadcrumbItem } from "./Breadcrumb";
 
 const defaultCondition: JsonValue = { type: "elapsed", duration: "1s" };
@@ -179,6 +181,10 @@ interface PropertyActions {
   detectorDefinitions: SharedDetectorDefinition[];
   assets: string[];
   addAsset?: (apply: (asset: string) => void) => void;
+  inputImage?: PreviewImage | null;
+  referenceImages?: Record<string, string>;
+  onPickInputImage?: () => void;
+  onRequestReferenceImage?: (reference: string) => void;
   overrides: Set<string>;
   exposure: DefinitionExposureInfo | null;
   document: ScenarioDocument;
@@ -387,6 +393,13 @@ function DetectorFieldsEditor({
               </button>
             ) : null}
           </div>
+          <DetectorPreview
+            detector={value}
+            inputImage={actions.inputImage}
+            referenceImages={actions.referenceImages}
+            onPickInputImage={actions.onPickInputImage}
+            onRequestReferenceImage={actions.onRequestReferenceImage}
+          />
           {fields.map((field) => {
             const item = value[field.name];
             if (item === undefined) {
@@ -423,6 +436,10 @@ function DetectorFieldsEditor({
       detectorDefinitions: actions.detectorDefinitions,
       assets: actions.assets,
       addAsset: actions.addAsset,
+      inputImage: actions.inputImage,
+      referenceImages: actions.referenceImages,
+      onPickInputImage: actions.onPickInputImage,
+      onRequestReferenceImage: actions.onRequestReferenceImage,
       overrides,
       exposure: nestedExposure,
       usageMode: true,
@@ -463,6 +480,13 @@ function DetectorFieldsEditor({
             </button>
           ) : null}
         </div>
+        <DetectorPreview
+          detector={value}
+          inputImage={nested.inputImage}
+          referenceImages={nested.referenceImages}
+          onPickInputImage={nested.onPickInputImage}
+          onRequestReferenceImage={nested.onRequestReferenceImage}
+        />
         {fields.map((field) => {
           const item = value[field.name];
           if (item === undefined) {
@@ -502,6 +526,13 @@ function DetectorFieldsEditor({
           </button>
         ) : null}
       </div>
+      <DetectorPreview
+        detector={value}
+        inputImage={actions.inputImage}
+        referenceImages={actions.referenceImages}
+        onPickInputImage={actions.onPickInputImage}
+        onRequestReferenceImage={actions.onRequestReferenceImage}
+      />
       <div className="setting-row">
         <span className="setting-label">type</span>
         {actions.changeDetectorType && actions.structureEditable(path) ? (
@@ -1928,6 +1959,10 @@ export function ConditionInspector({
   sendCommand,
   onAddAsset,
   onExtractCondition,
+  inputImage,
+  referenceImages,
+  onPickInputImage,
+  onRequestReferenceImage,
 }: {
   document: ScenarioDocument;
   schema: EditorSchema;
@@ -1938,6 +1973,10 @@ export function ConditionInspector({
   sendCommand: (command: Record<string, unknown>) => void;
   onAddAsset?: (apply: (asset: string) => void) => void;
   onExtractCondition?: (path: Path, name: string) => void;
+  inputImage?: PreviewImage | null;
+  referenceImages?: Record<string, string>;
+  onPickInputImage?: () => void;
+  onRequestReferenceImage?: (reference: string) => void;
 }) {
   const rawRoot = mode === "definition-detector"
     ? detectorDefinitionByName(document, String(rootPath[2]))?.detector
@@ -1964,7 +2003,7 @@ export function ConditionInspector({
     && !isSharedUse(selectedRaw)
     && !isParameterReference(selectedRaw);
   const [extractOpen, setExtractOpen] = useState(false);
-  const actions = nestedUsage
+  const baseActions = nestedUsage
     ? buildNestedConditionUsageActions(
         document,
         schema,
@@ -1986,6 +2025,13 @@ export function ConditionInspector({
         sendCommand,
         onAddAsset,
       );
+  const actions: PropertyActions = {
+    ...baseActions,
+    inputImage,
+    referenceImages,
+    onPickInputImage,
+    onRequestReferenceImage,
+  };
   return (
     <div className="inspector">
       <h2>Properties</h2>
