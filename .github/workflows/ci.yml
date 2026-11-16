@@ -194,7 +194,7 @@ jobs:
           "filename=$($zip.Name)" >> $env:GITHUB_OUTPUT
           "size=$($zip.Length)" >> $env:GITHUB_OUTPUT
           $zip | Select-Object Name, Length | Format-Table -AutoSize
-          "Distribution ZIP: $($zip.Name), $($zip.Length) bytes" >> $env:GITHUB_STEP_SUMMARY
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Distribution ZIP: $($zip.Name), $($zip.Length) bytes"
 
       - name: Upload distribution
         id: distribution
