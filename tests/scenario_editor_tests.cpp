@@ -1305,6 +1305,195 @@ splits:
     EXPECT_FALSE(session.document.splits[0].has_value());
 }
 
+TEST(ScenarioEditorV2, InlineConditionExpandsOnlyOneLevelAndPreservesNestedUses) {
+    EditorSession session;
+    session.document = import_scenario_yaml(R"(
+schema_version: 2
+definitions:
+  detectors:
+    detector_image:
+      parameters:
+        image: Asset/YI1.png
+      detector:
+        type: template_match
+        reference: {param: image}
+  conditions:
+    course_name:
+      parameters:
+        image: Asset/default.png
+      condition:
+        type: detected
+        minimum_score: 0.9
+        detector:
+          use: detector_image
+          with:
+            image: {param: image}
+    sp_even:
+      parameters:
+        course_image: Asset/YI1.png
+      condition:
+        type: then
+        conditions:
+          - type: elapsed
+            duration: 1s
+          - use: course_name
+            with:
+              image: {param: course_image}
+start_condition:
+  use: sp_even
+  with:
+    course_image: Asset/DPC.png
+splits: []
+)");
+    const auto before = value_to_json(resolved_condition(
+        session.document,
+        session.document.start_condition->value
+    ));
+    apply_editor_command(session, nlohmann::json{
+        {"type", "inline_condition"},
+        {"path", path({"start_condition"})},
+    });
+
+    const auto& inlined = session.document.start_condition->value;
+    EXPECT_FALSE(session.document.start_condition->is_shared_use());
+    EXPECT_EQ(inlined.find("type")->scalar, "then");
+    const auto* conditions = inlined.find("conditions");
+    ASSERT_NE(conditions, nullptr);
+    ASSERT_EQ(conditions->sequence.size(), 2U);
+    const auto& child_use = conditions->sequence[1];
+    EXPECT_EQ(child_use.find("use")->scalar, "course_name");
+    EXPECT_EQ(
+        child_use.find("with")->find("image")->scalar,
+        "Asset/DPC.png"
+    );
+    auto* child = find_condition_definition(session.document, "course_name");
+    ASSERT_NE(child, nullptr);
+    EXPECT_EQ(child->condition.find("detector")->find("use")->scalar, "detector_image");
+    auto* parent = find_condition_definition(session.document, "sp_even");
+    ASSERT_NE(parent, nullptr);
+    EXPECT_TRUE(
+        parent->condition.find("conditions")->find_index(1)->find("with")
+            ->find("image")->is_parameter_reference()
+    );
+    EXPECT_EQ(
+        value_to_json(resolved_condition(
+            session.document,
+            session.document.start_condition->value
+        )),
+        before
+    );
+
+    apply_editor_command(session, nlohmann::json{{"type", "undo"}});
+    EXPECT_TRUE(session.document.start_condition->is_shared_use());
+    EXPECT_EQ(session.document.start_condition->use_name(), "sp_even");
+    apply_editor_command(session, nlohmann::json{{"type", "redo"}});
+    EXPECT_FALSE(session.document.start_condition->is_shared_use());
+
+    const auto exported = export_scenario_yaml(session.document);
+    const auto reloaded = import_scenario_yaml(exported);
+    const auto* reloaded_child_use = reloaded.start_condition->value
+        .find("conditions")->find_index(1);
+    ASSERT_NE(reloaded_child_use, nullptr);
+    EXPECT_EQ(reloaded_child_use->find("use")->scalar, "course_name");
+    EXPECT_EQ(
+        value_to_json(resolved_condition(reloaded, reloaded.start_condition->value)),
+        before
+    );
+}
+
+TEST(ScenarioEditorV2, InlineConditionPreservesThreeNestedConditionLevels) {
+    EditorSession session;
+    session.document = import_scenario_yaml(R"(
+schema_version: 2
+definitions:
+  conditions:
+    leaf:
+      condition: {type: elapsed, duration: 2s}
+    mid:
+      condition:
+        type: then
+        conditions:
+          - use: leaf
+    top:
+      condition:
+        type: then
+        conditions:
+          - use: mid
+start_condition:
+  use: top
+splits: []
+)");
+    const auto before = value_to_json(resolved_condition(
+        session.document,
+        session.document.start_condition->value
+    ));
+    apply_editor_command(session, nlohmann::json{
+        {"type", "inline_condition"},
+        {"path", path({"start_condition"})},
+    });
+    const auto& inlined = session.document.start_condition->value;
+    EXPECT_EQ(inlined.find("type")->scalar, "then");
+    const auto& nested = inlined.find("conditions")->sequence[0];
+    EXPECT_EQ(nested.find("use")->scalar, "mid");
+    EXPECT_EQ(
+        value_to_json(resolved_condition(
+            session.document,
+            session.document.start_condition->value
+        )),
+        before
+    );
+}
+
+TEST(ScenarioEditorV2, InlineConditionUsesParameterDefaultsAndOmittedNull) {
+    EditorSession session;
+    session.document = import_scenario_yaml(R"(
+schema_version: 2
+definitions:
+  conditions:
+    defaulted:
+      parameters:
+        within_value: 2s
+      condition:
+        type: then
+        within: {param: within_value}
+        conditions:
+          - type: elapsed
+            duration: 1s
+    omitted:
+      parameters:
+        within_value: null
+      condition:
+        type: then
+        within: {param: within_value}
+        conditions:
+          - type: elapsed
+            duration: 1s
+start_condition:
+  use: defaulted
+splits: []
+)");
+    apply_editor_command(session, nlohmann::json{
+        {"type", "inline_condition"},
+        {"path", path({"start_condition"})},
+    });
+    EXPECT_EQ(
+        session.document.start_condition->value.find("within")->scalar,
+        "2s"
+    );
+
+    apply_editor_command(session, nlohmann::json{
+        {"type", "set_value"},
+        {"path", path({"start_condition"})},
+        {"value", {{"use", "omitted"}}},
+    });
+    apply_editor_command(session, nlohmann::json{
+        {"type", "inline_condition"},
+        {"path", path({"start_condition"})},
+    });
+    EXPECT_EQ(session.document.start_condition->value.find("within"), nullptr);
+    EXPECT_EQ(session.document.start_condition->value.find("type")->scalar, "then");
+}
+
 TEST(ScenarioEditorV2, RenameAndDetachUpdateReferences) {
     EditorSession session = new_editor_session();
     apply_editor_command(session, nlohmann::json{

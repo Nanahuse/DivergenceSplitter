@@ -1080,6 +1080,116 @@ void set_definition_setting(
     }
 }
 
+void substitute_with_values(
+    Value& value,
+    const std::map<std::string, Value>& bindings
+) {
+    if (value.is_parameter_reference()) {
+        const auto found = bindings.find(value.scalar);
+        if (found == bindings.end()) {
+            throw ScenarioEditorError("parameter definition was not found: " + value.scalar);
+        }
+        value = found->second;
+        return;
+    }
+    for (auto& item : value.sequence) {
+        substitute_with_values(item, bindings);
+    }
+    for (auto& [key, item] : value.mapping) {
+        (void)key;
+        substitute_with_values(item, bindings);
+    }
+}
+
+void substitute_condition_parameters(
+    Value& value,
+    const std::map<std::string, Value>& bindings
+) {
+    if (value.is_parameter_reference()) {
+        const auto found = bindings.find(value.scalar);
+        if (found == bindings.end()) {
+            throw ScenarioEditorError("parameter definition was not found: " + value.scalar);
+        }
+        value = found->second;
+        return;
+    }
+    if (value.is_sequence()) {
+        for (auto& item : value.sequence) {
+            substitute_condition_parameters(item, bindings);
+        }
+        return;
+    }
+    if (!value.is_mapping()) {
+        return;
+    }
+    auto& mapping = value.mapping;
+    for (auto item = mapping.begin(); item != mapping.end();) {
+        if (item->first == "with") {
+            substitute_with_values(item->second, bindings);
+            ++item;
+            continue;
+        }
+        if (item->second.is_parameter_reference()) {
+            const auto found = bindings.find(item->second.scalar);
+            if (found == bindings.end()) {
+                throw ScenarioEditorError(
+                    "parameter definition was not found: " + item->second.scalar
+                );
+            }
+            if (found->second.is_null()) {
+                item = mapping.erase(item);
+                continue;
+            }
+            item->second = found->second;
+            ++item;
+            continue;
+        }
+        substitute_condition_parameters(item->second, bindings);
+        ++item;
+    }
+}
+
+Value instantiate_condition_once(
+    ScenarioDocument& document,
+    const Value& usage
+) {
+    const auto* use = usage.find("use");
+    if (use == nullptr || !use->is_scalar()) {
+        throw ScenarioEditorError("shared condition use is missing a name");
+    }
+    auto* definition = find_condition_definition(document, use->scalar);
+    if (definition == nullptr) {
+        if (find_detector_definition(document, use->scalar) != nullptr) {
+            throw ScenarioEditorError(
+                "condition use refers to a detector definition: " + use->scalar
+            );
+        }
+        throw ScenarioEditorError("condition definition was not found: " + use->scalar);
+    }
+
+    std::map<std::string, Value> bindings;
+    for (const auto& parameter : definition->parameters) {
+        bindings[parameter.name] = parameter.default_value;
+    }
+    if (const auto* with = usage.find("with"); with != nullptr) {
+        if (!with->is_mapping()) {
+            throw ScenarioEditorError("usage.with must be a mapping");
+        }
+        for (const auto& [name, value] : with->mapping) {
+            if (!bindings.contains(name)) {
+                throw ScenarioEditorError(
+                    "usage.with contains an unknown parameter: " + name
+                );
+            }
+            bindings[name] = value;
+        }
+    }
+
+    Value result = definition->condition;
+    substitute_condition_parameters(result, bindings);
+    return result;
+}
+
 bool contains_parameter_reference(const Value& value) {
     if (value.is_parameter_reference()) {
         return true;
@@ -1570,7 +1680,8 @@ void mutate_document(ScenarioDocument& document, const nlohmann::json& command) 
         if (!is_usage_value(*target)) {
             return;
         }
-        *target = resolved_condition(document, *target);
+        Value inlined = instantiate_condition_once(document, *target);
+        *target = std::move(inlined);
         return;
     }
     if (type == "inline_detector") {
