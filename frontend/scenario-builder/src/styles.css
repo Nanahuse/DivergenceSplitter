@@ -1278,3 +1278,72 @@ button.icon.rename-button:hover:not(:disabled) {
 .preview-zoom-dialog .input-preview-frame {
   margin: 12px;
 }
+
+.exposed-parameters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(94, 168, 255, 0.06);
+}
+
+.exposed-parameters-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.exposed-parameters-header h3 {
+  margin: 0;
+  color: #dbe6f3;
+  font-size: 12px;
+}
+
+.exposed-parameters-header span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exposed-parameters-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.exposed-roi-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.exposed-parameter-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.exposed-parameter-header > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  color: #dbe6f3;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

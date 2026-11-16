@@ -223,8 +223,14 @@ export function pathFromKey(key: string): Path {
 
 export type DefinitionKind = "condition" | "detector";
 
+export interface ExposureOwner {
+  kind: DefinitionKind;
+  name: string;
+}
+
 export interface DefinitionExposureInfo {
   exposed: Map<string, string>;
+  owners: Map<string, ExposureOwner>;
   nestedExposed: Set<string>;
   nestedPrefixes: Set<string>;
 }
@@ -267,22 +273,35 @@ function collectExposure(
   stack: Set<string>,
   path: Path = [],
   expected?: DefinitionKind,
+  ownerKind: DefinitionKind = "condition",
+  ownerName = "",
 ): DefinitionExposureInfo {
   const result: DefinitionExposureInfo = {
     exposed: new Map(),
+    owners: new Map(),
     nestedExposed: new Set(),
     nestedPrefixes: new Set(),
   };
   if (isParameterReference(value)) {
     result.exposed.set(pathKey(path), value.$param);
+    result.owners.set(pathKey(path), { kind: ownerKind, name: ownerName });
     return result;
   }
   if (isSequence(value)) {
     value.forEach((item, index) => {
-      const child = collectExposure(document, item, stack, [...path, index], expected);
+      const child = collectExposure(
+        document,
+        item,
+        stack,
+        [...path, index],
+        expected,
+        ownerKind,
+        ownerName,
+      );
       for (const [key, parameter] of child.exposed) {
         result.exposed.set(key, parameter);
       }
+      child.owners.forEach((owner, key) => result.owners.set(key, owner));
       child.nestedExposed.forEach((key) => result.nestedExposed.add(key));
       child.nestedPrefixes.forEach((key) => result.nestedPrefixes.add(key));
     });
@@ -300,14 +319,27 @@ function collectExposure(
     }
     const nestedStack = new Set(stack);
     nestedStack.add(key);
-    const child = collectExposure(document, target.raw, nestedStack, [], target.kind);
+    const child = collectExposure(
+      document,
+      target.raw,
+      nestedStack,
+      [],
+      target.kind,
+      target.kind,
+      target.name,
+    );
     const withValues = sharedUseWith(value);
     for (const [childKey, childParameter] of child.exposed) {
       const fullPath = [...path, ...pathFromKey(childKey)];
-      result.nestedExposed.add(pathKey(fullPath));
+      const fullKey = pathKey(fullPath);
+      result.nestedExposed.add(fullKey);
+      const childOwner = child.owners.get(childKey);
+      if (childOwner) {
+        result.owners.set(fullKey, childOwner);
+      }
       const forwarded = withValues[childParameter];
       if (isParameterReference(forwarded)) {
-        result.exposed.set(pathKey(fullPath), forwarded.$param);
+        result.exposed.set(fullKey, forwarded.$param);
       }
     }
     for (const prefix of child.nestedPrefixes) {
@@ -321,10 +353,19 @@ function collectExposure(
       : (key === "condition" || key === "reset_condition" || key === "conditions")
         ? "condition" as const
         : expected;
-    const child = collectExposure(document, item, stack, [...path, key], childExpected);
+    const child = collectExposure(
+      document,
+      item,
+      stack,
+      [...path, key],
+      childExpected,
+      ownerKind,
+      ownerName,
+    );
     for (const [childKey, parameter] of child.exposed) {
       result.exposed.set(childKey, parameter);
     }
+    child.owners.forEach((owner, itemKey) => result.owners.set(itemKey, owner));
     child.nestedExposed.forEach((itemKey) => result.nestedExposed.add(itemKey));
     child.nestedPrefixes.forEach((itemKey) => result.nestedPrefixes.add(itemKey));
   }
@@ -340,9 +381,22 @@ export function definitionExposureInfo(
     ? conditionDefinitionByName(document, name)?.condition
     : detectorDefinitionByName(document, name)?.detector;
   if (raw === undefined) {
-    return { exposed: new Map(), nestedExposed: new Set(), nestedPrefixes: new Set() };
+    return {
+      exposed: new Map(),
+      owners: new Map(),
+      nestedExposed: new Set(),
+      nestedPrefixes: new Set(),
+    };
   }
-  return collectExposure(document, raw, new Set([`${kind}:${name}`]), [], kind);
+  return collectExposure(
+    document,
+    raw,
+    new Set([`${kind}:${name}`]),
+    [],
+    kind,
+    kind,
+    name,
+  );
 }
 
 export function isNestedExposurePath(

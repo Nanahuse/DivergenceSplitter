@@ -600,6 +600,7 @@ function AssetSelect({
   reset,
   readOnly = false,
   expose,
+  label = "reference",
 }: {
   actions: PropertyActions;
   path: Path;
@@ -607,6 +608,7 @@ function AssetSelect({
   overridden: boolean;
   reset?: () => void;
   readOnly?: boolean;
+  label?: string;
   expose?: {
     exposed: boolean;
     disabled: boolean;
@@ -652,7 +654,7 @@ function AssetSelect({
     <>
       <div className="asset-setting">
         <div className="asset-setting-header">
-          <span className="setting-label">reference</span>
+          <span className="setting-label">{label}</span>
           {overridden ? <span className="override-badge">この使用箇所</span> : null}
           {expose ? (
             <label className="expose-toggle" title="使用箇所から変更できるようにする">
@@ -780,6 +782,163 @@ function AssetSelect({
         </div>
       ) : null}
     </>
+  );
+}
+
+function ExposedRoiEditor({
+  actions,
+  path,
+  value,
+  label,
+  overridden,
+  reset,
+}: {
+  actions: PropertyActions;
+  path: Path;
+  value: JsonValue | undefined;
+  label: string;
+  overridden: boolean;
+  reset?: () => void;
+}) {
+  const mapping = isMapping(value) ? value : {};
+  const effective: Record<string, JsonValue> = {
+    x: "0",
+    y: "0",
+    width: "1",
+    height: "1",
+    ...mapping,
+  };
+  const readOnly = actions.readOnly(path);
+  return (
+    <div className="exposed-roi-editor">
+      <div className="exposed-parameter-header">
+        <span>{label}</span>
+        {overridden ? <span className="override-badge">この使用箇所</span> : null}
+        {!readOnly && reset ? (
+          <button
+            type="button"
+            className="icon"
+            title="共通定義の値に戻す"
+            onClick={reset}
+          >
+            ↺
+          </button>
+        ) : null}
+      </div>
+      {(["x", "y", "width", "height"] as const).map((key) => (
+        <SettingRow
+          key={key}
+          label={key}
+          value={effective[key]}
+          readOnly={readOnly}
+          onCommit={(next) =>
+            actions.set(path, { ...effective, [key]: next })
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
+function ExposedParametersPanel({
+  conditionName,
+  exposure,
+  resolvedRoot,
+  usageWith,
+  actions,
+}: {
+  conditionName: string;
+  exposure: DefinitionExposureInfo | null;
+  resolvedRoot: JsonValue | undefined;
+  usageWith: Record<string, JsonValue> | null;
+  actions: PropertyActions;
+}) {
+  if (!exposure || exposure.exposed.size === 0) {
+    return null;
+  }
+  const entries: {
+    parameter: string;
+    path: Path;
+    label: string;
+    value: JsonValue | undefined;
+    overridden: boolean;
+  }[] = [];
+  const seen = new Set<string>();
+  for (const [key, parameter] of exposure.exposed) {
+    if (seen.has(parameter)) {
+      continue;
+    }
+    seen.add(parameter);
+    const path = pathFromKey(key);
+    const owner = exposure.owners.get(key)?.name ?? conditionName;
+    const leaf = String(path[path.length - 1] ?? "");
+    entries.push({
+      parameter,
+      path,
+      label: `${owner} / ${leaf}`,
+      value: valueAtPath(resolvedRoot, path),
+      overridden: usageWith
+        ? Object.prototype.hasOwnProperty.call(usageWith, parameter)
+        : false,
+    });
+  }
+  if (entries.length === 0) {
+    return null;
+  }
+  return (
+    <section className="exposed-parameters">
+      <div className="exposed-parameters-header">
+        <h3>公開パラメーター</h3>
+        <span>共通Condition: {conditionName}</span>
+      </div>
+      <div className="exposed-parameters-list">
+        {entries.map((entry) => {
+          const readOnly = actions.readOnly(entry.path);
+          const reset = entry.overridden && actions.reset
+            ? () => actions.reset?.(entry.path)
+            : undefined;
+          const leaf = String(entry.path[entry.path.length - 1] ?? "");
+          if (leaf === "reference" && typeof entry.value === "string") {
+            return (
+              <AssetSelect
+                key={`${entry.parameter}-${entry.path.join("/")}`}
+                actions={actions}
+                path={entry.path}
+                value={entry.value}
+                overridden={entry.overridden}
+                reset={reset}
+                readOnly={readOnly}
+                label={entry.label}
+              />
+            );
+          }
+          if (leaf === "roi") {
+            return (
+              <ExposedRoiEditor
+                key={`${entry.parameter}-${entry.path.join("/")}`}
+                actions={actions}
+                path={entry.path}
+                value={entry.value}
+                label={entry.label}
+                overridden={entry.overridden}
+                reset={reset}
+              />
+            );
+          }
+          return (
+            <SettingRow
+              key={`${entry.parameter}-${entry.path.join("/")}`}
+              label={entry.label}
+              value={entry.value}
+              overridden={entry.overridden}
+              readOnly={readOnly}
+              onCommit={(next) => actions.set(entry.path, next)}
+              onReset={reset}
+            />
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -2032,6 +2191,23 @@ export function ConditionInspector({
     onPickInputImage,
     onRequestReferenceImage,
   };
+  const exposureConditionName = mode === "usage-condition"
+    ? sharedUseName(valueAtPathRawRoot(document, rootPath))
+    : mode === "definition-condition"
+      ? String(rootPath[2] ?? "")
+      : "";
+  const exposureInfo = exposureConditionName
+    ? definitionExposureInfo(document, "condition", exposureConditionName)
+    : null;
+  const exposureWith = mode === "usage-condition"
+    ? sharedUseWith(valueAtPathRawRoot(document, rootPath))
+    : null;
+  const exposureResolved = mode === "usage-condition" || mode === "definition-condition"
+    ? resolvedRootAtPath(document, rootPath)
+    : undefined;
+  const showExposurePanel = relative.length === 0
+    && exposureInfo !== null
+    && (mode === "usage-condition" || mode === "definition-condition");
   return (
     <div className="inspector">
       <h2>Properties</h2>
@@ -2050,6 +2226,15 @@ export function ConditionInspector({
           }
           onSelect={() => undefined}
           sendCommand={sendCommand}
+        />
+      ) : null}
+      {showExposurePanel ? (
+        <ExposedParametersPanel
+          conditionName={exposureConditionName}
+          exposure={exposureInfo}
+          resolvedRoot={exposureResolved}
+          usageWith={exposureWith}
+          actions={actions}
         />
       ) : null}
       {canExtract && onExtractCondition ? (
