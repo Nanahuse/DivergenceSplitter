@@ -15,6 +15,7 @@
 #include "divergencesplitter/text.hpp"
 #include "monitor_page.hpp"
 #include "profile_page.hpp"
+#include "resource.h"
 #include "settings_page.hpp"
 #include "ui_helpers.hpp"
 
@@ -136,6 +137,15 @@ bool App::create_window(HINSTANCE instance, int) {
     description.style = CS_HREDRAW | CS_VREDRAW;
     description.lpfnWndProc = &App::window_proc;
     description.hInstance = instance;
+    description.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP_ICON));
+    description.hIconSm = static_cast<HICON>(LoadImageW(
+        instance,
+        MAKEINTRESOURCEW(IDI_APP_ICON),
+        IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON),
+        GetSystemMetrics(SM_CYSMICON),
+        LR_SHARED
+    ));
     description.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
     description.lpszClassName = kWindowClass;
     if (RegisterClassExW(&description) == 0) {
