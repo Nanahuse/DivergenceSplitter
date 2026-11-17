@@ -158,7 +158,11 @@ if(DIVERGENCESPLITTER_BUILD_UI)
         target_include_directories(monitor_history_benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
     endif()
 
-    add_executable(DivergenceSplitter WIN32 ui/main.cpp)
+    add_executable(DivergenceSplitter WIN32 ui/main.cpp ui/app.rc)
+    target_include_directories(DivergenceSplitter PRIVATE "${PROJECT_SOURCE_DIR}/assets")
+    set_source_files_properties(ui/app.rc PROPERTIES
+        OBJECT_DEPENDS "${PROJECT_SOURCE_DIR}/assets/icon.ico"
+    )
     target_link_libraries(DivergenceSplitter PRIVATE divergencesplitter::ui divergencesplitter_imgui)
     target_compile_definitions(DivergenceSplitter PRIVATE _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX)
 

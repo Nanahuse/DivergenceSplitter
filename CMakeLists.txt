@@ -27,10 +27,10 @@ set(
 )
 
 if(MSVC)
-    add_compile_options(/W4 /permissive- /Zc:__cplusplus /utf-8 /EHsc)
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/W4;/permissive-;/Zc:__cplusplus;/utf-8;/EHsc>")
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>")
 endif()
 
 include(FetchContent)
@@ -59,6 +59,7 @@ if(DIVERGENCESPLITTER_BUILD_UI)
     if(NOT WIN32)
         message(FATAL_ERROR "DIVERGENCESPLITTER_BUILD_UI requires Windows (Win32/Direct3D 11)")
     endif()
+    enable_language(RC)
     FetchContent_Declare(
         imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
