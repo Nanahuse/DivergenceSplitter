@@ -70,7 +70,7 @@ add_executable(divergencesplitter_ndi_loopback_tests integration/ndi_loopback_te
 target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/third_party/ndi/include")
 target_compile_definitions(divergencesplitter_ndi_loopback_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::capture GTest::gtest_main)
+target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::runtime GTest::gtest_main)
 add_test(NAME ndi_sdk_loopback COMMAND divergencesplitter_ndi_loopback_tests)
 set_tests_properties(ndi_sdk_loopback PROPERTIES TIMEOUT 90 LABELS "ndi;integration")
 
