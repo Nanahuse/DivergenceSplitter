@@ -1,26 +1,24 @@
-# サンプルファイル
+# サンプルシナリオ
 
-[ドキュメント一覧](../README.md) · [シナリオ例](../docs/scenarios/examples.md)
+自動操作を試す場合は、先に [はじめに](../docs/getting-started.md) の手順で映像と LiveSplit を接続してください。
 
-## 目次
+## 時間で Start と Split を試す
 
-- [経過時間でStartとSplitを試す](#経過時間でstartとsplitを試す)
-- [画像の出現と消失を検出する](#画像の出現と消失を検出する)
+[scenario-v2.yaml](scenario-v2.yaml) は、開始条件の判定から2秒後に Start し、最初の区間の判定から3秒後に Split します。参照画像は不要です。LiveSplit には1区間のテスト用 Run を用意します。
 
-どちらのサンプルも、映像入力と、同じPCで動作するLiveSplit.Bridgeが必要です。LiveSplitに1区間のテスト用Runを用意します。
+- そのまま試すには、DivergenceSplitter の「Profile」で「Scenarios & Connections」を開きます。「Browse」でダウンロードしたファイルを選び、「Apply」を押します。
+- 設定を確認・変更するには、Scenario Builder の「作業フォルダ」でファイルを保存したフォルダーを指定し、左側の「YAML」でファイルを選びます。
 
-## 経過時間でStartとSplitを試す
+[はじめに](../docs/getting-started.md)で使う [minimal-scenario.yaml](minimal-scenario.yaml) でも同じ動作を試せます。
 
-[minimal-scenario.yaml](minimal-scenario.yaml) は、開始条件の判定から2秒後にStartし、最初の区間の判定から3秒後にSplitします。参照画像は不要です。[はじめに](../docs/getting-started.md)の手順で設定できます。
+## 画像が映ったら Start し、消えたら Split する
 
-動画入力を使う場合は、[profile.example.json](profile.example.json) も使えます。`source.path` を10秒より長い録画の絶対パスに、`instances[0].scenario` を保存したYAMLの絶対パスに書き換えます。Bridgeで `54000` 以外のポートを使う場合は、`instances[0].connection.port` も合わせます。ProfileのOpenでJSONを開くと、その設定で実行を始めます。
+1. [image-scenario.yaml](image-scenario.yaml) と [reference.ppm](reference.ppm) を同じフォルダーに保存します。LiveSplit には1区間のテスト用 Run を用意します。
+2. DivergenceSplitter の「Profile」でサンプルを選びます。入力の「Resize」を使っている場合は「Resize reference images」をオフにします。そのあと「Apply」を押します。
+3. 入力映像に参照画像と同じ模様を映します。Start したあとも、最初の区間で模様が検出されるまで映し、検出されたら画面から消します。判定結果は[Monitor](../docs/user-guide.md#判定結果とグラフ)で確認できます。
 
-## 画像の出現と消失を検出する
+## 共通 Condition で区間ごとに参照画像を変える
 
-[image-scenario.yaml](image-scenario.yaml) は、参照画像が映るとStartし、最初の区間でその画像が消えるとSplitします。
+[scenario-v2-shared.yaml](scenario-v2-shared.yaml) を保存し、Scenario Builder で開きます。2つの区間で同じ画像判定の条件を使い、参照画像だけを切り替える例です。
 
-1. [image-scenario.yaml](image-scenario.yaml) と [reference.ppm](reference.ppm) を同じフォルダーに保存します。参照画像は読み込み確認用の8×8の模様です。
-2. ProfileのインスタンスでこのYAMLを指定し、Resize reference imagesをオフにしてApplyを押します。サンプルのJSONを使う場合は、Openの前に `instances[0].scenario` をこのYAMLの絶対パスに変えます。
-3. 入力映像に参照画像と同じ模様を表示します。Startした後も、最初の区間で検出されるまで模様を表示し、検出されたら画面から消します。判定結果は[Monitor](../docs/user-guide.md#判定結果とグラフ)で確認できます。
-
-ゲームで使う場合は参照画像を置き換え、映像に合わせてしきい値を調整してください。設定の説明は[画像の検出](../docs/scenarios/examples.md#画像の検出)を参照してください。
+サンプルには参照画像が付属していません。動作を試す場合は、左側の「共通Condition」の `course_finish` で既定の画像を選び、「Split 1」と「Split 2」の Rule では各区間の画像を選び直してください。シナリオを保存して、LiveSplit の2区間のテスト用 Run で実行できます。参照画像の選び方は [画像が映ったら Split する](../docs/scenario-builder.md#画像が映ったら-split-する) を参照してください。

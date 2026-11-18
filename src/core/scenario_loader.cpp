@@ -21,6 +21,8 @@
 #include "divergencesplitter/condition/conditions.hpp"
 #include "divergencesplitter/detector/common.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
+#include "divergencesplitter/scenario/v2.hpp"
+#include "divergencesplitter/scenario/yaml_value.hpp"
 #include "divergencesplitter/text.hpp"
 #include "scenario_inheritance.hpp"
 #include "scenario_yaml.hpp"
@@ -677,9 +679,15 @@ LoadedScenario load_scenario(
         );
     }
 
-    const std::string source{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+    std::string source{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
     if (stream.bad()) {
         throw ScenarioLoadError(ScenarioErrorKind::io, "could not read scenario file: " + path.string());
+    }
+    if (source.size() >= 3
+        && static_cast<unsigned char>(source[0]) == 0xEF
+        && static_cast<unsigned char>(source[1]) == 0xBB
+        && static_cast<unsigned char>(source[2]) == 0xBF) {
+        source.erase(0, 3);
     }
     // Parser and Tree own their callbacks. Never change ryml's global handlers.
     const auto callbacks = yaml_callbacks();
@@ -706,7 +714,27 @@ LoadedScenario load_scenario(
 
     try {
         RmsDetectors rms_detectors;
-        return LoadedScenario{parse_scenario(root, LoadContext{path.parent_path(), reference_resize, rms_detectors}), path};
+        LoadContext context{path.parent_path(), reference_resize, rms_detectors};
+        const auto schema_version = scenario_yaml::child(root, "schema_version");
+        if (!schema_version.invalid()) {
+            const auto version = as_string(schema_version, "schema_version");
+            if (version != "2") {
+                schema_error("unsupported schema_version: " + version);
+            }
+            const auto document_value = scenario::value_from_yaml(root);
+            const auto document = scenario::v2::parse_document(document_value);
+            scenario::v2::validate_document(document);
+            const auto normalized = scenario::v2::normalize_scenario(document);
+            ryml::Tree normalized_tree;
+            ryml::NodeRef normalized_root = normalized_tree.rootref();
+            normalized_root.set_map();
+            scenario::write_yaml_value(normalized_root, normalized);
+            return LoadedScenario{
+                parse_scenario(normalized_tree.crootref(), context),
+                path
+            };
+        }
+        return LoadedScenario{parse_scenario(root, context), path};
     } catch (const ScenarioLoadError&) {
         throw;
     } catch (const std::exception& error) {

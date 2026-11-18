@@ -1,0 +1,874 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listenToHost, sendCommand, sendToHost, isWebViewHost } from "./bridge";
+import {
+  conditionAtPath,
+  emptyDemoState,
+  formatPath,
+  isSharedUse,
+  sharedUseName,
+  type EditorState,
+  type JsonValue,
+  type Path,
+  type PreviewImage,
+  type WorkspaceInfo,
+} from "./model";
+import { ConditionInspector, ConditionPane, DetectorPane } from "./ConditionEditor";
+import { RulesEditor } from "./RulesEditor";
+import {
+  adjustSelectionForSplitMutation,
+  inverseSplitMutation,
+  selectionPath,
+  splitMutationForCommand,
+  type Selection,
+  type SpecialCondition,
+  type SplitMutation,
+} from "./selection";
+
+interface PendingRename {
+  kind: "condition-definition" | "detector-definition";
+  from: string;
+  to: string;
+}
+
+const starterCondition = { type: "elapsed", duration: "1s" };
+
+function conditionMode(value: JsonValue | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "未設定";
+  }
+  return isSharedUse(value) ? `use ${sharedUseName(value)}` : "inline";
+}
+
+interface PendingCommand {
+  action: "command" | "undo" | "redo";
+  mutation: SplitMutation | null;
+}
+
+interface HistoryEntry {
+  mutation: SplitMutation | null;
+}
+
+export default function App() {
+  const [state, setState] = useState<EditorState | null>(
+    isWebViewHost() ? null : emptyDemoState(),
+  );
+  const [selection, setSelection] = useState<Selection>(null);
+  const [selectedPath, setSelectedPath] = useState<Path | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [newConditionName, setNewConditionName] = useState("");
+  const [newDetectorName, setNewDetectorName] = useState("");
+  const pendingAssetRef = useRef<((asset: string) => void) | null>(null);
+  const pendingRenameRef = useRef<PendingRename | null>(null);
+  const pendingCommandsRef = useRef<PendingCommand[]>([]);
+  const undoHistoryRef = useRef<HistoryEntry[]>([]);
+  const redoHistoryRef = useRef<HistoryEntry[]>([]);
+  const selectionRef = useRef<Selection>(selection);
+  const selectedPathRef = useRef<Path | null>(selectedPath);
+  selectionRef.current = selection;
+  selectedPathRef.current = selectedPath;
+  const [draggedSplit, setDraggedSplit] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ index: number; after: boolean } | null>(null);
+  const [inputImage, setInputImage] = useState<PreviewImage | null>(null);
+  const [referenceImages, setReferenceImages] = useState<Record<string, string>>({});
+  const preview = !isWebViewHost();
+
+  useEffect(() => {
+    const detach = listenToHost(
+      (nextState) => {
+        const pending = pendingCommandsRef.current.shift();
+        let nextSelection = selectionRef.current;
+        let nextPath = selectedPathRef.current;
+        if (pending) {
+          if (pending.action === "command") {
+            const adjusted = adjustSelectionForSplitMutation(
+              nextSelection,
+              nextPath,
+              pending.mutation,
+              nextState.document.splits.length,
+            );
+            nextSelection = adjusted.selection;
+            nextPath = adjusted.selectedPath;
+            undoHistoryRef.current.push({ mutation: pending.mutation });
+            redoHistoryRef.current = [];
+          } else if (pending.action === "undo") {
+            const entry = undoHistoryRef.current.pop();
+            if (entry) {
+              redoHistoryRef.current.push(entry);
+              if (entry.mutation) {
+                const adjusted = adjustSelectionForSplitMutation(
+                  nextSelection,
+                  nextPath,
+                  inverseSplitMutation(entry.mutation),
+                  nextState.document.splits.length,
+                );
+                nextSelection = adjusted.selection;
+                nextPath = adjusted.selectedPath;
+              }
+            }
+          } else {
+            const entry = redoHistoryRef.current.pop();
+            if (entry) {
+              undoHistoryRef.current.push(entry);
+              if (entry.mutation) {
+                const adjusted = adjustSelectionForSplitMutation(
+                  nextSelection,
+                  nextPath,
+                  entry.mutation,
+                  nextState.document.splits.length,
+                );
+                nextSelection = adjusted.selection;
+                nextPath = adjusted.selectedPath;
+              }
+            }
+          }
+          if (nextSelection !== selectionRef.current
+              || nextPath !== selectedPathRef.current) {
+            selectionRef.current = nextSelection;
+            selectedPathRef.current = nextPath;
+            setSelection(nextSelection);
+            setSelectedPath(nextPath);
+          }
+        }
+        if (!nextState.canUndo && !nextState.canRedo
+            && pendingCommandsRef.current.length === 0) {
+          undoHistoryRef.current = [];
+          redoHistoryRef.current = [];
+        }
+        const pendingRename = pendingRenameRef.current;
+        if (pendingRename) {
+          const names = pendingRename.kind === "condition-definition"
+            ? nextState.document.definitions.conditions.map((item) => item.name)
+            : nextState.document.definitions.detectors.map((item) => item.name);
+          if (names.includes(pendingRename.to)) {
+            pendingRenameRef.current = null;
+            const nextSelection: Selection = {
+              kind: pendingRename.kind,
+              name: pendingRename.to,
+            };
+            setSelection(nextSelection);
+            setSelectedPath(selectionPath(nextSelection));
+          }
+        }
+        setState(nextState);
+        setError(null);
+      },
+      (hostError) => {
+        pendingAssetRef.current = null;
+        pendingRenameRef.current = null;
+        if (pendingCommandsRef.current.length > 0) {
+          pendingCommandsRef.current.shift();
+        }
+        setError(hostError.message);
+      },
+      (asset) => {
+        const apply = pendingAssetRef.current;
+        pendingAssetRef.current = null;
+        apply?.(asset);
+      },
+      (image) => setInputImage(image),
+      (reference, url) =>
+        setReferenceImages((images) => ({ ...images, [reference]: url })),
+    );
+    sendToHost({ type: "ready" });
+    return detach;
+  }, []);
+
+  const workspaceRoot = state?.workspace?.root ?? null;
+  useEffect(() => {
+    setInputImage(null);
+    setReferenceImages({});
+  }, [workspaceRoot]);
+
+  const addAsset = useCallback((apply: (asset: string) => void) => {
+    if (preview) {
+      return;
+    }
+    pendingAssetRef.current = apply;
+    sendToHost({ type: "addAsset" });
+  }, [preview]);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+    if (selection?.kind === "split" && selection.index >= state.document.splits.length) {
+      setSelection(null);
+    }
+    if (selection?.kind === "rule") {
+      const split = state.document.splits[selection.split];
+      if (!split || selection.rule >= split.rules.length) {
+        setSelection(null);
+      }
+    }
+    if (selection?.kind === "sequence-rule") {
+      const split = state.document.splits[selection.split];
+      const rule = split?.rules[selection.rule];
+      if (!rule?.sequence || selection.step >= rule.sequence.length) {
+        setSelection(null);
+      }
+    }
+  }, [state, selection]);
+
+  const rootPath = useMemo(() => selectionPath(selection), [selection]);
+  const activePath = selectedPath && rootPath ? selectedPath : rootPath;
+
+  const runCommand = useCallback((command: Record<string, unknown>) => {
+    if (preview) {
+      return;
+    }
+    const type = typeof command.type === "string" ? command.type : "";
+    if (type === "undo") {
+      pendingCommandsRef.current.push({ action: "undo", mutation: null });
+    } else if (type === "redo") {
+      pendingCommandsRef.current.push({ action: "redo", mutation: null });
+    } else {
+      pendingCommandsRef.current.push({
+        action: "command",
+        mutation: splitMutationForCommand(command),
+      });
+    }
+    sendCommand(command);
+  }, [preview]);
+
+  const requestRenameDefinition = useCallback((
+    kind: "condition" | "detector",
+    from: string,
+    to: string,
+  ) => {
+    if (preview || from === to) {
+      return;
+    }
+    pendingRenameRef.current = {
+      kind: kind === "condition" ? "condition-definition" : "detector-definition",
+      from,
+      to,
+    };
+    runCommand({
+      type: kind === "condition"
+        ? "rename_condition_definition"
+        : "rename_detector_definition",
+      from,
+      to,
+    });
+  }, [preview, runCommand]);
+
+  const pickInputImage = useCallback(() => {
+    if (!preview) {
+      sendToHost({ type: "pickInputImage" });
+    }
+  }, [preview]);
+
+  const requestReferenceImage = useCallback((reference: string) => {
+    if (!preview && reference) {
+      sendToHost({ type: "loadReferenceImage", reference });
+    }
+  }, [preview]);
+
+  const moveSplit = useCallback((from: number, to: number) => {
+    if (from === to) {
+      return;
+    }
+    runCommand({ type: "move_split", from, to });
+  }, [runCommand]);
+
+  const extractConditionDefinition = useCallback((path: Path, name: string) => {
+    if (preview) {
+      return;
+    }
+    runCommand({
+      type: "extract_condition_definition",
+      path,
+      name,
+    });
+  }, [preview, runCommand]);
+
+  const chooseSelection = useCallback((next: Selection) => {
+    setSelection(next);
+    setSelectedPath(selectionPath(next));
+  }, []);
+
+  const navigateToSplit = useCallback((index: number) => {
+    setSelection({ kind: "split", index });
+    setSelectedPath(null);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        runCommand({ type: "undo" });
+      } else if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        runCommand({ type: "redo" });
+      } else if (key === "s") {
+        event.preventDefault();
+        sendToHost({ type: event.shiftKey ? "saveAs" : "save" });
+      } else if (key === "o") {
+        event.preventDefault();
+        sendToHost({ type: "open" });
+      } else if (key === "n") {
+        event.preventDefault();
+        sendToHost({ type: "new" });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [runCommand]);
+
+  const createConditionDefinition = () => {
+    const name = newConditionName.trim();
+    if (!name) {
+      return;
+    }
+    runCommand({ type: "create_condition_definition", name });
+    setNewConditionName("");
+    chooseSelection({ kind: "condition-definition", name });
+  };
+
+  const createDetectorDefinition = () => {
+    const name = newDetectorName.trim();
+    if (!name) {
+      return;
+    }
+    runCommand({ type: "create_detector_definition", name });
+    setNewDetectorName("");
+    chooseSelection({ kind: "detector-definition", name });
+  };
+
+  const document = state?.document;
+  const schema = state?.schema ?? { conditionFields: {}, detectorFields: {} };
+  const workspace: WorkspaceInfo | null = state?.workspace ?? null;
+  const splitSelection = selection?.kind === "split" ? selection : null;
+
+  const inspectorMode = useMemo(() => {
+    if (!document || !rootPath) {
+      return null;
+    }
+    if (selection?.kind === "condition-definition") {
+      return "definition-condition" as const;
+    }
+    if (selection?.kind === "detector-definition") {
+      return "definition-detector" as const;
+    }
+    const raw = conditionAtPath(document, rootPath);
+    return isSharedUse(raw) ? ("usage-condition" as const) : ("inline" as const);
+  }, [document, selection, rootPath]);
+
+  return (
+    <div className="app">
+      <header className="toolbar">
+        <div className="brand">
+          <strong>Scenario Builder</strong>
+          <span className="poc">YAML v2</span>
+        </div>
+        <div className="toolbar-group">
+          <button onClick={() => sendToHost({ type: "openWorkspace" })}>
+            作業フォルダ
+          </button>
+          <button onClick={() => sendToHost({ type: "new" })}>新規</button>
+          <button onClick={() => sendToHost({ type: "open" })}>開く</button>
+          <button onClick={() => sendToHost({ type: "save" })}>保存</button>
+          <button onClick={() => sendToHost({ type: "saveAs" })}>名前を付けて保存</button>
+        </div>
+        <div className="toolbar-group">
+          <button disabled={!state?.canUndo} onClick={() => runCommand({ type: "undo" })}>
+            Undo
+          </button>
+          <button disabled={!state?.canRedo} onClick={() => runCommand({ type: "redo" })}>
+            Redo
+          </button>
+        </div>
+        <div className="file-status">
+          <span className={document?.dirty ? "dirty" : ""}>
+            {document?.dirty ? "● " : ""}
+            {document?.path || "(未保存)"}
+          </span>
+        </div>
+      </header>
+
+      {preview ? (
+        <div className="notice">
+          WebView2 ホスト外のプレビューです。編集コマンドは送信されません。
+        </div>
+      ) : null}
+      {error ? (
+        <div className="error-banner" onClick={() => setError(null)}>
+          {error}
+        </div>
+      ) : null}
+
+      {!document ? (
+        <main className="loading">C++ ホストからの状態を待っています…</main>
+      ) : (
+        <main className="panes">
+          <aside className="pane left-pane">
+            <section>
+              <div className="section-title">
+                <h2>作業ディレクトリ</h2>
+              </div>
+              {workspace ? (
+                <>
+                  <p className="workspace-root" title={workspace.root}>
+                    {workspace.root}
+                  </p>
+                  <h3 className="subsection-title">YAML</h3>
+                  <ul className="tree-list">
+                    {workspace.scenarios.map((scenario) => (
+                      <li
+                        key={scenario}
+                        className={
+                          document.path.endsWith(`\\${scenario}`)
+                          || document.path.endsWith(`/${scenario}`)
+                            ? "active"
+                            : ""
+                        }
+                      >
+                        <button
+                          className="link-row"
+                          onClick={() =>
+                            sendToHost({ type: "openScenario", name: scenario })
+                          }
+                        >
+                          <span className="anchor-mark">Y</span>
+                          {scenario}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {workspace.scenarios.length === 0 ? (
+                    <p className="muted">YAML ファイルはまだありません。</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="muted">
+                  作業フォルダを開くと、YAML を一覧から切り替えられます。
+                </p>
+              )}
+            </section>
+            <section>
+              <div className="section-title">
+                <h2>共通Condition</h2>
+                <span className="count">{document.definitions.conditions.length}</span>
+              </div>
+              <div className="inline-form">
+                <input
+                  value={newConditionName}
+                  placeholder="course_finish"
+                  onChange={(event) => setNewConditionName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      createConditionDefinition();
+                    }
+                  }}
+                />
+                <button onClick={createConditionDefinition}>作成</button>
+              </div>
+              <ul className="tree-list">
+                {document.definitions.conditions.map((definition) => (
+                  <li
+                    key={definition.name}
+                    className={
+                      selection?.kind === "condition-definition"
+                      && selection.name === definition.name
+                        ? "active"
+                        : ""
+                    }
+                  >
+                    <button
+                      className="link-row"
+                      onClick={() =>
+                        chooseSelection({
+                          kind: "condition-definition",
+                          name: definition.name,
+                        })
+                      }
+                    >
+                      <span className="anchor-mark">◇</span>
+                      {definition.name}
+                      <span className="mode-hint">
+                        {definition.parameters.length} params
+                      </span>
+                    </button>
+                    <button
+                      className="icon"
+                      title="共通Conditionを削除"
+                      onClick={() => {
+                        if (window.confirm(`${definition.name} を削除しますか？`)) {
+                          runCommand({
+                            type: "delete_condition_definition",
+                            name: definition.name,
+                          });
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section>
+              <div className="section-title">
+                <h2>共通Detector</h2>
+                <span className="count">{document.definitions.detectors.length}</span>
+              </div>
+              <div className="inline-form">
+                <input
+                  value={newDetectorName}
+                  placeholder="shared_detector"
+                  onChange={(event) => setNewDetectorName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      createDetectorDefinition();
+                    }
+                  }}
+                />
+                <button onClick={createDetectorDefinition}>作成</button>
+              </div>
+              <ul className="tree-list">
+                {document.definitions.detectors.map((definition) => (
+                  <li
+                    key={definition.name}
+                    className={
+                      selection?.kind === "detector-definition"
+                      && selection.name === definition.name
+                        ? "active"
+                        : ""
+                    }
+                  >
+                    <button
+                      className="link-row"
+                      onClick={() =>
+                        chooseSelection({
+                          kind: "detector-definition",
+                          name: definition.name,
+                        })
+                      }
+                    >
+                      <span className="anchor-mark">#</span>
+                      {definition.name}
+                      <span className="mode-hint">
+                        {definition.parameters.length} params
+                      </span>
+                    </button>
+                    <button
+                      className="icon"
+                      title="共通Detectorを削除"
+                      onClick={() => {
+                        if (window.confirm(`${definition.name} を削除しますか？`)) {
+                          runCommand({
+                            type: "delete_detector_definition",
+                            name: definition.name,
+                          });
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section>
+              <div className="section-title">
+                <h2>シナリオ条件</h2>
+              </div>
+              <ul className="tree-list">
+                {(
+                  [
+                    ["start_condition", "Start", document.start_condition],
+                    ["reset_condition", "Reset", document.reset_condition],
+                    ["incomplete_condition", "Incomplete", document.incomplete_condition],
+                  ] as [SpecialCondition, string, JsonValue | null][]
+                ).map(([key, label, value]) => (
+                  <li
+                    key={key}
+                    className={
+                      selection?.kind === "special" && selection.name === key
+                        ? "active"
+                        : ""
+                    }
+                  >
+                    <button
+                      className="link-row"
+                      disabled={value === null || value === undefined}
+                      onClick={() => chooseSelection({ kind: "special", name: key })}
+                    >
+                      <span>{label}</span>
+                      <span className="mode-hint">{conditionMode(value)}</span>
+                    </button>
+                    {key === "start_condition" ? null : (
+                      <button
+                        className="icon"
+                        title={value ? "無効化" : "追加"}
+                        onClick={() =>
+                          runCommand({
+                            type: "set_optional_condition",
+                            name: key,
+                            enabled: !value,
+                            value: starterCondition,
+                          })
+                        }
+                      >
+                        {value ? "−" : "+"}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="split-section">
+              <div className="section-title">
+                <h2>Split</h2>
+                <button
+                  onClick={() =>
+                    runCommand({
+                      type: "add_split",
+                      index: document.splits.length,
+                    })
+                  }
+                >
+                  + Split
+                </button>
+              </div>
+              {document.splits.length > 1 ? (
+                <p className="drag-hint">ドラッグして並び替え</p>
+              ) : null}
+              <ul className="tree-list split-list">
+                {document.splits.map((split, index) => {
+                  const drop = dropTarget?.index === index ? dropTarget.after : null;
+                  return (
+                    <li
+                      key={index}
+                      className={[
+                        selection?.kind === "split" && selection.index === index
+                          ? "active"
+                          : "",
+                        drop === false ? "drop-before" : "",
+                        drop === true ? "drop-after" : "",
+                      ].filter(Boolean).join(" ")}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setDropTarget({
+                          index,
+                          after: event.clientY > rect.top + rect.height / 2,
+                        });
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const raw = event.dataTransfer.getData("text/plain");
+                        const from = draggedSplit ?? (raw === "" ? null : Number(raw));
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const after = event.clientY > rect.top + rect.height / 2;
+                        if (from !== null && Number.isInteger(from)) {
+                          const insertAt = index + (after ? 1 : 0);
+                          const to = from < insertAt ? insertAt - 1 : insertAt;
+                          moveSplit(from, to);
+                        }
+                        setDraggedSplit(null);
+                        setDropTarget(null);
+                      }}
+                    >
+                      <span
+                        className="drag-handle"
+                        draggable
+                        title="ドラッグして並び替え"
+                        aria-label="ドラッグして並び替え"
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", String(index));
+                          setDraggedSplit(index);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedSplit(null);
+                          setDropTarget(null);
+                        }}
+                      >
+                        ⠿
+                      </span>
+                      <button
+                        className="link-row"
+                        onClick={() => chooseSelection({ kind: "split", index })}
+                      >
+                        <span>Split {index + 1}</span>
+                        <span className="mode-hint">
+                          {split ? `${split.rules.length} rules` : "manual"}
+                        </span>
+                      </button>
+                      <div className="split-item-actions">
+                        <button
+                          className="icon"
+                          title="上へ"
+                          disabled={index === 0}
+                          onClick={() => moveSplit(index, index - 1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="icon"
+                          title="下へ"
+                          disabled={index === document.splits.length - 1}
+                          onClick={() => moveSplit(index, index + 1)}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          className="icon"
+                          title="Split を削除"
+                          onClick={() => {
+                            if (window.confirm(`Split ${index + 1} を削除しますか？`)) {
+                              runCommand({ type: "remove_split", index });
+                            }
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          </aside>
+
+          <section className="pane center-pane">
+            {rootPath && selection?.kind === "condition-definition" ? (
+              <ConditionPane
+                document={document}
+                rootPath={rootPath}
+                selectedPath={activePath ?? rootPath}
+                definition
+                onSelect={setSelectedPath}
+                sendCommand={runCommand}
+                onNavigateSplit={navigateToSplit}
+                onRenameDefinition={(from, to) =>
+                  requestRenameDefinition("condition", from, to)
+                }
+              />
+            ) : rootPath
+              && (selection?.kind === "special"
+                || selection?.kind === "rule"
+                || selection?.kind === "sequence-rule") ? (
+              <ConditionPane
+                document={document}
+                rootPath={rootPath}
+                selectedPath={activePath ?? rootPath}
+                definition={false}
+                onSelect={setSelectedPath}
+                sendCommand={runCommand}
+                onNavigateSplit={navigateToSplit}
+                onRenameDefinition={(from, to) =>
+                  requestRenameDefinition("condition", from, to)
+                }
+              />
+            ) : rootPath && selection?.kind === "detector-definition" ? (
+              <DetectorPane
+                document={document}
+                rootPath={rootPath}
+                onRenameDefinition={(from, to) =>
+                  requestRenameDefinition("detector", from, to)
+                }
+              />
+            ) : splitSelection ? (
+              <RulesEditor
+                document={document}
+                splitIndex={splitSelection.index}
+                onSelectCondition={(path) => {
+                  if (path[4] === "sequence" && typeof path[5] === "number") {
+                    setSelection({
+                      kind: "sequence-rule",
+                      split: splitSelection.index,
+                      rule: path[3] as number,
+                      step: path[5],
+                    });
+                  } else {
+                    setSelection({
+                      kind: "rule",
+                      split: splitSelection.index,
+                      rule: path[3] as number,
+                    });
+                  }
+                  setSelectedPath(path);
+                }}
+                sendCommand={runCommand}
+              />
+            ) : (
+              <div className="welcome">
+                <h2>Scenario Builder</h2>
+                <p>
+                  左の一覧から共通Condition・共通Detector・Start / Reset / Incomplete・Split
+                  を選択してください。
+                </p>
+                <p className="muted">
+                  共通Conditionの設定は共通定義側で編集し、
+                  「公開」した項目だけを使用箇所から変更できます。
+                </p>
+              </div>
+            )}
+          </section>
+
+          <aside className="pane right-pane">
+            {rootPath && inspectorMode ? (
+              <>
+                <ConditionInspector
+                  document={document}
+                  schema={schema}
+                  workspace={workspace}
+                  onAddAsset={addAsset}
+                  rootPath={rootPath}
+                  selectedPath={activePath ?? rootPath}
+                  mode={inspectorMode}
+                  sendCommand={runCommand}
+                  onExtractCondition={extractConditionDefinition}
+                  inputImage={inputImage}
+                  referenceImages={referenceImages}
+                  onPickInputImage={pickInputImage}
+                  onRequestReferenceImage={requestReferenceImage}
+                />
+                {activePath && rootPath && activePath.join("/") !== rootPath.join("/") ? (
+                  <button className="secondary" onClick={() => setSelectedPath(rootPath)}>
+                    root に戻る
+                  </button>
+                ) : null}
+              </>
+            ) : splitSelection ? (
+              <div className="inspector">
+                <h2>Split {splitSelection.index + 1}</h2>
+                <p className="muted">
+                  {document.splits[splitSelection.index]
+                    ? "中央の一覧から対象 Rule の Condition を開けます。"
+                    : "手動区間です。自動区間に変更すると Rule を追加できます。"}
+                </p>
+              </div>
+            ) : (
+              <div className="inspector">
+                <h2>Properties</h2>
+                <p className="muted">
+                  Condition を選択すると、設定と共通定義の利用方法を編集できます。
+                </p>
+              </div>
+            )}
+          </aside>
+        </main>
+      )}
+
+      <footer className="statusbar">
+        <span>
+          {selection
+            ? formatPath(document ?? emptyDemoState().document, rootPath ?? [])
+            : "No selection"}
+        </span>
+        <span>{document?.start_condition ? "start condition ready" : ""}</span>
+      </footer>
+    </div>
+  );
+}

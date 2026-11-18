@@ -1,0 +1,841 @@
+#include "webview_host.hpp"
+
+#include <windows.h>
+#include <commdlg.h>
+#include <shlobj.h>
+#include <shobjidl.h>
+#include <wrl.h>
+
+#include <WebView2.h>
+
+#include <nlohmann/json.hpp>
+#include <opencv2/imgcodecs.hpp>
+
+#include <algorithm>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "divergencesplitter/scenario/editor/document.hpp"
+#include "divergencesplitter/scenario/editor/workspace.hpp"
+
+namespace divergencesplitter::scenario_builder {
+namespace {
+
+using Microsoft::WRL::Callback;
+using Microsoft::WRL::ComPtr;
+using nlohmann::json;
+using scenario_editor::EditorSession;
+using scenario_editor::apply_editor_command;
+using scenario_editor::editor_state_json;
+using scenario_editor::new_editor_session;
+using scenario_editor::open_editor_session;
+using scenario_editor::save_editor_session;
+using scenario_editor::ScenarioWorkspace;
+
+constexpr wchar_t window_class[] = L"DivergenceSplitterScenarioBuilder";
+
+std::wstring to_wide(std::string_view text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int length = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), nullptr, 0
+    );
+    if (length <= 0) {
+        return L"invalid UTF-8";
+    }
+    std::wstring result(static_cast<std::size_t>(length), L'\0');
+    MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        text.data(),
+        static_cast<int>(text.size()),
+        result.data(),
+        length
+    );
+    return result;
+}
+
+std::string to_utf8(std::wstring_view text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int length = WideCharToMultiByte(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr
+    );
+    if (length <= 0) {
+        return {};
+    }
+    std::string result(static_cast<std::size_t>(length), '\0');
+    WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        text.data(),
+        static_cast<int>(text.size()),
+        result.data(),
+        length,
+        nullptr,
+        nullptr
+    );
+    return result;
+}
+
+std::filesystem::path executable_directory() {
+    std::wstring buffer(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0 || length >= buffer.size()) {
+        throw std::runtime_error("could not locate the Scenario Builder executable");
+    }
+    buffer.resize(length);
+    return std::filesystem::path{buffer}.parent_path();
+}
+
+std::filesystem::path local_app_data() {
+    PWSTR raw = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &raw))) {
+        throw std::runtime_error("could not locate LOCALAPPDATA for the WebView2 profile");
+    }
+    std::filesystem::path result{raw};
+    CoTaskMemFree(raw);
+    return result;
+}
+
+std::filesystem::path pick_open_file(
+    HWND owner,
+    const std::filesystem::path& initial_directory = {}
+) {
+    std::wstring buffer(32768, L'\0');
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = owner;
+    dialog.lpstrFilter = L"Scenario YAML (*.yaml;*.yml)\0*.yaml;*.yml\0All files (*.*)\0*.*\0";
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    if (!initial_directory.empty()) {
+        dialog.lpstrInitialDir = initial_directory.c_str();
+    }
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&dialog)) {
+        return {};
+    }
+    return std::filesystem::path{buffer.c_str()};
+}
+
+std::filesystem::path pick_save_file(
+    HWND owner,
+    const std::filesystem::path& current,
+    const std::filesystem::path& initial_directory = {}
+) {
+    std::wstring buffer(32768, L'\0');
+    const std::wstring suggested = current.empty()
+        ? std::wstring{L"scenario.yaml"}
+        : current.filename().wstring();
+    if (suggested.size() < buffer.size()) {
+        std::copy(suggested.begin(), suggested.end(), buffer.begin());
+    }
+
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = owner;
+    dialog.lpstrFilter = L"Scenario YAML (*.yaml;*.yml)\0*.yaml;*.yml\0All files (*.*)\0*.*\0";
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    dialog.lpstrDefExt = L"yaml";
+    if (!initial_directory.empty()) {
+        dialog.lpstrInitialDir = initial_directory.c_str();
+    }
+    dialog.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameW(&dialog)) {
+        return {};
+    }
+    return std::filesystem::path{buffer.c_str()};
+}
+
+std::filesystem::path pick_image_file(HWND owner, const std::filesystem::path& initial_directory) {
+    std::wstring buffer(32768, L'\0');
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = owner;
+    dialog.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.webp;*.ppm;*.pgm)\0"
+        L"*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.webp;*.ppm;*.pgm\0All files (*.*)\0*.*\0";
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    if (!initial_directory.empty()) {
+        dialog.lpstrInitialDir = initial_directory.c_str();
+    }
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&dialog)) {
+        return {};
+    }
+    return std::filesystem::path{buffer.c_str()};
+}
+
+std::vector<unsigned char> read_binary_file(const std::filesystem::path& path) {
+    std::ifstream stream{path, std::ios::binary};
+    if (!stream) {
+        throw std::runtime_error(
+            "could not open image file: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    return {
+        std::istreambuf_iterator<char>{stream},
+        std::istreambuf_iterator<char>{},
+    };
+}
+
+std::string base64_encode(const std::vector<unsigned char>& bytes) {
+    static constexpr char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string result;
+    result.reserve((bytes.size() + 2) / 3 * 4);
+    for (std::size_t index = 0; index < bytes.size(); index += 3) {
+        const std::uint32_t first = bytes[index];
+        const std::uint32_t second = index + 1 < bytes.size() ? bytes[index + 1] : 0;
+        const std::uint32_t third = index + 2 < bytes.size() ? bytes[index + 2] : 0;
+        const std::uint32_t value = (first << 16) | (second << 8) | third;
+        result.push_back(alphabet[(value >> 18) & 0x3F]);
+        result.push_back(alphabet[(value >> 12) & 0x3F]);
+        result.push_back(index + 1 < bytes.size() ? alphabet[(value >> 6) & 0x3F] : '=');
+        result.push_back(index + 2 < bytes.size() ? alphabet[value & 0x3F] : '=');
+    }
+    return result;
+}
+
+std::string image_data_url(const std::filesystem::path& path) {
+    const auto bytes = read_binary_file(path);
+    if (bytes.empty()) {
+        throw std::runtime_error(
+            "image file is empty: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    cv::Mat image = cv::imdecode(bytes, cv::IMREAD_UNCHANGED);
+    if (image.empty()) {
+        throw std::runtime_error(
+            "could not decode image: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    std::vector<unsigned char> png;
+    if (!cv::imencode(".png", image, png)) {
+        throw std::runtime_error(
+            "could not encode image for preview: " + scenario_editor::path_to_utf8(path)
+        );
+    }
+    return "data:image/png;base64," + base64_encode(png);
+}
+
+std::filesystem::path pick_workspace_directory(HWND owner) {
+    ComPtr<IFileOpenDialog> dialog;
+    if (FAILED(CoCreateInstance(
+            CLSID_FileOpenDialog,
+            nullptr,
+            CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(&dialog)
+        ))) {
+        throw std::runtime_error("could not open the workspace folder picker");
+    }
+    DWORD options = 0;
+    if (FAILED(dialog->GetOptions(&options))
+        || FAILED(dialog->SetOptions(
+            options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST
+        ))) {
+        throw std::runtime_error("could not configure the workspace folder picker");
+    }
+    if (FAILED(dialog->Show(owner))) {
+        return {};
+    }
+    ComPtr<IShellItem> item;
+    if (FAILED(dialog->GetResult(&item))) {
+        return {};
+    }
+    PWSTR raw = nullptr;
+    if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &raw)) || raw == nullptr) {
+        return {};
+    }
+    std::filesystem::path result{raw};
+    CoTaskMemFree(raw);
+    return result;
+}
+
+class WebViewHost {
+public:
+    explicit WebViewHost(std::filesystem::path initial_document, bool smoke_test)
+        : initial_document_(std::move(initial_document)), smoke_test_(smoke_test) {}
+
+    int run() {
+        const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        const bool com_initialized = SUCCEEDED(com_result);
+        if (FAILED(com_result) && com_result != RPC_E_CHANGED_MODE) {
+            MessageBoxW(nullptr, L"COM initialization failed.", L"Scenario Builder", MB_ICONERROR);
+            return 1;
+        }
+
+        if (!initial_document_.empty()) {
+            try {
+                workspace_.open(initial_document_.parent_path());
+                session_ = open_editor_session(initial_document_, workspace_.root());
+            } catch (const std::exception& error) {
+                if (smoke_test_) {
+                    if (com_initialized) {
+                        CoUninitialize();
+                    }
+                    return 1;
+                }
+                const std::wstring message = to_wide(error.what());
+                MessageBoxW(
+                    nullptr,
+                    message.c_str(),
+                    L"Scenario Builder",
+                    MB_ICONWARNING
+                );
+                session_ = new_editor_session();
+            }
+        } else {
+            session_ = new_editor_session();
+        }
+
+        create_window();
+        initialize_webview();
+
+        MSG message{};
+        int exit_code = 0;
+        while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        if (message.message == WM_QUIT) {
+            exit_code = static_cast<int>(message.wParam);
+        }
+
+        webview_.Reset();
+        controller_.Reset();
+        if (com_initialized) {
+            CoUninitialize();
+        }
+        return exit_code;
+    }
+
+private:
+    static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+        WebViewHost* self = reinterpret_cast<WebViewHost*>(
+            GetWindowLongPtrW(window, GWLP_USERDATA)
+        );
+        if (message == WM_NCCREATE) {
+            const auto* create = reinterpret_cast<CREATESTRUCTW*>(lparam);
+            self = static_cast<WebViewHost*>(create->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        if (self == nullptr) {
+            return DefWindowProcW(window, message, wparam, lparam);
+        }
+        switch (message) {
+        case WM_SIZE:
+            if (self->controller_) {
+                RECT bounds{};
+                GetClientRect(window, &bounds);
+                self->controller_->put_Bounds(bounds);
+            }
+            return 0;
+        case WM_SETFOCUS:
+            if (self->controller_) {
+                self->controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+            }
+            return 0;
+        case WM_CLOSE:
+            if (!self->confirm_discard_changes()) {
+                return 0;
+            }
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            return 0;
+        default:
+            return DefWindowProcW(window, message, wparam, lparam);
+        }
+    }
+
+    void create_window() {
+        WNDCLASSEXW window_class_info{};
+        window_class_info.cbSize = sizeof(window_class_info);
+        window_class_info.lpfnWndProc = window_proc;
+        window_class_info.hInstance = GetModuleHandleW(nullptr);
+        window_class_info.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        window_class_info.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        window_class_info.lpszClassName = window_class;
+        if (!RegisterClassExW(&window_class_info)) {
+            throw std::runtime_error("could not register the Scenario Builder window");
+        }
+        window_ = CreateWindowExW(
+            0,
+            window_class,
+            L"DivergenceSplitter Scenario Builder",
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            1280,
+            860,
+            nullptr,
+            nullptr,
+            GetModuleHandleW(nullptr),
+            this
+        );
+        if (window_ == nullptr) {
+            throw std::runtime_error("could not create the Scenario Builder window");
+        }
+        update_title();
+        ShowWindow(window_, SW_SHOW);
+        UpdateWindow(window_);
+    }
+
+    void initialize_webview() {
+        const auto user_data = local_app_data() / "DivergenceSplitter" / "ScenarioBuilder";
+        std::error_code error;
+        std::filesystem::create_directories(user_data, error);
+        if (error) {
+            throw std::runtime_error("could not create the WebView2 user data directory");
+        }
+
+        auto environment_handler =
+            Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+                [this](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
+                    if (FAILED(result) || environment == nullptr) {
+                        webview_failed(L"WebView2 environment initialization failed.");
+                        return result;
+                    }
+                    auto controller_handler =
+                        Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                            [this](
+                                HRESULT controller_result,
+                                ICoreWebView2Controller* controller
+                            ) -> HRESULT {
+                                if (FAILED(controller_result) || controller == nullptr) {
+                                    webview_failed(
+                                        L"WebView2 controller initialization failed."
+                                    );
+                                    return controller_result;
+                                }
+                                controller_ = controller;
+                                initialize_controller();
+                                return S_OK;
+                            }
+                        );
+                    environment->CreateCoreWebView2Controller(
+                        window_, controller_handler.Get()
+                    );
+                    return S_OK;
+                }
+            );
+        const HRESULT result = CreateCoreWebView2EnvironmentWithOptions(
+            nullptr,
+            user_data.c_str(),
+            nullptr,
+            environment_handler.Get()
+        );
+        if (FAILED(result)) {
+            throw std::runtime_error(
+                "WebView2 Runtime is unavailable. Install the Microsoft Edge WebView2 Runtime."
+            );
+        }
+    }
+
+    void initialize_controller() {
+        try {
+            RECT bounds{};
+            GetClientRect(window_, &bounds);
+            controller_->put_Bounds(bounds);
+            controller_->put_IsVisible(TRUE);
+            controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+            controller_->get_CoreWebView2(webview_.ReleaseAndGetAddressOf());
+
+            auto message_handler = Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                [this](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                    LPWSTR source_raw = nullptr;
+                    if (FAILED(args->get_Source(&source_raw)) || source_raw == nullptr) {
+                        return S_OK;
+                    }
+                    const std::wstring source = source_raw;
+                    CoTaskMemFree(source_raw);
+                    if (source.rfind(L"https://app.local/", 0) != 0
+                        && source != L"https://app.local") {
+                        return S_OK;
+                    }
+
+                    LPWSTR raw = nullptr;
+                    if (FAILED(args->get_WebMessageAsJson(&raw)) || raw == nullptr) {
+                        return S_OK;
+                    }
+                    const std::string text = to_utf8(raw);
+                    CoTaskMemFree(raw);
+                    handle_message(text);
+                    return S_OK;
+                }
+            );
+            webview_->add_WebMessageReceived(message_handler.Get(), nullptr);
+
+            auto navigation_handler = Callback<ICoreWebView2NavigationStartingEventHandler>(
+                [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                    LPWSTR uri_raw = nullptr;
+                    if (FAILED(args->get_Uri(&uri_raw)) || uri_raw == nullptr) {
+                        return S_OK;
+                    }
+                    const std::wstring uri = uri_raw;
+                    CoTaskMemFree(uri_raw);
+                    if (uri.rfind(L"https://app.local/", 0) != 0
+                        && uri != L"https://app.local") {
+                        args->put_Cancel(TRUE);
+                    }
+                    return S_OK;
+                }
+            );
+            webview_->add_NavigationStarting(navigation_handler.Get(), nullptr);
+
+            auto new_window_handler = Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                    args->put_Handled(TRUE);
+                    return S_OK;
+                }
+            );
+            webview_->add_NewWindowRequested(new_window_handler.Get(), nullptr);
+
+            const auto ui = executable_directory() / "scenario-builder-ui";
+            if (!std::filesystem::exists(ui / "index.html")) {
+                throw std::runtime_error(
+                    "scenario-builder-ui/index.html was not found next to the executable"
+                );
+            }
+            ComPtr<ICoreWebView2_3> webview3;
+            if (FAILED(webview_.As(&webview3))) {
+                throw std::runtime_error(
+                    "the installed WebView2 Runtime does not support virtual host mapping"
+                );
+            }
+            webview3->SetVirtualHostNameToFolderMapping(
+                L"app.local",
+                ui.c_str(),
+                COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS
+            );
+            webview_->Navigate(L"https://app.local/index.html");
+        } catch (const std::exception& error) {
+            const std::wstring message = to_wide(error.what());
+            webview_failed(message.c_str());
+        }
+    }
+
+    void webview_failed(const wchar_t* message) {
+        if (!smoke_test_) {
+            MessageBoxW(window_, message, L"Scenario Builder", MB_ICONERROR);
+        }
+        PostQuitMessage(1);
+    }
+
+    void handle_message(const std::string& text) {
+        try {
+            const json message = json::parse(text);
+            const std::string type = message.value("type", "");
+            if (type == "ready") {
+                publish_state();
+                if (smoke_test_) {
+                    PostQuitMessage(0);
+                }
+                return;
+            }
+            if (type == "command") {
+                EditorSession next = session_;
+                apply_editor_command(next, message.at("command"));
+                const json state = state_json(next);
+                session_ = std::move(next);
+                update_title();
+                post_state(state);
+                return;
+            }
+            if (type == "new") {
+                if (!confirm_discard_changes()) {
+                    return;
+                }
+                session_ = new_editor_session(
+                    workspace_.is_open() ? workspace_.root() : std::filesystem::path{}
+                );
+                update_title();
+                publish_state();
+                return;
+            }
+            if (type == "openWorkspace") {
+                open_workspace();
+                return;
+            }
+            if (type == "openScenario") {
+                open_scenario(message.value("name", ""));
+                return;
+            }
+            if (type == "open") {
+                open_scenario_dialog();
+                return;
+            }
+            if (type == "addAsset") {
+                add_asset();
+                return;
+            }
+            if (type == "pickInputImage") {
+                pick_input_image();
+                return;
+            }
+            if (type == "loadReferenceImage") {
+                load_reference_image(message.value("reference", ""));
+                return;
+            }
+            if (type == "save" || type == "saveAs") {
+                (void)save(type == "saveAs");
+                return;
+            }
+        } catch (const std::exception& error) {
+            publish_error(error.what());
+        }
+    }
+
+    void open_workspace() {
+        if (!confirm_discard_changes()) {
+            return;
+        }
+        const auto directory = pick_workspace_directory(window_);
+        if (directory.empty()) {
+            return;
+        }
+        workspace_.open(directory);
+        session_ = new_editor_session(workspace_.root());
+        update_title();
+        publish_state();
+    }
+
+    void open_scenario(const std::string& name) {
+        if (!workspace_.is_open()) {
+            throw std::runtime_error("workspace is not open");
+        }
+        if (!confirm_discard_changes()) {
+            return;
+        }
+        const auto path = workspace_.scenario_path(name);
+        session_ = open_editor_session(path, workspace_.root());
+        update_title();
+        publish_state();
+    }
+
+    void open_scenario_dialog() {
+        if (!confirm_discard_changes()) {
+            return;
+        }
+        const auto path = pick_open_file(
+            window_, workspace_.is_open() ? workspace_.root() : std::filesystem::path{}
+        );
+        if (path.empty()) {
+            return;
+        }
+        if (!workspace_.is_open()) {
+            workspace_.open(path.parent_path());
+        } else {
+            workspace_.validate_scenario_destination(path);
+        }
+        session_ = open_editor_session(path, workspace_.root());
+        update_title();
+        publish_state();
+    }
+
+    void add_asset() {
+        if (!workspace_.is_open()) {
+            throw std::runtime_error("open a workspace before adding an image");
+        }
+        const auto source = pick_image_file(window_, workspace_.asset_directory());
+        if (source.empty()) {
+            return;
+        }
+        const std::string asset = workspace_.import_asset(source);
+        publish_state();
+        post_message(json{{"type", "assetAdded"}, {"asset", asset}});
+    }
+
+    void pick_input_image() {
+        const auto source = pick_image_file(window_, {});
+        if (source.empty()) {
+            return;
+        }
+        post_message(json{
+            {"type", "inputImage"},
+            {"name", scenario_editor::path_to_utf8(source.filename())},
+            {"path", scenario_editor::path_to_utf8(source)},
+            {"url", image_data_url(source)},
+        });
+    }
+
+    void load_reference_image(const std::string& reference) {
+        if (!workspace_.is_open()) {
+            throw std::runtime_error("open a workspace before previewing an image");
+        }
+        if (reference.empty()) {
+            throw std::runtime_error("reference image is empty");
+        }
+        const auto path = workspace_.resolve_asset_reference(reference);
+        post_message(json{
+            {"type", "referenceImage"},
+            {"reference", reference},
+            {"url", image_data_url(path)},
+        });
+    }
+
+    void post_message(const json& message) {
+        if (!webview_) {
+            return;
+        }
+        const std::wstring serialized = to_wide(message.dump());
+        webview_->PostWebMessageAsJson(serialized.c_str());
+    }
+
+    [[nodiscard]] json workspace_json() const {
+        json result{
+            {"root", scenario_editor::path_to_utf8(workspace_.root())},
+            {"assets", workspace_.list_assets()},
+            {"scenarios", json::array()},
+        };
+        for (const auto& scenario : workspace_.list_scenarios()) {
+            result["scenarios"].push_back(scenario_to_utf8(scenario));
+        }
+        return result;
+    }
+
+    static std::string scenario_to_utf8(const std::filesystem::path& path) {
+        return scenario_editor::path_to_utf8(path);
+    }
+
+    bool confirm_discard_changes() {
+        if (!session_.dirty) {
+            return true;
+        }
+        const int answer = MessageBoxW(
+            window_,
+            L"保存されていない変更があります。保存しますか？",
+            L"Scenario Builder",
+            MB_YESNOCANCEL | MB_ICONWARNING
+        );
+        if (answer == IDCANCEL) {
+            return false;
+        }
+        if (answer == IDYES) {
+            try {
+                return save(false);
+            } catch (const std::exception& error) {
+                const std::wstring message = to_wide(error.what());
+                MessageBoxW(window_, message.c_str(), L"Scenario Builder", MB_ICONERROR);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool save(bool force_picker) {
+        std::filesystem::path path = session_.path;
+        if (!workspace_.is_open()) {
+            if (force_picker || path.empty()) {
+                path = pick_save_file(window_, path);
+            }
+            if (path.empty()) {
+                return false;
+            }
+            workspace_.open(path.parent_path());
+            session_.workspace_root = workspace_.root();
+        } else {
+            if (force_picker || path.empty()) {
+                path = pick_save_file(window_, path, workspace_.root());
+            }
+            if (path.empty()) {
+                return false;
+            }
+            workspace_.validate_scenario_destination(path);
+            session_.workspace_root = workspace_.root();
+        }
+        save_editor_session(session_, path);
+        update_title();
+        publish_state();
+        return true;
+    }
+
+    void update_title() {
+        const std::wstring name = session_.path.empty()
+            ? L"Untitled"
+            : session_.path.filename().wstring();
+        const std::wstring dirty = session_.dirty ? L" *" : L"";
+        SetWindowTextW(window_, (L"Scenario Builder - " + name + dirty).c_str());
+    }
+
+    [[nodiscard]] json state_json(const EditorSession& session) const {
+        json state = editor_state_json(session);
+        state["type"] = "state";
+        state["workspace"] = workspace_.is_open()
+            ? workspace_json()
+            : json(nullptr);
+        return state;
+    }
+
+    void post_state(const json& state) {
+        if (!webview_) {
+            return;
+        }
+        const std::wstring serialized = to_wide(state.dump());
+        webview_->PostWebMessageAsJson(serialized.c_str());
+    }
+
+    void publish_state() {
+        if (!webview_) {
+            return;
+        }
+        try {
+            post_state(state_json(session_));
+        } catch (const std::exception& error) {
+            publish_error(error.what());
+        }
+    }
+
+    void publish_error(const std::string& message) {
+        if (!webview_) {
+            return;
+        }
+        const json failure{{"type", "error"}, {"message", message}};
+        const std::wstring serialized = to_wide(failure.dump());
+        webview_->PostWebMessageAsJson(serialized.c_str());
+    }
+
+    std::filesystem::path initial_document_;
+    bool smoke_test_;
+    EditorSession session_;
+    ScenarioWorkspace workspace_;
+    HWND window_{};
+    ComPtr<ICoreWebView2Controller> controller_;
+    ComPtr<ICoreWebView2> webview_;
+};
+
+}  // namespace
+
+int run_scenario_builder(
+    const std::filesystem::path& initial_document,
+    bool smoke_test
+) {
+    try {
+        WebViewHost host{initial_document, smoke_test};
+        return host.run();
+    } catch (const std::exception& error) {
+        if (!smoke_test) {
+            const std::wstring message = to_wide(error.what());
+            MessageBoxW(
+                nullptr,
+                message.c_str(),
+                L"Scenario Builder",
+                MB_ICONERROR
+            );
+        }
+        return 1;
+    }
+}
+
+}  // namespace divergencesplitter::scenario_builder

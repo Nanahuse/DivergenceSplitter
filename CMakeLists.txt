@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(
     DivergenceSplitter
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "Automatic splitter for LiveSplit.Bridge"
     HOMEPAGE_URL "https://github.com/Nanahuse/DivergenceSplitter"
     LANGUAGES CXX
@@ -10,9 +10,13 @@ project(
 
 option(DIVERGENCESPLITTER_BUILD_BENCHMARKS "Build developer Monitor history benchmarks" OFF)
 option(DIVERGENCESPLITTER_BUILD_UI "Build the Dear ImGui Win32 desktop UI" ON)
+option(DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER "Build the standalone Scenario Builder" OFF)
 option(DIVERGENCESPLITTER_BUILD_TESTS "Build the CTest suite" ON)
 option(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS "Build the optional LiveSplit.Bridge TestHost smoke test" OFF)
 option(DIVERGENCESPLITTER_FETCH_BRIDGE "Fetch the LiveSplit Bridge C++ client" ON)
+if(DIVERGENCESPLITTER_BUILD_UI AND DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER)
+    set(DIVERGENCESPLITTER_COMBINED_DISTRIBUTION ON)
+endif()
 set(
     DIVERGENCESPLITTER_BRIDGE_TAG
     "v0.1.0"
@@ -85,6 +89,9 @@ find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 
 add_subdirectory(src)
+if(DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER)
+    add_subdirectory(src/scenario_builder)
+endif()
 if(DIVERGENCESPLITTER_BUILD_TESTS)
     add_subdirectory(tests)
 endif()

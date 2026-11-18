@@ -11,6 +11,10 @@ Testing/
 compile_commands.json
 vcpkg_installed/
 
+# Scenario Builder frontend
+frontend/**/node_modules/
+frontend/**/dist/
+
 # Local IDE settings
 .vs/
 .vscode/

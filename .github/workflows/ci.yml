@@ -19,6 +19,7 @@ jobs:
     outputs:
       version: ${{ steps.package.outputs.version }}
       artifact-id: ${{ steps.distribution.outputs.artifact-id }}
+      zip-size: ${{ steps.package.outputs.size }}
     env:
       VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
       NDI_SDK_URL_WINDOWS: ${{ secrets.NDI_SDK_URL_WINDOWS }}
@@ -32,15 +33,24 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/scenario-builder/package-lock.json
 
       - name: Test distribution scripts
         run: python -m unittest discover -s tools/tests -v
 
       - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
 
       - name: Set vcpkg root after MSVC setup
         run: '"VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV'
@@ -66,7 +76,7 @@ jobs:
           "msvc=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT
 
       - name: Cache vcpkg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ env.VCPKG_ROOT }}\downloads
@@ -86,7 +96,7 @@ jobs:
 
       - name: Restore TestHost
         id: testhost-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.TESTHOST_OUTPUT }}
           key: testhost-v1-${{ steps.testhost-image.outputs.image }}-${{ runner.arch }}-${{ env.TESTHOST_CONFIGURATION }}-${{ env.TESTHOST_REF }}
@@ -102,7 +112,7 @@ jobs:
 
       - name: Set up .NET
         if: steps.testhost-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -122,18 +132,28 @@ jobs:
 
       - name: Restore sccache
         id: sccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-${{ hashFiles('.github/workflows/ci.yml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json', 'cmake/**', 'src/**', 'include/**', 'tests/**', 'third_party/**') }}
           restore-keys: |
             sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-
 
+      - name: Cache WebView2 SDK
+        uses: actions/cache@v6
+        with:
+          path: build/ci/_deps/webview2
+          key: webview2-sdk-1.0.2903.40-${{ runner.os }}-${{ runner.arch }}
+
       - name: Configure
         run: cmake --preset ci -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DFETCHCONTENT_QUIET=OFF
 
       - name: Build
         run: cmake --build --preset ci --parallel
+
+      - name: Test frontend
+        working-directory: frontend/scenario-builder
+        run: npm test
 
       - name: Show sccache statistics
         if: always() && steps.sccache.outcome == 'success'
@@ -152,7 +172,7 @@ jobs:
 
       - name: Save TestHost
         if: steps.testhost-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ env.TESTHOST_OUTPUT }}
           key: ${{ steps.testhost-cache.outputs.cache-primary-key }}
@@ -172,7 +192,9 @@ jobs:
           }
           "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
           "filename=$($zip.Name)" >> $env:GITHUB_OUTPUT
+          "size=$($zip.Length)" >> $env:GITHUB_OUTPUT
           $zip | Select-Object Name, Length | Format-Table -AutoSize
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Distribution ZIP: $($zip.Name), $($zip.Length) bytes"
 
       - name: Upload distribution
         id: distribution
@@ -195,7 +217,7 @@ jobs:
 
       - name: Save sccache
         if: steps.sccache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: ${{ steps.sccache.outputs.cache-primary-key }}

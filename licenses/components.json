@@ -60,6 +60,18 @@
       "source": "pinned:camera"
     },
     {
+      "name": "Microsoft WebView2 SDK",
+      "license": "BSD-3-Clause",
+      "license_file": "webview2.txt",
+      "source": "checked-in"
+    },
+    {
+      "name": "Microsoft Edge WebView2 Runtime",
+      "license": "External dependency; Microsoft license applies",
+      "url": "https://developer.microsoft.com/microsoft-edge/webview2/",
+      "source": "external"
+    },
+    {
       "name": "NDI SDK Headers",
       "license": "MIT (per header)",
       "license_file": "ndi-headers.txt",

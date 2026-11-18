@@ -1,0 +1,12 @@
+schema_version: 2
+
+start_condition:
+  type: elapsed
+  duration: 2s
+
+splits:
+  - rules:
+      - condition:
+          type: elapsed
+          duration: 3s
+        action: split

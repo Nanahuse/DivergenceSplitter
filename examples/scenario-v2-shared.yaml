@@ -1,0 +1,35 @@
+schema_version: 2
+
+definitions:
+  conditions:
+    course_finish:
+      parameters:
+        course_image: assets/default.png
+      condition:
+        type: then
+        conditions:
+          - type: detected
+            minimum_score: 0.9
+            detector:
+              type: root_mean_square_similarity
+              reference: {param: course_image}
+          - type: elapsed
+            duration: 1s
+
+start_condition:
+  type: elapsed
+  duration: 0s
+
+splits:
+  - rules:
+      - condition:
+          use: course_finish
+          with:
+            course_image: assets/YI1.png
+        action: split
+  - rules:
+      - condition:
+          use: course_finish
+          with:
+            course_image: assets/DPC.png
+        action: split
