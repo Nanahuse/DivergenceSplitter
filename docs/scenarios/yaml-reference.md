@@ -18,65 +18,6 @@
   - [アンカーとエイリアス](#アンカーとエイリアス)
   - [マージ](#マージ)
 
-## YAML v2 の共通定義
-
-`schema_version: 2` を最上位に置くと、共通定義とパラメーターを使うYAML v2として読み込みます。`schema_version` がないファイルは従来形式として扱います。`start_condition`、`reset_condition`、`incomplete_condition`、`splits`、Rule、Action、Condition、Detectorの書き方はv2でも同じです。
-
-YAML v2では、`definitions` に再利用可能なConditionとDetectorを置き、使用箇所から `use` で参照します。使用箇所ごとの値は `with` で指定します。Condition ID、`extends`、`overrides` は使いません。
-
-```yaml
-schema_version: 2
-
-definitions:
-  conditions:
-    course_finish:
-      parameters:
-        course_image: assets/default.png
-      condition:
-        type: then
-        conditions:
-          - type: detected
-            minimum_score: 0.9
-            detector:
-              type: root_mean_square_similarity
-              reference: {param: course_image}
-          - type: elapsed
-            duration: 1s
-
-start_condition:
-  type: elapsed
-  duration: 0s
-
-splits:
-  - rules:
-      - condition:
-          use: course_finish
-          with:
-            course_image: assets/YI1.png
-        action: split
-```
-
-| 項目 | 意味 |
-| --- | --- |
-| `schema_version` | `2` でYAML v2として読み込む。省略時は従来形式。 |
-| `definitions.conditions` | 再利用可能なCondition。`parameters` と `condition` を持ちます。 |
-| `definitions.detectors` | 再利用可能なDetector。`parameters` と `detector` を持ちます。 |
-| `parameters` | パラメーター名と既定値。値はスカラー、リスト、マッピングのいずれかです。 |
-| `param` | 設定値全体をパラメーターで置き換える参照。`{param: name}` と書きます。 |
-| `use` | 共通Conditionまたは共通Detectorの使用。使用箇所の位置で種類が決まります。 |
-| `with` | 使用箇所ごとのパラメーター値。省略したパラメーターは既定値を使います。 |
-
-- Scenario Builderでは、共通定義側で「公開」した設定項目が `parameters` と `{param: name}` として保存されます。使用箇所から変更できるのは公開済みのパラメーターだけです。
-- 共通定義は参照する位置より後ろにあってもかまいません。
-- 未定義の共通定義、未定義のパラメーター、未知の `with` 項目、ConditionとDetectorの種類が異なる参照はエラーになります。
-- 定義やパラメーターの循環参照はエラーになります。
-- ネストした共通Condition / Detectorを参照できます。内側の `with` には外側のパラメーターを渡せます。Scenario Builderで外側から公開できるのは、内側の共通定義ですでに公開されている項目だけです。
-- `with` の値は呼び出し元のスコープで解決されます。
-- 共通定義を使うたびに独立した実行用Conditionが作られ、`then`、`once`、`elapsed` などの状態は共有されません。
-- 省略可能な項目に `null` の既定値を持つパラメーターを使うと、その項目はYAML上で省略されます。使用箇所で `with` に値を指定すると項目が追加されます。必須項目に `null` を渡すことはできません。
-- YAMLのアンカー・エイリアスはv2でもYAML構文として使用できますが、共通定義機能とは独立しています。Scenario Builderはv2の `definitions` / `use` を正本として編集します。
-
-従来の `&anchor` / `*anchor` / `extends` / `overrides` を使うYAMLは引き続き実行できます。Scenario Builderでv2形式として編集するには、`definitions` / `use` / `parameters` へ変換する必要があります。旧形式からv2への自動変換は段階的対応です。
 ## シナリオの構造
 
 ```yaml
@@ -207,8 +148,6 @@ Conditionごとのリセットは [`reset_when`](conditions.md#reset_when)、制
 シナリオには `.yaml` または `.yml` を使います。拡張子の大文字・小文字は区別しません。Profileにはシナリオの絶対パスを保存します。
 
 Detectorの `reference` には絶対パスも相対パスも使えます。相対パスはYAMLファイルの保存先を基準にします。Profileの保存先や、アプリを起動したフォルダーが基準になるわけではありません。include、glob、環境変数、ホームディレクトリの展開には対応していません。
-
-Scenario Builderでは、作業ディレクトリ内の `Asset` に参照画像をまとめ、`Asset/DPC.png` のような相対パスで保存します。参照画像の選択欄からAsset内の画像を選び、「新規追加」で画像を作業ディレクトリの `Asset` へコピーできます。画像ファイル名は作業ディレクトリ内で一意になるよう、同名時は `DPC_2.png` のような名前を自動生成します。
 
 Windowsでも `images/title.png` や `C:/game/title.png` のようにスラッシュで区切れます。バックスラッシュで書く場合は、YAMLの単一引用符で囲むと、そのままの文字として保持されます。
 

@@ -1,46 +1,29 @@
 # DivergenceSplitter
 
-## 目次
+DivergenceSplitter は、映像をもとに LiveSplit の Start、Split、Reset などを自動で行う Windows アプリです。カメラ、キャプチャーカード、動画ファイル、NDI® の映像を使えます。LiveSplit との接続にはProtocol v4 対応の LiveSplit.Bridge を使います。
 
-- [できること](#できること)
-- [インストール](#インストール)
-- [ドキュメント](#ドキュメント)
-- [ライセンス](#ライセンス)
-
-## できること
-
-DivergenceSplitterは、映像を判定し、LiveSplitのStart、Split、Resetなどを自動で行うWindowsアプリです。LiveSplitとの接続には、Protocol v4対応のLiveSplit.Bridgeを使います。
-
-- カメラ、キャプチャーカード、動画ファイル、NDI®の映像を使えます。入力映像の切り取り（Crop）とサイズ変更（Resize）も設定できます。
-- 画像を調べるDetectorと、スコアや経過時間を判定するConditionを組み合わせて、YAMLでシナリオを作れます。
-- 1つの映像を複数のシナリオで判定し、それぞれ別のLiveSplitを操作できます。Monitorで映像、接続状態、判定結果を確認できます。
-- 同梱のScenario Builder（`ScenarioBuilder.exe`）で、共通Condition / DetectorとYAML v2のシナリオをGUIで編集できます。
+同梱の Scenario Builder ではどの場面でタイマーを操作するかを画面から設定できます。たとえば、ゲームのクリア画面が映ったときに Split する設定を作れます。
 
 ## インストール
 
 1. [GitHub Releases](https://github.com/Nanahuse/DivergenceSplitter/releases/latest) の Assets から `DivergenceSplitter-<version>-windows-x64.zip` をダウンロードします。
-2. ZIPを書き込み可能なフォルダーに展開し、`DivergenceSplitter.exe` を起動します。同梱のDLLとライセンスファイルは展開時の配置を保ってください。
+2. ZIP を書き込み可能なフォルダーに展開します。同梱ファイルは展開時の配置のまま使ってください。
+3. シナリオを実行するには `DivergenceSplitter.exe`、作成・編集するには `ScenarioBuilder.exe` を起動します。
 
-NDI入力を使う場合は、[NDI Runtime](https://ndi.video/)もインストールしてください。配布ZIPには含まれていません。
+NDI 入力を使う場合は [NDI Runtime](https://ndi.video/) をインストールしてください。Scenario Builder の起動時に Microsoft Edge WebView2 Runtime のインストールを求められた場合は、画面の案内に従ってください。
 
-Scenario Builderを起動するときは、同じフォルダーの`ScenarioBuilder.exe`を使います。Scenario BuilderはMicrosoft Edge WebView2 Runtimeを使用します。未インストールの場合は、案内に従ってEvergreen Runtimeをインストールしてください。WebView2 Runtimeは配布ZIPに含まれていません。
+## 使い方
 
-DivergenceSplitterを起動したら、[はじめに](docs/getting-started.md)の手順でLiveSplitを接続し、自動Splitを試してください。Scenario Builderの使い方は[Scenario Builder](docs/scenario-builder.md)を参照してください。
-
-## ドキュメント
-
-| 目的 | 参照先 |
+| やりたいこと | 手順 |
 | --- | --- |
-| LiveSplitを接続して最初の自動Splitを試す | [はじめに](docs/getting-started.md) |
-| Monitorで判定を確認する、Profileを編集・保存する | [利用ガイド](docs/user-guide.md) |
-| Profileとアプリ設定のJSONを調べる | [設定リファレンス](docs/configuration.md) |
-| 映像・接続・判定の問題を解決する | [トラブルシューティング](docs/troubleshooting.md) |
-| 自分のゲームに合わせてシナリオを作る | [シナリオ作成](docs/scenarios/README.md) |
-| シナリオの項目と実行時の動作を調べる | [YAML](docs/scenarios/yaml-reference.md)、[Condition](docs/scenarios/conditions.md)、[Detector](docs/scenarios/detectors.md) |
-| サンプルを試す、用途に合う設定例を探す | [サンプルファイル](examples/README.md)、[シナリオ例](docs/scenarios/examples.md) |
+| 映像と LiveSplit をつなぎ、最初の自動 Split を試す | [はじめに](docs/getting-started.md) |
+| 自分のゲーム用のシナリオを作る | [Scenario Builder の使い方](docs/scenario-builder.md) |
+| 複数の LiveSplit を操作する、判定結果を確認する、設定を保存する | [DivergenceSplitter の利用ガイド](docs/user-guide.md) |
+| サンプルを使って設定や動作を確かめる | [サンプルシナリオ](examples/README.md) |
+| 映像・接続・判定の問題を調べる | [トラブルシューティング](docs/troubleshooting.md) |
 
 ## ライセンス
 
-ソースコードには[MITライセンス](LICENSE)が適用されます。同梱する第三者コンポーネントには、それぞれのライセンスが適用されます。アプリのAbout画面または[配布時の通知](DISTRIBUTION-NOTICE.txt)を参照してください。
+ソースコードには [MIT ライセンス](LICENSE) が適用されます。同梱する第三者コンポーネントには、それぞれのライセンスが適用されます。アプリの About 画面または[配布時の通知](DISTRIBUTION-NOTICE.txt)を参照してください。
 
-NDI®はVizrt NDI ABの登録商標です。利用条件は[NDIの通知](licenses/NDI.md)を参照してください。
+NDI® は Vizrt NDI AB の登録商標です。利用条件は [NDI の通知](licenses/NDI.md)を参照してください。

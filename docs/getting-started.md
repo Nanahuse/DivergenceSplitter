@@ -38,4 +38,6 @@
 2. 開始条件を初めて判定してから約2秒後にLiveSplitがStartします。最初の区間の判定が始まってから約3秒後にSplitし、Runが終了します。確認が終わるまで映像を送り続けてください。
 3. ProfileのSave Asで設定を保存します。保存と適用の違いは[Profileの操作](user-guide.md#profileの操作)を参照してください。
 
-テストを終えたらアプリを閉じます。このサンプルは映像が届いた状態でタイマーをResetすると再びStartします。うまく動かない場合は[トラブルシューティング](troubleshooting.md)を参照してください。次に画像を使った判定を試す場合は、[画像が現れたらStartし、消えたらSplitする例](scenarios/examples.md#画像の検出)に進んでください。
+テストを終えたらアプリを閉じます。このサンプルは映像が届いた状態でタイマーをResetすると再びStartします。うまく動かない場合は[トラブルシューティング](troubleshooting.md)を参照してください。
+
+自分のゲーム用のシナリオを作るには、[Scenario Builder の使い方](scenario-builder.md)を参照してください。画像判定をすぐ試す場合は、[サンプルシナリオ](../examples/README.md#画像が映ったら-start-し消えたら-split-する)を使えます。
