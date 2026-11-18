@@ -59,11 +59,14 @@ if(NOT TARGET livesplit_bridge::livesplit_bridge)
     message(FATAL_ERROR "livesplit_bridge::livesplit_bridge is required")
 endif()
 
+if(WIN32 AND (DIVERGENCESPLITTER_BUILD_UI OR DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER))
+    enable_language(RC)
+endif()
+
 if(DIVERGENCESPLITTER_BUILD_UI)
     if(NOT WIN32)
         message(FATAL_ERROR "DIVERGENCESPLITTER_BUILD_UI requires Windows (Win32/Direct3D 11)")
     endif()
-    enable_language(RC)
     FetchContent_Declare(
         imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
