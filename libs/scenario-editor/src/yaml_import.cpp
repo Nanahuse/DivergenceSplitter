@@ -12,8 +12,8 @@
 #include <utility>
 #include <vector>
 
-#include "../core/scenario_yaml.hpp"
 #include "divergencesplitter/scenario/yaml_value.hpp"
+#include "scenario_yaml.hpp"
 
 namespace divergencesplitter::scenario_editor {
 namespace {

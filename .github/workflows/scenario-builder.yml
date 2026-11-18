@@ -8,16 +8,12 @@ on:
       - "CMakePresets.json"
       - "vcpkg.json"
       - "cmake/**"
-      - "include/divergencesplitter/scenario/**"
-      - "src/CMakeLists.txt"
-      - "src/core/**"
-      - "src/scenario_editor/**"
-      - "src/scenario_builder/**"
+      - "libs/core/**"
+      - "libs/scenario-editor/**"
+      - "apps/scenario-builder/**"
       - "tests/CMakeLists.txt"
-      - "tests/scenario_editor_tests.cpp"
-      - "tests/scenario_v2_tests.cpp"
-      - "tests/scenario_workspace_tests.cpp"
-      - "frontend/scenario-builder/**"
+      - "tests/core/scenario_v2_tests.cpp"
+      - "tests/scenario-editor/**"
       - "examples/scenario-v2.yaml"
       - "docs/scenario-builder.md"
   push:
@@ -51,7 +47,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: frontend/scenario-builder/package-lock.json
+          cache-dependency-path: apps/scenario-builder/frontend/package-lock.json
 
       - name: Set up MSVC
         uses: TheMrMilchmann/setup-msvc-dev@v4
@@ -100,7 +96,7 @@ jobs:
           --parallel
 
       - name: Test frontend
-        working-directory: frontend/scenario-builder
+        working-directory: apps/scenario-builder/frontend
         run: npm test
 
       - name: Test

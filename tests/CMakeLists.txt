@@ -1,39 +1,45 @@
 include(GoogleTest)
 
 add_executable(divergencesplitter_tests
-    camera_tests.cpp
-    condition_tests.cpp
-    detector_tests.cpp
-    evaluation_history_tests.cpp
-    frame_cache_tests.cpp
-    instance_runtime_tests.cpp
-    logging_tests.cpp
-    normalizer_tests.cpp
-    ndi_tests.cpp
-    profile_tests.cpp
-    recorded_pipeline_tests.cpp
-    scenario_loader_tests.cpp
-    scenario_runtime_tests.cpp
-    test_support.cpp
+    capture/camera_tests.cpp
+    capture/ndi_tests.cpp
+    capture/normalizer_tests.cpp
+    core/condition_tests.cpp
+    core/detector_tests.cpp
+    core/frame_cache_tests.cpp
+    core/scenario_loader_tests.cpp
+    integration/recorded_pipeline_tests.cpp
+    runtime/evaluation_history_tests.cpp
+    runtime/instance_runtime_tests.cpp
+    runtime/logging_tests.cpp
+    runtime/profile_tests.cpp
+    runtime/scenario_runtime_tests.cpp
+    support/test_support.cpp
 )
 target_compile_features(divergencesplitter_tests PRIVATE cxx_std_23)
 target_link_libraries(divergencesplitter_tests
     PRIVATE
         divergencesplitter::runtime
+        opencv_videoio
         GTest::gtest_main
 )
-target_include_directories(divergencesplitter_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(divergencesplitter_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/support"
+    "${PROJECT_SOURCE_DIR}/libs/core/src"
+)
 gtest_discover_tests(divergencesplitter_tests)
+
 # Four groups of five fresh processes cover decoder startup 20 times.
 foreach(group RANGE 1 4)
     add_test(NAME recorded_pipeline_repeat_${group} COMMAND "${CMAKE_COMMAND}"
         "-DTEST_EXECUTABLE=$<TARGET_FILE:divergencesplitter_tests>"
         "-DGROUP=${group}"
-        -P "${CMAKE_CURRENT_LIST_DIR}/repeat_recorded_pipeline.cmake")
+        -P "${CMAKE_CURRENT_LIST_DIR}/integration/repeat_recorded_pipeline.cmake")
     set_tests_properties(recorded_pipeline_repeat_${group} PROPERTIES
         TIMEOUT 180 LABELS "recording;regression")
 endforeach()
-add_executable(divergencesplitter_scenario_editor_tests scenario_editor_tests.cpp)
+
+add_executable(divergencesplitter_scenario_editor_tests scenario-editor/scenario_editor_tests.cpp)
 target_compile_features(divergencesplitter_scenario_editor_tests PRIVATE cxx_std_23)
 target_link_libraries(divergencesplitter_scenario_editor_tests
     PRIVATE
@@ -42,7 +48,7 @@ target_link_libraries(divergencesplitter_scenario_editor_tests
 )
 gtest_discover_tests(divergencesplitter_scenario_editor_tests)
 
-add_executable(divergencesplitter_scenario_v2_tests scenario_v2_tests.cpp)
+add_executable(divergencesplitter_scenario_v2_tests core/scenario_v2_tests.cpp)
 target_compile_features(divergencesplitter_scenario_v2_tests PRIVATE cxx_std_23)
 target_link_libraries(divergencesplitter_scenario_v2_tests
     PRIVATE
@@ -51,7 +57,7 @@ target_link_libraries(divergencesplitter_scenario_v2_tests
 )
 gtest_discover_tests(divergencesplitter_scenario_v2_tests)
 
-add_executable(divergencesplitter_scenario_workspace_tests scenario_workspace_tests.cpp)
+add_executable(divergencesplitter_scenario_workspace_tests scenario-editor/scenario_workspace_tests.cpp)
 target_compile_features(divergencesplitter_scenario_workspace_tests PRIVATE cxx_std_23)
 target_link_libraries(divergencesplitter_scenario_workspace_tests
     PRIVATE
@@ -60,27 +66,28 @@ target_link_libraries(divergencesplitter_scenario_workspace_tests
 )
 gtest_discover_tests(divergencesplitter_scenario_workspace_tests)
 
-add_executable(divergencesplitter_ndi_loopback_tests ndi_loopback_tests.cpp)
+add_executable(divergencesplitter_ndi_loopback_tests integration/ndi_loopback_tests.cpp)
 target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE
     "${PROJECT_SOURCE_DIR}/third_party/ndi/include")
 target_compile_definitions(divergencesplitter_ndi_loopback_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::runtime GTest::gtest_main)
+target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::capture GTest::gtest_main)
 add_test(NAME ndi_sdk_loopback COMMAND divergencesplitter_ndi_loopback_tests)
 set_tests_properties(ndi_sdk_loopback PROPERTIES TIMEOUT 90 LABELS "ndi;integration")
 
 if(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS)
-    add_executable(divergencesplitter_testhost_tests testhost_tests.cpp)
+    add_executable(divergencesplitter_testhost_tests integration/testhost_tests.cpp)
     target_compile_features(divergencesplitter_testhost_tests PRIVATE cxx_std_23)
     target_link_libraries(divergencesplitter_testhost_tests
         PRIVATE
             divergencesplitter::runtime
+            opencv_videoio
             GTest::gtest_main
     )
     add_test(NAME divergencesplitter_testhost_tests COMMAND divergencesplitter_testhost_tests)
 endif()
 
 if(DIVERGENCESPLITTER_BUILD_UI)
-    add_executable(divergencesplitter_ui_tests ui_model_tests.cpp history_plot_tests.cpp)
+    add_executable(divergencesplitter_ui_tests ui/ui_model_tests.cpp ui/history_plot_tests.cpp)
     target_compile_features(divergencesplitter_ui_tests PRIVATE cxx_std_23)
     target_link_libraries(divergencesplitter_ui_tests
         PRIVATE
@@ -89,6 +96,6 @@ if(DIVERGENCESPLITTER_BUILD_UI)
             divergencesplitter_implot
             GTest::gtest_main
     )
-    target_include_directories(divergencesplitter_ui_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui")
+    target_include_directories(divergencesplitter_ui_tests PRIVATE "${PROJECT_SOURCE_DIR}/apps/divergencesplitter/src/ui")
     gtest_discover_tests(divergencesplitter_ui_tests)
 endif()

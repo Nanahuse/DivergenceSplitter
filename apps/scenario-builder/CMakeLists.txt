@@ -91,11 +91,13 @@ if(NOT DIVERGENCESPLITTER_NPM_EXECUTABLE)
     message(FATAL_ERROR "Scenario Builder requires Node.js and npm to build the React frontend")
 endif()
 
-set(_scenario_builder_frontend "${PROJECT_SOURCE_DIR}/frontend/scenario-builder")
+set(_scenario_builder_frontend "${CMAKE_CURRENT_SOURCE_DIR}/frontend")
+set(_scenario_builder_frontend_build "${CMAKE_CURRENT_BINARY_DIR}/frontend")
 
 add_executable(ScenarioBuilder WIN32
-    main.cpp
-    webview_host.cpp
+    native/main.cpp
+    native/webview_host.cpp
+    native/webview_host.hpp
 )
 target_compile_features(ScenarioBuilder PRIVATE cxx_std_23)
 target_compile_definitions(ScenarioBuilder PRIVATE
@@ -105,7 +107,6 @@ target_compile_definitions(ScenarioBuilder PRIVATE
     UNICODE
     _UNICODE
 )
-target_include_directories(ScenarioBuilder PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(ScenarioBuilder PRIVATE
     divergencesplitter::scenario_editor
     divergencesplitter_webview2
@@ -131,24 +132,35 @@ file(GLOB_RECURSE _scenario_builder_frontend_sources CONFIGURE_DEPENDS
 set(_scenario_builder_frontend_stamp
     "${CMAKE_CURRENT_BINARY_DIR}/scenario_builder_frontend.stamp"
 )
+set(_scenario_builder_frontend_config
+    "${_scenario_builder_frontend}/index.html"
+    "${_scenario_builder_frontend}/package.json"
+    "${_scenario_builder_frontend}/package-lock.json"
+    "${_scenario_builder_frontend}/tsconfig.json"
+    "${_scenario_builder_frontend}/vite.config.ts"
+)
 add_custom_command(
     OUTPUT "${_scenario_builder_frontend_stamp}"
-    COMMAND "${DIVERGENCESPLITTER_NPM_EXECUTABLE}" ci --no-audit --no-fund
-    COMMAND "${DIVERGENCESPLITTER_NPM_EXECUTABLE}" run build
+    BYPRODUCTS "${_scenario_builder_frontend_build}/dist/index.html"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_scenario_builder_frontend_build}"
+    COMMAND "${CMAKE_COMMAND}" -E remove_directory "${_scenario_builder_frontend_build}/src"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${_scenario_builder_frontend}/src" "${_scenario_builder_frontend_build}/src"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        ${_scenario_builder_frontend_config} "${_scenario_builder_frontend_build}"
+    COMMAND "${CMAKE_COMMAND}" -E chdir "${_scenario_builder_frontend_build}"
+        "${DIVERGENCESPLITTER_NPM_EXECUTABLE}" ci --no-audit --no-fund
+    COMMAND "${CMAKE_COMMAND}" -E chdir "${_scenario_builder_frontend_build}"
+        "${DIVERGENCESPLITTER_NPM_EXECUTABLE}" run build
     COMMAND "${CMAKE_COMMAND}" -E remove_directory
         "$<TARGET_FILE_DIR:ScenarioBuilder>/scenario-builder-ui"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
-        "${_scenario_builder_frontend}/dist"
+        "${_scenario_builder_frontend_build}/dist"
         "$<TARGET_FILE_DIR:ScenarioBuilder>/scenario-builder-ui"
     COMMAND "${CMAKE_COMMAND}" -E touch "${_scenario_builder_frontend_stamp}"
     DEPENDS
-        "${_scenario_builder_frontend}/index.html"
-        "${_scenario_builder_frontend}/package.json"
-        "${_scenario_builder_frontend}/package-lock.json"
-        "${_scenario_builder_frontend}/tsconfig.json"
-        "${_scenario_builder_frontend}/vite.config.ts"
+        ${_scenario_builder_frontend_config}
         ${_scenario_builder_frontend_sources}
-    WORKING_DIRECTORY "${_scenario_builder_frontend}"
     COMMENT "Building and deploying the Scenario Builder React frontend"
     VERBATIM
 )
@@ -215,7 +227,9 @@ else()
         DESTINATION . COMPONENT ScenarioBuilder
     )
 endif()
-install(DIRECTORY "${_scenario_builder_frontend}/dist/" DESTINATION "scenario-builder-ui" COMPONENT ScenarioBuilder)
+install(DIRECTORY "${_scenario_builder_frontend_build}/dist/"
+    DESTINATION "scenario-builder-ui" COMPONENT ScenarioBuilder
+)
 install(FILES
     "${PROJECT_SOURCE_DIR}/docs/scenario-builder.md"
     DESTINATION docs COMPONENT ScenarioBuilder

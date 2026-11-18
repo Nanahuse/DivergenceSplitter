@@ -8,9 +8,7 @@ endif()
 
 include(GNUInstallDirs)
 
-if(TARGET DivergenceSplitter)
-    install(TARGETS DivergenceSplitter RUNTIME DESTINATION .)
-endif()
+install(TARGETS DivergenceSplitter RUNTIME DESTINATION .)
 install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION . RENAME LICENSE.txt)
 install(FILES "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt" DESTINATION .)
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION licenses)
@@ -36,7 +34,7 @@ install(CODE "
 ")
 if(WIN32)
     install(CODE "
-        file(GLOB _app_dlls \"${CMAKE_BINARY_DIR}/*.dll\")
+        file(GLOB _app_dlls \"$<TARGET_FILE_DIR:DivergenceSplitter>/*.dll\")
         list(FILTER _app_dlls EXCLUDE REGEX \"gtest\")
         list(FILTER _app_dlls EXCLUDE REGEX \"Processing[.]NDI[.]\")
         if(_app_dlls)
@@ -56,7 +54,7 @@ if(WIN32)
     ")
 endif()
 
-if(DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER)
+if(TARGET ScenarioBuilder)
     install(CODE "
         if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/ScenarioBuilder.exe\")
             message(FATAL_ERROR \"ScenarioBuilder.exe is missing from the combined package\")

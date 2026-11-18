@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include "divergencesplitter/configuration/configuration.hpp"
+#include "divergencesplitter/capture/source_configuration.hpp"
 
 namespace divergencesplitter {
 

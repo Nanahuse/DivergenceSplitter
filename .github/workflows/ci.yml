@@ -42,7 +42,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: frontend/scenario-builder/package-lock.json
+          cache-dependency-path: apps/scenario-builder/frontend/package-lock.json
 
       - name: Test distribution scripts
         run: python -m unittest discover -s tools/tests -v
@@ -135,7 +135,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-${{ hashFiles('.github/workflows/ci.yml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json', 'cmake/**', 'src/**', 'include/**', 'tests/**', 'third_party/**') }}
+          key: sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-${{ hashFiles('.github/workflows/ci.yml', 'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json', 'cmake/**', 'apps/**', 'libs/**', 'tests/**', 'third_party/**') }}
           restore-keys: |
             sccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.msvc }}-
 
@@ -152,7 +152,7 @@ jobs:
         run: cmake --build --preset ci --parallel
 
       - name: Test frontend
-        working-directory: frontend/scenario-builder
+        working-directory: apps/scenario-builder/frontend
         run: npm test
 
       - name: Show sccache statistics

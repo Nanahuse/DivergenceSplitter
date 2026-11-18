@@ -12,8 +12,6 @@
 #include <string>
 #include <vector>
 
-#include "divergencesplitter/configuration/configuration.hpp"
-
 #ifdef _WIN32
 #include <windows.h>
 #include <dshow.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "divergencesplitter/capture/frame_source.hpp"
-#include "divergencesplitter/configuration/configuration.hpp"
+#include "divergencesplitter/capture/source_configuration.hpp"
 
 namespace divergencesplitter {
 
