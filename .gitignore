@@ -12,8 +12,7 @@ compile_commands.json
 vcpkg_installed/
 
 # Scenario Builder frontend
-frontend/**/node_modules/
-frontend/**/dist/
+apps/scenario-builder/frontend/node_modules/
 
 # Local IDE settings
 .vs/
@@ -50,4 +49,4 @@ AGENTS.md
 
 # Local development documentation
 docs/development/
-tests/data/README.md
+tests/integration/data/README.md

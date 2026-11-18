@@ -22,6 +22,8 @@ NDI 入力を使う場合は [NDI Runtime](https://ndi.video/) をインスト�
 | サンプルを使って設定や動作を確かめる | [サンプルシナリオ](examples/README.md) |
 | 映像・接続・判定の問題を調べる | [トラブルシューティング](docs/troubleshooting.md) |
 
+ソースからのビルドとテストの手順は[開発ガイド](docs/building.md)を参照してください。
+
 ## ライセンス
 
 ソースコードには [MIT ライセンス](LICENSE) が適用されます。同梱する第三者コンポーネントには、それぞれのライセンスが適用されます。アプリの About 画面または[配布時の通知](DISTRIBUTION-NOTICE.txt)を参照してください。

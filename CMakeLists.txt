@@ -88,9 +88,16 @@ find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
 # Keep executable/DLL deployment paths stable when targets live in subdirectories.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 
-add_subdirectory(src)
+add_subdirectory(libs/core)
+add_subdirectory(libs/capture)
+add_subdirectory(libs/runtime)
+add_subdirectory(libs/scenario-editor)
+
+if(DIVERGENCESPLITTER_BUILD_UI)
+    add_subdirectory(apps/divergencesplitter)
+endif()
 if(DIVERGENCESPLITTER_BUILD_SCENARIO_BUILDER)
-    add_subdirectory(src/scenario_builder)
+    add_subdirectory(apps/scenario-builder)
 endif()
 if(DIVERGENCESPLITTER_BUILD_TESTS)
     add_subdirectory(tests)
