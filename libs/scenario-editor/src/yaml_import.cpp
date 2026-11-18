@@ -13,12 +13,15 @@
 #include <vector>
 
 #include "divergencesplitter/scenario/yaml_value.hpp"
-#include "scenario_yaml.hpp"
 
 namespace divergencesplitter::scenario_editor {
 namespace {
 
 using ryml::ConstNodeRef;
+
+std::string copy_scalar(ryml::csubstr value) {
+    return value.len ? std::string{value.str, value.len} : std::string{};
+}
 
 [[noreturn]] void yaml_error(const std::string& message) {
     throw ScenarioEditorError("could not parse scenario YAML: " + message);
@@ -27,16 +30,16 @@ using ryml::ConstNodeRef;
 ryml::Callbacks yaml_callbacks() {
     ryml::Callbacks callbacks;
     callbacks.set_error_basic([](ryml::csubstr message, const ryml::ErrorDataBasic&, void*) {
-        yaml_error(scenario_yaml::copy_scalar(message));
+        yaml_error(copy_scalar(message));
     });
     callbacks.set_error_parse([](ryml::csubstr message, const ryml::ErrorDataParse& data, void*) {
         yaml_error(
-            scenario_yaml::copy_scalar(message) + " at line " + std::to_string(data.ymlloc.line + 1)
+            copy_scalar(message) + " at line " + std::to_string(data.ymlloc.line + 1)
             + ", column " + std::to_string(data.ymlloc.col + 1)
         );
     });
     callbacks.set_error_visit([](ryml::csubstr message, const ryml::ErrorDataVisit&, void*) {
-        yaml_error(scenario_yaml::copy_scalar(message));
+        yaml_error(copy_scalar(message));
     });
     return callbacks;
 }
@@ -44,15 +47,15 @@ ryml::Callbacks yaml_callbacks() {
 void validate_and_resolve_yaml(ryml::Tree& tree, ConstNodeRef root) {
     std::map<std::string, ConstNodeRef> anchors;
     const auto target_for = [&](ConstNodeRef node, ryml::csubstr name) {
-        const auto found = anchors.find(scenario_yaml::copy_scalar(name));
+        const auto found = anchors.find(copy_scalar(name));
         if (found == anchors.end()) {
-            yaml_error("anchor not found: " + scenario_yaml::copy_scalar(name));
+            yaml_error("anchor not found: " + copy_scalar(name));
         }
         const auto value = found->second;
         if (!value.invalid()
             && (value.id() == node.id()
                 || node.tree()->is_ancestor(node.id(), value.id()))) {
-            yaml_error("cyclic alias: " + scenario_yaml::copy_scalar(name));
+            yaml_error("cyclic alias: " + copy_scalar(name));
         }
         return value;
     };
@@ -75,10 +78,10 @@ void validate_and_resolve_yaml(ryml::Tree& tree, ConstNodeRef root) {
             }
         }
         if (node.has_key_anchor()) {
-            anchors[scenario_yaml::copy_scalar(node.key_anchor())] = {};
+            anchors[copy_scalar(node.key_anchor())] = {};
         }
         if (node.has_val_anchor()) {
-            anchors[scenario_yaml::copy_scalar(node.val_anchor())] = node;
+            anchors[copy_scalar(node.val_anchor())] = node;
         }
         if (node.has_key() && node.key() == "<<") {
             if (node.is_seq()) {
@@ -97,7 +100,7 @@ void validate_and_resolve_yaml(ryml::Tree& tree, ConstNodeRef root) {
                 if (item.key_is_null()) {
                     yaml_error("mapping keys must be strings");
                 }
-                const std::string key = scenario_yaml::copy_scalar(item.key());
+                const std::string key = copy_scalar(item.key());
                 if (!keys.insert(key).second) {
                     yaml_error("duplicate scenario field: " + key);
                 }

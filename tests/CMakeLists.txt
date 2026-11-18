@@ -3,10 +3,10 @@ include(GoogleTest)
 add_executable(divergencesplitter_tests
     capture/camera_tests.cpp
     capture/ndi_tests.cpp
-    capture/normalizer_tests.cpp
     core/condition_tests.cpp
     core/detector_tests.cpp
     core/frame_cache_tests.cpp
+    core/normalizer_tests.cpp
     core/scenario_loader_tests.cpp
     integration/recorded_pipeline_tests.cpp
     runtime/evaluation_history_tests.cpp

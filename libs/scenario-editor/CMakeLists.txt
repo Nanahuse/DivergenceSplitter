@@ -14,8 +14,6 @@ target_include_directories(divergencesplitter_scenario_editor
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
-    PRIVATE
-        "${PROJECT_SOURCE_DIR}/libs/core/src"
 )
 target_link_libraries(divergencesplitter_scenario_editor
     PUBLIC
