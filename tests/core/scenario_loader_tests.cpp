@@ -4,6 +4,7 @@
 #include <opencv2/imgproc.hpp>
 #include <ryml/ryml.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -23,10 +24,13 @@ class TemporaryDirectory {
 public:
     TemporaryDirectory() {
         static int counter = 0;
-        path_ = std::filesystem::temp_directory_path() /
-                ("divergencesplitter-yaml-" + std::to_string(++counter) + "-" +
-                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(path_);
+        const auto parent = std::filesystem::temp_directory_path();
+        const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        // Separate CTest processes can generate the same name.
+        do {
+            path_ = parent / ("divergencesplitter-yaml-" + std::to_string(timestamp) + "-" +
+                              std::to_string(++counter));
+        } while (!std::filesystem::create_directory(path_));
     }
     ~TemporaryDirectory() {
         std::error_code error;

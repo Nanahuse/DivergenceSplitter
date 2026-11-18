@@ -1,7 +1,11 @@
 add_library(divergencesplitter_scenario_editor STATIC
     src/commands.cpp
+    src/editor_detail.cpp
+    src/editor_state.cpp
     src/model.cpp
     src/schema.cpp
+    src/session.cpp
+    src/value_json.cpp
     src/workspace.cpp
     src/yaml_export.cpp
     src/yaml_import.cpp
