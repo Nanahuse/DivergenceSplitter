@@ -25,7 +25,6 @@ target_link_libraries(divergencesplitter_tests
 )
 target_include_directories(divergencesplitter_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/support"
-    "${PROJECT_SOURCE_DIR}/libs/core/src"
 )
 gtest_discover_tests(divergencesplitter_tests)
 
@@ -72,7 +71,11 @@ target_include_directories(divergencesplitter_ndi_loopback_tests SYSTEM PRIVATE
 target_compile_definitions(divergencesplitter_ndi_loopback_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(divergencesplitter_ndi_loopback_tests PRIVATE divergencesplitter::runtime GTest::gtest_main)
 add_test(NAME ndi_sdk_loopback COMMAND divergencesplitter_ndi_loopback_tests)
-set_tests_properties(ndi_sdk_loopback PROPERTIES TIMEOUT 90 LABELS "ndi;integration")
+set_tests_properties(ndi_sdk_loopback PROPERTIES
+    TIMEOUT 90
+    LABELS "ndi;integration"
+    SKIP_REGULAR_EXPRESSION "\\[  SKIPPED \\]"
+)
 
 if(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS)
     add_executable(divergencesplitter_testhost_tests integration/testhost_tests.cpp)
@@ -83,7 +86,7 @@ if(DIVERGENCESPLITTER_BUILD_TESTHOST_TESTS)
             opencv_videoio
             GTest::gtest_main
     )
-    add_test(NAME divergencesplitter_testhost_tests COMMAND divergencesplitter_testhost_tests)
+    # tools/run_testhost.py runs this executable with a live TestHost.
 endif()
 
 if(DIVERGENCESPLITTER_BUILD_UI)

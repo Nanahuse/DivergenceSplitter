@@ -54,17 +54,6 @@ if(WIN32)
     ")
 endif()
 
-if(TARGET ScenarioBuilder)
-    install(CODE "
-        if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/ScenarioBuilder.exe\")
-            message(FATAL_ERROR \"ScenarioBuilder.exe is missing from the combined package\")
-        endif()
-        if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/scenario-builder-ui/index.html\")
-            message(FATAL_ERROR \"scenario-builder-ui/index.html is missing from the combined package\")
-        endif()
-    ")
-endif()
-
 set(CPACK_GENERATOR "ZIP")
 set(CPACK_PACKAGE_NAME "DivergenceSplitter")
 set(CPACK_PACKAGE_VENDOR "Nanahuse")

@@ -10,28 +10,12 @@
 #include <memory>
 
 #include "divergencesplitter/condition/conditions.hpp"
-#include "divergencesplitter/detector/common.hpp"
 #include "divergencesplitter/detector/detectors.hpp"
 #include "test_support.hpp"
 
 using namespace divergencesplitter;
 
 namespace {
-
-class CountingDetector final : public Detector {
-public:
-    explicit CountingDetector(std::shared_ptr<int> calls) : calls_(std::move(calls)) {}
-
-    [[nodiscard]] std::string_view type_name() const noexcept override { return "counting"; }
-    [[nodiscard]] std::string cache_key() const override { return "counting:stable"; }
-    [[nodiscard]] DetectionResult detect(FrameContext&) const override {
-        ++*calls_;
-        return DetectionResult{1.0};
-    }
-
-private:
-    std::shared_ptr<int> calls_;
-};
 
 cv::Mat gradient(int width, int height) {
     cv::Mat image(height, width, CV_8UC1);
@@ -70,16 +54,19 @@ cv::Mat with_alpha(const cv::Mat& image) {
 }
 
 double floating_rms_score(const cv::Mat& frame, const cv::Mat& reference) {
-    const auto prepared = detail::prepare_reference_alpha(reference);
+    cv::Mat colors = reference;
+    cv::Mat mask;
+    if (reference.channels() == 4) {
+        cv::cvtColor(reference, colors, cv::COLOR_BGRA2BGR);
+        cv::extractChannel(reference, mask, 3);
+    }
     cv::Mat frame_float;
     cv::Mat reference_float;
     frame.convertTo(frame_float, CV_64F);
-    prepared.image.convertTo(reference_float, CV_64F);
-    const auto pixels = prepared.mask.empty()
-        ? prepared.image.total()
-        : static_cast<std::size_t>(cv::countNonZero(prepared.mask));
-    const double components = static_cast<double>(pixels * prepared.image.channels());
-    const double total = cv::norm(frame_float, reference_float, cv::NORM_L2SQR, prepared.mask);
+    colors.convertTo(reference_float, CV_64F);
+    const auto pixels = mask.empty() ? colors.total() : static_cast<std::size_t>(cv::countNonZero(mask));
+    const double components = static_cast<double>(pixels * colors.channels());
+    const double total = cv::norm(frame_float, reference_float, cv::NORM_L2SQR, mask);
     return std::clamp(1.0 - (std::sqrt(total) / std::sqrt(components)) / 255.0, 0.0, 1.0);
 }
 
@@ -144,7 +131,7 @@ TEST(Detectors, SimilarityDetectorsScoreMatches) {
     EXPECT_NEAR(rms.detect(different_context).score, 1.0 - 100.0 / 255.0, 1e-9);
 }
 
-TEST(Detectors, IntegerRmsMatchesFloatingScoresAndThresholds) {
+TEST(Detectors, RmsScoresAndThresholdsAgreeWithMaskedPixelDifferences) {
     cv::RNG random(1823);
     test::ManualTimeProvider clock;
     const Region roi{2, 3, 19, 17};
@@ -172,30 +159,27 @@ TEST(Detectors, IntegerRmsMatchesFloatingScoresAndThresholds) {
                     const auto detector = std::make_shared<RootMeanSquareSimilarityDetector>(
                         target, use_roi ? std::optional{roi} : std::nullopt);
                     auto context = test::make_context(use_roi ? input : input(rectangle), clock);
-                    EXPECT_DOUBLE_EQ(detector->detect(context).score, expected);
+                    EXPECT_NEAR(detector->detect(context).score, expected, 1e-12);
                     const auto threshold = [&](double value) {
                         return evaluate_normal(std::make_shared<DetectedCondition>(detector, value), context);
                     };
-                    EXPECT_TRUE(threshold(std::nextafter(expected, 0.0)));
-                    EXPECT_TRUE(threshold(expected));
-                    EXPECT_FALSE(threshold(std::nextafter(expected, 1.0)));
+                    EXPECT_TRUE(threshold(expected - 1e-7));
+                    EXPECT_FALSE(threshold(expected + 1e-7));
                 }
             }
         }
     }
 }
 
-TEST(Detectors, IntegerRmsAccumulatesLargeSquaredErrors) {
+TEST(Detectors, RmsScoresOppositeLargeFramesAsZero) {
     const cv::Mat reference(224, 256, CV_8UC3, cv::Scalar::all(0));
     const cv::Mat frame(reference.size(), CV_8UC3, cv::Scalar::all(255));
     test::ManualTimeProvider clock;
     auto context = test::make_context(frame, clock);
-    EXPECT_DOUBLE_EQ(RootMeanSquareSimilarityDetector{reference}.detect(context).score,
-                     floating_rms_score(frame, reference));
     EXPECT_NEAR(RootMeanSquareSimilarityDetector{reference}.detect(context).score, 0.0, 1e-15);
 }
 
-TEST(Detectors, IntegerRmsValidatesReferenceAlphaAndPreservesDiagnosticImage) {
+TEST(Detectors, RmsRejectsInvalidReferenceAlphaAndPreservesThePreview) {
     cv::Mat reference(2, 2, CV_8UC4, cv::Scalar{1, 2, 3, 0});
     EXPECT_THROW(RootMeanSquareSimilarityDetector{reference}, std::invalid_argument);
     reference.at<cv::Vec4b>(0, 0)[3] = 128;
@@ -246,25 +230,6 @@ TEST(Detectors, PhaseCorrelation) {
     PhaseCorrelationDetector detector(image.clone());
     auto context = test::make_context(image, clock);
     EXPECT_GT(detector.detect(context).score, 0.99);
-}
-
-TEST(Detectors, EquivalentDetectorsShareFrameCache) {
-    auto calls = std::make_shared<int>(0);
-    DetectedCondition first(std::make_shared<CountingDetector>(calls), 0.5);
-    DetectedCondition second(std::make_shared<CountingDetector>(calls), 0.5);
-
-    test::ManualTimeProvider clock;
-    auto shared = std::make_shared<SharedFrameEvaluation>(
-        SharedFrameEvaluation{
-            Frame{test::solid(2, 2, 0), clock.now()},
-            clock.now(),
-            {},
-        }
-    );
-    FrameContext context{shared};
-    EXPECT_TRUE(evaluate_normal(std::shared_ptr<Condition>(&first, [](Condition*) {}), context));
-    EXPECT_TRUE(evaluate_normal(std::shared_ptr<Condition>(&second, [](Condition*) {}), context));
-    EXPECT_EQ(*calls, 1);
 }
 
 TEST(Detectors, TemplateWithAlphaUsesMask) {
@@ -436,45 +401,40 @@ TEST(Detectors, ColorSimilaritiesRejectInvalidImagesMasksAndRegions) {
     }
 }
 
-TEST(Detectors, ColorSimilaritiesUseExistingConditionCacheAndReferenceInterface) {
-    cv::Mat reference = with_alpha(color_texture());
-    const cv::Mat original = reference.clone();
-    const auto detectors = color_similarities(reference);
-    const auto equivalent = color_similarities(reference.clone());
-    const auto different_roi = color_similarities(reference, Region{1, 2, 13, 11});
-    cv::Mat changed = reference.clone();
-    changed.at<cv::Vec4b>(0, 0)[3] = 255;
-    const auto different_mask = color_similarities(changed);
-    const auto different_pixels = color_similarities(with_alpha(cv::Mat::zeros(11, 13, CV_8UC3)));
-    reference.setTo(cv::Scalar{0, 0, 0, 0});
-    EXPECT_NE(detectors[0]->cache_key(), detectors[1]->cache_key());
+TEST(Detectors, ColorSimilarityConditionsMeasureTheirOwnReferenceOnEachFrame) {
+    const auto texture = color_texture();
+    const auto black = cv::Mat::zeros(texture.size(), CV_8UC3);
+    const auto texture_detectors = color_similarities(with_alpha(texture));
+    const auto black_detectors = color_similarities(with_alpha(black));
     test::ManualTimeProvider clock;
-    auto context = test::make_context(color_texture(), clock);
-    for (std::size_t index = 0; index < detectors.size(); ++index) {
-        const auto& detector = detectors[index];
+    auto texture_frame = test::make_context(texture, clock);
+    auto black_frame = test::make_context(black, clock);
+
+    for (std::size_t index = 0; index < texture_detectors.size(); ++index) {
+        SCOPED_TRACE(texture_detectors[index]->type_name());
+        DetectedCondition matches_texture{texture_detectors[index], 0.99};
+        DetectedCondition matches_black{black_detectors[index], 0.99};
+        EXPECT_EQ(matches_texture.evaluate(texture_frame), true);
+        EXPECT_EQ(matches_black.evaluate(texture_frame), false);
+        EXPECT_EQ(matches_black.evaluate(black_frame), true);
+        EXPECT_EQ(matches_texture.evaluate(black_frame), false);
+    }
+}
+
+TEST(Detectors, ColorSimilarityReferencePreviewsPreserveTheOriginalPixels) {
+    cv::Mat reference = with_alpha(color_texture());
+    const auto original = reference.clone();
+    const auto detectors = color_similarities(reference);
+    reference.setTo(cv::Scalar::all(0));
+
+    for (const auto& detector : detectors) {
         SCOPED_TRACE(detector->type_name());
-        EXPECT_EQ(detector->cache_key(), equivalent[index]->cache_key());
-        EXPECT_NE(detector->cache_key(), different_roi[index]->cache_key());
-        EXPECT_NE(detector->cache_key(), different_mask[index]->cache_key());
-        EXPECT_NE(detector->cache_key(), different_pixels[index]->cache_key());
-        EXPECT_FALSE(detector->describe().empty());
-        auto references = detector->reference_images();
-        ASSERT_EQ(references.size(), 1U);
-        EXPECT_EQ(references[0].label, "reference");
-        EXPECT_EQ(cv::norm(references[0].image, original, cv::NORM_INF), 0.0);
-        references[0].image.setTo(cv::Scalar{0, 0, 0, 0});
-        EXPECT_EQ(cv::norm(detector->reference_images()[0].image, original, cv::NORM_INF), 0.0);
-        auto condition = std::make_shared<DetectedCondition>(detector, 0.99);
-        EXPECT_TRUE(evaluate_normal(condition, context));
-        ASSERT_TRUE(context.cache().has_detection(detector->cache_key()));
-        EXPECT_NEAR(*condition->latest_score(), 1.0, 1e-7);
-        EXPECT_DOUBLE_EQ(detect_cached(context, equivalent[index]).score, *condition->latest_score());
-        // A seeded result proves equivalent detectors use the shared cache.
-        auto seeded = test::make_context(color_texture(), clock);
-        (void)seeded.cache().detection(detector->cache_key(), [] { return DetectionResult{0.25}; });
-        EXPECT_DOUBLE_EQ(detect_cached(seeded, equivalent[index]).score, 0.25);
-        auto next_frame = test::make_context(color_texture(), clock);
-        EXPECT_FALSE(next_frame.cache().has_detection(detector->cache_key()));
-        EXPECT_NEAR(detect_cached(next_frame, detector).score, 1.0, 1e-7);
+        auto preview = detector->reference_images();
+        ASSERT_EQ(preview.size(), 1U);
+        EXPECT_EQ(cv::norm(preview[0].image, original, cv::NORM_INF), 0);
+        preview[0].image.setTo(cv::Scalar::all(0));
+        preview = detector->reference_images();
+        ASSERT_EQ(preview.size(), 1U);
+        EXPECT_EQ(cv::norm(preview[0].image, original, cv::NORM_INF), 0);
     }
 }

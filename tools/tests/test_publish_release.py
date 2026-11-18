@@ -1,4 +1,4 @@
-"""Test release decisions without contacting GitHub."""
+"""Test release outcomes against a local model of GitHub and its refs."""
 
 import io
 import os
@@ -18,75 +18,97 @@ REPO = "owner/repo"
 COMMIT = "a" * 40
 OTHER_COMMIT = "b" * 40
 TAG = "v0.2.0"
-MAIN_REF = f"{COMMIT}\trefs/heads/main"
 TAG_REF = f"refs/tags/{TAG}"
 ASSET_NAME = "DivergenceSplitter-0.2.0-windows-x64.zip"
+ASSET_CONTENTS = b"verified ZIP"
+
+
+class FakeReleaseRemote:
+    def __init__(self):
+        self.refs = {"refs/heads/main": COMMIT}
+        self.drafts = set()
+        self.published = []
+        self.unavailable = False
+
+    def run(self, command, *, check, **options):
+        executable, operation, *args = command
+        output = ""
+        if (executable, operation) == ("gh", "api"):
+            if self.unavailable:
+                raise subprocess.CalledProcessError(1, command)
+            if TAG in self.drafts:
+                output = "true"
+            if any(tag == TAG for tag, *_ in self.published):
+                output = "false"
+        elif (executable, operation) == ("git", "ls-remote"):
+            output = "\n".join(f"{sha}\t{ref}" for ref, sha in self.refs.items())
+        elif (executable, operation, args[0]) == ("gh", "release", "create"):
+            tag, asset, *flags = args[1:]
+            target = flags[flags.index("--target") + 1]
+            repository = flags[flags.index("--repo") + 1]
+            commit = self.refs.get(f"refs/tags/{tag}^{{}}", self.refs.get(f"refs/tags/{tag}", target))
+            self.published.append((tag, repository, commit, Path(asset).read_bytes()))
+        else:
+            raise AssertionError(f"Unexpected remote operation: {command}")
+        return subprocess.CompletedProcess(command, 0, stdout=output)
 
 
 class PublishReleaseTests(unittest.TestCase):
     def setUp(self):
         temporary = self.enterContext(tempfile.TemporaryDirectory())
         self.asset = Path(temporary) / ASSET_NAME
-        self.remote = self.enterContext(patch.object(publish_release, "capture"))
-        self.create = self.enterContext(patch.object(publish_release.subprocess, "run"))
+        self.remote = FakeReleaseRemote()
+        self.enterContext(patch.object(publish_release.subprocess, "run", side_effect=self.remote.run))
         self.enterContext(redirect_stdout(io.StringIO()))
 
     def publish(self):
         publish_release.publish(REPO, COMMIT, TAG, self.asset)
 
-    def test_new_release_and_rerun(self):
-        self.asset.write_bytes(b"test ZIP")
-        self.remote.side_effect = ["", MAIN_REF, "false"]
+    def test_rerun_leaves_one_release_with_the_verified_asset(self):
+        self.asset.write_bytes(ASSET_CONTENTS)
 
         self.publish()
         self.publish()
 
-        self.create.assert_called_once_with(
-            [
-                "gh", "release", "create", TAG, str(self.asset),
-                "--repo", REPO, "--target", COMMIT, "--generate-notes",
-            ],
-            check=True,
-        )
+        self.assertEqual(self.remote.published, [(TAG, REPO, COMMIT, ASSET_CONTENTS)])
 
-    def test_tag_on_target_commit_can_be_released(self):
-        self.asset.write_bytes(b"test ZIP")
-        for refs in (
-            f"{COMMIT}\t{TAG_REF}",
-            f"{OTHER_COMMIT}\t{TAG_REF}\n{COMMIT}\t{TAG_REF}^{{}}",
-        ):
+    def test_lightweight_and_annotated_tags_on_target_commit_can_be_released(self):
+        self.asset.write_bytes(ASSET_CONTENTS)
+        for refs in ({TAG_REF: COMMIT}, {TAG_REF: OTHER_COMMIT, f"{TAG_REF}^{{}}": COMMIT}):
             with self.subTest(refs=refs):
-                self.remote.side_effect = ["", f"{MAIN_REF}\n{refs}"]
-                self.create.reset_mock()
+                self.remote.refs.update(refs)
+                self.remote.published.clear()
+
                 self.publish()
-                self.create.assert_called_once()
+
+                self.assertEqual(self.remote.published, [(TAG, REPO, COMMIT, ASSET_CONTENTS)])
 
     def test_tag_on_other_commit_fails(self):
-        self.asset.write_bytes(b"test ZIP")
-        self.remote.side_effect = ["", f"{MAIN_REF}\n{OTHER_COMMIT}\t{TAG_REF}"]
+        self.asset.write_bytes(ASSET_CONTENTS)
+        self.remote.refs[TAG_REF] = OTHER_COMMIT
 
         with self.assertRaisesRegex(RuntimeError, "points to"):
             self.publish()
 
-        self.create.assert_not_called()
+        self.assertEqual(self.remote.published, [])
 
     def test_existing_draft_blocks_publication(self):
-        self.asset.write_bytes(b"test ZIP")
-        self.remote.side_effect = ["true", MAIN_REF]
+        self.asset.write_bytes(ASSET_CONTENTS)
+        self.remote.drafts.add(TAG)
 
         with self.assertRaisesRegex(RuntimeError, "draft release"):
             self.publish()
 
-        self.create.assert_not_called()
+        self.assertEqual(self.remote.published, [])
 
     def test_main_advances_between_check_and_publish(self):
-        self.asset.write_bytes(b"test ZIP")
-        self.remote.side_effect = ["", MAIN_REF, "", f"{OTHER_COMMIT}\trefs/heads/main"]
-
+        self.asset.write_bytes(ASSET_CONTENTS)
         self.assertTrue(publish_release.eligible(REPO, COMMIT, TAG))
+        self.remote.refs["refs/heads/main"] = OTHER_COMMIT
+
         self.publish()
 
-        self.create.assert_not_called()
+        self.assertEqual(self.remote.published, [])
 
     def test_missing_or_empty_zip_fails(self):
         for file_exists in (False, True):
@@ -95,9 +117,7 @@ class PublishReleaseTests(unittest.TestCase):
                     self.asset.touch()
                 with self.assertRaisesRegex(RuntimeError, "Missing or empty"):
                     self.publish()
-
-        self.remote.assert_not_called()
-        self.create.assert_not_called()
+                self.assertEqual(self.remote.published, [])
 
     def test_check_requires_a_single_artifact_id(self):
         output = self.asset.with_name("output.txt")
@@ -112,20 +132,22 @@ class PublishReleaseTests(unittest.TestCase):
             patch.dict(os.environ, environment),
             patch.object(sys, "argv", ["publish_release.py", "check"]),
         ):
-            self.remote.side_effect = ["", MAIN_REF, "", MAIN_REF]
-            with self.assertRaisesRegex(RuntimeError, "artifact ID"):
-                publish_release.main()
-            self.assertFalse(output.exists())
+            for invalid in ("", "0", "123,456"):
+                with self.subTest(artifact_id=invalid):
+                    os.environ["RELEASE_ARTIFACT_ID"] = invalid
+                    with self.assertRaisesRegex(RuntimeError, "artifact ID"):
+                        publish_release.main()
+                    self.assertFalse(output.exists())
 
             os.environ["RELEASE_ARTIFACT_ID"] = "123"
             publish_release.main()
             self.assertEqual(output.read_text(encoding="utf-8"), "publish=true\n")
 
     def test_remote_lookup_error_fails(self):
-        self.asset.write_bytes(b"test ZIP")
-        self.remote.side_effect = [subprocess.CalledProcessError(1, "gh")]
+        self.asset.write_bytes(ASSET_CONTENTS)
+        self.remote.unavailable = True
 
         with self.assertRaises(subprocess.CalledProcessError):
             self.publish()
 
-        self.create.assert_not_called()
+        self.assertEqual(self.remote.published, [])

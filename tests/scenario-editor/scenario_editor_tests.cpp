@@ -109,7 +109,7 @@ splits: []
     EXPECT_EQ(scalar_setting(resolved, "duration"), "2s");
 }
 
-TEST(ScenarioEditorV2, ExportsV2AndRuntimeLoaderReadsIt) {
+TEST(ScenarioEditorV2, ExportPreservesSharedUsageAndRunsWithTheOverriddenDuration) {
     TemporaryDirectory directory;
     const auto path = directory.path() / "scenario.yaml";
     write_text(path, R"(
@@ -130,18 +130,30 @@ splits: []
 )");
     const auto document = load_scenario_document(path);
     const auto exported = export_scenario_yaml(document);
-    EXPECT_NE(exported.find("schema_version: 2"), std::string::npos) << exported;
-    EXPECT_NE(exported.find("use: wait"), std::string::npos) << exported;
-    EXPECT_NE(exported.find("param: duration"), std::string::npos) << exported;
+    const auto exported_path = directory.path() / "exported.yaml";
+    write_text(exported_path, exported);
 
-    const auto reloaded = import_scenario_yaml(exported);
-    EXPECT_EQ(reloaded.definitions.conditions.size(), 1U);
-    const auto loaded = load_scenario(path);
-    const auto* start = dynamic_cast<const ElapsedCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    ASSERT_NE(start, nullptr);
-    EXPECT_EQ(start->duration(), std::chrono::seconds{3});
+    const auto reloaded = load_scenario_document(exported_path);
+    const auto* definition = find_condition_definition(reloaded, "wait");
+    ASSERT_NE(definition, nullptr);
+    ASSERT_TRUE(reloaded.start_condition);
+    EXPECT_EQ(reloaded.start_condition->use_name(), "wait");
+    const auto& parameter = require_setting(definition->condition, "duration");
+    ASSERT_TRUE(parameter.is_parameter_reference());
+    EXPECT_EQ(parameter.scalar, "duration");
+
+    const auto loaded = load_scenario(exported_path);
+    ASSERT_TRUE(loaded.scenario.start_condition);
+    using namespace std::chrono_literals;
+    const cv::Mat image(1, 1, CV_8UC3, cv::Scalar::all(0));
+    const auto evaluate_at = [&](std::chrono::nanoseconds time) {
+        const MonotonicTime timestamp{time.count()};
+        FrameContext context{Frame{image, timestamp}, timestamp};
+        return loaded.scenario.start_condition->evaluate(context);
+    };
+    EXPECT_EQ(evaluate_at(0s), false);
+    EXPECT_EQ(evaluate_at(2999ms), false);
+    EXPECT_EQ(evaluate_at(3s), true);
 }
 
 TEST(ScenarioEditorV2, ExplicitExposureAllowsPerUsageOverrideAndReset) {
@@ -993,8 +1005,8 @@ TEST(ScenarioEditorV2, NestedSharedConditionUsageStoresAssetReference) {
     EXPECT_EQ(overrides[0]["default"], "Asset/YI1.png");
     EXPECT_EQ(overrides[0]["value"], "Asset/DPC.png");
     const auto exported = export_scenario_yaml(session.document);
-    EXPECT_NE(exported.find("reference: Asset/DPC.png"), std::string::npos);
     const auto reloaded = import_scenario_yaml(exported);
+    ASSERT_TRUE(reloaded.start_condition);
     const auto reloaded_resolved = resolved_condition(
         reloaded,
         reloaded.start_condition->value
@@ -1567,21 +1579,15 @@ splits: []
 )");
     ASSERT_EQ(document.extra_root.size(), 1U);
     const auto exported = export_scenario_yaml(document);
-    EXPECT_NE(exported.find("metadata:"), std::string::npos) << exported;
-    EXPECT_NE(exported.find("reference: \"null\""), std::string::npos) << exported;
     const auto reloaded = import_scenario_yaml(exported);
     ASSERT_EQ(reloaded.extra_root.size(), 1U);
+    EXPECT_EQ(reloaded.extra_root[0].first, "metadata");
     const auto& metadata = reloaded.extra_root[0].second;
     EXPECT_EQ(scalar_setting(metadata, "title"), "My Scenario");
-    const auto* note = metadata.find("note");
-    ASSERT_NE(note, nullptr);
-    EXPECT_TRUE(note->is_scalar());
-    EXPECT_TRUE(note->quoted);
-    const auto* reference =
-        reloaded.start_condition->value.find("detector")->find("reference");
-    ASSERT_NE(reference, nullptr);
-    EXPECT_TRUE(reference->is_scalar());
-    EXPECT_TRUE(reference->quoted);
+    EXPECT_EQ(scalar_setting(metadata, "note"), "null");
+    ASSERT_TRUE(reloaded.start_condition);
+    const auto& detector = require_setting(reloaded.start_condition->value, "detector");
+    EXPECT_EQ(scalar_setting(detector, "reference"), "null");
 }
 
 TEST(ScenarioEditorV2, SaveValidatesAndKeepsOriginalFileOnFailure) {

@@ -6,13 +6,29 @@
 #include <string>
 #include <string_view>
 
-#include "divergencesplitter/condition/conditions.hpp"
-#include "divergencesplitter/detector/detector.hpp"
 #include "divergencesplitter/scenario/scenario.hpp"
 
 using namespace divergencesplitter;
 
 namespace {
+
+using namespace std::chrono_literals;
+
+FrameContext frame_at(std::chrono::nanoseconds time, const cv::Mat& image) {
+    const MonotonicTime timestamp{time.count()};
+    return FrameContext{Frame{image, timestamp}, timestamp};
+}
+
+void expect_elapsed(const ConditionPtr& condition, std::chrono::nanoseconds duration) {
+    ASSERT_TRUE(condition);
+    const cv::Mat image(1, 1, CV_8UC3, cv::Scalar::all(0));
+    auto first = frame_at(0s, image);
+    auto before = frame_at(duration - 1ms, image);
+    auto at = frame_at(duration, image);
+    EXPECT_EQ(condition->evaluate(first), false);
+    EXPECT_EQ(condition->evaluate(before), false);
+    EXPECT_EQ(condition->evaluate(at), true);
+}
 
 class TemporaryDirectory {
 public:
@@ -91,13 +107,16 @@ start_condition:
 splits: []
 )");
     const auto loaded = load_scenario(path);
-    const auto* start = dynamic_cast<const DetectedCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    ASSERT_NE(start, nullptr);
-    EXPECT_DOUBLE_EQ(start->minimum_score(), 0.75);
-    ASSERT_NE(start->detector(), nullptr);
-    EXPECT_EQ(start->detector()->type_name(), "color_range");
+    ASSERT_TRUE(loaded.scenario.start_condition);
+    cv::Mat image(1, 4, CV_8UC3, cv::Scalar{0, 140, 0});
+    image.at<cv::Vec3b>(0, 0) = {101, 140, 0};
+    auto at_minimum = frame_at(0s, image);
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(at_minimum), true);
+
+    cv::Mat below = image.clone();
+    below.at<cv::Vec3b>(0, 1) = {0, 139, 0};
+    auto below_minimum = frame_at(1ms, below);
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(below_minimum), false);
 }
 
 TEST(ScenarioV2, DefinitionOrderDoesNotMatter) {
@@ -120,14 +139,10 @@ start_condition:
 splits: []
 )");
     const auto loaded = load_scenario(path);
-    const auto* start = dynamic_cast<const ElapsedCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    ASSERT_NE(start, nullptr);
-    EXPECT_EQ(start->duration(), std::chrono::seconds{1});
+    expect_elapsed(loaded.scenario.start_condition, 1s);
 }
 
-TEST(ScenarioV2, UsesIndependentConditionInstancesPerUsage) {
+TEST(ScenarioV2, ASharedSplitConditionStartsItsOwnTimer) {
     TemporaryDirectory directory;
     const auto path = write_scenario(directory, R"(
 schema_version: 2
@@ -146,17 +161,19 @@ splits:
         action: split
 )");
     const auto loaded = load_scenario(path);
-    ASSERT_TRUE(loaded.scenario.splits[0].has_value());
-    const auto* start = dynamic_cast<const ElapsedCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    const auto* rule = dynamic_cast<const ElapsedCondition*>(
-        loaded.scenario.splits[0]->at(0)->active_condition()
-    );
-    ASSERT_NE(start, nullptr);
-    ASSERT_NE(rule, nullptr);
-    EXPECT_NE(start, rule);
-    EXPECT_EQ(rule->duration(), std::chrono::seconds{2});
+    ASSERT_TRUE(loaded.scenario.start_condition);
+    ASSERT_EQ(loaded.scenario.splits.size(), 1U);
+    ASSERT_TRUE(loaded.scenario.splits[0]);
+    ASSERT_EQ(loaded.scenario.splits[0]->size(), 1U);
+    const auto& rule = loaded.scenario.splits[0]->at(0);
+    const cv::Mat image(1, 1, CV_8UC3, cv::Scalar::all(0));
+    auto first = frame_at(0s, image);
+    auto second = frame_at(2s, image);
+    auto third = frame_at(4s, image);
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(first), false);
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(second), true);
+    EXPECT_EQ(rule->evaluate(second), std::nullopt);
+    EXPECT_EQ(rule->evaluate(third), (Action{ActionOperation::split}));
 }
 
 TEST(ScenarioV2, RejectsUnknownDefinitionsParametersAndTypeMismatches) {
@@ -301,11 +318,11 @@ start_condition:
 splits: []
 )");
     const auto loaded = load_scenario(path);
-    const auto* start = dynamic_cast<const DetectedCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    ASSERT_NE(start, nullptr);
-    EXPECT_EQ(start->detector()->type_name(), "color_range");
+    ASSERT_TRUE(loaded.scenario.start_condition);
+    auto below = frame_at(0s, cv::Mat(1, 1, CV_8UC3, cv::Scalar{0, 129, 0}));
+    auto at = frame_at(1ms, cv::Mat(1, 1, CV_8UC3, cv::Scalar{0, 130, 0}));
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(below), false);
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(at), true);
 }
 
 TEST(ScenarioV2, LegacyScenariosStillLoad) {
@@ -317,37 +334,10 @@ start_condition:
 splits: []
 )");
     const auto loaded = load_scenario(path);
-    const auto* start = dynamic_cast<const ElapsedCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    ASSERT_NE(start, nullptr);
-    EXPECT_EQ(start->duration(), std::chrono::seconds{1});
+    expect_elapsed(loaded.scenario.start_condition, 1s);
 }
 
-namespace {
-
-std::string describe_tree(const Condition* condition) {
-    if (condition == nullptr) {
-        return "<null>";
-    }
-    std::string result{condition->type_name()};
-    const auto children = condition->children();
-    if (!children.empty()) {
-        result += "(";
-        for (std::size_t index = 0; index < children.size(); ++index) {
-            if (index != 0) {
-                result += ",";
-            }
-            result += describe_tree(children[index]);
-        }
-        result += ")";
-    }
-    return result;
-}
-
-}  // namespace
-
-TEST(ScenarioV2, LegacyAndV2ResolveToTheSameConditionTree) {
+TEST(ScenarioV2, LegacyAndV2StartAndSplitOnTheSameInputs) {
     TemporaryDirectory legacy_directory;
     const auto legacy = write_scenario(legacy_directory, R"(
 start_condition:
@@ -388,32 +378,36 @@ splits:
           duration: 5s
         action: split
 )");
-    const auto legacy_loaded = load_scenario(legacy);
-    const auto v2_loaded = load_scenario(v2);
-    EXPECT_EQ(
-        describe_tree(legacy_loaded.scenario.start_condition.get()),
-        describe_tree(v2_loaded.scenario.start_condition.get())
-    );
-    ASSERT_EQ(v2_loaded.scenario.splits.size(), 1U);
-    ASSERT_TRUE(v2_loaded.scenario.splits[0].has_value());
-    EXPECT_EQ(
-        describe_tree(legacy_loaded.scenario.splits[0]->at(0)->active_condition()),
-        describe_tree(v2_loaded.scenario.splits[0]->at(0)->active_condition())
-    );
+    for (const auto& path : {legacy, v2}) {
+        SCOPED_TRACE(path.string());
+        const auto loaded = load_scenario(path);
+        ASSERT_TRUE(loaded.scenario.start_condition);
+        ASSERT_EQ(loaded.scenario.splits.size(), 1U);
+        ASSERT_TRUE(loaded.scenario.splits[0]);
+        ASSERT_EQ(loaded.scenario.splits[0]->size(), 1U);
+        const auto& rule = loaded.scenario.splits[0]->at(0);
+        const cv::Mat green(1, 1, CV_8UC3, cv::Scalar{0, 128, 0});
+        const cv::Mat dark(1, 1, CV_8UC3, cv::Scalar::all(0));
+        auto before_start = frame_at(0s, dark);
+        auto start = frame_at(1s, green);
+        auto before_split = frame_at(5999ms, dark);
+        auto split = frame_at(6s, dark);
+        EXPECT_EQ(loaded.scenario.start_condition->evaluate(before_start), false);
+        EXPECT_EQ(loaded.scenario.start_condition->evaluate(start), true);
+        EXPECT_EQ(rule->evaluate(start), std::nullopt);
+        EXPECT_EQ(rule->evaluate(before_split), std::nullopt);
+        EXPECT_EQ(rule->evaluate(split), (Action{ActionOperation::split}));
+    }
 }
 
 TEST(ScenarioV2, AcceptsUtf8Bom) {
     TemporaryDirectory directory;
     const auto path = write_scenario(directory, "\xEF\xBB\xBFschema_version: 2\nstart_condition: {type: elapsed, duration: 1s}\nsplits: []\n");
     const auto loaded = load_scenario(path);
-    const auto* start = dynamic_cast<const ElapsedCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    ASSERT_NE(start, nullptr);
-    EXPECT_EQ(start->duration(), std::chrono::seconds{1});
+    expect_elapsed(loaded.scenario.start_condition, 1s);
 }
 
-TEST(ScenarioV2, OmitsOptionalFieldsWithNullParameterDefaults) {
+TEST(ScenarioV2, NullTimeLimitAllowsASequenceToCompleteAfterTheOverrideExpires) {
     TemporaryDirectory directory;
     const auto path = write_scenario(directory, R"(
 schema_version: 2
@@ -426,8 +420,12 @@ definitions:
         type: then
         within: {param: within_value}
         conditions:
-          - type: elapsed
-            duration: 1s
+          - type: detected
+            detector: {type: mean_brightness}
+            minimum_score: 0.8
+          - type: detected
+            detector: {type: mean_brightness}
+            minimum_score: 0.3
 start_condition:
   use: sequence
   with:
@@ -439,15 +437,15 @@ splits:
         action: split
 )");
     const auto loaded = load_scenario(path);
-    const auto* start = dynamic_cast<const ThenCondition*>(
-        loaded.scenario.start_condition.get()
-    );
-    ASSERT_NE(start, nullptr);
-    EXPECT_NE(start->describe().find("within 3s"), std::string::npos);
+    ASSERT_TRUE(loaded.scenario.start_condition);
     ASSERT_EQ(loaded.scenario.splits.size(), 1U);
-    const auto* rule = dynamic_cast<const ThenCondition*>(
-        loaded.scenario.splits[0]->at(0)->active_condition()
-    );
-    ASSERT_NE(rule, nullptr);
-    EXPECT_EQ(rule->describe().find("within"), std::string::npos);
+    ASSERT_TRUE(loaded.scenario.splits[0]);
+    ASSERT_EQ(loaded.scenario.splits[0]->size(), 1U);
+    const auto& rule = loaded.scenario.splits[0]->at(0);
+    auto bright = frame_at(0s, cv::Mat(1, 1, CV_8UC3, cv::Scalar::all(255)));
+    auto dim = frame_at(4s, cv::Mat(1, 1, CV_8UC3, cv::Scalar::all(128)));
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(bright), false);
+    EXPECT_EQ(rule->evaluate(bright), std::nullopt);
+    EXPECT_EQ(loaded.scenario.start_condition->evaluate(dim), false);
+    EXPECT_EQ(rule->evaluate(dim), (Action{ActionOperation::split}));
 }

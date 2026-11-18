@@ -16,6 +16,9 @@ on:
       - "tests/scenario-editor/**"
       - "examples/scenario-v2.yaml"
       - "docs/scenario-builder.md"
+      - "tools/verify_windows_zip.py"
+      - "tools/collect_licenses.py"
+      - "tools/ndi-sdk-lock.json"
   push:
     branches: [main]
   workflow_dispatch:
@@ -103,6 +106,7 @@ jobs:
         run: >-
           ctest --test-dir build/builder
           -R "ScenarioEditor|ScenarioV2|ScenarioWorkspace"
+          --no-tests=error
           --output-on-failure
           --interactive-debug-mode 0
           --output-junit scenario-builder-ctest.xml
@@ -113,19 +117,11 @@ jobs:
           Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
           cmake --install build/builder --prefix $dist --component ScenarioBuilder
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "$dist/ScenarioBuilder.exe")) {
-            throw "ScenarioBuilder.exe was not installed"
-          }
-          if (-not (Test-Path "$dist/scenario-builder-ui/index.html")) {
-            throw "scenario-builder-ui/index.html was not installed"
-          }
-          $checkPath = (Resolve-Path "examples/scenario-v2.yaml").Path
-          & "$dist/ScenarioBuilder.exe" --check $checkPath
-          if ($LASTEXITCODE -ne 0) {
-            throw "Packaged ScenarioBuilder failed its --check smoke test"
-          }
           Compress-Archive -Path "$dist/*" -DestinationPath "build/ScenarioBuilder-windows-x64.zip" -Force
           Get-ChildItem "build/ScenarioBuilder-windows-x64.zip" | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: Verify extracted Scenario Builder ZIP
+        run: python tools/verify_windows_zip.py --archive build/ScenarioBuilder-windows-x64.zip --scenario-builder-only
 
       - name: Upload Scenario Builder
         uses: actions/upload-artifact@v7

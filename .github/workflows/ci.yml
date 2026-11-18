@@ -164,7 +164,7 @@ jobs:
           if ($env:NDI_SDK_DIR) {
             $env:NDI_RUNTIME_DIR_V6 = Join-Path $env:NDI_SDK_DIR "Bin/x64"
           }
-          ctest --preset ci --parallel 4 --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
+          ctest --preset ci --parallel 4 --no-tests=error --output-on-failure --interactive-debug-mode 0 --output-junit ctest-results.xml
 
       - name: TestHost integration
         working-directory: ${{ github.workspace }}

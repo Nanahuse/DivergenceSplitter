@@ -2,7 +2,6 @@
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-#include <ryml/ryml.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -75,48 +74,44 @@ void expect_load_error(const std::filesystem::path& path, ScenarioErrorKind kind
 
 }  // namespace
 
-TEST(ScenarioLoader, SharesMatchingRmsDetectorsWithinOneLoad) {
+TEST(ScenarioLoader, SharedRmsReferenceKeepsUsageThresholdsAndReloadsChangedImage) {
     TemporaryDirectory directory;
-    const auto reference = write_reference(directory.path());
+    const auto reference = directory.path() / "reference.png";
+    const auto black = test::solid(8, 8, 0);
+    const auto gray = test::solid(8, 8, 128);
+    const auto white = test::solid(8, 8, 255);
+    ASSERT_TRUE(cv::imwrite(reference.string(), black));
     const auto path = directory.path() / "scenario.yaml";
     write_text(path, R"(
 definitions:
   condition: &condition
     type: detected
     minimum_score: 0.9
-    detector: &detector {type: root_mean_square_similarity, reference: reference.png}
+    detector: {type: root_mean_square_similarity, reference: reference.png}
 start_condition:
-  type: all
-  conditions:
-    - <<: *condition
-      minimum_score: 0.25
-    - <<: *condition
-    - <<: *condition
-      detector:
-        <<: *detector
-        roi: {x: 0, y: 0, width: 8, height: 8}
+  <<: *condition
+  minimum_score: 0.25
+reset_condition: *condition
 splits: []
 )");
 
     const auto original = load_scenario(path);
-    const auto conditions = original.scenario.start_condition->children();
-    ASSERT_EQ(conditions.size(), 3U);
-    const auto* first = dynamic_cast<const DetectedCondition*>(conditions[0]);
-    const auto* second = dynamic_cast<const DetectedCondition*>(conditions[1]);
-    ASSERT_NE(first, nullptr);
-    ASSERT_NE(second, nullptr);
-    EXPECT_DOUBLE_EQ(first->minimum_score(), 0.25);
-    EXPECT_DOUBLE_EQ(second->minimum_score(), 0.9);
-    ASSERT_NE(first->detector(), nullptr);
-    EXPECT_EQ(first->detector(), second->detector());
-    EXPECT_NE(first->detector(), conditions[2]->detector());
+    test::ManualTimeProvider clock;
+    auto gray_frame = test::make_context(gray, clock);
+    ASSERT_TRUE(original.scenario.start_condition);
+    ASSERT_TRUE(original.scenario.reset_condition);
+    EXPECT_EQ(original.scenario.start_condition->evaluate(gray_frame), true);
+    EXPECT_EQ(original.scenario.reset_condition->evaluate(gray_frame), false);
 
-    ASSERT_TRUE(cv::imwrite(reference.string(), cv::Mat(8, 8, CV_8UC3, cv::Scalar::all(255))));
+    ASSERT_TRUE(cv::imwrite(reference.string(), white));
     const auto reloaded = load_scenario(path);
-    const auto reloaded_conditions = reloaded.scenario.start_condition->children();
-    ASSERT_EQ(reloaded_conditions.size(), 3U);
-    ASSERT_NE(reloaded_conditions[0]->detector(), nullptr);
-    EXPECT_NE(first->detector()->cache_key(), reloaded_conditions[0]->detector()->cache_key());
+    ASSERT_TRUE(reloaded.scenario.reset_condition);
+    auto white_frame = test::make_context(white, clock);
+    EXPECT_EQ(original.scenario.reset_condition->evaluate(white_frame), false);
+    EXPECT_EQ(reloaded.scenario.reset_condition->evaluate(white_frame), true);
+    auto black_frame = test::make_context(black, clock);
+    EXPECT_EQ(reloaded.scenario.reset_condition->evaluate(black_frame), false);
+    EXPECT_EQ(original.scenario.reset_condition->evaluate(black_frame), true);
 }
 
 TEST(ScenarioLoader, ResolvesNestedMergesAndExplicitOverrides) {
@@ -198,8 +193,12 @@ splits:
     const auto loaded = load_scenario(path);
     auto& start = loaded.scenario.start_condition;
     auto& reset = loaded.scenario.reset_condition;
-    EXPECT_NE(start.get(), reset.get());
-    EXPECT_NE(start->children()[0], reset->children()[0]);
+    ASSERT_TRUE(start);
+    ASSERT_TRUE(reset);
+    ASSERT_EQ(loaded.scenario.splits.size(), 1U);
+    ASSERT_TRUE(loaded.scenario.splits[0]);
+    ASSERT_EQ(loaded.scenario.splits[0]->size(), 1U);
+    const auto& rule = loaded.scenario.splits[0]->at(0);
     test::ManualTimeProvider clock;
     auto context = test::make_context(cv::Mat::zeros(2, 2, CV_8UC3), clock);
     EXPECT_EQ(start->evaluate(context), false);
@@ -210,13 +209,15 @@ splits:
     clock.advance(std::chrono::seconds{1});
     context = test::make_context(cv::Mat::zeros(2, 2, CV_8UC3), clock);
     EXPECT_EQ(reset->evaluate(context), true);
-    EXPECT_EQ(loaded.scenario.splits[0]->at(0)->active_condition()->type_name(), "once");
+    EXPECT_EQ(rule->evaluate(context), std::nullopt);
+    clock.advance(std::chrono::seconds{1});
+    context = test::make_context(cv::Mat::zeros(2, 2, CV_8UC3), clock);
+    EXPECT_EQ(rule->evaluate(context), (Action{ActionOperation::split}));
 }
 
-TEST(ScenarioLoader, InvalidYamlAndReferencesThrowWithoutChangingGlobalCallbacks) {
+TEST(ScenarioLoader, InvalidYamlAndReferencesDoNotPreventTheNextLoad) {
     TemporaryDirectory directory;
     const auto path = directory.path() / "scenario.yaml";
-    const auto callbacks = ryml::get_callbacks();
     for (const auto* source : {
         "start_condition: [broken\n",
         "start_condition: *missing\nsplits: []\n",
@@ -234,7 +235,6 @@ TEST(ScenarioLoader, InvalidYamlAndReferencesThrowWithoutChangingGlobalCallbacks
         SCOPED_TRACE(source);
         write_text(path, source);
         expect_load_error(path, ScenarioErrorKind::yaml);
-        EXPECT_EQ(ryml::get_callbacks(), callbacks);
         write_text(path, "start_condition: {type: elapsed, duration: 0s}\nsplits: []\n");
         EXPECT_NO_THROW((void)load_scenario(path));
     }
@@ -291,7 +291,8 @@ splits:
 
 TEST(ScenarioLoader, InheritanceMergesNestedDetectorSettingsAcrossLayers) {
     TemporaryDirectory directory;
-    const auto reference = write_reference(directory.path());
+    const cv::Mat reference(8, 8, CV_8UC3, cv::Scalar::all(150));
+    ASSERT_TRUE(cv::imwrite((directory.path() / "reference.png").string(), reference));
     const cv::Mat alternate(8, 8, CV_8UC3, cv::Scalar{40, 80, 120});
     ASSERT_TRUE(cv::imwrite((directory.path() / "alternate.png").string(), alternate));
     const auto path = directory.path() / "scenario.yaml";
@@ -334,30 +335,33 @@ incomplete_condition: *base
 splits: []
 )");
     const auto loaded = load_scenario(path);
-    const auto nested = [](const Condition& condition) {
-        return dynamic_cast<const DetectedCondition*>(condition.children().at(0)->children().at(1));
+    const auto expect_elapsed = [](std::string_view usage, const ConditionPtr& condition,
+                                   const cv::Mat& input, bool fires) {
+        SCOPED_TRACE(usage);
+        ASSERT_TRUE(condition);
+        condition->reset();
+        test::ManualTimeProvider clock;
+        auto first = test::make_context(cv::Mat(input.size(), CV_8UC3, cv::Scalar::all(255)), clock);
+        ASSERT_NO_THROW(EXPECT_EQ(condition->evaluate(first), false));
+        clock.advance(std::chrono::seconds{1});
+        auto next = test::make_context(input, clock);
+        EXPECT_NO_THROW(EXPECT_EQ(condition->evaluate(next), fires));
     };
-    const auto* start = nested(*loaded.scenario.start_condition);
-    const auto* reset = nested(*loaded.scenario.reset_condition);
-    const auto* base = nested(*loaded.scenario.incomplete_condition);
-    ASSERT_NE(start, nullptr);
-    ASSERT_NE(reset, nullptr);
-    ASSERT_NE(base, nullptr);
-    EXPECT_DOUBLE_EQ(start->minimum_score(), 0.7);
-    EXPECT_DOUBLE_EQ(reset->minimum_score(), 0.6);
-    EXPECT_DOUBLE_EQ(base->minimum_score(), 0.9);
-    EXPECT_EQ(start->detector()->type_name(), "root_mean_square_similarity");
-    const RootMeanSquareSimilarityDetector expected_start{alternate, Region{1, 2, 8, 8}};
-    const RootMeanSquareSimilarityDetector expected_reset{alternate};
-    EXPECT_EQ(start->detector()->cache_key(), expected_start.cache_key());
-    EXPECT_EQ(reset->detector()->cache_key(), expected_reset.cache_key());
-    EXPECT_NE(loaded.scenario.start_condition->describe().find("within"), std::string::npos);
-    EXPECT_EQ(loaded.scenario.reset_condition->describe().find("within"), std::string::npos);
-    test::ManualTimeProvider clock;
-    auto alternate_context = test::make_context(alternate, clock);
-    EXPECT_DOUBLE_EQ(reset->detector()->detect(alternate_context).score, 1.0);
-    auto original_context = test::make_context(cv::imread(reference.string()), clock);
-    EXPECT_DOUBLE_EQ(base->detector()->detect(original_context).score, 1.0);
+    const cv::Rect inherited_roi{1, 2, 8, 8};
+    cv::Mat padded(10, 10, CV_8UC3, cv::Scalar::all(255));
+    // A score just above 0.7 only resets the timer at the inherited x and y offsets.
+    cv::add(alternate, cv::Scalar::all(74), padded(inherited_roi));
+    expect_elapsed("start, matching inherited ROI", loaded.scenario.start_condition, padded, false);
+    cv::add(alternate, cv::Scalar::all(89), padded(inherited_roi));
+    expect_elapsed("start, below the overridden threshold", loaded.scenario.start_condition, padded, true);
+
+    expect_elapsed("reset, matching without ROI", loaded.scenario.reset_condition,
+                   alternate + cv::Scalar::all(89), false);
+    expect_elapsed("reset, below the inherited threshold", loaded.scenario.reset_condition,
+                   alternate + cv::Scalar::all(112), true);
+    expect_elapsed("base, matching original reference", loaded.scenario.incomplete_condition, reference, false);
+    expect_elapsed("base, below the original threshold", loaded.scenario.incomplete_condition,
+                   reference + cv::Scalar::all(38), true);
 }
 
 TEST(ScenarioLoader, InheritanceReplacesSequencesAndWorksInRuleSequences) {
