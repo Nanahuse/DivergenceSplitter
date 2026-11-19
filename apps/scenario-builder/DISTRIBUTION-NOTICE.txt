@@ -1,0 +1,12 @@
+Scenario Builder
+================
+
+Copyright (c) Nanahuse. Distributed under the MIT License. See LICENSE.txt.
+
+The component inventory and links are in licenses/components.json.
+Third-party license texts, including the frontend library notices, are in
+licenses/. Transitive native dependency notices are in licenses/vcpkg/.
+
+Scenario Builder uses the Microsoft Edge WebView2 Runtime. It is an external
+dependency subject to Microsoft's license and is distributed separately.
+See https://developer.microsoft.com/microsoft-edge/webview2/.

@@ -9,12 +9,14 @@
       "name": "Dear ImGui",
       "license": "MIT",
       "license_file": "imgui.txt",
+      "product": "divergencesplitter",
       "source": "imgui"
     },
     {
       "name": "ImPlot",
       "license": "MIT",
       "license_file": "implot.txt",
+      "product": "divergencesplitter",
       "source": "implot"
     },
     {
@@ -27,7 +29,8 @@
       "name": "Boost",
       "license": "BSL-1.0",
       "license_file": "boost.txt",
-      "source": "vcpkg:boost-asio"
+      "source": "vcpkg:boost-beast",
+      "product": "divergencesplitter"
     },
     {
       "name": "rapidyaml",
@@ -51,35 +54,63 @@
       "name": "livesplit-bridge-client-cpp",
       "license": "MIT",
       "license_file": "livesplit-bridge-client-cpp.txt",
+      "product": "divergencesplitter",
       "source": "bridge"
     },
     {
       "name": "windows-capture-device-list",
       "license": "MIT",
       "license_file": "windows-capture-device-list.txt",
+      "product": "divergencesplitter",
       "source": "pinned:camera"
     },
     {
       "name": "Microsoft WebView2 SDK",
       "license": "BSD-3-Clause",
       "license_file": "webview2.txt",
+      "product": "scenario-builder",
       "source": "checked-in"
     },
     {
       "name": "Microsoft Edge WebView2 Runtime",
       "license": "External dependency; Microsoft license applies",
       "url": "https://developer.microsoft.com/microsoft-edge/webview2/",
+      "product": "scenario-builder",
       "source": "external"
+    },
+    {
+      "name": "React",
+      "license": "MIT",
+      "license_file": "react.txt",
+      "product": "scenario-builder",
+      "source": "npm:react"
+    },
+    {
+      "name": "React DOM",
+      "license": "MIT",
+      "license_file": "react-dom.txt",
+      "product": "scenario-builder",
+      "source": "npm:react-dom"
+    },
+    {
+      "name": "Scheduler",
+      "license": "MIT",
+      "license_file": "scheduler.txt",
+      "product": "scenario-builder",
+      "source": "npm:scheduler"
     },
     {
       "name": "NDI SDK Headers",
       "license": "MIT (per header)",
       "license_file": "ndi-headers.txt",
+      "product": "divergencesplitter",
       "source": "checked-in"
     },
     {
       "name": "NDI Runtime",
       "license": "External dependency; NDI license applies",
+      "notice_file": "NDI-TERMS.txt",
+      "product": "divergencesplitter",
       "url": "https://ndi.link/ndisdk_license",
       "source": "external"
     }

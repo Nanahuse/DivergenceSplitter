@@ -3,8 +3,8 @@ DivergenceSplitter
 
 Copyright (c) Nanahuse. Distributed under the MIT License. See LICENSE.txt.
 
-This distribution includes DivergenceSplitter.exe and ScenarioBuilder.exe.
-Both applications are covered by the same MIT License.
+DivergenceSplitter.exe and ScenarioBuilder.exe are covered by the MIT License.
+The component inventory lists the components included in this ZIP.
 
 The machine-readable component and license inventory is
 licenses/components.json. The same inventory is shown in the About screen.
@@ -25,10 +25,6 @@ Third-party components:
   licenses/livesplit-bridge-client-cpp.txt.
 - windows-capture-device-list - MIT. Camera enumeration code is adapted from
   this project. See licenses/windows-capture-device-list.txt.
-- Microsoft WebView2 SDK - BSD-3-Clause. See licenses/webview2.txt.
-- Microsoft Edge WebView2 Runtime - External dependency; Microsoft license
-  applies. The runtime is not bundled. See
-  https://developer.microsoft.com/microsoft-edge/webview2/.
 - NDI SDK Headers - MIT (per header). See licenses/ndi-headers.txt. The headers
   are used to build the dynamically loaded NDI adapter.
 - NDI Runtime - External dependency; NDI license applies. The runtime is not
@@ -38,3 +34,12 @@ Third-party components:
 NDI® is a registered trademark of Vizrt NDI AB. NDI website:
 https://ndi.video/. The NDI runtime is separately licensed by NDI, Inc. /
 Vizrt NDI AB and is not covered by DivergenceSplitter's MIT License.
+
+When the ZIP includes ScenarioBuilder.exe, its dependencies also include:
+
+- Microsoft WebView2 SDK - BSD-3-Clause. See licenses/webview2.txt.
+- React, React DOM, and Scheduler - MIT. See licenses/react.txt,
+  licenses/react-dom.txt, and licenses/scheduler.txt.
+- Microsoft Edge WebView2 Runtime - External dependency; Microsoft license
+  applies. The runtime is not bundled. See
+  https://developer.microsoft.com/microsoft-edge/webview2/.

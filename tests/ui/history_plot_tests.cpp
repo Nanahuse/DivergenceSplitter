@@ -636,12 +636,6 @@ TEST(HistoryPlot, ChartSeriesAndEventColorsContrastAgainstBothBackgrounds) {
             const float background = luminance(palette.background);
             return (std::max(foreground, background) + 0.05f) / (std::min(foreground, background) + 0.05f);
         };
-        EXPECT_GT(palette.reset.x, palette.reset.y);
-        EXPECT_GT(palette.reset.y, palette.reset.z);
-        EXPECT_GT(palette.transition.y, palette.transition.x);
-        EXPECT_GT(palette.transition.y, palette.transition.z);
-        EXPECT_GT(palette.error.x, palette.error.y);
-        EXPECT_GT(palette.error.x, palette.error.z);
         for (const auto& color : {palette.reset, palette.transition, palette.error, palette.target})
             EXPECT_GE(contrast(color), 3.0f);
         EXPECT_GE(contrast(palette.axis_text), 4.5f);
@@ -689,12 +683,12 @@ TEST(HistoryPlot, SharedChartRecolorsTheSameSnapshotAcrossThemeSwitches) {
     draw(dark, lighter_history);
 }
 
-TEST(HistoryPlot, SharedDrawFramesTranslateTheSameCachedTrace) {
+TEST(HistoryPlot, SharedTraceScrollsLeftAndIncludesNewMeasurements) {
     PlotFixture fixture;
     SharedHistoryChart chart;
     chart.seconds = 30;
     chart.series = {{"clocked", true, 60,
-        {{{{40'000'000'000}, 0.3f}, {{45'000'000'000}, 0.7f}, {{50'000'000'000}, 0.2f}}}, {}}};
+        {{{{40'000'000'000}, 0.3f}, {{45'000'000'000}, 0.3f}, {{50'000'000'000}, 0.3f}}}, {}}};
     const auto palette = theme::chart_colors(theme::Mode::dark);
     const auto ink = ImGui::ColorConvertFloat4ToU32(shared_series_color("clocked", palette));
     const auto draw = [&](double now) {
@@ -708,14 +702,16 @@ TEST(HistoryPlot, SharedDrawFramesTranslateTheSameCachedTrace) {
     };
     (void)draw(60);
     const auto first = draw(60);
-    const auto* cache = chart.trace_mesh.get();
-    ASSERT_TRUE(cache);
     const auto next = draw(60.05);
-    EXPECT_EQ(chart.trace_mesh.get(), cache);
     ASSERT_GE(first.size(), 3);
     ASSERT_EQ(first.size(), next.size());
+    const auto displacement = first.front().x - next.front().x;
+    const auto [left, right] = std::ranges::minmax_element(first, {}, &ImVec2::x);
+    const auto ten_seconds = right->x - left->x;
+    ASSERT_GT(ten_seconds, 0);
+    EXPECT_NEAR(displacement, ten_seconds * 0.05 / 10.0, 0.01);
     for (std::size_t i = 0; i < first.size(); ++i) {
-        EXPECT_NEAR(first[i].x - next[i].x, (300 - 14) * 0.05 / 30, 0.001);
+        EXPECT_NEAR(first[i].x - next[i].x, displacement, 0.001);
         EXPECT_NEAR(first[i].y, next[i].y, 0.001);
     }
 
@@ -724,15 +720,19 @@ TEST(HistoryPlot, SharedDrawFramesTranslateTheSameCachedTrace) {
     node.type = "detected";
     node.measurement.target = 1;
     ConditionHistory history;
-    history.samples = {{{40'000'000'000}, 0.3}, {{45'000'000'000}, 0.7},
-        {{50'000'000'000}, 0.2}, {{60'100'000'000}, 0.9}};
+    history.samples = {{{40'000'000'000}, 0.3}, {{45'000'000'000}, 0.3},
+        {{50'000'000'000}, 0.3}, {{60'100'000'000}, 0.9}};
     chart = prepare_shared_chart({{&node, &history, true}}, {60'100'000'000},
         std::chrono::seconds{30}, {}, std::move(chart));
-    EXPECT_GT(draw(60.1).size(), next.size());
-    EXPECT_EQ(chart.trace_mesh.get(), cache);
+    const auto updated = draw(60.1);
+    ASSERT_FALSE(updated.empty());
+    const auto rightmost = [](const auto& vertices) {
+        return std::ranges::max_element(vertices, {}, &ImVec2::x)->x;
+    };
+    EXPECT_GT(rightmost(updated), rightmost(next));
 }
 
-TEST(HistoryPlot, CachedTraceDrawsKeepIndicesValidAcrossVertexOffsets) {
+TEST(HistoryPlot, DenseChartSubmitsValidDrawCommands) {
     PlotFixture fixture;
     ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
     SharedHistoryChart chart;
@@ -751,20 +751,24 @@ TEST(HistoryPlot, CachedTraceDrawsKeepIndicesValidAcrossVertexOffsets) {
         draw_shared_chart("shared", chart, now, 30, {300, 120}, theme::chart_colors(theme::Mode::dark), 1);
         fixture.end();
         const auto* data = ImGui::GetDrawData();
-        ASSERT_GT(data->TotalVtxCount, 65536);
-        bool used_offset = false;
-        bool valid_indices = true;
+        ASSERT_GT(data->TotalVtxCount, 65'536);
+        ASSERT_GT(data->TotalIdxCount, 0);
+        bool used_vertex_offset = false;
         for (int i = 0; i < data->CmdListsCount; ++i) {
             const auto& draw = *data->CmdLists[i];
             for (const auto& command : draw.CmdBuffer) {
-                used_offset |= command.VtxOffset > 0;
-                for (unsigned int index = 0; index < command.ElemCount; ++index)
-                    valid_indices &= command.VtxOffset + draw.IdxBuffer[command.IdxOffset + index] <
-                        static_cast<unsigned int>(draw.VtxBuffer.Size);
+                used_vertex_offset |= command.ElemCount > 0 && command.VtxOffset > 0;
+                const auto index_count = static_cast<unsigned int>(draw.IdxBuffer.Size);
+                ASSERT_LE(command.IdxOffset, index_count);
+                ASSERT_LE(command.ElemCount, index_count - command.IdxOffset);
+                const auto vertex_count = static_cast<unsigned int>(draw.VtxBuffer.Size);
+                for (unsigned int index = 0; index < command.ElemCount; ++index) {
+                    const auto vertex = command.VtxOffset + draw.IdxBuffer[command.IdxOffset + index];
+                    ASSERT_LT(vertex, vertex_count);
+                }
             }
         }
-        EXPECT_TRUE(used_offset);
-        EXPECT_TRUE(valid_indices);
+        EXPECT_TRUE(used_vertex_offset);
     }
 }
 

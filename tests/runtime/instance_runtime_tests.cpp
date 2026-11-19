@@ -170,7 +170,7 @@ TEST(InstanceRuntime, ExecutesSplitForCurrentIndex) {
     runtime.stop();
 }
 
-TEST(InstanceRuntime, ManualResetUsesInstanceThread) {
+TEST(InstanceRuntime, ManualResetSendsAResetWithoutAnInputFrame) {
     auto fake = std::make_unique<test::FakeBridgeClient>(
         test::make_snapshot(TimerPhase::running, 0, 2)
     );
@@ -191,7 +191,7 @@ TEST(InstanceRuntime, ManualResetUsesInstanceThread) {
     }));
     runtime.request_manual_reset();
 
-    pump(runtime, [&]() { return !bridge->actions().empty(); });
+    ASSERT_TRUE(test::wait_until([&]() { return !bridge->actions().empty(); }));
     ASSERT_EQ(bridge->actions().size(), 1U);
     EXPECT_EQ(bridge->actions().front(), ActionOperation::reset);
 
@@ -249,11 +249,18 @@ TEST(Adapter, ContextEventDoesNotQuery) {
     EXPECT_EQ(client.sync_count(), 1U);
 }
 
-TEST(InstanceRuntime, TimerEventDoesNotBlockOnSnapshotQuery) {
+TEST(InstanceRuntime, TimerEventUpdatesThePausedStateWhenSnapshotQueriesAreUnavailable) {
+    std::atomic_bool snapshot_available{true};
     auto fake = std::make_unique<test::FakeBridgeClient>(
         test::make_snapshot(TimerPhase::running, 0, 2)
     );
     auto* bridge = fake.get();
+    bridge->on_synchronize = [&] {
+        if (!snapshot_available) {
+            throw BridgeError{BridgeErrorKind::timeout, "snapshot query unavailable"};
+        }
+        return bridge->snapshot();
+    };
 
     Scenario scenario;
     scenario.start_condition = visible();
@@ -262,7 +269,7 @@ TEST(InstanceRuntime, TimerEventDoesNotBlockOnSnapshotQuery) {
     ASSERT_TRUE(test::wait_until([&]() {
         return runtime.diagnostics().state == InstanceState::ready;
     }));
-    const auto baseline_syncs = bridge->sync_count();
+    snapshot_available = false;
     BridgeEvent event;
     event.kind = BridgeEventKind::timer;
     event.session_id = 1;
@@ -273,9 +280,9 @@ TEST(InstanceRuntime, TimerEventDoesNotBlockOnSnapshotQuery) {
         const auto diagnostics = runtime.diagnostics();
         return diagnostics.scenario.has_value() &&
                diagnostics.scenario->snapshot.has_value() &&
-               diagnostics.scenario->snapshot->phase == TimerPhase::paused;
+               diagnostics.scenario->snapshot->phase == TimerPhase::paused &&
+               diagnostics.scenario->snapshot->split_index == 1;
     }));
-    EXPECT_EQ(bridge->sync_count(), baseline_syncs);
     runtime.stop();
 }
 
