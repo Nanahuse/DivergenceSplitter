@@ -22,6 +22,7 @@
 
 #include "divergencesplitter/scenario/editor/document.hpp"
 #include "divergencesplitter/scenario/editor/workspace.hpp"
+#include "resource.h"
 
 namespace divergencesplitter::scenario_builder {
 namespace {
@@ -364,6 +365,17 @@ private:
         window_class_info.cbSize = sizeof(window_class_info);
         window_class_info.lpfnWndProc = window_proc;
         window_class_info.hInstance = GetModuleHandleW(nullptr);
+        window_class_info.hIcon = LoadIconW(
+            window_class_info.hInstance, MAKEINTRESOURCEW(IDI_APP_ICON)
+        );
+        window_class_info.hIconSm = static_cast<HICON>(LoadImageW(
+            window_class_info.hInstance,
+            MAKEINTRESOURCEW(IDI_APP_ICON),
+            IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics(SM_CYSMICON),
+            LR_SHARED
+        ));
         window_class_info.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         window_class_info.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         window_class_info.lpszClassName = window_class;
@@ -381,7 +393,7 @@ private:
             860,
             nullptr,
             nullptr,
-            GetModuleHandleW(nullptr),
+            window_class_info.hInstance,
             this
         );
         if (window_ == nullptr) {

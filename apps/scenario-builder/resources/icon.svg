@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" role="img" aria-labelledby="title desc">
+  <title id="title">Scenario Builder: Notebook and pencil</title>
+  <desc id="desc">An ivory pencil with an orange cap writes in a lined notebook, encircled by an orange gear-shaped orbit.</desc>
+  <defs>
+    <radialGradient id="background" cx="48%" cy="46%" r="73%">
+      <stop offset="0" stop-color="#0c0905"/>
+      <stop offset="1" stop-color="#080602"/>
+    </radialGradient>
+    <linearGradient id="ivory" x1="230" y1="190" x2="870" y2="860" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff6e1"/>
+      <stop offset="0.55" stop-color="#fff5df"/>
+      <stop offset="1" stop-color="#fff7e5"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="260" y1="1010" x2="1030" y2="350" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff9200"/>
+      <stop offset="0.5" stop-color="#ff8900"/>
+      <stop offset="1" stop-color="#ff8b00"/>
+    </linearGradient>
+    <path id="gear-orbit" d="M 928,348
+      C 992,330 1053,350 1086,391
+      L 1108,391
+      C 1119,390 1125,399 1131,411
+      C 1137,422 1144,437 1147,447
+      C 1150,456 1142,460 1135,461
+      L 1108,466 L 1104,500
+      Q 1102,506 1108,509
+      L 1152,532
+      Q 1165,538 1162,549
+      C 1157,574 1148,602 1135,624
+      Q 1129,636 1115,631
+      L 1064,613
+      C 1050,632 1037,650 1021,667
+      L 1054,708
+      Q 1062,719 1054,730
+      C 1036,752 1015,774 990,792
+      Q 980,800 969,790
+      L 933,758 Q 928,754 923,758
+      C 901,776 877,793 852,807
+      L 874,858 Q 880,872 868,880
+      C 846,895 822,908 802,918
+      Q 787,926 779,912
+      L 746,864
+      C 723,876 697,887 670,897
+      L 681,950 Q 685,967 672,973
+      C 649,983 624,991 604,997
+      Q 590,1002 584,988
+      L 560,933
+      C 536,940 511,945 487,949
+      L 481,1005 Q 480,1018 466,1020
+      C 446,1022 425,1023 407,1023
+      Q 393,1023 390,1009
+      L 380,961
+      C 356,963 333,962 312,961
+      L 297,998 Q 293,1012 279,1010
+      C 262,1008 246,1005 234,1001
+      Q 221,997 225,982
+      L 232,949
+      C 213,943 196,934 182,922
+      L 173,928 Q 165,932 157,925
+      C 132,899 123,870 132,837
+      C 142,798 172,759 210,731
+      L 218,746
+      C 194,775 182,804 189,832
+      C 201,879 265,900 355,894
+      C 482,886 634,832 766,754
+      C 890,680 994,580 1023,487
+      C 1042,422 1007,377 940,372 Z"/>
+  </defs>
+
+  <rect id="backdrop" x="5" y="5" width="1244" height="1244" rx="190" fill="url(#background)"/>
+
+  <g id="artwork" transform="translate(0 38)">
+    <g id="notebook" fill="none" stroke="url(#ivory)" stroke-linejoin="round">
+      <rect x="284" y="229" width="508" height="598" rx="55" stroke-width="58"/>
+      <path d="M 403,229 V 827" stroke-width="43"/>
+      <path d="M 232,344 H 328 M 232,524 H 328 M 232,704 H 328"
+        stroke-width="52" stroke-linecap="round"/>
+      <path d="M 491,379 H 656 M 491,494 H 597
+        M 491,609 H 570" stroke-width="43" stroke-linecap="round"/>
+    </g>
+    <g id="pencil" transform="translate(553 640) rotate(-48) scale(1.37)">
+      <path d="M 4,-15 L 82,-56 Q 90,-60 98,-60 H 346 A 28,28 0 0 1 374,-32
+        V 32 A 28,28 0 0 1 346,60 H 98 Q 90,60 82,56 L 4,15 Q -12,0 4,-15 Z"
+        fill="url(#background)" stroke="url(#background)" stroke-width="36" stroke-linejoin="round"/>
+      <path d="M 4,-13 L 83,-54 V 54 L 4,13 Q -10,0 4,-13 Z" fill="url(#ivory)"/>
+      <path d="M 109,-58 H 287 V 58 H 109 Z" fill="url(#ivory)"/>
+      <path d="M 315,-58 H 346 A 28,28 0 0 1 374,-30 V 30 A 28,28 0 0 1 346,58
+        H 315 Z" fill="url(#orange)"/>
+    </g>
+    <use href="#gear-orbit" fill="url(#background)" stroke="url(#background)"
+      stroke-width="48" stroke-linejoin="round"/>
+    <use href="#gear-orbit" fill="url(#orange)"/>
+  </g>
+</svg>

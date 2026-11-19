@@ -98,6 +98,11 @@ add_executable(ScenarioBuilder WIN32
     native/main.cpp
     native/webview_host.cpp
     native/webview_host.hpp
+    resources/app.rc
+)
+target_include_directories(ScenarioBuilder PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+set_source_files_properties(resources/app.rc PROPERTIES
+    OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon.ico"
 )
 target_compile_features(ScenarioBuilder PRIVATE cxx_std_23)
 target_compile_definitions(ScenarioBuilder PRIVATE
