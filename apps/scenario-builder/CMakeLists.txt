@@ -129,6 +129,7 @@ target_link_libraries(ScenarioBuilder PRIVATE
 set_target_properties(ScenarioBuilder PROPERTIES
     WIN32_EXECUTABLE TRUE
     OUTPUT_NAME "ScenarioBuilder"
+    DIVERGENCESPLITTER_FRONTEND_BUILD "${_scenario_builder_frontend_build}"
 )
 
 file(GLOB_RECURSE _scenario_builder_frontend_sources CONFIGURE_DEPENDS
@@ -224,12 +225,6 @@ else()
             "[Dd][Ww][Mm][Aa][Pp][Ii]\\.dll"
         POST_EXCLUDE_REGEXES
             ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\][Ss][Yy][Ss][Tt][Ee][Mm]32.*"
-    )
-    install(DIRECTORY "${PROJECT_SOURCE_DIR}/licenses/" DESTINATION "licenses" COMPONENT ScenarioBuilder)
-    install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" DESTINATION . RENAME LICENSE.txt COMPONENT ScenarioBuilder)
-    install(FILES
-        "${PROJECT_SOURCE_DIR}/DISTRIBUTION-NOTICE.txt"
-        DESTINATION . COMPONENT ScenarioBuilder
     )
 endif()
 install(DIRECTORY "${_scenario_builder_frontend_build}/dist/"

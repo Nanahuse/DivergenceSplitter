@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <barrier>
 #include <stdexcept>
 #include <thread>
@@ -11,21 +12,29 @@ using namespace divergencesplitter;
 TEST(FrameCache, ConcurrentReadersSeeTheSameResultForAKey) {
     FrameCache cache;
     std::barrier start{2};
+    std::atomic_int computations{0};
     DetectionResult left;
     DetectionResult right;
     std::jthread first([&] {
         start.arrive_and_wait();
-        left = cache.detection("shared", [] { return DetectionResult{0.25}; });
+        left = cache.detection("shared", [&] {
+            ++computations;
+            return DetectionResult{0.25};
+        });
     });
     std::jthread second([&] {
         start.arrive_and_wait();
-        right = cache.detection("shared", [] { return DetectionResult{0.75}; });
+        right = cache.detection("shared", [&] {
+            ++computations;
+            return DetectionResult{0.75};
+        });
     });
     first.join();
     second.join();
 
     EXPECT_TRUE(left.score == 0.25 || left.score == 0.75);
     EXPECT_DOUBLE_EQ(left.score, right.score);
+    EXPECT_EQ(computations.load(), 1);
     EXPECT_DOUBLE_EQ(cache.detection("other", [] { return DetectionResult{0.5}; }).score, 0.5);
     ASSERT_TRUE(cache.cached_detection("shared"));
     EXPECT_DOUBLE_EQ(cache.cached_detection("shared")->score, left.score);
@@ -33,11 +42,18 @@ TEST(FrameCache, ConcurrentReadersSeeTheSameResultForAKey) {
 
 TEST(FrameCache, FailedDetectionCanBeRetriedSuccessfully) {
     FrameCache cache;
-    const auto failing = []() -> DetectionResult { throw std::runtime_error("boom"); };
-    EXPECT_THROW((void)cache.detection("detector", failing), std::runtime_error);
+    int attempts = 0;
+    const auto compute = [&]() -> DetectionResult {
+        if (++attempts == 1) {
+            throw std::runtime_error("boom");
+        }
+        return DetectionResult{0.75};
+    };
+    EXPECT_THROW((void)cache.detection("detector", compute), std::runtime_error);
     EXPECT_EQ(cache.cached_detection("detector"), std::nullopt);
-    EXPECT_DOUBLE_EQ(cache.detection("detector", [] { return DetectionResult{0.75}; }).score, 0.75);
-    EXPECT_DOUBLE_EQ(cache.detection("detector", failing).score, 0.75);
+    EXPECT_DOUBLE_EQ(cache.detection("detector", compute).score, 0.75);
+    EXPECT_DOUBLE_EQ(cache.detection("detector", compute).score, 0.75);
+    EXPECT_EQ(attempts, 2);
 }
 
 TEST(FrameCache, GrayImagesCanBeRetrievedByKey) {

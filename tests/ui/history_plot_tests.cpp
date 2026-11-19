@@ -688,7 +688,7 @@ TEST(HistoryPlot, SharedTraceScrollsLeftAndIncludesNewMeasurements) {
     SharedHistoryChart chart;
     chart.seconds = 30;
     chart.series = {{"clocked", true, 60,
-        {{{{40'000'000'000}, 0.3f}, {{45'000'000'000}, 0.7f}, {{50'000'000'000}, 0.2f}}}, {}}};
+        {{{{40'000'000'000}, 0.3f}, {{45'000'000'000}, 0.3f}, {{50'000'000'000}, 0.3f}}}, {}}};
     const auto palette = theme::chart_colors(theme::Mode::dark);
     const auto ink = ImGui::ColorConvertFloat4ToU32(shared_series_color("clocked", palette));
     const auto draw = [&](double now) {
@@ -706,7 +706,10 @@ TEST(HistoryPlot, SharedTraceScrollsLeftAndIncludesNewMeasurements) {
     ASSERT_GE(first.size(), 3);
     ASSERT_EQ(first.size(), next.size());
     const auto displacement = first.front().x - next.front().x;
-    EXPECT_GT(displacement, 0);
+    const auto [left, right] = std::ranges::minmax_element(first, {}, &ImVec2::x);
+    const auto ten_seconds = right->x - left->x;
+    ASSERT_GT(ten_seconds, 0);
+    EXPECT_NEAR(displacement, ten_seconds * 0.05 / 10.0, 0.01);
     for (std::size_t i = 0; i < first.size(); ++i) {
         EXPECT_NEAR(first[i].x - next[i].x, displacement, 0.001);
         EXPECT_NEAR(first[i].y, next[i].y, 0.001);
@@ -717,8 +720,8 @@ TEST(HistoryPlot, SharedTraceScrollsLeftAndIncludesNewMeasurements) {
     node.type = "detected";
     node.measurement.target = 1;
     ConditionHistory history;
-    history.samples = {{{40'000'000'000}, 0.3}, {{45'000'000'000}, 0.7},
-        {{50'000'000'000}, 0.2}, {{60'100'000'000}, 0.9}};
+    history.samples = {{{40'000'000'000}, 0.3}, {{45'000'000'000}, 0.3},
+        {{50'000'000'000}, 0.3}, {{60'100'000'000}, 0.9}};
     chart = prepare_shared_chart({{&node, &history, true}}, {60'100'000'000},
         std::chrono::seconds{30}, {}, std::move(chart));
     const auto updated = draw(60.1);
@@ -748,10 +751,13 @@ TEST(HistoryPlot, DenseChartSubmitsValidDrawCommands) {
         draw_shared_chart("shared", chart, now, 30, {300, 120}, theme::chart_colors(theme::Mode::dark), 1);
         fixture.end();
         const auto* data = ImGui::GetDrawData();
+        ASSERT_GT(data->TotalVtxCount, 65'536);
         ASSERT_GT(data->TotalIdxCount, 0);
+        bool used_vertex_offset = false;
         for (int i = 0; i < data->CmdListsCount; ++i) {
             const auto& draw = *data->CmdLists[i];
             for (const auto& command : draw.CmdBuffer) {
+                used_vertex_offset |= command.ElemCount > 0 && command.VtxOffset > 0;
                 const auto index_count = static_cast<unsigned int>(draw.IdxBuffer.Size);
                 ASSERT_LE(command.IdxOffset, index_count);
                 ASSERT_LE(command.ElemCount, index_count - command.IdxOffset);
@@ -762,6 +768,7 @@ TEST(HistoryPlot, DenseChartSubmitsValidDrawCommands) {
                 }
             }
         }
+        EXPECT_TRUE(used_vertex_offset);
     }
 }
 

@@ -71,6 +71,9 @@ bool wait_until(Predicate predicate, std::chrono::seconds timeout = 20s) {
 
 TEST(NdiSdkLoopback, DiscoversReceivesNormalizesEvaluatesAndReconnects) {
     if (!ndi_enabled()) {
+        if (std::getenv("DIVERGENCESPLITTER_REQUIRE_NDI_RUNTIME")) {
+            FAIL() << ndi_runtime_status().message;
+        }
         GTEST_SKIP() << ndi_runtime_status().message;
     }
     auto runtime = acquire_ndi_runtime();

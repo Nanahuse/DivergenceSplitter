@@ -17,6 +17,23 @@ using namespace divergencesplitter;
 
 namespace {
 
+class CountingDetector final : public Detector {
+public:
+    CountingDetector(DetectorPtr detector, int& computations)
+        : detector_(std::move(detector)), computations_(computations) {}
+
+    std::string_view type_name() const noexcept override { return detector_->type_name(); }
+    std::string cache_key() const override { return detector_->cache_key(); }
+    DetectionResult detect(FrameContext& context) const override {
+        ++computations_;
+        return detector_->detect(context);
+    }
+
+private:
+    DetectorPtr detector_;
+    int& computations_;
+};
+
 cv::Mat gradient(int width, int height) {
     cv::Mat image(height, width, CV_8UC1);
     for (int row = 0; row < height; ++row) {
@@ -347,6 +364,10 @@ TEST(Detectors, ColorSimilaritiesIgnoreOnlyTransparentPixels) {
         EXPECT_LT(bgr_detectors[index]->detect(context).score, 0.99);
         EXPECT_DOUBLE_EQ(opaque_detectors[index]->detect(context).score,
                          bgr_detectors[index]->detect(context).score);
+        DetectedCondition masked_condition{masked_detectors[index], 0.99};
+        DetectedCondition opaque_condition{opaque_detectors[index], 0.99};
+        EXPECT_EQ(masked_condition.evaluate(context), true);
+        EXPECT_EQ(opaque_condition.evaluate(context), false);
         // Fully opaque alpha behaves like an unmasked BGR reference at any size.
         auto smaller = test::make_context(cv::Mat::zeros(3, 4, CV_8UC3), clock);
         EXPECT_NO_THROW((void)opaque_detectors[index]->detect(smaller));
@@ -418,6 +439,50 @@ TEST(Detectors, ColorSimilarityConditionsMeasureTheirOwnReferenceOnEachFrame) {
         EXPECT_EQ(matches_black.evaluate(texture_frame), false);
         EXPECT_EQ(matches_black.evaluate(black_frame), true);
         EXPECT_EQ(matches_texture.evaluate(black_frame), false);
+    }
+}
+
+TEST(Detectors, EquivalentColorSimilarityConditionsComputeOncePerFrame) {
+    const auto texture = color_texture();
+    const auto reference = with_alpha(texture);
+    const auto detectors = color_similarities(reference);
+    const auto equivalent = color_similarities(reference.clone());
+    test::ManualTimeProvider clock;
+    auto match = test::make_context(texture, clock);
+    clock.advance(std::chrono::milliseconds{1});
+    auto miss = test::make_context(cv::Mat::zeros(texture.size(), texture.type()), clock);
+
+    for (std::size_t index = 0; index < detectors.size(); ++index) {
+        SCOPED_TRACE(detectors[index]->type_name());
+        int computations = 0;
+        DetectedCondition first{std::make_shared<CountingDetector>(detectors[index], computations), 0.99};
+        DetectedCondition second{std::make_shared<CountingDetector>(equivalent[index], computations), 0.99};
+        EXPECT_EQ(first.evaluate(match), true);
+        EXPECT_EQ(first.evaluate(match), true);
+        EXPECT_EQ(second.evaluate(match), true);
+        EXPECT_EQ(computations, 1);
+        EXPECT_EQ(second.evaluate(miss), false);
+        EXPECT_EQ(first.evaluate(miss), false);
+        EXPECT_EQ(computations, 2);
+    }
+}
+
+TEST(Detectors, ColorSimilarityConditionsMeasureDifferentRegionsOfTheSameFrame) {
+    const auto texture = color_texture();
+    const auto reference = with_alpha(texture);
+    cv::Mat image;
+    cv::hconcat(texture, cv::Mat::zeros(texture.size(), texture.type()), image);
+    const auto left = color_similarities(reference, Region{0, 0, texture.cols, texture.rows});
+    const auto right = color_similarities(reference, Region{texture.cols, 0, texture.cols, texture.rows});
+    test::ManualTimeProvider clock;
+    auto frame = test::make_context(image, clock);
+
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        SCOPED_TRACE(left[index]->type_name());
+        DetectedCondition matches_left{left[index], 0.99};
+        DetectedCondition matches_right{right[index], 0.99};
+        EXPECT_EQ(matches_left.evaluate(frame), true);
+        EXPECT_EQ(matches_right.evaluate(frame), false);
     }
 }
 

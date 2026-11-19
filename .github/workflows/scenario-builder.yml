@@ -19,6 +19,8 @@ on:
       - "tools/verify_windows_zip.py"
       - "tools/collect_licenses.py"
       - "tools/ndi-sdk-lock.json"
+      - "licenses/**"
+      - "LICENSE"
   push:
     branches: [main]
   workflow_dispatch:

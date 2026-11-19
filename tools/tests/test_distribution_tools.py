@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -183,11 +184,28 @@ class LicenseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             share, bridge, output, cache = [
-                root / name for name in ("share", "bridge", "out", "cache")
+                root / name for name in ("x64-windows/share", "bridge", "out", "cache")
             ]
-            for port in ("boost-asio", "opencv4", "ryml", "c4core", "nlohmann-json", "zlib"):
+            ports = ("boost-beast", "opencv4", "ryml", "c4core", "nlohmann-json", "zlib", "libpng")
+            for port in ports:
                 (share / port).mkdir(parents=True)
                 (share / port / "copyright").write_text(port, encoding="utf-8")
+            status = root / "vcpkg/status"
+            status.parent.mkdir()
+            status.write_text(
+                "\n\n".join(
+                    f"Package: {port}\nArchitecture: x64-windows\nStatus: install ok installed"
+                    for port in ports
+                )
+                + "\n\nPackage: opencv4\nFeature: png\nDepends: libpng, zlib"
+                + "\nArchitecture: x64-windows\nStatus: install ok installed\n",
+                encoding="utf-8",
+            )
+            frontend = root / "frontend"
+            for name in ("react", "react-dom", "scheduler"):
+                package = frontend / "node_modules" / name
+                package.mkdir(parents=True)
+                (package / "LICENSE").write_text(f"{name} upstream", encoding="utf-8")
             bridge.mkdir()
             (bridge / "LICENSE").write_text("bridge upstream", encoding="utf-8")
             camera = root / "camera"
@@ -199,20 +217,30 @@ class LicenseTests(unittest.TestCase):
             implot.mkdir()
             (implot / "LICENSE").write_text("implot upstream", encoding="utf-8")
             with patch.object(collect_licenses, "pinned_file", return_value=camera):
-                collect_licenses.collect(output, share, bridge, imgui, cache, implot)
+                collect_licenses.collect(output, share, bridge, imgui, cache, implot, frontend=frontend)
             self.assertEqual((output / "opencv.txt").read_text(), "opencv4")
             self.assertEqual((output / "ryml.txt").read_text(), "ryml")
             self.assertEqual((output / "c4core.txt").read_text(), "c4core")
             self.assertEqual((output / "vcpkg/zlib.txt").read_text(), "zlib")
             self.assertEqual((output / "imgui.txt").read_text(), "imgui upstream")
             self.assertEqual((output / "implot.txt").read_text(), "implot upstream")
-            for port in ("opencv4", "ryml", "c4core"):
+            self.assertEqual((output / "react-dom.txt").read_text(), "react-dom upstream")
+            standalone = root / "standalone"
+            builder_args = {"distribution": "scenario-builder", "frontend": frontend}
+            collect_licenses.collect(standalone, share, None, None, cache, **builder_args)
+            self.assertEqual((standalone / "webview2.txt").read_bytes(),
+                             (output / "webview2.txt").read_bytes())
+            self.assertEqual((standalone / "scheduler.txt").read_text(), "scheduler upstream")
+            self.assertEqual((standalone / "vcpkg/libpng.txt").read_text(), "libpng")
+            self.assertFalse((standalone / "imgui.txt").exists())
+            self.assertFalse((standalone / "vcpkg/boost-beast.txt").exists())
+            for port in ("opencv4", "ryml", "c4core", "libpng"):
                 notice = share / port / "copyright"
                 notice.unlink()
                 with self.subTest(port=port), self.assertRaisesRegex(
                     RuntimeError, "Required dependency notice missing"
                 ):
-                    collect_licenses.collect(output, share, bridge, imgui, cache, implot)
+                    collect_licenses.collect(standalone, share, None, None, cache, **builder_args)
                 notice.write_text(port, encoding="utf-8")
 
 
@@ -229,10 +257,8 @@ class PackageTests(unittest.TestCase):
             "plugins/alternate/decoder.dll",
             "LICENSE.txt",
             "DISTRIBUTION-NOTICE.txt",
-            "licenses/components.json",
             "licenses/ndi-headers.txt",
             "licenses/NDI-TERMS.txt",
-            "licenses/vcpkg/zlib.txt",
         ]
         names += [
             f"licenses/{name}.txt"
@@ -247,22 +273,29 @@ class PackageTests(unittest.TestCase):
                 "livesplit-bridge-client-cpp",
                 "windows-capture-device-list",
                 "webview2",
+                "react",
+                "react-dom",
+                "scheduler",
             )
         ]
+        self.ports = ["opencv4", "ryml", "c4core", "nlohmann-json", "zlib", "libpng"]
+        names += [f"licenses/vcpkg/{port}.txt" for port in [*self.ports, "boost-beast"]]
         for name in names:
             file = self.root / name
             file.parent.mkdir(parents=True, exist_ok=True)
-            if name == "licenses/components.json":
-                source = Path(__file__).resolve().parents[2] / "licenses/components.json"
-                file.write_bytes(source.read_bytes())
-            else:
-                file.write_bytes(b"test")
+            file.write_bytes(b"test")
+        self.write_inventory("combined", [*self.ports, "boost-beast"])
         self.lock = {
             "installer_sha256": hashlib.sha256(b"installer").hexdigest(),
             "runtime_sha256": hashlib.sha256(b"runtime").hexdigest(),
             "runtime_licenses_sha256": hashlib.sha256(b"notices").hexdigest(),
             "agreement_sha256": hashlib.sha256(b"agreement").hexdigest(),
         }
+
+    def write_inventory(self, distribution, ports):
+        inventory = collect_licenses.distribution_inventory(distribution)
+        inventory["vcpkg_notices"] = ports
+        (self.root / "licenses/components.json").write_text(json.dumps(inventory), encoding="utf-8")
 
     def test_yaml_dependency_notices_are_required(self):
         for name in ("ryml", "c4core"):
@@ -321,17 +354,61 @@ class PackageTests(unittest.TestCase):
 
     def test_empty_license_notice_is_rejected(self):
         file = self.root / "licenses/opencv.txt"
-        file.write_bytes(b"")
-        with self.assertRaisesRegex(RuntimeError, "missing or empty"):
-            verify_windows_zip.verify_contents(self.root, self.lock)
-        file.write_bytes(b"test")
+        for contents in (b"", b" \r\n"):
+            file.write_bytes(contents)
+            with self.subTest(contents=contents), self.assertRaisesRegex(RuntimeError, "missing or empty"):
+                verify_windows_zip.verify_contents(self.root, self.lock)
 
     def test_transitive_license_notice_is_required(self):
         file = self.root / "licenses/vcpkg/zlib.txt"
         file.unlink()
         with self.assertRaisesRegex(RuntimeError, "transitive vcpkg"):
             verify_windows_zip.verify_contents(self.root, self.lock)
-        file.write_bytes(b"test")
+
+    def test_builder_accepts_its_own_notices_and_requires_each_dependency_license(self):
+        self.write_inventory("scenario-builder", self.ports)
+        for name in ("imgui.txt", "implot.txt", "boost.txt", "ndi-headers.txt", "NDI-TERMS.txt"):
+            (self.root / "licenses" / name).unlink()
+        verify_windows_zip.verify_contents(self.root, self.lock, builder_only=True)
+
+        for name in ("ryml.txt", "webview2.txt", "react-dom.txt", "vcpkg/libpng.txt"):
+            notice = self.root / "licenses" / name
+            for contents in (None, b""):
+                if contents is None:
+                    notice.unlink()
+                else:
+                    notice.write_bytes(contents)
+                with self.subTest(name=name, contents=contents), self.assertRaisesRegex(
+                    RuntimeError, "notice"
+                ):
+                    verify_windows_zip.verify_contents(self.root, self.lock, builder_only=True)
+            notice.write_bytes(b"test")
+
+    def test_builder_rejects_an_inventory_for_the_combined_zip(self):
+        with self.assertRaisesRegex(RuntimeError, "incorrect license inventory"):
+            verify_windows_zip.verify_contents(self.root, self.lock, builder_only=True)
+
+    def test_development_files_are_rejected_in_both_zip_formats(self):
+        for builder_only in (False, True):
+            if builder_only:
+                self.write_inventory("scenario-builder", self.ports)
+            for name in (
+                "include/Processing.NDI.Lib.H",
+                "include/ndi.hpp",
+                "lib/Processing.NDI.Lib.x64.lib",
+                "nested/NODE.EXE",
+                "nested/npm.cmd",
+                "frontend/Node_Modules/react/index.js",
+            ):
+                with (
+                    self.subTest(builder_only=builder_only, name=name),
+                    tempfile.TemporaryDirectory(dir=self.root) as temporary,
+                ):
+                    file = Path(temporary) / name
+                    file.parent.mkdir(parents=True)
+                    file.write_bytes(b"development file")
+                    with self.assertRaisesRegex(RuntimeError, "development"):
+                        verify_windows_zip.verify_contents(self.root, self.lock, builder_only=builder_only)
 
 
 if __name__ == "__main__":

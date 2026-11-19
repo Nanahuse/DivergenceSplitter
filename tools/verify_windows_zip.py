@@ -21,6 +21,13 @@ start_condition: {type: elapsed, duration: 1s}
 splits: []
 """
 
+NODE_TOOLS = {
+    "node.exe", "node",
+    "npm", "npm.cmd", "npm.ps1",
+    "npx", "npx.cmd", "npx.ps1",
+    "corepack", "corepack.cmd", "corepack.ps1",
+}
+
 
 def verify_archive_names(names: list[str]) -> None:
     normalized = [name.casefold() for name in names if name and not name.endswith("/")]
@@ -43,12 +50,17 @@ def sha256(file: Path) -> str:
 
 def verify_contents(root: Path, lock: dict[str, str], *, builder_only: bool = False) -> None:
     inventory = collect_licenses.load_inventory(root)
-    collect_licenses.validate_application(root, inventory)
+    distribution = "scenario-builder" if builder_only else "combined"
+    expected = collect_licenses.distribution_inventory(distribution)
+    if inventory["application"] != expected["application"] or {
+        component["name"]: component for component in inventory["components"]
+    } != {component["name"]: component for component in expected["components"]}:
+        raise RuntimeError(f"ZIP has an incorrect license inventory for {distribution}")
+    collect_licenses.validate_application(root, expected)
+    collect_licenses.validate_destination(root / "licenses", inventory)
     notice = root / "DISTRIBUTION-NOTICE.txt"
-    if not notice.is_file() or not notice.stat().st_size:
-        raise RuntimeError("ZIP missing DISTRIBUTION-NOTICE.txt")
-    if not builder_only:
-        collect_licenses.validate_destination(root / "licenses", inventory)
+    if not collect_licenses.has_notice(notice):
+        raise RuntimeError("ZIP missing or empty DISTRIBUTION-NOTICE.txt")
 
     restricted_ndi_files = {
         lock[key]
@@ -60,11 +72,16 @@ def verify_contents(root: Path, lock: dict[str, str], *, builder_only: bool = Fa
         )
     }
     for file in root.rglob("*"):
+        path = file.relative_to(root)
+        name = file.name.casefold()
+        if name in NODE_TOOLS or name == "node_modules":
+            raise RuntimeError(f"ZIP contains Node.js development files: {path}")
         if not file.is_file():
             continue
-        name = file.name.casefold()
+        if file.suffix.casefold() in {".h", ".hpp", ".lib"}:
+            raise RuntimeError(f"ZIP contains a development header or library: {path}")
         if name == "msedgewebview2.exe":
-            raise RuntimeError(f"ZIP contains a bundled WebView2 Runtime: {file.relative_to(root)}")
+            raise RuntimeError(f"ZIP contains a bundled WebView2 Runtime: {path}")
         if (
             (name.startswith("processing.ndi.lib.") and name.endswith(".dll"))
             or name == "processing.ndi.lib.licenses.txt"
@@ -72,7 +89,7 @@ def verify_contents(root: Path, lock: dict[str, str], *, builder_only: bool = Fa
             or re.search(r"ndi.*(sdk|runtime).*\.exe$", name)
             or sha256(file) in restricted_ndi_files
         ):
-            raise RuntimeError(f"ZIP contains a separately distributed NDI file: {file.relative_to(root)}")
+            raise RuntimeError(f"ZIP contains a separately distributed NDI file: {path}")
 
 
 def launch(root: Path, *, builder_only: bool = False) -> None:

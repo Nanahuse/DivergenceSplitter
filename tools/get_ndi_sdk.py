@@ -24,8 +24,9 @@ DOWNLOAD_PROCESS_TIMEOUT = DOWNLOAD_RETRY_WINDOW + DOWNLOAD_TRANSFER_TIMEOUT + 3
 
 
 def verify_hash(path: Path, expected: str) -> None:
-    if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
-        raise RuntimeError(f"SHA-256 mismatch: {path.name}")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise RuntimeError(f"SHA-256 mismatch: {path.name} (expected {expected}, got {actual})")
 
 
 def download(url: str, destination: Path) -> None:
