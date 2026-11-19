@@ -109,10 +109,10 @@
     {
       "name": "NDI Runtime",
       "license": "External dependency; NDI license applies",
-      "license_file": "NDI-TERMS.txt",
+      "notice_file": "NDI-TERMS.txt",
       "product": "divergencesplitter",
       "url": "https://ndi.link/ndisdk_license",
-      "source": "checked-in"
+      "source": "external"
     }
   ]
 }

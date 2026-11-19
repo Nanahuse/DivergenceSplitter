@@ -359,6 +359,11 @@ class PackageTests(unittest.TestCase):
             with self.subTest(contents=contents), self.assertRaisesRegex(RuntimeError, "missing or empty"):
                 verify_windows_zip.verify_contents(self.root, self.lock)
 
+    def test_combined_package_requires_the_notice_for_the_external_ndi_runtime(self):
+        (self.root / "licenses/NDI-TERMS.txt").unlink()
+        with self.assertRaisesRegex(RuntimeError, "NDI-TERMS.txt"):
+            verify_windows_zip.verify_contents(self.root, self.lock)
+
     def test_transitive_license_notice_is_required(self):
         file = self.root / "licenses/vcpkg/zlib.txt"
         file.unlink()

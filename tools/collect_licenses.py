@@ -80,17 +80,15 @@ def has_notice(file: Path) -> bool:
 def validate_destination(destination: Path, inventory: dict) -> None:
     for component in inventory["components"]:
         name = component["name"]
-        license_file = component.get("license_file")
-        if license_file:
-            file = destination / license_file
-            if not has_notice(file):
-                raise RuntimeError(
-                    f"Required license notice missing or empty: licenses/{license_file} ({name})"
-                )
-        elif not component.get("url"):
+        if not component.get("license_file") and not component.get("url"):
             raise RuntimeError(
                 f"Component has neither a license file nor an official URL: {name}"
             )
+        for field in ("license_file", "notice_file"):
+            if (filename := component.get(field)) and not has_notice(destination / filename):
+                raise RuntimeError(
+                    f"Required license notice missing or empty: licenses/{filename} ({name})"
+                )
 
     ports = inventory.get("vcpkg_notices")
     if not isinstance(ports, list) or not all(
@@ -182,6 +180,8 @@ def collect(
         elif source in ("external", "bundled"):
             if not component.get("url"):
                 raise RuntimeError(f"Official license URL missing: {component['name']}")
+            if notice_file := component.get("notice_file"):
+                copy_notice(source_root / "licenses" / notice_file, destination / notice_file)
         else:
             raise RuntimeError(f"Unknown license source: {source}")
 
